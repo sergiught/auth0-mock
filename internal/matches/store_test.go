@@ -73,3 +73,47 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestStore_List(t *testing.T) {
+	s := NewStore()
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Status: 200})
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Status: 200})
+
+	list := s.List()
+	assert.Len(t, list, 2)
+}
+
+func TestStore_ResetEndpoint_Exact(t *testing.T) {
+	s := NewStore()
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Status: 200})
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Status: 200})
+
+	s.ResetEndpoint("GET", "/api/v2/users/123", KindExact)
+
+	assert.Nil(t, s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}-other-template"))
+	// template still serves any concrete id
+	assert.NotNil(t, s.Find("GET", "/api/v2/users/999", "/api/v2/users/{id}"))
+}
+
+func TestStore_ResetEndpoint_Template(t *testing.T) {
+	s := NewStore()
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Status: 200})
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Status: 200})
+
+	s.ResetEndpoint("GET", "/api/v2/users/{id}", KindTemplate)
+
+	// concrete remains
+	assert.NotNil(t, s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}"))
+	// template gone
+	assert.Nil(t, s.Find("GET", "/api/v2/users/999", "/api/v2/users/{id}"))
+}
+
+func TestStore_ResetAll(t *testing.T) {
+	s := NewStore()
+	s.Put(Match{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Status: 200})
+	s.Put(Match{Method: "POST", Path: "/api/v2/clients", Kind: KindExact, Status: 201})
+
+	s.ResetAll()
+
+	assert.Empty(t, s.List())
+}

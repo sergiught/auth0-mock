@@ -1,6 +1,9 @@
 package matches
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // Store holds registered Match entries in memory. Safe for concurrent use.
 type Store struct {
@@ -48,4 +51,45 @@ func (s *Store) Find(method, concretePath, opTemplate string) *Match {
 		return &m
 	}
 	return nil
+}
+
+// List returns every registered Match, sorted by (method, path).
+func (s *Store) List() []Match {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Match, 0, len(s.exact)+len(s.template))
+	for _, m := range s.exact {
+		out = append(out, m)
+	}
+	for _, m := range s.template {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Method != out[j].Method {
+			return out[i].Method < out[j].Method
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
+// ResetEndpoint removes the registered Match keyed by (method, path) within
+// the map indicated by kind. Calls for unregistered keys are no-ops.
+func (s *Store) ResetEndpoint(method, path string, kind Kind) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := key{Method: method, Path: path}
+	if kind == KindTemplate {
+		delete(s.template, k)
+		return
+	}
+	delete(s.exact, k)
+}
+
+// ResetAll clears every registered Match.
+func (s *Store) ResetAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.exact = make(map[key]Match)
+	s.template = make(map[key]Match)
 }
