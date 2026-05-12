@@ -19,3 +19,17 @@
 
 # Go workspace file
 go.work
+
+# Local env
+.env
+
+# Build artifacts
+/dist/
+/bin/
+
+# IDE
+.idea/
+.vscode/
+
+# Coverage
+coverage.out
