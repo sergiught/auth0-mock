@@ -1,0 +1,12 @@
+services:
+  auth0-mock:
+    build:
+      context: .
+      dockerfile: infrastructure/dockerfiles/development/Dockerfile
+    container_name: auth0-mock
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    env_file: .env
+    volumes:
+      - ./:/app
