@@ -5,11 +5,10 @@ go 1.26
 require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/google/uuid v1.6.0
-	github.com/joho/godotenv v1.5.1
 	github.com/julienschmidt/httprouter v1.3.0
-	github.com/rs/cors v1.11.1
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/sync v0.20.0
 )
 
 require (
