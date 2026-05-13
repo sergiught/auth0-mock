@@ -63,6 +63,20 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 		return nil, fmt.Errorf("load base: %w", err)
 	}
 
+	// Prefix every Mgmt API path with the base path derived from servers[0].url
+	// (e.g. "/api/v2") so that the merged document carries the full path.
+	// Fragment paths (Auth API, admin0, service) are left untouched because
+	// those surfaces are mounted at the chi root without any prefix.
+	if len(base.Servers) > 0 {
+		if bp := basePath(base.Servers[0].URL); bp != "" {
+			prefixed := openapi3.NewPaths()
+			for path, item := range base.Paths.Map() {
+				prefixed.Set(bp+path, item)
+			}
+			base.Paths = prefixed
+		}
+	}
+
 	fragments := [][]byte{
 		api.MockControlOpenAPIYAML,
 		router.ServiceFragment,
@@ -152,4 +166,20 @@ func securitySchemesEqual(a, b *openapi3.SecuritySchemeRef) bool {
 	// Normalise to lower-case before comparing so that bearerFormat "JWT" and
 	// "jwt" are treated as the same definition.
 	return strings.EqualFold(string(ja), string(jb))
+}
+
+// basePath extracts the path component of a server URL, e.g.
+// "https://{tenantDomain}/api/v2" => "/api/v2". Copied from
+// internal/spec.deriveBasePath (unexported) to avoid coupling.
+func basePath(url string) string {
+	for i := 0; i+2 < len(url); i++ {
+		if url[i] == ':' && url[i+1] == '/' && url[i+2] == '/' {
+			j := i + 3
+			for j < len(url) && url[j] != '/' {
+				j++
+			}
+			return url[j:]
+		}
+	}
+	return url
 }

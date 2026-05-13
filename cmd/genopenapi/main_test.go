@@ -11,10 +11,10 @@ func TestBundleMergesEveryFragment(t *testing.T) {
 	doc, err := bundle("http://localhost:8080")
 	require.NoError(t, err)
 
-	// Mgmt API base path survives (paths in the spec are relative to the
-	// server URL which already contains /api/v2, so paths start at /users).
-	assert.NotNil(t, doc.Paths.Value("/users/{id}"),
-		"base /users/{id} should be present")
+	// Mgmt API base path survives and paths are prefixed with /api/v2 so that
+	// the merged doc matches the routes the mock actually serves.
+	assert.NotNil(t, doc.Paths.Value("/api/v2/users/{id}"),
+		"base /api/v2/users/{id} should be present after prefixing")
 
 	// Auth API fragment is merged.
 	require.NotNil(t, doc.Paths.Value("/oauth/token"))
