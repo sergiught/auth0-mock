@@ -12,6 +12,7 @@ import (
 
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
@@ -26,6 +27,7 @@ func newDeps() Deps {
 		Matches:     matches.NewStore(),
 		Claims:      claims.NewStore(),
 		Permissions: permissions.NewStore(),
+		MFA:         mfa.NewStore(),
 	}
 }
 
@@ -34,6 +36,7 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	d.Matches.Put(matches.Match{Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate, Status: 200})
 	d.Claims.Set(map[string]any{"role": "admin"})
 	d.Permissions.Set("api", []string{"read:users"})
+	d.MFA.SetRequired(true)
 
 	r := newRouter(d)
 	w := httptest.NewRecorder()
@@ -43,6 +46,32 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	assert.Empty(t, d.Matches.List())
 	assert.Empty(t, d.Claims.Get())
 	assert.Empty(t, d.Permissions.All())
+	assert.False(t, d.MFA.IsRequired())
+}
+
+func TestMFARequired_PutGet(t *testing.T) {
+	d := newDeps()
+	r := newRouter(d)
+
+	// PUT true
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/mfa-required", strings.NewReader(`{"required":true}`)))
+	require.Equal(t, 204, w.Code)
+	assert.True(t, d.MFA.IsRequired())
+
+	// GET
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/mfa-required", nil))
+	require.Equal(t, 200, w.Code)
+	var body map[string]bool
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.True(t, body["required"])
+
+	// PUT false
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/mfa-required", strings.NewReader(`{"required":false}`)))
+	require.Equal(t, 204, w.Code)
+	assert.False(t, d.MFA.IsRequired())
 }
 
 func TestMatches_ReturnsRegisteredMatches(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
@@ -36,6 +37,7 @@ type Context struct {
 	t          *testing.T
 	BaseURL    string
 	BearerTok  string
+	MFAToken   string // captured from a 403 mfa_required response
 	LastResp   *http.Response
 	LastBody   []byte
 	client     *http.Client
@@ -70,12 +72,14 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	claimsStore := claims.NewStore()
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore()
+	mfaStore := mfa.NewStore()
 	handler, err := router.New(router.Deps{
 		Log:                  zerolog.Nop(),
 		Store:                store,
 		Claims:               claimsStore,
 		Permissions:          permsStore,
 		PKCE:                 pkceStore,
+		MFA:                  mfaStore,
 		Keys:                 ks,
 		Spec:                 openapiSpec,
 		Validator:            spec.NewValidator(openapiSpec),

@@ -262,6 +262,32 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	// MFA: capture the mfa_token from a 403 mfa_required response so a follow-up
+	// step can present it on /oauth/token with one of the mfa-* grants.
+	sc.Step(`^I save the mfa_token from the response$`, func() error {
+		tok := gjson.GetBytes(c.LastBody, "mfa_token").String()
+		if tok == "" {
+			return fmt.Errorf("no mfa_token in response (body=%s)", string(c.LastBody))
+		}
+		c.MFAToken = tok
+		return nil
+	})
+
+	sc.Step(`^I exchange the mfa_token with grant "([^"]+)" and form body:$`, func(grant string, body *godog.DocString) error {
+		form := url.Values{}
+		form.Set("grant_type", grant)
+		form.Set("mfa_token", c.MFAToken)
+		for line := range strings.SplitSeq(strings.TrimSpace(body.Content), "\n") {
+			kv := strings.SplitN(strings.TrimSpace(line), "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			form.Set(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
+		}
+		c.DoForm("POST", "/oauth/token", form, false)
+		return nil
+	})
+
 	sc.Step(`^I exchange the code without a verifier$`, func() error {
 		code, err := codeFromLastLocation(c)
 		if err != nil {

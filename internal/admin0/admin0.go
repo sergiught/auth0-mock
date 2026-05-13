@@ -14,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
@@ -22,6 +23,7 @@ type Deps struct {
 	Matches     *matches.Store
 	Claims      *claims.Store
 	Permissions *permissions.Store
+	MFA         *mfa.Store
 }
 
 // Mount registers every /admin0/* route on r.
@@ -41,6 +43,9 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodGet, "/admin0/permissions/*", &GetPermissionsHandler{Store: d.Permissions})
 	r.Method(http.MethodPut, "/admin0/permissions/*", &PutPermissionsHandler{Store: d.Permissions})
 	r.Method(http.MethodDelete, "/admin0/permissions/*", &DeletePermissionsHandler{Store: d.Permissions})
+
+	r.Method(http.MethodGet, "/admin0/mfa-required", &GetMFARequiredHandler{Store: d.MFA})
+	r.Method(http.MethodPut, "/admin0/mfa-required", &PutMFARequiredHandler{Store: d.MFA})
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
@@ -59,6 +64,40 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	if h.Deps.Permissions != nil {
 		h.Deps.Permissions.Clear()
 	}
+	if h.Deps.MFA != nil {
+		h.Deps.MFA.Reset()
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- mfa ------------------------------------------------------------------
+
+type mfaRequiredBody struct {
+	Required bool `json:"required"`
+}
+
+// GetMFARequiredHandler reports whether the password and password-realm grants
+// currently demand MFA step-up.
+type GetMFARequiredHandler struct {
+	Store *mfa.Store
+}
+
+func (h *GetMFARequiredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	render.JSON(w, r, mfaRequiredBody{Required: h.Store.IsRequired()})
+}
+
+// PutMFARequiredHandler toggles MFA enforcement at runtime. Body: {"required":true|false}.
+type PutMFARequiredHandler struct {
+	Store *mfa.Store
+}
+
+func (h *PutMFARequiredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body mfaRequiredBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "decode body: "+err.Error(), "invalid_body")
+		return
+	}
+	h.Store.SetRequired(body.Required)
 	w.WriteHeader(http.StatusNoContent)
 }
 

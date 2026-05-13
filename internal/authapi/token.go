@@ -14,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 )
@@ -30,6 +31,34 @@ type TokenHandler struct {
 	// code that was stashed at /authorize with a code_challenge, the matching
 	// code_verifier is required and verified.
 	PKCE *pkce.Store
+	// MFA may be nil. When set and IsRequired() returns true, the password
+	// and password-realm grants return 403 mfa_required + mfa_token instead
+	// of minting; the three Auth0 mfa-* grants then trade the mfa_token plus
+	// a fixed canned challenge for an access_token.
+	MFA *mfa.Store
+}
+
+// mfaChallengeResponse is the body returned alongside the 403 mfa_required.
+type mfaChallengeResponse struct {
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+	MFAToken         string `json:"mfa_token"`
+}
+
+// requireMFA returns true (and writes the 403 challenge) if the MFA store
+// reports MFA enforcement is on. Caller must abort token minting when true.
+func (h *TokenHandler) requireMFA(w http.ResponseWriter, r *http.Request, ctx mfa.Context) bool {
+	if h.MFA == nil || !h.MFA.IsRequired() {
+		return false
+	}
+	tok := h.MFA.Issue(ctx)
+	render.Status(r, http.StatusForbidden)
+	render.JSON(w, r, mfaChallengeResponse{
+		Error:            "mfa_required",
+		ErrorDescription: "Multifactor authentication required",
+		MFAToken:         tok,
+	})
+	return true
 }
 
 // augmentExtra layers per-audience permissions and per-process custom claims
@@ -77,6 +106,12 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.respondRefreshToken(w, r, req, aud)
 	case "authorization_code":
 		h.respondAuthorizationCode(w, r, req, aud)
+	case "http://auth0.com/oauth/grant-type/mfa-otp":
+		h.respondMFAOTP(w, r, req)
+	case "http://auth0.com/oauth/grant-type/mfa-oob":
+		h.respondMFAOOB(w, r, req)
+	case "http://auth0.com/oauth/grant-type/mfa-recovery-code":
+		h.respondMFARecoveryCode(w, r, req)
 	default:
 		httperr.WriteAuth(w, http.StatusBadRequest, "unsupported_grant_type",
 			"grant_type "+req.GrantType+" is not supported")
@@ -96,15 +131,20 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 	if subject == "" {
 		subject = "auth0|" + uuid.NewString()
 	}
+	if h.requireMFA(w, r, mfa.Context{
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm,
+	}) {
+		return
+	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra: h.augmentExtra(map[string]any{
-			"gty":              "password-realm",
-			"azp":              req.ClientID,
-			"connection":       req.Realm,
+			"gty":                     "password-realm",
+			"azp":                     req.ClientID,
+			"connection":              req.Realm,
 			"https://auth0.com/realm": req.Realm,
 		}, aud),
 	})
@@ -173,6 +213,11 @@ func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
 		RedirectURI:  r.PostForm.Get("redirect_uri"),
 		CodeVerifier: r.PostForm.Get("code_verifier"),
 		Realm:        r.PostForm.Get("realm"),
+		MFAToken:     r.PostForm.Get("mfa_token"),
+		OTP:          r.PostForm.Get("otp"),
+		OOBCode:      r.PostForm.Get("oob_code"),
+		BindingCode:  r.PostForm.Get("binding_code"),
+		RecoveryCode: r.PostForm.Get("recovery_code"),
 	}, nil
 }
 
@@ -200,6 +245,11 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 	subject := req.Username
 	if subject == "" {
 		subject = "auth0|" + uuid.NewString()
+	}
+	if h.requireMFA(w, r, mfa.Context{
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject,
+	}) {
+		return
 	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,

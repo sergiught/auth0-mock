@@ -13,6 +13,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/logger"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
@@ -48,12 +49,14 @@ func main() {
 	claimsStore := claims.NewStore()
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore()
+	mfaStore := mfa.NewStore()
 	handler, err := router.New(router.Deps{
 		Log:                  log,
 		Store:                store,
 		Claims:               claimsStore,
 		Permissions:          permsStore,
 		PKCE:                 pkceStore,
+		MFA:                  mfaStore,
 		Keys:                 keys,
 		Spec:                 openapiSpec,
 		Validator:            validator,

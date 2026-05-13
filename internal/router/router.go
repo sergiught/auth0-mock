@@ -13,6 +13,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/mgmtapi"
 	"github.com/sergiught/auth0-mock/internal/middleware"
 	"github.com/sergiught/auth0-mock/internal/permissions"
@@ -27,6 +28,7 @@ type Deps struct {
 	Claims               *claims.Store
 	Permissions          *permissions.Store
 	PKCE                 *pkce.Store
+	MFA                  *mfa.Store
 	Keys                 *jwks.KeySet
 	Spec                 *spec.Spec
 	Validator            *spec.Validator
@@ -47,6 +49,7 @@ func New(d Deps) (http.Handler, error) {
 		Matches:     d.Store,
 		Claims:      d.Claims,
 		Permissions: d.Permissions,
+		MFA:         d.MFA,
 	})
 	mountJWKS(r, d.Keys)
 
@@ -59,6 +62,7 @@ func New(d Deps) (http.Handler, error) {
 		Claims:          d.Claims,
 		Permissions:     d.Permissions,
 		PKCE:            d.PKCE,
+		MFA:             d.MFA,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{
