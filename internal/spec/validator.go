@@ -21,8 +21,15 @@ type Validator struct {
 }
 
 // NewValidator constructs a Validator. The underlying router is built once.
+// DisableSchemaPatternValidation is required because Auth0's spec contains
+// Perl-syntax lookahead patterns (e.g. `(?=`) that Go's regexp engine does
+// not support. Route matching is unaffected; only pattern constraints are
+// skipped during router construction.
 func NewValidator(s *Spec) *Validator {
-	r, err := legacyrouter.NewRouter(s.Doc)
+	r, err := legacyrouter.NewRouter(s.Doc,
+		openapi3.DisableSchemaPatternValidation(),
+		openapi3.DisableSchemaDefaultsValidation(),
+	)
 	if err != nil {
 		// Fail loudly at startup. Boot will catch this.
 		panic(fmt.Errorf("build openapi router: %w", err))

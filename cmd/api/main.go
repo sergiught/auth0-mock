@@ -7,12 +7,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/config"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/logger"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/router"
 	"github.com/sergiught/auth0-mock/internal/server"
+	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/internal/tlscert"
 )
 
@@ -33,8 +35,24 @@ func main() {
 		log.Fatal().Err(err).Msg("jwks init")
 	}
 
+	openapiSpec, err := spec.Load(api.ManagementOpenAPIJSON)
+	if err != nil {
+		log.Fatal().Err(err).Msg("openapi load")
+	}
+	validator := spec.NewValidator(openapiSpec)
+
 	store := matches.NewStore()
-	handler := router.New(log, store, keys)
+	handler, err := router.New(router.Deps{
+		Log:                  log,
+		Store:                store,
+		Keys:                 keys,
+		Spec:                 openapiSpec,
+		Validator:            validator,
+		SpecValidationStrict: cfg.SpecValidationStrict,
+	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("router init")
+	}
 
 	servers := []server.Server{}
 	if cfg.HTTPAddress != "" {
