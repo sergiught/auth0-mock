@@ -151,3 +151,29 @@ func TestMatchHandler_TemplateRegistration(t *testing.T) {
 	require.NotNil(t, stored)
 	assert.Equal(t, matches.KindTemplate, stored.Kind)
 }
+
+func TestResetHandler_ClearsConcrete(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/abc", Kind: matches.KindExact, Status: 200, Body: json.RawMessage(`{"id":"abc"}`)})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/reset", nil))
+
+	assert.Equal(t, 204, w.Code)
+	assert.Nil(t, store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}"))
+}
+
+func TestResetHandler_ClearsTemplate(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/{id}", Kind: matches.KindTemplate, Status: 200, Body: json.RawMessage(`{"id":"any"}`)})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/{id}/reset", nil))
+
+	assert.Equal(t, 204, w.Code)
+	assert.Nil(t, store.Find("GET", "/api/v2/widgets/zzz", "/api/v2/widgets/{id}"))
+}
