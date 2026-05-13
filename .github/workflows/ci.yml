@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   lint:
-    name: lint (gofmt + go vet + golangci-lint)
+    name: lint (golangci-lint + openapi drift)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,21 +26,15 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: gofmt
-        run: |
-          out=$(gofmt -l .)
-          if [ -n "$out" ]; then
-            echo "::error::gofmt found unformatted files:"
-            echo "$out"
-            exit 1
-          fi
-      - name: go vet
-        run: go vet ./...
       # golangci/golangci-lint-action v9.2.0
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: -c .golangci.yaml ./...
+      - name: regenerate openapi spec
+        run: make openapi
+      - name: check openapi spec is up to date
+        run: git diff --exit-code api/auth0-mock.openapi.json
 
   test:
     name: test (-race)
