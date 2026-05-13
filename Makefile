@@ -1,83 +1,79 @@
+#-----------------------------------------------------------------------------------------------------------------------
+# Variables (https://www.gnu.org/software/make/manual/html_node/Using-Variables.html#Using-Variables)
+#-----------------------------------------------------------------------------------------------------------------------
 BINARIES_DIR = $(CURDIR)/bin
 BINARY_NAME = auth0-mock
 
-# Tooling versions (pinned to commit SHAs for reproducibility).
-GOLANGCI_LINT_VERSION = v2.5.0
-GOLANGCI_LINT_SHA     = ff63786c30d6c2926f99d677ab2ecf089e9390ad
-COMMITLINT_VERSION    = v0.10.1
-COMMITLINT_SHA        = e9a606ce7074ac884ea091765be1651be18356d4
-GOVULNCHECK_REF       = latest
-AIR_REF               = latest
+#-----------------------------------------------------------------------------------------------------------------------
+# Rules (https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html#Rule-Introduction)
+#-----------------------------------------------------------------------------------------------------------------------
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Show this help message and exit
+	@awk 'BEGIN {FS = ":.*?## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+$(BINARIES_DIR)/golangci-lint:
+	@echo "==> Installing golangci-lint within ${BINARIES_DIR}"
+	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@ff63786c30d6c2926f99d677ab2ecf089e9390ad # v2.5.0
+
+$(BINARIES_DIR)/commitlint:
+	@echo "==> Installing commitlint within ${BINARIES_DIR}"
+	@GOBIN=$(BINARIES_DIR) go install github.com/conventionalcommit/commitlint@e9a606ce7074ac884ea091765be1651be18356d4 # v0.10.1
+
+$(BINARIES_DIR)/govulncheck:
+	@echo "==> Installing govulncheck within ${BINARIES_DIR}"
+	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@latest
+
+$(BINARIES_DIR)/air:
+	@echo "==> Installing air within ${BINARIES_DIR}"
+	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@latest
 
 .PHONY: build
-build:
-	@echo "==> Building $(BINARY_NAME) into $(BINARIES_DIR)"
+build: ## Build the auth0-mock binary into bin/
+	@echo "==> Building $(BINARY_NAME) within $(BINARIES_DIR)"
 	@go build -v -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
 
 .PHONY: test
-test:
+test: ## Run unit tests with the race detector
 	@go test -race -count=1 ./...
 
 .PHONY: test-features
-test-features:
+test-features: ## Run the godog acceptance suite
 	@go test -tags=features -count=1 ./cmd/api/...
 
-# ---- Tooling installs (idempotent; pinned where possible) ----
-
-$(BINARIES_DIR)/golangci-lint:
-	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) into $(BINARIES_DIR)"
-	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_SHA)
-
-$(BINARIES_DIR)/commitlint:
-	@echo "==> Installing commitlint $(COMMITLINT_VERSION) into $(BINARIES_DIR)"
-	@GOBIN=$(BINARIES_DIR) go install github.com/conventionalcommit/commitlint@$(COMMITLINT_SHA)
-
-$(BINARIES_DIR)/govulncheck:
-	@echo "==> Installing govulncheck@$(GOVULNCHECK_REF) into $(BINARIES_DIR)"
-	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_REF)
-
-$(BINARIES_DIR)/air:
-	@echo "==> Installing air into $(BINARIES_DIR)"
-	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@$(AIR_REF)
-
-# ---- Quality gates ----
-
 .PHONY: lint
-lint: $(BINARIES_DIR)/golangci-lint
+lint: $(BINARIES_DIR)/golangci-lint ## Run golangci-lint over the project (with --fix)
 	@echo "==> Running golangci-lint"
 	@$(BINARIES_DIR)/golangci-lint run -v --fix -c .golangci.yaml ./...
 
 .PHONY: lint-commits
-lint-commits: $(BINARIES_DIR)/commitlint
+lint-commits: $(BINARIES_DIR)/commitlint ## Lint the current commit message against commitlint.yaml
 	@$(BINARIES_DIR)/commitlint lint
 
 .PHONY: vuln
-vuln: $(BINARIES_DIR)/govulncheck
+vuln: $(BINARIES_DIR)/govulncheck ## Scan the module graph for known Go vulnerabilities
 	@echo "==> Scanning module graph for known Go vulnerabilities"
 	@$(BINARIES_DIR)/govulncheck ./...
 
-# ---- Pre-commit hooks ----
-
 .PHONY: pre-commit
-pre-commit:
+pre-commit: ## Install local pre-commit and commit-msg hooks
 	@if ! command -v pre-commit >/dev/null 2>&1; then \
-		echo "⚠️  'pre-commit' is not installed. Install with 'pip install pre-commit' or 'brew install pre-commit'."; \
+		echo "'pre-commit' is not installed. Install with 'pip install pre-commit' or 'brew install pre-commit'."; \
 		exit 1; \
 	fi
 	@pre-commit install --hook-type pre-commit --hook-type commit-msg
 	@echo "==> pre-commit hooks installed"
 
-# ---- Local dev loop ----
-
 .PHONY: dev-env
-dev-env:
+dev-env: ## Materialise .env from .env.example (no-op if .env already exists)
 	@cp -n .env.example .env || true
 
 .PHONY: watch
-watch: dev-env $(BINARIES_DIR)/air
+watch: dev-env $(BINARIES_DIR)/air ## Run the API locally with native hot reload via air
 	@$(BINARIES_DIR)/air
 
 .PHONY: dev-run
-dev-run: dev-env
+dev-run: dev-env ## Run the API inside docker compose and tail its logs
 	@docker compose up -d --build
 	@docker compose logs -f auth0-mock
