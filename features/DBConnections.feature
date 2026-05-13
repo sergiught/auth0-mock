@@ -8,9 +8,14 @@ Feature: Database connection signup and password change
       {"client_id":"demo","email":"alice@example.com","password":"pw","connection":"Username-Password-Authentication"}
       """
     Then I receive a 201 response
-    And the response JSON path "_id" exists
-    And the response JSON path "email" equals "alice@example.com"
-    And the response JSON path "email_verified" equals "false"
+    And the response body should match the JSON pattern:
+      """
+      {
+        "_id":            "<<PRESENCE>>",
+        "email":          "alice@example.com",
+        "email_verified": false
+      }
+      """
 
   Scenario: signup without email is 400
     When I post to "/dbconnections/signup" with body:

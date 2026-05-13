@@ -8,8 +8,18 @@ import (
 	"strings"
 
 	"github.com/cucumber/godog"
+	"github.com/kinbiko/jsonassert"
 	"github.com/tidwall/gjson"
 )
+
+// jsonAssertPrinter satisfies jsonassert.Printer by buffering Errorf calls so
+// the godog step can convert them into a returned error rather than failing
+// the surrounding *testing.T directly.
+type jsonAssertPrinter struct{ msgs []string }
+
+func (p *jsonAssertPrinter) Errorf(format string, args ...any) {
+	p.msgs = append(p.msgs, fmt.Sprintf(format, args...))
+}
 
 // RegisterSteps wires the .feature step phrases to Go functions.
 func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
@@ -170,6 +180,19 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	sc.Step(`^the response JSON path "([^"]+)" exists$`, func(path string) error {
 		if !gjson.GetBytes(c.LastBody, path).Exists() {
 			return fmt.Errorf("JSON path %s does not exist (body=%s)", path, string(c.LastBody))
+		}
+		return nil
+	})
+
+	// Match the entire response body against a JSON shape. Use "<<PRESENCE>>"
+	// for fields whose values are runtime-generated (UUIDs, JWTs, timestamps).
+	// See https://github.com/kinbiko/jsonassert for the full DSL.
+	sc.Step(`^the response body should match the JSON pattern:$`, func(pattern *godog.DocString) error {
+		p := &jsonAssertPrinter{}
+		jsonassert.New(p).Assertf(string(c.LastBody), "%s", pattern.Content)
+		if len(p.msgs) > 0 {
+			return fmt.Errorf("JSON pattern mismatch:\n%s\n\nactual body:\n%s",
+				strings.Join(p.msgs, "\n"), string(c.LastBody))
 		}
 		return nil
 	})

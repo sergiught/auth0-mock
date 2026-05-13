@@ -12,9 +12,15 @@ Feature: /oauth/token supports all four grant types
       scope=read:users
       """
     Then I receive a 200 response
-    And the response JSON path "access_token" exists
-    And the response JSON path "token_type" equals "Bearer"
-    And the response JSON path "scope" equals "read:users"
+    And the response body should match the JSON pattern:
+      """
+      {
+        "access_token": "<<PRESENCE>>",
+        "token_type":   "Bearer",
+        "expires_in":   "<<PRESENCE>>",
+        "scope":        "read:users"
+      }
+      """
 
   Scenario: password grant returns access_token, id_token, and refresh_token
     When I post to "/oauth/token" with form body:
@@ -27,9 +33,17 @@ Feature: /oauth/token supports all four grant types
       scope=openid profile email
       """
     Then I receive a 200 response
-    And the response JSON path "access_token" exists
-    And the response JSON path "id_token" exists
-    And the response JSON path "refresh_token" exists
+    And the response body should match the JSON pattern:
+      """
+      {
+        "access_token":  "<<PRESENCE>>",
+        "id_token":      "<<PRESENCE>>",
+        "refresh_token": "<<PRESENCE>>",
+        "token_type":    "Bearer",
+        "expires_in":    "<<PRESENCE>>",
+        "scope":         "openid profile email"
+      }
+      """
 
   Scenario: refresh_token grant mints a new access_token
     When I post to "/oauth/token" with form body:
@@ -39,7 +53,14 @@ Feature: /oauth/token supports all four grant types
       refresh_token=any-uuid
       """
     Then I receive a 200 response
-    And the response JSON path "access_token" exists
+    And the response body should match the JSON pattern:
+      """
+      {
+        "access_token": "<<PRESENCE>>",
+        "token_type":   "Bearer",
+        "expires_in":   "<<PRESENCE>>"
+      }
+      """
 
   Scenario: authorization_code grant returns access_token and id_token
     When I post to "/oauth/token" with form body:
@@ -50,8 +71,16 @@ Feature: /oauth/token supports all four grant types
       redirect_uri=https://app/cb
       """
     Then I receive a 200 response
-    And the response JSON path "access_token" exists
-    And the response JSON path "id_token" exists
+    And the response body should match the JSON pattern:
+      """
+      {
+        "access_token":  "<<PRESENCE>>",
+        "id_token":      "<<PRESENCE>>",
+        "refresh_token": "<<PRESENCE>>",
+        "token_type":    "Bearer",
+        "expires_in":    "<<PRESENCE>>"
+      }
+      """
 
   Scenario: Missing grant_type is rejected with 400 invalid_request
     When I post to "/oauth/token" with body:
@@ -59,7 +88,13 @@ Feature: /oauth/token supports all four grant types
       {}
       """
     Then I receive a 400 response
-    And the response JSON path "error" equals "invalid_request"
+    And the response body should match the JSON pattern:
+      """
+      {
+        "error":             "invalid_request",
+        "error_description": "<<PRESENCE>>"
+      }
+      """
 
   Scenario: Unknown grant_type is rejected with 400 unsupported_grant_type
     When I post to "/oauth/token" with body:
@@ -67,4 +102,10 @@ Feature: /oauth/token supports all four grant types
       {"grant_type":"weird"}
       """
     Then I receive a 400 response
-    And the response JSON path "error" equals "unsupported_grant_type"
+    And the response body should match the JSON pattern:
+      """
+      {
+        "error":             "unsupported_grant_type",
+        "error_description": "<<PRESENCE>>"
+      }
+      """

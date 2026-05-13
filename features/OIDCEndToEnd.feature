@@ -9,8 +9,14 @@ Feature: OIDC end-to-end loop
       audience=http://example/api/v2/
       """
     Then I receive a 200 response
-    And the response JSON path "access_token" exists
-    And the response JSON path "token_type" equals "Bearer"
+    And the response body should match the JSON pattern:
+      """
+      {
+        "access_token": "<<PRESENCE>>",
+        "token_type":   "Bearer",
+        "expires_in":   "<<PRESENCE>>"
+      }
+      """
     And the access_token verifies against the published JWKS
     And I save the access_token as my bearer
     When I send "GET /api/v2/users/auth0|loop" with a valid bearer

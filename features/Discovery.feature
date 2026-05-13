@@ -5,19 +5,40 @@ Feature: OIDC discovery and JWKS publication
   Scenario: JWKS document exposes an RS256 public key
     When I send "GET /.well-known/jwks.json" without a bearer
     Then I receive a 200 response
-    And the response JSON path "keys.0.kty" equals "RSA"
-    And the response JSON path "keys.0.alg" equals "RS256"
-    And the response JSON path "keys.0.use" equals "sig"
-    And the response JSON path "keys.0.kid" exists
-    And the response JSON path "keys.0.n" exists
-    And the response JSON path "keys.0.e" exists
+    And the response body should match the JSON pattern:
+      """
+      {
+        "keys": [
+          {
+            "kty": "RSA",
+            "alg": "RS256",
+            "use": "sig",
+            "kid": "<<PRESENCE>>",
+            "n":   "<<PRESENCE>>",
+            "e":   "<<PRESENCE>>"
+          }
+        ]
+      }
+      """
 
   Scenario: OpenID discovery document points at the configured endpoints
     When I send "GET /.well-known/openid-configuration" without a bearer
     Then I receive a 200 response
-    And the response JSON path "issuer" exists
-    And the response JSON path "jwks_uri" exists
-    And the response JSON path "token_endpoint" exists
-    And the response JSON path "authorization_endpoint" exists
-    And the response JSON path "userinfo_endpoint" exists
-    And the response JSON path "id_token_signing_alg_values_supported.0" equals "RS256"
+    And the response body should match the JSON pattern:
+      """
+      {
+        "issuer":                                "<<PRESENCE>>",
+        "jwks_uri":                              "<<PRESENCE>>",
+        "token_endpoint":                        "<<PRESENCE>>",
+        "authorization_endpoint":                "<<PRESENCE>>",
+        "userinfo_endpoint":                     "<<PRESENCE>>",
+        "end_session_endpoint":                  "<<PRESENCE>>",
+        "revocation_endpoint":                   "<<PRESENCE>>",
+        "response_types_supported":              "<<PRESENCE>>",
+        "subject_types_supported":               "<<PRESENCE>>",
+        "id_token_signing_alg_values_supported": ["RS256"],
+        "token_endpoint_auth_methods_supported": "<<PRESENCE>>",
+        "scopes_supported":                      "<<PRESENCE>>",
+        "grant_types_supported":                 "<<PRESENCE>>"
+      }
+      """
