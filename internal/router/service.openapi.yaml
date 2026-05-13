@@ -1,0 +1,67 @@
+openapi: 3.1.0
+info:
+  title: auth0-mock service endpoints
+  version: 1.0.0
+tags:
+  - name: service
+    description: Service plumbing — health probe, JWKS, OpenAPI export.
+paths:
+  /healthz:
+    get:
+      tags: [service]
+      summary: Liveness probe.
+      description: Returns 200 if the process is up. No authentication.
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /.well-known/jwks.json:
+    get:
+      tags: [service]
+      summary: JSON Web Key Set used to verify tokens minted by /oauth/token.
+      responses:
+        "200":
+          description: JWKS document.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+  /openapi.json:
+    get:
+      tags: [service]
+      summary: The merged OpenAPI 3.1 spec for this mock instance.
+      description: |
+        Returns the same bytes as `api/auth0-mock.openapi.json` in the repo.
+        Import this URL directly into Postman or Insomnia.
+      responses:
+        "200":
+          description: OpenAPI document.
+          content:
+            application/json:
+              schema:
+                type: object
+  /openapi.yaml:
+    get:
+      tags: [service]
+      summary: The merged OpenAPI 3.1 spec, YAML-encoded.
+      responses:
+        "200":
+          description: OpenAPI document.
+          content:
+            application/yaml:
+              schema:
+                type: object
