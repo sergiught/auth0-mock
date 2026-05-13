@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: auth0-mock mock-control schemas
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    MatchRegistration:
+      type: object
+      description: |
+        Body posted to `/match` siblings to programme a canned response for the
+        next call to the paired Management API operation.
+      required: [status]
+      properties:
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: HTTP status code the mock should return.
+          example: 200
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional headers to attach to the response.
+          example:
+            X-Match-Source: planned-test
+        body:
+          description: |
+            Response body the mock should return. Any JSON-serialisable value
+            is accepted; the mock validates it against the operation's response
+            schema before storing.
+          example:
+            user_id: auth0|abc123
+    MatchRegistrationResponse:
+      description: |
+        Returned by `/match` siblings on success. Empty body — the only
+        observable signal is the 204 status.
+      type: "null"
+    ResetResponse:
+      description: |
+        Returned by `/reset` siblings on success. Empty body — the only
+        observable signal is the 204 status.
+      type: "null"
