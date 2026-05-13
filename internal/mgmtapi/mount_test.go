@@ -103,3 +103,51 @@ func TestGeneric_ExactMatchWins(t *testing.T) {
 	assert.Equal(t, 200, w.Code)
 	assert.JSONEq(t, `{"id":"abc"}`, w.Body.String())
 }
+
+func TestMatchHandler_RegistersValid(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	body := `{"status":200,"body":{"id":"abc"}}`
+	req := httptest.NewRequest("GET", "/api/v2/widgets/abc/match", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 204, w.Code)
+	stored := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}")
+	if assert.NotNil(t, stored) {
+		assert.Equal(t, 200, stored.Status)
+		assert.JSONEq(t, `{"id":"abc"}`, string(stored.Body))
+	}
+}
+
+func TestMatchHandler_RejectsInvalid(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	body := `{"status":200,"body":{"unrelated":true}}`
+	req := httptest.NewRequest("GET", "/api/v2/widgets/abc/match", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 400, w.Code)
+	assert.Empty(t, store.List())
+}
+
+func TestMatchHandler_TemplateRegistration(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	body := `{"status":200,"body":{"id":"any"}}`
+	req := httptest.NewRequest("GET", "/api/v2/widgets/{id}/match", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 204, w.Code)
+	stored := store.Find("GET", "/api/v2/widgets/zzz", "/api/v2/widgets/{id}")
+	require.NotNil(t, stored)
+	assert.Equal(t, matches.KindTemplate, stored.Kind)
+}
