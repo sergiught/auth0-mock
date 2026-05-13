@@ -3,10 +3,12 @@ module github.com/sergiught/auth0-mock
 go 1.26
 
 require (
+	github.com/MicahParks/keyfunc/v3 v3.8.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/cucumber/godog v0.15.1
 	github.com/getkin/kin-openapi v0.138.0
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-chi/render v1.0.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/rs/zerolog v1.35.1
@@ -15,11 +17,11 @@ require (
 )
 
 require (
+	github.com/MicahParks/jwkset v0.11.0 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/cucumber/gherkin/go/v26 v26.2.0 // indirect
 	github.com/cucumber/messages/go/v21 v21.0.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/go-chi/render v1.0.3 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/gofrs/uuid v4.3.1+incompatible // indirect
@@ -40,5 +42,6 @@ require (
 	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/time v0.9.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
