@@ -33,4 +33,6 @@ func Mount(d Deps) {
 	d.Router.HandlerFunc(http.MethodPost, "/oauth/revoke", revoke(d))
 	d.Router.HandlerFunc(http.MethodPost, "/dbconnections/signup", dbconnectionsSignup(d))
 	d.Router.HandlerFunc(http.MethodPost, "/dbconnections/change_password", dbconnectionsChangePassword(d))
+	d.Router.HandlerFunc(http.MethodPost, "/passwordless/start", passwordlessStart(d))
+	d.Router.HandlerFunc(http.MethodPost, "/passwordless/verify", passwordlessVerify(d))
 }
