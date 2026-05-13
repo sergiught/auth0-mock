@@ -8,8 +8,10 @@ import (
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
 
+	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
 // The mock accepts only this fixed OTP. Tests can rely on it being constant.
@@ -55,6 +57,8 @@ func (h *PasswordlessStartHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 type PasswordlessVerifyHandler struct {
 	Keys            *jwks.KeySet
 	DefaultAudience string
+	Claims          *claims.Store
+	Permissions     *permissions.Store
 }
 
 func (h *PasswordlessVerifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -75,11 +79,20 @@ func (h *PasswordlessVerifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	extra := map[string]any{"gty": "passwordless", "azp": clientID}
+	if h.Permissions != nil {
+		if perms := h.Permissions.Get(h.DefaultAudience); len(perms) > 0 {
+			extra["permissions"] = perms
+		}
+	}
+	if h.Claims != nil {
+		h.Claims.MergeInto(extra)
+	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  username,
 		Audience: []string{h.DefaultAudience},
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    map[string]any{"gty": "passwordless", "azp": clientID},
+		Extra:    extra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())

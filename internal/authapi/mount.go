@@ -9,7 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
+	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
 // Deps is the parameter object for Mount.
@@ -19,12 +21,19 @@ type Deps struct {
 	Issuer          string
 	DefaultAudience string
 	Log             zerolog.Logger
+	Claims          *claims.Store
+	Permissions     *permissions.Store
 }
 
 // Mount registers all Auth API endpoints on d.Router.
 func Mount(d Deps) {
 	d.Router.Method(http.MethodPost, "/oauth/token", &TokenHandler{
-		Keys: d.Keys, Issuer: d.Issuer, DefaultAudience: d.DefaultAudience, Log: d.Log,
+		Keys:            d.Keys,
+		Issuer:          d.Issuer,
+		DefaultAudience: d.DefaultAudience,
+		Log:             d.Log,
+		Claims:          d.Claims,
+		Permissions:     d.Permissions,
 	})
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys})
@@ -35,6 +44,9 @@ func Mount(d Deps) {
 	d.Router.Method(http.MethodPost, "/dbconnections/change_password", &DBConnectionsChangePasswordHandler{})
 	d.Router.Method(http.MethodPost, "/passwordless/start", &PasswordlessStartHandler{})
 	d.Router.Method(http.MethodPost, "/passwordless/verify", &PasswordlessVerifyHandler{
-		Keys: d.Keys, DefaultAudience: d.DefaultAudience,
+		Keys:            d.Keys,
+		DefaultAudience: d.DefaultAudience,
+		Claims:          d.Claims,
+		Permissions:     d.Permissions,
 	})
 }

@@ -8,10 +8,12 @@ import (
 	"syscall"
 
 	"github.com/sergiught/auth0-mock/api"
+	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/config"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/logger"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/router"
 	"github.com/sergiught/auth0-mock/internal/server"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -42,9 +44,13 @@ func main() {
 	validator := spec.NewValidator(openapiSpec)
 
 	store := matches.NewStore()
+	claimsStore := claims.NewStore()
+	permsStore := permissions.NewStore()
 	handler, err := router.New(router.Deps{
 		Log:                  log,
 		Store:                store,
+		Claims:               claimsStore,
+		Permissions:          permsStore,
 		Keys:                 keys,
 		Spec:                 openapiSpec,
 		Validator:            validator,

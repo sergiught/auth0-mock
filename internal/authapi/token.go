@@ -11,8 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
 // TokenHandler handles OAuth token requests.
@@ -21,6 +23,26 @@ type TokenHandler struct {
 	Issuer          string
 	DefaultAudience string
 	Log             zerolog.Logger
+	Claims          *claims.Store
+	Permissions     *permissions.Store
+}
+
+// augmentExtra layers per-audience permissions and per-process custom claims
+// onto the Extra map passed to jwks.Mint. Custom claims take final precedence,
+// allowing tests to override anything (gty, azp, even permissions).
+func (h *TokenHandler) augmentExtra(extra map[string]any, audience string) map[string]any {
+	if extra == nil {
+		extra = make(map[string]any)
+	}
+	if h.Permissions != nil {
+		if perms := h.Permissions.Get(audience); len(perms) > 0 {
+			extra["permissions"] = perms
+		}
+	}
+	if h.Claims != nil {
+		h.Claims.MergeInto(extra)
+	}
+	return extra
 }
 
 func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +120,7 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    map[string]any{"gty": "client-credentials", "azp": req.ClientID},
+		Extra:    h.augmentExtra(map[string]any{"gty": "client-credentials", "azp": req.ClientID}, aud),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -122,7 +144,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    map[string]any{"gty": "password", "azp": req.ClientID},
+		Extra:    h.augmentExtra(map[string]any{"gty": "password", "azp": req.ClientID}, aud),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -157,7 +179,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    map[string]any{"gty": "refresh-token", "azp": req.ClientID},
+		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": req.ClientID}, aud),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -177,7 +199,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    map[string]any{"gty": "authorization-code", "azp": req.ClientID},
+		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())

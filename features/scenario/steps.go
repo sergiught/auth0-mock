@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strings"
@@ -204,6 +205,65 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		c.BearerTok = tok
 		return nil
 	})
+
+	// JSON-body request with an explicit verb (covers PUT/DELETE for admin0).
+	sc.Step(`^I (PUT|POST|DELETE|PATCH) "([^"]+)" with body:$`, func(method, path string, body *godog.DocString) error {
+		c.Do(method, path, body.Content, false)
+		return nil
+	})
+
+	// Bodyless request with an explicit verb (covers DELETE).
+	sc.Step(`^I (PUT|DELETE) "([^"]+)"$`, func(method, path string) error {
+		c.Do(method, path, "", false)
+		return nil
+	})
+
+	// Decode the access_token from the last response and assert on its claims.
+	sc.Step(`^the access_token claim "([^"]+)" equals "([^"]*)"$`, func(claim, want string) error {
+		got, err := claimValueFromAccessToken(c.LastBody, claim)
+		if err != nil {
+			return err
+		}
+		if got.String() != want {
+			return fmt.Errorf("claim %q: got %q, want %q", claim, got.String(), want)
+		}
+		return nil
+	})
+
+	sc.Step(`^the access_token claim "([^"]+)" array contains "([^"]+)"$`, func(claim, item string) error {
+		got, err := claimValueFromAccessToken(c.LastBody, claim)
+		if err != nil {
+			return err
+		}
+		if !got.IsArray() {
+			return fmt.Errorf("claim %q is not an array (got %s)", claim, got.Raw)
+		}
+		for _, v := range got.Array() {
+			if v.String() == item {
+				return nil
+			}
+		}
+		return fmt.Errorf("claim %q array does not contain %q (got %s)", claim, item, got.Raw)
+	})
+}
+
+// claimValueFromAccessToken decodes the JWT payload from the access_token in
+// the given JSON response body and returns the gjson Result for the named
+// claim path.
+func claimValueFromAccessToken(body []byte, claim string) (gjson.Result, error) {
+	tok := gjson.GetBytes(body, "access_token").String()
+	if tok == "" {
+		return gjson.Result{}, fmt.Errorf("no access_token in response")
+	}
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return gjson.Result{}, fmt.Errorf("access_token is not a JWT")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return gjson.Result{}, fmt.Errorf("decode payload: %w", err)
+	}
+	return gjson.GetBytes(payload, claim), nil
 }
 
 // splitTarget parses a "METHOD /path" string into its parts.

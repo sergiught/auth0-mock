@@ -10,10 +10,12 @@ import (
 
 	"github.com/sergiught/auth0-mock/internal/admin0"
 	"github.com/sergiught/auth0-mock/internal/authapi"
+	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mgmtapi"
 	"github.com/sergiught/auth0-mock/internal/middleware"
+	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
@@ -21,6 +23,8 @@ import (
 type Deps struct {
 	Log                  zerolog.Logger
 	Store                *matches.Store
+	Claims               *claims.Store
+	Permissions          *permissions.Store
 	Keys                 *jwks.KeySet
 	Spec                 *spec.Spec
 	Validator            *spec.Validator
@@ -37,7 +41,11 @@ func New(d Deps) (http.Handler, error) {
 	r.Use(middleware.Logging(d.Log))
 
 	mountHealthz(r)
-	admin0.Mount(r, d.Store)
+	admin0.Mount(r, admin0.Deps{
+		Matches:     d.Store,
+		Claims:      d.Claims,
+		Permissions: d.Permissions,
+	})
 	mountJWKS(r, d.Keys)
 
 	authapi.Mount(authapi.Deps{
@@ -46,6 +54,8 @@ func New(d Deps) (http.Handler, error) {
 		Issuer:          d.Issuer,
 		DefaultAudience: d.DefaultAudience,
 		Log:             d.Log,
+		Claims:          d.Claims,
+		Permissions:     d.Permissions,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{
