@@ -185,11 +185,15 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	})
 
 	// Match the entire response body against a JSON shape. Use "<<PRESENCE>>"
-	// for fields whose values are runtime-generated (UUIDs, JWTs, timestamps).
+	// for fields whose values are truly runtime-random (signed JWTs, UUIDs).
+	// Use "${BASE_URL}" inside string values to refer to the live server's
+	// base URL (e.g. "http://127.0.0.1:RANDOM_PORT") so URL-shaped fields can
+	// be asserted concretely instead of with PRESENCE.
 	// See https://github.com/kinbiko/jsonassert for the full DSL.
 	sc.Step(`^the response body should match the JSON pattern:$`, func(pattern *godog.DocString) error {
+		expanded := strings.ReplaceAll(pattern.Content, "${BASE_URL}", c.BaseURL)
 		p := &jsonAssertPrinter{}
-		jsonassert.New(p).Assertf(string(c.LastBody), "%s", pattern.Content)
+		jsonassert.New(p).Assertf(string(c.LastBody), "%s", expanded)
 		if len(p.msgs) > 0 {
 			return fmt.Errorf("JSON pattern mismatch:\n%s\n\nactual body:\n%s",
 				strings.Join(p.msgs, "\n"), string(c.LastBody))

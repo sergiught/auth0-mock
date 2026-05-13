@@ -17,7 +17,7 @@ Feature: /oauth/token supports all four grant types
       {
         "access_token": "<<PRESENCE>>",
         "token_type":   "Bearer",
-        "expires_in":   "<<PRESENCE>>",
+        "expires_in":   3600,
         "scope":        "read:users"
       }
       """
@@ -40,7 +40,7 @@ Feature: /oauth/token supports all four grant types
         "id_token":      "<<PRESENCE>>",
         "refresh_token": "<<PRESENCE>>",
         "token_type":    "Bearer",
-        "expires_in":    "<<PRESENCE>>",
+        "expires_in":    3600,
         "scope":         "openid profile email"
       }
       """
@@ -58,7 +58,7 @@ Feature: /oauth/token supports all four grant types
       {
         "access_token": "<<PRESENCE>>",
         "token_type":   "Bearer",
-        "expires_in":   "<<PRESENCE>>"
+        "expires_in":   3600
       }
       """
 
@@ -78,7 +78,7 @@ Feature: /oauth/token supports all four grant types
         "id_token":      "<<PRESENCE>>",
         "refresh_token": "<<PRESENCE>>",
         "token_type":    "Bearer",
-        "expires_in":    "<<PRESENCE>>"
+        "expires_in":    3600
       }
       """
 
@@ -92,7 +92,7 @@ Feature: /oauth/token supports all four grant types
       """
       {
         "error":             "invalid_request",
-        "error_description": "<<PRESENCE>>"
+        "error_description": "missing grant_type"
       }
       """
 
@@ -106,6 +106,6 @@ Feature: /oauth/token supports all four grant types
       """
       {
         "error":             "unsupported_grant_type",
-        "error_description": "<<PRESENCE>>"
+        "error_description": "grant_type weird is not supported"
       }
       """

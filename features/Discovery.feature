@@ -15,7 +15,7 @@ Feature: OIDC discovery and JWKS publication
             "use": "sig",
             "kid": "<<PRESENCE>>",
             "n":   "<<PRESENCE>>",
-            "e":   "<<PRESENCE>>"
+            "e":   "AQAB"
           }
         ]
       }
@@ -27,18 +27,21 @@ Feature: OIDC discovery and JWKS publication
     And the response body should match the JSON pattern:
       """
       {
-        "issuer":                                "<<PRESENCE>>",
-        "jwks_uri":                              "<<PRESENCE>>",
-        "token_endpoint":                        "<<PRESENCE>>",
-        "authorization_endpoint":                "<<PRESENCE>>",
-        "userinfo_endpoint":                     "<<PRESENCE>>",
-        "end_session_endpoint":                  "<<PRESENCE>>",
-        "revocation_endpoint":                   "<<PRESENCE>>",
-        "response_types_supported":              "<<PRESENCE>>",
-        "subject_types_supported":               "<<PRESENCE>>",
+        "issuer":                 "${BASE_URL}/",
+        "authorization_endpoint": "${BASE_URL}/authorize",
+        "token_endpoint":         "${BASE_URL}/oauth/token",
+        "userinfo_endpoint":      "${BASE_URL}/userinfo",
+        "jwks_uri":               "${BASE_URL}/.well-known/jwks.json",
+        "end_session_endpoint":   "${BASE_URL}/v2/logout",
+        "revocation_endpoint":    "${BASE_URL}/oauth/revoke",
+        "response_types_supported": [
+          "code", "token", "id_token",
+          "code token", "code id_token", "token id_token", "code token id_token"
+        ],
+        "subject_types_supported":               ["public"],
         "id_token_signing_alg_values_supported": ["RS256"],
-        "token_endpoint_auth_methods_supported": "<<PRESENCE>>",
-        "scopes_supported":                      "<<PRESENCE>>",
-        "grant_types_supported":                 "<<PRESENCE>>"
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+        "scopes_supported":                      ["openid", "profile", "email", "offline_access"],
+        "grant_types_supported":                 ["client_credentials", "password", "refresh_token", "authorization_code"]
       }
       """

@@ -14,7 +14,7 @@ Feature: OIDC end-to-end loop
       {
         "access_token": "<<PRESENCE>>",
         "token_type":   "Bearer",
-        "expires_in":   "<<PRESENCE>>"
+        "expires_in":   3600
       }
       """
     And the access_token verifies against the published JWKS
