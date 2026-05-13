@@ -1,0 +1,65 @@
+package mgmtapi
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/spec"
+)
+
+const tinySpec = `{
+  "openapi": "3.0.0",
+  "info":{"title":"t","version":"1"},
+  "servers":[{"url":"http://x/api/v2"}],
+  "paths":{
+    "/widgets/{id}":{
+      "get":{
+        "operationId":"getWidget",
+        "parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
+        "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}}}}}
+      }
+    }
+  }
+}`
+
+func newDeps(t *testing.T) (*spec.Spec, *spec.Validator, *matches.Store, *jwks.KeySet, *httprouter.Router) {
+	t.Helper()
+	s, err := spec.Load([]byte(tinySpec))
+	require.NoError(t, err)
+	v := spec.NewValidator(s)
+	store := matches.NewStore()
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := httprouter.New()
+	return s, v, store, ks, r
+}
+
+func TestMount_RegistersOriginalAndSiblingRoutes(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	log := zerolog.Nop()
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: log}))
+
+	// Without a registered match, the original endpoint should 401 (no bearer).
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc", nil))
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// /match should be reachable without a bearer (verb mirrors original = GET).
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/match", nil))
+	assert.NotEqual(t, http.StatusNotFound, w.Code, "match route should be registered")
+
+	// /reset should be reachable without a bearer (verb mirrors original = GET).
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/reset", nil))
+	assert.NotEqual(t, http.StatusNotFound, w.Code, "reset route should be registered")
+}
