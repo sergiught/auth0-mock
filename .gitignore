@@ -33,3 +33,10 @@ go.work
 
 # Coverage
 coverage.out
+
+# Local-only Claude Code permission allowlist (workstation-specific).
+.claude/
+
+# Local-only design + implementation-plan working docs.
+/docs/design/
+/docs/plans/

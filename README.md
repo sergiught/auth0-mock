@@ -153,5 +153,27 @@ that mints a token, verifies its signature against the published JWKS using
 `MicahParks/keyfunc` + `golang-jwt/jwt`, registers a Mgmt API response, and
 calls it back successfully — proving the drop-in compatibility end to end.
 
-## Design
+## Design notes
 
+- **Authentication API is hand-coded.** Mints RS256 JWTs with `iss`, `aud`,
+  `iat`, `exp`, `scope`, `gty`, `azp` claims; verifies via `golang-jwt/jwt v5`
+  against an in-process key pair (RS256, 2048-bit; regenerated each boot
+  unless `SIGNING_KEY_FILE` is mounted).
+- **Management API is spec-driven.** Auth0's published OpenAPI 3.1 spec is
+  embedded with `//go:embed`. At startup, `mgmtapi.Mount` iterates every
+  operation in the spec and registers three routes per operation: the
+  endpoint itself (bearer + spec-validate + look up registered match → 404),
+  `<verb> …/match` (decode → spec-validate against the response schema for
+  the chosen status → store), and `<verb> …/reset` (clear scope). One
+  generic handler powers the entire ~400-operation surface.
+- **Match keying.** Exact path wins over template path. Template-vs-concrete
+  is decided by whether the registration URL contains `{` or `}` segments,
+  so PUTting to `/api/v2/users/auth0|123/match` is concrete, PUTting to
+  `/api/v2/users/{id}/match` is a catch-all.
+- **Bearer enforcement.** `/api/v2/*` requires `Authorization: Bearer <jwt>`
+  verified against the mock's own JWKS (signature + `exp` + `iss`; audience
+  is not enforced). `/match` and `/reset` siblings are bearer-free, as is
+  `/admin0/*`.
+- **Routing & rendering.** `go-chi/chi v5` with handlers structured as
+  structs holding their dependencies as fields, implementing `ServeHTTP`.
+  JSON responses use `go-chi/render`.
