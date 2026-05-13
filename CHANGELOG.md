@@ -28,6 +28,11 @@ All notable changes to this project will be documented here. Format follows [Kee
 
 - **`make watch`** — sub-second hot-reload via [`air`](https://github.com/air-verse/air). Installs air into `./bin` on first run; watches `cmd/`, `internal/`, `api/`; rebuilds + restarts the binary on every save. `.air.toml` lives at the repo root. Native filesystem events, no docker, no bind-mount.
 - **`make test-features`** — run the godog acceptance suite (was: `go test -tags=features -count=1 ./cmd/api/...`).
+- **`make lint`** — runs `golangci-lint` v2.5.0 with the project's `.golangci.yaml` (errcheck, gocritic, gocyclo, godot, gosec, revive, staticcheck, unconvert, unused, whitespace). Auto-installed into `./bin` on first invocation.
+- **`make lint-commits`** — runs `commitlint` v0.10.1 against the conventional-commit `commitlint.yaml` profile.
+- **`make vuln`** — runs `govulncheck` against the module graph to surface known Go vulnerabilities.
+- **`make pre-commit`** — installs the `pre-commit` framework hooks (`.pre-commit-config.yaml`) so commitlint / gofmt / golangci-lint / govulncheck run automatically on every commit.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) — five parallel jobs: `lint`, `test`, `test-features`, `vuln`, `commitlint` (PR-only). Go 1.26.
 
 ## Earlier work (pre-release, unversioned)
 

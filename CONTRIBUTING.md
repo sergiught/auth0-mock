@@ -86,12 +86,26 @@ go test -tags=features ./cmd/api/... # godog acceptance suite
 
 If you need a new step phrase, add it to `features/scenario/steps.go` and write a focused unit test for the helper if the logic is non-trivial.
 
+## 🔍 Lint, security, commit checks
+
+The project ships a `.golangci.yaml`, `commitlint.yaml`, and `.pre-commit-config.yaml`. They are wired into both the Makefile and GitHub Actions CI — keep them green locally before pushing.
+
+```bash
+make lint            # golangci-lint v2.5.0 against ./...
+make lint-commits    # commitlint against your last N commits
+make vuln            # govulncheck against the module graph
+make pre-commit      # install the pre-commit hooks (one-time)
+```
+
+`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework — install it once and the hooks will run `gofmt`, `golangci-lint`, `govulncheck` on every `git commit`, plus `commitlint` on the commit message. CI runs the same checks on every PR (see `.github/workflows/ci.yml`).
+
 ## ✍️ Code style
 
 Standard Go formatting plus a few specific conventions:
 
 - `gofmt -l .` must print nothing. PRs that fail this are CI-rejected.
 - `go vet ./...` must be clean.
+- `make lint` must report `0 issues`.
 - Every handler is a **struct holding its dependencies as fields**, implementing `ServeHTTP(w, r)`. Closures-returning-handlers are a code smell here.
 - Mount functions take a `chi.Router` and register handlers via `r.Method(verb, path, &Handler{Deps: ...})`.
 - JSON responses use `render.JSON(w, r, body)`. Use `render.Status(r, code)` before `render.JSON` for non-200.
@@ -158,7 +172,7 @@ If your work surfaces a recipe other users will want (e.g. "how do I test refres
 2. Branch from `main`. One coherent change per PR; smaller is better.
 3. Update `CHANGELOG.md` under `## [Unreleased]` with a one-line entry under the appropriate section (Added / Changed / Fixed / Removed).
 4. If you add a new env var, endpoint, or grant: update **README** and **`docs/ARCHITECTURE.md`** alongside the code.
-5. CI must pass: `make test`, `gofmt -l .`, `go vet ./...`, godog suite.
+5. CI must pass: `make lint`, `make test`, `make test-features`, `make vuln`, and `make lint-commits` on PR commits.
 6. Squash-merge is the default. Keep the commit subject conventional-commit shaped.
 
 ## 🙅 What we won't accept
