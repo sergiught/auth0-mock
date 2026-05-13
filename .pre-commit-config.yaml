@@ -1,0 +1,39 @@
+repos:
+  - repo: local
+    hooks:
+      - id: commitlint
+        name: Conventional Commits Checker
+        description: Lints commit messages against commitlint.yaml. Requires `make lint-commits` to be runnable, which installs github.com/conventionalcommit/commitlint on demand.
+        language: system
+        entry: make lint-commits
+        stages:
+          - commit-msg
+
+      - id: gofmt
+        name: gofmt
+        description: Refuses commits where gofmt would change anything.
+        language: system
+        entry: bash -c 'out=$(gofmt -l "$@"); if [ -n "$out" ]; then echo "$out"; exit 1; fi' --
+        files: '\.go$'
+        stages:
+          - pre-commit
+
+      - id: golangci-lint
+        name: golangci-lint
+        description: Runs golangci-lint with --fix. Requires `make lint` to be runnable, which installs the binary on demand.
+        language: system
+        entry: make lint
+        files: '\.go$'
+        pass_filenames: false
+        stages:
+          - pre-commit
+
+      - id: govulncheck
+        name: govulncheck
+        description: Scans the module graph for known Go vulnerabilities. Requires `make vuln`.
+        language: system
+        entry: make vuln
+        files: '(go\.mod|go\.sum|\.go)$'
+        pass_filenames: false
+        stages:
+          - pre-commit

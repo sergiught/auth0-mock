@@ -56,6 +56,17 @@ vuln: $(BINARIES_DIR)/govulncheck
 	@echo "==> Scanning module graph for known Go vulnerabilities"
 	@$(BINARIES_DIR)/govulncheck ./...
 
+# ---- Pre-commit hooks ----
+
+.PHONY: pre-commit
+pre-commit:
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "⚠️  'pre-commit' is not installed. Install with 'pip install pre-commit' or 'brew install pre-commit'."; \
+		exit 1; \
+	fi
+	@pre-commit install --hook-type pre-commit --hook-type commit-msg
+	@echo "==> pre-commit hooks installed"
+
 # ---- Local dev loop ----
 
 .PHONY: dev-env
