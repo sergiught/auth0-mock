@@ -31,4 +31,6 @@ func Mount(d Deps) {
 	d.Router.HandlerFunc(http.MethodGet, "/.well-known/openid-configuration", discovery(d))
 	d.Router.HandlerFunc(http.MethodGet, "/v2/logout", logout(d))
 	d.Router.HandlerFunc(http.MethodPost, "/oauth/revoke", revoke(d))
+	d.Router.HandlerFunc(http.MethodPost, "/dbconnections/signup", dbconnectionsSignup(d))
+	d.Router.HandlerFunc(http.MethodPost, "/dbconnections/change_password", dbconnectionsChangePassword(d))
 }
