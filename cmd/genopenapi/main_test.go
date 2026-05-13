@@ -20,7 +20,7 @@ func TestBundleMergesEveryFragment(t *testing.T) {
 	require.NotNil(t, doc.Paths.Value("/oauth/token"))
 	assert.NotNil(t, doc.Paths.Value("/oauth/token").GetOperation("POST"))
 
-	// admin0 fragment is merged.
+	// The admin0 fragment is merged.
 	require.NotNil(t, doc.Paths.Value("/admin0/reset"))
 	assert.NotNil(t, doc.Paths.Value("/admin0/reset").GetOperation("POST"))
 

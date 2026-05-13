@@ -39,7 +39,7 @@ func run(out, server string) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	if err := os.WriteFile(out, append(body, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(out, append(body, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", out, err)
 	}
 	return nil
@@ -107,59 +107,80 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 	return base, nil
 }
 
-// mergeFragment copies frag.paths and frag.components.schemas into base,
-// returning an error if any path+method or schema name is declared twice.
+// mergeFragment copies frag.paths and frag.components into base, returning an
+// error if any path+method or schema name is declared twice.
 func mergeFragment(base, frag *openapi3.T) error {
-	if frag.Paths != nil {
-		for path, item := range frag.Paths.Map() {
-			existing := base.Paths.Value(path)
-			if existing == nil {
-				base.Paths.Set(path, item)
-				continue
+	if err := mergePaths(base, frag); err != nil {
+		return err
+	}
+	if err := mergeSchemas(base, frag); err != nil {
+		return err
+	}
+	return mergeSecuritySchemes(base, frag)
+}
+
+func mergePaths(base, frag *openapi3.T) error {
+	if frag.Paths == nil {
+		return nil
+	}
+	for path, item := range frag.Paths.Map() {
+		existing := base.Paths.Value(path)
+		if existing == nil {
+			base.Paths.Set(path, item)
+			continue
+		}
+		// Path exists; merge operations method by method, refusing
+		// duplicate methods on the same path.
+		for method, op := range item.Operations() {
+			if existing.GetOperation(method) != nil {
+				return fmt.Errorf("conflict: %s %s declared in both base and fragment", method, path)
 			}
-			// Path exists; merge operations method by method, refusing
-			// duplicate methods on the same path.
-			for method, op := range item.Operations() {
-				if existing.GetOperation(method) != nil {
-					return fmt.Errorf("conflict: %s %s declared in both base and fragment", method, path)
-				}
-				existing.SetOperation(method, op)
-			}
+			existing.SetOperation(method, op)
 		}
 	}
-	if frag.Components != nil && frag.Components.Schemas != nil {
-		if base.Components == nil {
-			base.Components = &openapi3.Components{}
-		}
-		if base.Components.Schemas == nil {
-			base.Components.Schemas = openapi3.Schemas{}
-		}
-		for name, schema := range frag.Components.Schemas {
-			if _, dup := base.Components.Schemas[name]; dup {
-				return fmt.Errorf("conflict: schema %q declared in both base and fragment", name)
-			}
-			base.Components.Schemas[name] = schema
-		}
+	return nil
+}
+
+func mergeSchemas(base, frag *openapi3.T) error {
+	if frag.Components == nil || frag.Components.Schemas == nil {
+		return nil
 	}
-	if frag.Components != nil && frag.Components.SecuritySchemes != nil {
-		if base.Components == nil {
-			base.Components = &openapi3.Components{}
+	if base.Components == nil {
+		base.Components = &openapi3.Components{}
+	}
+	if base.Components.Schemas == nil {
+		base.Components.Schemas = openapi3.Schemas{}
+	}
+	for name, schema := range frag.Components.Schemas {
+		if _, dup := base.Components.Schemas[name]; dup {
+			return fmt.Errorf("conflict: schema %q declared in both base and fragment", name)
 		}
-		if base.Components.SecuritySchemes == nil {
-			base.Components.SecuritySchemes = openapi3.SecuritySchemes{}
-		}
-		for name, scheme := range frag.Components.SecuritySchemes {
-			// Security schemes are routinely re-declared (e.g. bearerAuth);
-			// skip when the existing definition is byte-identical, error
-			// otherwise.
-			if existing, dup := base.Components.SecuritySchemes[name]; dup {
-				if !securitySchemesEqual(existing, scheme) {
-					return fmt.Errorf("conflict: security scheme %q redefined with different shape", name)
-				}
-				continue
+		base.Components.Schemas[name] = schema
+	}
+	return nil
+}
+
+func mergeSecuritySchemes(base, frag *openapi3.T) error {
+	if frag.Components == nil || frag.Components.SecuritySchemes == nil {
+		return nil
+	}
+	if base.Components == nil {
+		base.Components = &openapi3.Components{}
+	}
+	if base.Components.SecuritySchemes == nil {
+		base.Components.SecuritySchemes = openapi3.SecuritySchemes{}
+	}
+	for name, scheme := range frag.Components.SecuritySchemes {
+		// Security schemes are routinely re-declared (e.g. bearerAuth);
+		// skip when the existing definition is byte-identical, error
+		// otherwise.
+		if existing, dup := base.Components.SecuritySchemes[name]; dup {
+			if !securitySchemesEqual(existing, scheme) {
+				return fmt.Errorf("conflict: security scheme %q redefined with different shape", name)
 			}
-			base.Components.SecuritySchemes[name] = scheme
+			continue
 		}
+		base.Components.SecuritySchemes[name] = scheme
 	}
 	return nil
 }
