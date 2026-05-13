@@ -305,5 +305,4 @@ After this, `curl https://localhost:8443/...` works without `-k`, browsers stop 
 
 - [README.md](../README.md) — top-level overview
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — internals
-- [docs/COMPARISON.md](COMPARISON.md) — auth0-mock vs alternatives
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — adding new functionality

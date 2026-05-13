@@ -6,7 +6,7 @@
 
 Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injection · MFA flow · PKCE · OIDC discovery · HTTP & HTTPS
 
-[Quick start](#-quick-start) · [What's mocked](#-whats-mocked) · [Recipes](docs/COOKBOOK.md) · [Architecture](docs/ARCHITECTURE.md) · [Why not X?](docs/COMPARISON.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#-quick-start) · [What's mocked](#-whats-mocked) · [Recipes](docs/COOKBOOK.md) · [Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -253,12 +253,6 @@ chi router
 
 Every handler is a struct holding its dependencies as fields, implementing `http.Handler` via `ServeHTTP`. JSON responses go through `go-chi/render`.
 
-## 🆚 Why not X?
-
-→ Detailed comparison vs `localauth0`, `mock-oauth2-server`, `oauth2-mock-server`, `node-oidc-provider`, Keycloak, and WireMock: [`docs/COMPARISON.md`](docs/COMPARISON.md).
-
-Headline: every alternative covers only the OIDC half (or nothing of it, in WireMock's case). **None has the Auth0 Management API surface** that auth0-mock exposes spec-driven from `/api/v2/*`.
-
 ## 📂 Example consumer
 
 [`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Mgmt API stub, and calls the stubbed endpoint.
@@ -279,7 +273,6 @@ PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code styl
 | [`README.md`](README.md) (this file) | Everyone | Overview, quick start, configuration |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Contributors / curious users | How the service is structured internally |
 | [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Test authors | Recipes for common test scenarios |
-| [`docs/COMPARISON.md`](docs/COMPARISON.md) | Evaluators | auth0-mock vs other Auth/OIDC mocks |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Dev setup, conventions, PR workflow |
 | [`CHANGELOG.md`](CHANGELOG.md) | Everyone | What changed between versions |
 | [`examples/consumer/README.md`](examples/consumer/README.md) | Test authors | Worked end-to-end example |
