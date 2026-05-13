@@ -1,0 +1,257 @@
+openapi: 3.1.0
+info:
+  title: auth0-mock Authentication API
+  version: 1.0.0
+tags:
+  - name: auth-api
+    description: Auth0 Authentication API endpoints — OAuth2/OIDC, dbconnections, passwordless.
+paths:
+  /oauth/token:
+    post:
+      tags: [auth-api]
+      summary: Exchange credentials for an access token.
+      description: |
+        Supports every grant type the mock implements: `client_credentials`,
+        `password`, `refresh_token`, `authorization_code` (with optional PKCE),
+        `http://auth0.com/oauth/grant-type/password-realm`,
+        `http://auth0.com/oauth/grant-type/passwordless/otp`, and the MFA
+        step-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/OAuthTokenRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthTokenRequest"
+      responses:
+        "200":
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthTokenResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: Invalid client credentials.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "403":
+          description: MFA required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFARequiredError" }
+  /authorize:
+    get:
+      tags: [auth-api]
+      summary: Start the Authorization Code flow.
+      parameters:
+        - { name: response_type,        in: query, required: true,  schema: { type: string, enum: [code] } }
+        - { name: client_id,            in: query, required: true,  schema: { type: string } }
+        - { name: redirect_uri,         in: query, required: true,  schema: { type: string, format: uri } }
+        - { name: scope,                in: query, required: false, schema: { type: string } }
+        - { name: state,                in: query, required: false, schema: { type: string } }
+        - { name: audience,             in: query, required: false, schema: { type: string } }
+        - { name: code_challenge,       in: query, required: false, schema: { type: string } }
+        - { name: code_challenge_method,in: query, required: false, schema: { type: string, enum: [S256, plain] } }
+      responses:
+        "302":
+          description: Redirect to `redirect_uri` with `code` and `state` query parameters.
+  /userinfo:
+    get:
+      tags: [auth-api]
+      summary: Resolve the authenticated user from an access token.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OIDC user claims.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid bearer.
+  /.well-known/openid-configuration:
+    get:
+      tags: [auth-api]
+      summary: OIDC discovery document.
+      responses:
+        "200":
+          description: Discovery document.
+          content:
+            application/json:
+              schema:
+                type: object
+  /v2/logout:
+    get:
+      tags: [auth-api]
+      summary: End the user's session and optionally redirect them.
+      parameters:
+        - { name: returnTo,  in: query, required: false, schema: { type: string, format: uri } }
+        - { name: client_id, in: query, required: false, schema: { type: string } }
+      responses:
+        "302":
+          description: Redirect to `returnTo`.
+        "200":
+          description: Logout acknowledged.
+  /oauth/revoke:
+    post:
+      tags: [auth-api]
+      summary: Revoke a refresh token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:         { type: string }
+                client_id:     { type: string }
+                client_secret: { type: string }
+      responses:
+        "200":
+          description: Revoked.
+  /dbconnections/signup:
+    post:
+      tags: [auth-api]
+      summary: Create a database-connection user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, email, password, connection]
+              properties:
+                client_id:  { type: string }
+                email:      { type: string, format: email }
+                password:   { type: string, format: password }
+                connection: { type: string }
+                username:   { type: string }
+                user_metadata: { type: object }
+      responses:
+        "200":
+          description: User created (mock returns a canned profile).
+          content:
+            application/json:
+              schema:
+                type: object
+  /dbconnections/change_password:
+    post:
+      tags: [auth-api]
+      summary: Trigger a password-change email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, email, connection]
+              properties:
+                client_id:  { type: string }
+                email:      { type: string, format: email }
+                connection: { type: string }
+      responses:
+        "200":
+          description: Acknowledged.
+  /passwordless/start:
+    post:
+      tags: [auth-api]
+      summary: Start the passwordless flow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, connection]
+              properties:
+                client_id:  { type: string }
+                connection: { type: string, enum: [email, sms] }
+                email:      { type: string, format: email }
+                phone_number: { type: string }
+                send:       { type: string, enum: [code, link] }
+      responses:
+        "200":
+          description: OTP / link sent (mock returns 200 without sending).
+  /passwordless/verify:
+    post:
+      tags: [auth-api]
+      summary: Verify a passwordless OTP and mint tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, connection, otp]
+              properties:
+                client_id:  { type: string }
+                connection: { type: string, enum: [email, sms] }
+                otp:        { type: string }
+                email:      { type: string, format: email }
+                phone_number: { type: string }
+      responses:
+        "200":
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthTokenResponse"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    OAuthTokenRequest:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type:    { type: string, description: "OAuth2/Auth0 grant type." }
+        client_id:     { type: string }
+        client_secret: { type: string }
+        audience:      { type: string }
+        scope:         { type: string }
+        username:      { type: string }
+        password:      { type: string }
+        realm:         { type: string }
+        refresh_token: { type: string }
+        code:          { type: string }
+        code_verifier: { type: string }
+        redirect_uri:  { type: string }
+        otp:           { type: string }
+        mfa_token:     { type: string }
+        oob_code:      { type: string }
+        recovery_code: { type: string }
+    OAuthTokenResponse:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token:   { type: string }
+        id_token:       { type: string }
+        refresh_token:  { type: string }
+        scope:          { type: string }
+        token_type:     { type: string, example: Bearer }
+        expires_in:     { type: integer, example: 86400 }
+    OAuthError:
+      type: object
+      required: [error]
+      properties:
+        error:             { type: string }
+        error_description: { type: string }
+    MFARequiredError:
+      allOf:
+        - $ref: "#/components/schemas/OAuthError"
+        - type: object
+          properties:
+            mfa_token: { type: string }
