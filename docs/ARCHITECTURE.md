@@ -1,0 +1,261 @@
+# Architecture
+
+A walkthrough of how auth0-mock is put together, written for contributors and curious users. If you want a quick mental model rather than the deep dive, the [README](../README.md#-architecture) has a 10-line diagram.
+
+## Big picture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Servers                                                                  │
+│   ├── HTTP   :8080                                                        │
+│   └── HTTPS  :8443  (auto-gen self-signed cert; mountable; persistable)  │
+└─────────────────────────┬────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  chi router (go-chi/chi v5)                                              │
+│                                                                          │
+│   middleware (in order, applied to every route):                         │
+│     1. RequestID    (UUID per request, returned as X-Request-Id header)  │
+│     2. Recovery     (panic → 500)                                        │
+│     3. Logging      (zerolog: method, path, status, latency, request_id)│
+│                                                                          │
+│   /healthz                                  liveness                     │
+│                                                                          │
+│   /admin0/{reset, matches, claims,          control plane (no bearer)    │
+│            permissions[/{audience}],        — wipes / inspects / shapes  │
+│            mfa-required}                    runtime state                │
+│                                                                          │
+│   /.well-known/jwks.json                    JWKS publication             │
+│   /.well-known/openid-configuration         OIDC discovery               │
+│                                                                          │
+│   /oauth/* /authorize /userinfo             Auth API (hand-coded)        │
+│   /v2/logout                                — mints real RS256 JWTs      │
+│   /dbconnections/{signup,change_password}                                │
+│   /passwordless/{start,verify}                                           │
+│                                                                          │
+│   /api/v2/*                                 Mgmt API (spec-driven)       │
+│       <verb> <path>             ← bearer-enforced + spec-validated +    │
+│                                    consults stub store (404 by default)  │
+│       <verb> <path>/match       ← stub register (no bearer)              │
+│       <verb> <path>/reset       ← stub clear (no bearer)                 │
+└─────────────────────────┬────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Shared in-process state (no persistence)                                │
+│   ├── matches.Store        Mgmt API stub registrations                   │
+│   ├── claims.Store         per-process custom JWT claims                 │
+│   ├── permissions.Store    per-audience permission slice                 │
+│   ├── pkce.Store           authorize_code → code_challenge map           │
+│   ├── mfa.Store            mfa_token map + global "required" flag       │
+│   ├── jwks.KeySet          RS256 signing key + JWKS publisher           │
+│   └── spec.{Spec,Validator} embedded OpenAPI 3.1 + kin-openapi          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+The two halves work very differently. The Auth API is **hand-coded** because the mock must *do something* — sign JWTs, redirect with real codes, return discovery docs. The Management API is **spec-driven** because all ~400 operations behave the same way (return a registered stub or 404), so one generic handler serves them all.
+
+## Two halves, two strategies
+
+### Authentication API: hand-coded, functional
+
+Every Auth API endpoint is a struct in `internal/authapi/` implementing `http.Handler`:
+
+```go
+type TokenHandler struct {
+    Keys            *jwks.KeySet
+    Issuer          string
+    DefaultAudience string
+    Log             zerolog.Logger
+    Claims          *claims.Store
+    Permissions     *permissions.Store
+    PKCE            *pkce.Store
+    MFA             *mfa.Store
+}
+
+func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) { ... }
+```
+
+The handlers actually *do* the OAuth/OIDC dance: parse form or JSON, dispatch on `grant_type`, sign tokens with `jwks.KeySet.Mint`, handle redirects, build the OIDC discovery doc. Tokens minted here are valid RS256 JWTs, signed with an in-process 2048-bit RSA key, with the matching public key published at `/.well-known/jwks.json`.
+
+The full list of grants and their dispatch lives in [`internal/authapi/token.go`](../internal/authapi/token.go).
+
+### Management API: spec-driven, generic
+
+`mgmtapi.Mount` walks Auth0's embedded OpenAPI 3.1 spec at boot:
+
+```go
+for op := range opts.Spec.Operations() {
+    base := op.Template                    // "/api/v2/users/{id}"
+    matchPath := base + "/match"
+    resetPath := base + "/reset"
+
+    r.Method(op.Method, base,      bearer.Middleware(opts.Keys)(&GenericHandler{Op: op, ...}))
+    r.Method(op.Method, matchPath, &MatchHandler{Op: op, ...})
+    r.Method(op.Method, resetPath, &ResetHandler{Op: op, ...})
+}
+```
+
+Three handlers, all in `internal/mgmtapi/`:
+
+- **`GenericHandler`** — validates the incoming request against the operation's OpenAPI schema, looks up a stub from `matches.Store` (exact path wins over template path), defensively re-validates the stored response against the spec, writes it. Returns `404 no_match` if nothing was registered.
+- **`MatchHandler`** — decodes a `{status, headers, body}` payload, validates `body` against the operation's *response* schema for the chosen `status`, stores it.
+- **`ResetHandler`** — strips `/reset` from the URL, calls `matches.Store.ResetEndpoint`.
+
+The bearer middleware wraps only the original endpoint handler — `/match` and `/reset` siblings are bearer-free so test setup doesn't have to mint tokens first.
+
+### Why use a chi wildcard for paths?
+
+chi uses `{id}` natively (same as OpenAPI), so we pass `op.Template` straight to `r.Method` without translation. For one tricky case — `/admin0/permissions/{audience}` where audiences are often URLs containing slashes — we use chi's `/*` wildcard with `chi.URLParam(r, "*")`.
+
+## State stores (all in-memory)
+
+| Store | Owns | Mutated by | Consulted by |
+|---|---|---|---|
+| [`internal/matches/`](../internal/matches/) | Map of `(method, path) → {status, headers, body}` for Mgmt API stubs | `/api/v2/.../match`, `/api/v2/.../reset`, `/admin0/reset` | `GenericHandler` |
+| [`internal/claims/`](../internal/claims/) | Per-process map of custom JWT claims | `PUT/DELETE /admin0/claims`, `POST /admin0/reset` | `TokenHandler.augmentExtra`, `PasswordlessVerifyHandler` |
+| [`internal/permissions/`](../internal/permissions/) | `map[audience] → []permission` for RBAC claim injection | `PUT/DELETE /admin0/permissions[/{audience}]`, `POST /admin0/reset` | `TokenHandler.augmentExtra` (looks up by audience), `PasswordlessVerifyHandler` |
+| [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | — |
+| [`internal/mfa/`](../internal/mfa/) | `mfa_token → Context` with 10-min TTL + atomic "required" flag | `PUT /admin0/mfa-required`, `POST /admin0/reset`, `TokenHandler.requireMFA` | `respondPassword`, `respondPasswordRealm`, `respondMFA*` |
+
+Every store is mutex-protected and snapshot-isolating on reads (so the caller can mutate the returned slice/map without corrupting the store).
+
+There is **no persistence** anywhere. Each process restart is a clean slate. That's a deliberate design choice: tests get isolation for free; you don't need a teardown step beyond `POST /admin0/reset` (which is also called automatically between godog scenarios via the scenario harness).
+
+## Token claim composition
+
+When `/oauth/token` mints a token, the payload is built in this order — **last write wins**:
+
+1. **Reserved claims** built by the grant handler:
+   - `iss` (issuer from config)
+   - `sub` (depends on grant: `<client_id>@clients` for client_credentials, the username for password, etc.)
+   - `aud` (from request, falls back to `DefaultAudience`)
+   - `iat`, `exp` (now + `ACCESS_TOKEN_TTL`)
+   - `scope` (echoed from request)
+   - `azp` (client_id)
+   - `gty` (grant type, e.g. `client-credentials`, `password-realm`, `mfa-otp`)
+2. **`permissions` claim** — added if `permissions.Store.Get(audience)` returns a non-empty slice. Skipped silently otherwise.
+3. **Custom claims** from `claims.Store` — merged in. **These overwrite everything above.** Tests can override `gty`, `azp`, `permissions`, anything.
+
+All of this is encapsulated in `TokenHandler.augmentExtra`:
+
+```go
+func (h *TokenHandler) augmentExtra(extra map[string]any, audience string) map[string]any {
+    if extra == nil {
+        extra = make(map[string]any)
+    }
+    if h.Permissions != nil {
+        if perms := h.Permissions.Get(audience); len(perms) > 0 {
+            extra["permissions"] = perms
+        }
+    }
+    if h.Claims != nil {
+        h.Claims.MergeInto(extra)
+    }
+    return extra
+}
+```
+
+## MFA challenge dance
+
+When `mfa.Store.IsRequired()` is true, `password` and `password-realm` don't mint directly. Instead:
+
+1. **Step 1 — challenge issued.** The handler builds an `mfa.Context` snapshot of `{client_id, audience, scope, subject, realm}`, calls `mfa.Store.Issue(ctx)` to get back a UUID `mfa_token`, and responds:
+
+   ```json
+   {
+     "error": "mfa_required",
+     "error_description": "Multifactor authentication required",
+     "mfa_token": "<uuid>"
+   }
+   ```
+
+   HTTP status `403`. The token is good for 10 minutes and is single-use.
+
+2. **Step 2 — exchange.** The client re-calls `/oauth/token` with one of the three Auth0 MFA grants plus the canned factor:
+
+   | grant_type | Factor field(s) | Accepted value |
+   |---|---|---|
+   | `http://auth0.com/oauth/grant-type/mfa-otp` | `otp` | `123456` |
+   | `http://auth0.com/oauth/grant-type/mfa-oob` | `oob_code` (any) + `binding_code` | `123456` |
+   | `http://auth0.com/oauth/grant-type/mfa-recovery-code` | `recovery_code` | `ABCDEFGHIJKLMNOP` |
+
+   The handler `Consume`s the mfa_token (which expires/removes it), validates the factor against the canned constant, and mints normally using the stored `Context`. The minted token carries `gty=mfa-otp` (or `mfa-oob` / `mfa-recovery-code`) so downstream services can tell step-up tokens apart.
+
+This mirrors Auth0's actual MFA flow shape end-to-end. The canned factors are the only "mocky" part — real Auth0 stores a per-user secret and checks TOTP.
+
+## PKCE flow
+
+When `/authorize` is called with a `code_challenge` (and optionally `code_challenge_method=S256|plain`, defaulting to `plain` per RFC 7636), `AuthorizeHandler` stashes the challenge keyed by the generated `code`:
+
+```go
+h.PKCE.Put(issuedCode, pkce.Entry{
+    Challenge: challenge,
+    Method:    pkce.Method(method),
+    ClientID:  clientID,
+    Redirect:  redirect,
+})
+```
+
+Later, when `/oauth/token` receives `grant_type=authorization_code` with that code, `TokenHandler.respondAuthorizationCode` consults the PKCE store:
+
+```go
+if entry, ok := h.PKCE.Consume(req.Code); ok {
+    if err := entry.Verify(req.CodeVerifier); err != nil {
+        // 400 invalid_grant
+    }
+}
+```
+
+`Consume` removes the entry (single-use). `Verify` runs the spec algorithm: `S256` hashes the verifier with SHA-256 and base64url-encodes, comparing to the stored challenge; `plain` compares the verifier to the challenge byte-for-byte.
+
+**Codes that never came through `/authorize`** (or arrived without a `code_challenge`) still mint — backward-compatible with tests that don't care about PKCE.
+
+## Error response shapes
+
+Two distinct shapes, matching real Auth0:
+
+**Management API** (`/api/v2/*`, `/admin0/*`, `/api/v2/.../{match,reset}`):
+```json
+{ "statusCode": 400, "error": "Bad Request", "message": "...", "errorCode": "invalid_body" }
+```
+
+**Authentication API** (`/oauth/*`, `/authorize`, `/userinfo`, `/dbconnections/*`, `/passwordless/*`):
+```json
+{ "error": "invalid_request", "error_description": "..." }
+```
+
+Selected by the caller via `httperr.WriteMgmt(...)` or `httperr.WriteAuth(...)`.
+
+## TLS lifecycle
+
+`internal/tlscert/Load` has three modes, checked in order:
+
+1. If `TLS_CERT_FILE` AND `TLS_KEY_FILE` are both set → load from those paths.
+2. Else if `TLS_CACHE_DIR` is set → load `<dir>/tls.{crt,key}` if they exist, otherwise generate a fresh self-signed cert + persist it there for next boot.
+3. Else → generate a fresh self-signed cert in-memory only (regenerated on every boot).
+
+The auto-generated cert is ECDSA P-256, valid for 365 days, with SAN entries split between `DNSNames` and `IPAddresses` per `net.ParseIP`. Default SAN list: `localhost`, `127.0.0.1`, `::1`. Override with `TLS_HOSTNAMES`.
+
+## Why these choices
+
+- **chi over http.ServeMux** — clean middleware composition, native `{id}` path params, wildcard support for the URL-form audiences case.
+- **go-chi/render over hand-rolled JSON** — uniform `render.JSON(w, r, body)` + `render.Status(r, code)` everywhere; no scattered `json.NewEncoder(w).Encode(...)` calls with their own content-type handling.
+- **kin-openapi v0.x for OpenAPI** — only Go OpenAPI library that handles 3.1 well enough for Auth0's spec. We had to add `DisableSchemaPatternValidation` + `DisableSchemaDefaultsValidation` to its legacy router to cope with Auth0's regex lookahead patterns (Go's regexp doesn't support them).
+- **golang-jwt/jwt v5** — RS256 mint/verify with proper signing-method validation, native `WithIssuer` + `WithExpirationRequired`. We chose RS256 only on purpose: it's Auth0's default; HS256 is legacy; PS256 is Enterprise-tier; ES256/EdDSA aren't Auth0 features.
+- **Per-process in-memory stores, no persistence** — tests get isolation for free; `POST /admin0/reset` is a single round-trip cleanup; no schema migrations, no garbage in `/tmp`.
+- **Embedded OpenAPI spec via `//go:embed`** — the spec is the source of truth for the Mgmt API surface. Refresh it by re-downloading the file; no codegen step.
+
+## Project layout (recap)
+
+```
+auth0-mock/
+├── cmd/api/main.go                 entrypoint (wires config + stores + router)
+├── api/                            //go:embed Auth0 OpenAPI 3.1 spec
+├── internal/                       private packages (see CONTRIBUTING.md)
+├── features/                       godog acceptance tests
+└── examples/consumer/              end-to-end Go consumer
+```
+
+Full file-level breakdown is in [`CONTRIBUTING.md`](../CONTRIBUTING.md#-project-layout).

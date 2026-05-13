@@ -1,179 +1,289 @@
-# auth0-mock
+<div align="center">
 
-A self-contained Go service that mocks Auth0's HTTP API surface so applications
-configured to talk to Auth0 can be pointed at this mock with no code change.
+# 🔐 auth0-mock
 
-- **Authentication API** — fully functional. Mints real RS256-signed JWTs and
-  publishes the matching JWKS, so consumer services validate signatures
-  normally.
-- **Management API** — driven by Auth0's published OpenAPI 3.1 spec
-  (~400 operations). Each endpoint returns 404 by default; tests register
-  the response they expect via `<verb> <path>/match` siblings and clear it
-  via `<verb> <path>/reset`. The same OpenAPI spec validates incoming
-  requests, registered match payloads, and outgoing responses.
+**A drop-in mock of Auth0's HTTP API — both the Authentication API and the Management API — that you can point any Auth0-using service at, with no code changes.**
 
-## Stack
+Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injection · MFA flow · PKCE · OIDC discovery · HTTP & HTTPS
 
-Go 1.26, [go-chi/chi v5](https://github.com/go-chi/chi),
-[go-chi/render](https://github.com/go-chi/render),
-[getkin/kin-openapi](https://github.com/getkin/kin-openapi),
-[golang-jwt/jwt v5](https://github.com/golang-jwt/jwt),
-[rs/zerolog](https://github.com/rs/zerolog),
-[caarlos0/env](https://github.com/caarlos0/env).
+[Quick start](#-quick-start) · [What's mocked](#-whats-mocked) · [Recipes](docs/COOKBOOK.md) · [Architecture](docs/ARCHITECTURE.md) · [Why not X?](docs/COMPARISON.md) · [Contributing](CONTRIBUTING.md)
 
-## Quick start
+</div>
 
-Local binary:
+---
+
+## ✨ What is this?
+
+A self-contained Go service that **looks and behaves like Auth0** to a calling client:
+
+- 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally — no `InsecureSkipVerify`, no fake-token kludges.
+- 📦 **Mocks the Management API spec-completely** by embedding Auth0's published OpenAPI 3.1 document (~400 operations) and routing every endpoint to a single generic handler. You stub responses with `<verb> /api/v2/.../match`; the OpenAPI schema validates the stubbed body.
+- 🛠 **Shapes runtime state via HTTP** — custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
+- 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
+
+It's what we wish [`primait/localauth0`](https://github.com/primait/localauth0) had been when we needed to test code that hit Auth0's `/api/v2/*` Management API surface.
+
+## 🎯 Who is this for?
+
+Anyone whose service talks to Auth0 in tests or local dev:
+
+- **CI pipelines** that need deterministic Auth0 responses without burning rate limit on a real tenant.
+- **Local dev loops** where you don't want to share an Auth0 tenant or wait on its latency.
+- **Integration test suites** for Auth0 SPA / native / API SDKs (auth0-react, auth0-js, auth0-spa-js, auth0-android, auth0-swift, auth0-react-native, etc.).
+- **Resilience tests** for code paths that hit `/api/v2/users`, `/api/v2/clients`, `/api/v2/roles`, etc.
+- **Service-to-service** flows using `client_credentials`, with realistic scopes and `permissions` claim shapes.
+
+It's NOT for: production traffic, replacing your IdP, or anything that needs a real RBAC engine. Use [Keycloak](https://www.keycloak.org/) or actual Auth0 for those.
+
+## 🚀 Quick start
+
+### Local binary
 
 ```bash
 make build && ./bin/auth0-mock
 ```
 
-Docker (development):
+### Docker (development)
 
 ```bash
 docker compose up -d --build
+docker compose logs -f auth0-mock
 ```
 
-Both expose `:8080` (HTTP) and `:8443` (HTTPS, auto-generated self-signed cert
-covering `localhost`, `127.0.0.1`, `::1`).
-
-## Mocking a Management API call
+### Smoke test
 
 ```bash
-# 1. Register a response (no bearer required for /match)
-curl -X GET http://localhost:8080/api/v2/users/auth0%7C123/match \
-  -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|123","email":"a@x"}}'
-
-# 2. Mint a bearer
+# 1. Mint a real signed access token
 TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'grant_type=client_credentials&client_id=x&client_secret=x&audience=http://localhost:8080/api/v2/' \
+  -d 'grant_type=client_credentials&client_id=demo&client_secret=x&audience=http://localhost:8080/api/v2/' \
   | jq -r .access_token)
 
-# 3. Call the mocked endpoint
+# 2. Stub a Mgmt API response
+curl -X GET http://localhost:8080/api/v2/users/auth0%7C123/match \
+  -H 'Content-Type: application/json' \
+  -d '{"status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}'
+
+# 3. Call the stubbed endpoint with your bearer
 curl http://localhost:8080/api/v2/users/auth0%7C123 \
   -H "Authorization: Bearer ${TOKEN}"
-# => 200 with {"user_id":"auth0|123","email":"a@x"}
+# => {"user_id":"auth0|123","email":"alice@example.com"}
 ```
 
-`/match` siblings mirror the original verb (e.g. for `GET /api/v2/users/{id}`
-the sibling is `GET …/match`). The same `<verb> …/match` URL also supports
-template registration (literal `{id}` in the path) for catch-all responses.
+That's it. No SDK changes, no monkey-patching — your code calls auth0-mock the same way it calls Auth0.
 
-## Reset
+## 📋 What's mocked
 
-| Endpoint                       | Scope                                    |
-|--------------------------------|------------------------------------------|
-| `<verb> /api/v2/…/reset`       | Clears that endpoint's matches.          |
-| `POST /admin0/reset`           | Wipes ALL registered matches.            |
-| `GET /admin0/matches`          | Lists every currently registered match.  |
+### 🎫 Authentication API (hand-coded, fully functional)
 
-## Configuration
+| Endpoint | Method | Notes |
+|---|---|---|
+| `/oauth/token` | POST | All Auth0 grants (see table below) |
+| `/oauth/revoke` | POST | 200 no-op (mock doesn't track refresh state) |
+| `/authorize` | GET | 302 with `code` (or implicit token); stashes PKCE challenge if present |
+| `/userinfo` | GET | Returns claims from the bearer |
+| `/v2/logout` | GET | 302 to `returnTo` |
+| `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
+| `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer |
+| `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
+| `/dbconnections/change_password` | POST | Returns the canned reset-email message |
+| `/passwordless/start` | POST | Returns `{_id, email, phone_number}` |
+| `/passwordless/verify` | POST | Mints token if `otp=000000` |
 
-Environment variables (see `.env.example`):
+### 🔑 OAuth grants supported
 
-| Var                       | Default                                     |
-|---------------------------|---------------------------------------------|
-| `HTTP_ADDR`               | `0.0.0.0:8080` (empty disables HTTP)        |
-| `HTTPS_ADDR`              | `0.0.0.0:8443` (empty disables HTTPS)       |
-| `TLS_CERT_FILE`           | _empty_ → auto-generate self-signed         |
-| `TLS_KEY_FILE`            | _empty_                                     |
-| `TLS_CACHE_DIR`           | _empty_ → fresh cert per boot; if set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
-| `TLS_HOSTNAMES`           | `localhost,127.0.0.1,::1`                   |
-| `SIGNING_KEY_FILE`        | _empty_ → fresh RS256 key per boot          |
-| `ISSUER_URL`              | `https://localhost:8443/`                   |
-| `DEFAULT_AUDIENCE`        | `https://localhost:8443/api/v2/`            |
-| `ACCESS_TOKEN_TTL`        | `24h`                                       |
-| `ID_TOKEN_TTL`            | `24h`                                       |
-| `SPEC_VALIDATION_STRICT`  | `true`                                      |
-| `LOG_LEVEL`               | `info`                                      |
+| `grant_type` | Notes |
+|---|---|
+| `client_credentials` | M2M flow — returns `access_token` only |
+| `password` | Returns access + id + refresh; gates on the MFA flag |
+| `refresh_token` | New `access_token`; no refresh state tracked |
+| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize` |
+| `http://auth0.com/oauth/grant-type/password-realm` | Auth0 Native SDKs; same as password + `realm` field threaded into claims |
+| `http://auth0.com/oauth/grant-type/passwordless/otp` | Mints if `otp=000000` |
+| `http://auth0.com/oauth/grant-type/mfa-otp` | Step 2 of MFA dance; accepts `otp=123456` |
+| `http://auth0.com/oauth/grant-type/mfa-oob` | Push/SMS step-up; accepts `binding_code=123456` |
+| `http://auth0.com/oauth/grant-type/mfa-recovery-code` | Recovery flow; accepts `recovery_code=ABCDEFGHIJKLMNOP` |
 
-## HTTPS / TLS trust
+### 📦 Management API (spec-driven, ~400 endpoints)
 
-The auto-generated cert has SAN entries for `localhost`, `127.0.0.1`, and `::1`
-by default (override with `TLS_HOSTNAMES`). It works identically on macOS and
-Linux at the TLS layer, but it is self-signed, so clients will reject it unless
-you tell them otherwise. Three options, in order of recommendation:
-
-**1. `mkcert` (recommended for local dev).** [`mkcert`](https://github.com/FiloSottile/mkcert)
-installs a local CA into your platform's trust store and issues certs signed by
-it — browsers, Go, and `curl` accept the result without flags:
+Every operation in Auth0's published OpenAPI 3.1 spec is mounted. Default response is `404 no_match`. Tests register stubs:
 
 ```bash
-mkcert -install                                   # one-time per workstation
+# Concrete-id stub
+curl -X GET http://localhost:8080/api/v2/users/auth0%7C123/match \
+  -H 'Content-Type: application/json' \
+  -d '{"status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
+
+# Template stub (catch-all for any user id)
+curl -X GET http://localhost:8080/api/v2/users/{id}/match \
+  -H 'Content-Type: application/json' \
+  -d '{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}'
+```
+
+> Concrete URL stubs win over template stubs. Schemas are validated at registration time — invalid bodies are rejected with `400 invalid_match`. `/match` siblings mirror the original verb (so for `GET /users/{id}` the sibling is `GET …/match` — yes, GET-with-body).
+
+### 🛠 Admin surface (no auth, JSON-driven)
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/admin0/reset` | POST | Wipe everything: matches, claims, permissions, MFA flag |
+| `/admin0/matches` | GET | List currently registered match stubs |
+| `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
+| `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
+| `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL — chi wildcard) |
+| `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
+
+### 🩺 Operations
+
+| Endpoint | Notes |
+|---|---|
+| `/healthz` | Kubernetes-style liveness probe — `200 {"status":"ok"}`, no auth |
+
+## 💡 Common recipes
+
+→ See [`docs/COOKBOOK.md`](docs/COOKBOOK.md) for full recipes. Highlights:
+
+```bash
+# Inject a custom claim into every token
+curl -X PUT http://localhost:8080/admin0/claims \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"admin","org_id":"o-42"}'
+
+# Set RBAC for an audience (URL-form audience works thanks to chi wildcard)
+curl -X PUT http://localhost:8080/admin0/permissions/https://api.example.com/ \
+  -H 'Content-Type: application/json' \
+  -d '["read:users","write:users"]'
+
+# Force MFA on the next password grant
+curl -X PUT http://localhost:8080/admin0/mfa-required \
+  -H 'Content-Type: application/json' \
+  -d '{"required":true}'
+
+# Reset everything between tests
+curl -X POST http://localhost:8080/admin0/reset
+```
+
+## 🛠 Configuration
+
+Environment variables (see [`.env.example`](.env.example) for the full template):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `HTTP_ADDR` | `0.0.0.0:8080` | Empty disables the HTTP listener |
+| `HTTPS_ADDR` | `0.0.0.0:8443` | Empty disables the HTTPS listener |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |
+| `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
+| `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
+| `SIGNING_KEY_FILE` | _empty_ | PEM-encoded RSA key. Otherwise a fresh RS256 key is generated each boot |
+| `ISSUER_URL` | `https://localhost:8443/` | `iss` claim and OIDC discovery base |
+| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one |
+| `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
+| `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
+| `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
+| `LOG_LEVEL` | `info` | zerolog levels |
+| `READ_HEADER_TIMEOUT` | `5s` | http.Server's `ReadHeaderTimeout` |
+| `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
+
+## 🔒 HTTPS / TLS
+
+The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). Identical TLS behaviour on macOS and Linux — but it's self-signed, so clients reject it unless told otherwise. Three options:
+
+### 1. `mkcert` (recommended for local dev)
+
+[`mkcert`](https://github.com/FiloSottile/mkcert) installs a local CA into your platform's trust store and signs certs with it. Browsers, Go, and `curl` accept the result without flags:
+
+```bash
+mkcert -install                                                # one-time per workstation
 mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
 
 docker run -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
   -v "$PWD:/certs" auth0-mock
 ```
 
-**2. `TLS_CACHE_DIR` (recommended for `docker compose` without mkcert).** Pick
-a path and the mock will write its auto-generated cert there on first boot, then
-reuse the same files on subsequent restarts. Trust the cert once (see option 3)
-and trust persists across boots:
+### 2. `TLS_CACHE_DIR` (recommended for `docker compose` without mkcert)
+
+Pick a path; the mock writes its auto-generated cert there on first boot and reuses it on subsequent restarts. Trust the cert once and trust persists:
 
 ```bash
 docker compose run --rm -e TLS_CACHE_DIR=/data/tls \
   -v auth0-mock-tls:/data/tls auth0-mock
 ```
 
-**3. Skip verification.** Fine for ephemeral tests, not for anything else:
+### 3. Skip verification
+
+Fine for ephemeral tests, ugly for anything else:
 
 ```bash
 curl -k https://localhost:8443/.well-known/openid-configuration
 # Go: &tls.Config{InsecureSkipVerify: true}
 ```
 
-To install the mock's generated cert into the OS trust store (after option 2 so
-it stays stable across boots):
+To install the mock's cert into your OS trust store (after option 2 so it's stable across boots), see [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert).
+
+## 🧪 Testing the mock
 
 ```bash
-# Export from a running server (or read from $TLS_CACHE_DIR/tls.crt):
-openssl s_client -connect localhost:8443 -showcerts </dev/null 2>/dev/null \
-  | openssl x509 -outform pem > /tmp/auth0-mock.crt
-
-# macOS
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain /tmp/auth0-mock.crt
-
-# Debian/Ubuntu
-sudo cp /tmp/auth0-mock.crt /usr/local/share/ca-certificates/auth0-mock.crt
-sudo update-ca-certificates
-
-# Arch/Fedora
-sudo trust anchor /tmp/auth0-mock.crt
+go test -race ./...                        # unit tests
+go test -tags=features ./cmd/api/...       # godog acceptance suite (63 scenarios)
 ```
 
-## Example consumer
+The godog harness boots the service in-process on a random port and exercises every Auth API path, every admin endpoint, and the spec-driven Mgmt API surface. See [`features/`](features/) for the gherkin and [`features/scenario/`](features/scenario/) for the harness.
 
-See [`examples/consumer/`](examples/consumer/) for a stand-alone Go program
-that mints a token, verifies its signature against the published JWKS using
-`MicahParks/keyfunc` + `golang-jwt/jwt`, registers a Mgmt API response, and
-calls it back successfully — proving the drop-in compatibility end to end.
+## 🏗 Architecture
 
-## Design notes
+→ Full deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-- **Authentication API is hand-coded.** Mints RS256 JWTs with `iss`, `aud`,
-  `iat`, `exp`, `scope`, `gty`, `azp` claims; verifies via `golang-jwt/jwt v5`
-  against an in-process key pair (RS256, 2048-bit; regenerated each boot
-  unless `SIGNING_KEY_FILE` is mounted).
-- **Management API is spec-driven.** Auth0's published OpenAPI 3.1 spec is
-  embedded with `//go:embed`. At startup, `mgmtapi.Mount` iterates every
-  operation in the spec and registers three routes per operation: the
-  endpoint itself (bearer + spec-validate + look up registered match → 404),
-  `<verb> …/match` (decode → spec-validate against the response schema for
-  the chosen status → store), and `<verb> …/reset` (clear scope). One
-  generic handler powers the entire ~400-operation surface.
-- **Match keying.** Exact path wins over template path. Template-vs-concrete
-  is decided by whether the registration URL contains `{` or `}` segments,
-  so PUTting to `/api/v2/users/auth0|123/match` is concrete, PUTting to
-  `/api/v2/users/{id}/match` is a catch-all.
-- **Bearer enforcement.** `/api/v2/*` requires `Authorization: Bearer <jwt>`
-  verified against the mock's own JWKS (signature + `exp` + `iss`; audience
-  is not enforced). `/match` and `/reset` siblings are bearer-free, as is
-  `/admin0/*`.
-- **Routing & rendering.** `go-chi/chi v5` with handlers structured as
-  structs holding their dependencies as fields, implementing `ServeHTTP`.
-  JSON responses use `go-chi/render`.
+At-a-glance:
+
+```
+chi router
+  ├── recovery + request_id + logging       (always-on middleware)
+  ├── /healthz                               liveness
+  ├── /admin0/{reset, matches, claims, permissions/*, mfa-required}
+  │                                          control plane (no auth)
+  ├── /.well-known/{jwks.json, openid-configuration}
+  ├── /oauth/* /authorize /userinfo /v2/logout
+  │   /dbconnections/* /passwordless/*
+  │                                          Auth API (hand-coded, functional)
+  └── /api/v2/*                              Management API (spec-driven)
+        /api/v2/.../{verb}                   ← bearer-enforced; generic handler
+        /api/v2/.../{verb}/match             ← stub register (no bearer)
+        /api/v2/.../{verb}/reset             ← stub clear (no bearer)
+```
+
+Every handler is a struct holding its dependencies as fields, implementing `http.Handler` via `ServeHTTP`. JSON responses go through `go-chi/render`.
+
+## 🆚 Why not X?
+
+→ Detailed comparison vs `localauth0`, `mock-oauth2-server`, `oauth2-mock-server`, `node-oidc-provider`, Keycloak, and WireMock: [`docs/COMPARISON.md`](docs/COMPARISON.md).
+
+Headline: every alternative covers only the OIDC half (or nothing of it, in WireMock's case). **None has the Auth0 Management API surface** that auth0-mock exposes spec-driven from `/api/v2/*`.
+
+## 📂 Example consumer
+
+[`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Mgmt API stub, and calls the stubbed endpoint.
+
+```bash
+go run ./cmd/api &
+go run ./examples/consumer
+```
+
+## 🤝 Contributing
+
+PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code style, testing requirements, and how to add a new endpoint.
+
+## 📖 Documentation map
+
+| File | Audience | Purpose |
+|---|---|---|
+| [`README.md`](README.md) (this file) | Everyone | Overview, quick start, configuration |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Contributors / curious users | How the service is structured internally |
+| [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Test authors | Recipes for common test scenarios |
+| [`docs/COMPARISON.md`](docs/COMPARISON.md) | Evaluators | auth0-mock vs other Auth/OIDC mocks |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Dev setup, conventions, PR workflow |
+| [`CHANGELOG.md`](CHANGELOG.md) | Everyone | What changed between versions |
+| [`examples/consumer/README.md`](examples/consumer/README.md) | Test authors | Worked end-to-end example |
+
+## ⚖️ License
+
+[MIT](LICENSE).
