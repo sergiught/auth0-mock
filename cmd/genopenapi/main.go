@@ -22,6 +22,6 @@ func main() {
 	}
 }
 
-func run(out, server string) error {
+func run(_, _ string) error {
 	return errors.New("not implemented")
 }
