@@ -80,6 +80,7 @@ Environment variables (see `.env.example`):
 | `HTTPS_ADDR`              | `0.0.0.0:8443` (empty disables HTTPS)       |
 | `TLS_CERT_FILE`           | _empty_ → auto-generate self-signed         |
 | `TLS_KEY_FILE`            | _empty_                                     |
+| `TLS_CACHE_DIR`           | _empty_ → fresh cert per boot; if set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
 | `TLS_HOSTNAMES`           | `localhost,127.0.0.1,::1`                   |
 | `SIGNING_KEY_FILE`        | _empty_ → fresh RS256 key per boot          |
 | `ISSUER_URL`              | `https://localhost:8443/`                   |
@@ -88,6 +89,62 @@ Environment variables (see `.env.example`):
 | `ID_TOKEN_TTL`            | `24h`                                       |
 | `SPEC_VALIDATION_STRICT`  | `true`                                      |
 | `LOG_LEVEL`               | `info`                                      |
+
+## HTTPS / TLS trust
+
+The auto-generated cert has SAN entries for `localhost`, `127.0.0.1`, and `::1`
+by default (override with `TLS_HOSTNAMES`). It works identically on macOS and
+Linux at the TLS layer, but it is self-signed, so clients will reject it unless
+you tell them otherwise. Three options, in order of recommendation:
+
+**1. `mkcert` (recommended for local dev).** [`mkcert`](https://github.com/FiloSottile/mkcert)
+installs a local CA into your platform's trust store and issues certs signed by
+it — browsers, Go, and `curl` accept the result without flags:
+
+```bash
+mkcert -install                                   # one-time per workstation
+mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
+
+docker run -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
+  -v "$PWD:/certs" auth0-mock
+```
+
+**2. `TLS_CACHE_DIR` (recommended for `docker compose` without mkcert).** Pick
+a path and the mock will write its auto-generated cert there on first boot, then
+reuse the same files on subsequent restarts. Trust the cert once (see option 3)
+and trust persists across boots:
+
+```bash
+docker compose run --rm -e TLS_CACHE_DIR=/data/tls \
+  -v auth0-mock-tls:/data/tls auth0-mock
+```
+
+**3. Skip verification.** Fine for ephemeral tests, not for anything else:
+
+```bash
+curl -k https://localhost:8443/.well-known/openid-configuration
+# Go: &tls.Config{InsecureSkipVerify: true}
+```
+
+To install the mock's generated cert into the OS trust store (after option 2 so
+it stays stable across boots):
+
+```bash
+# Export from a running server (or read from $TLS_CACHE_DIR/tls.crt):
+openssl s_client -connect localhost:8443 -showcerts </dev/null 2>/dev/null \
+  | openssl x509 -outform pem > /tmp/auth0-mock.crt
+
+# macOS
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain /tmp/auth0-mock.crt
+
+# Debian/Ubuntu
+sudo cp /tmp/auth0-mock.crt /usr/local/share/ca-certificates/auth0-mock.crt
+sudo update-ca-certificates
+
+# Arch/Fedora
+sudo trust anchor /tmp/auth0-mock.crt
+```
 
 ## Example consumer
 

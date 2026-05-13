@@ -40,3 +40,61 @@ func TestLoad_FromFiles(t *testing.T) {
 	require.Len(t, cfg.Certificates, 1)
 	assert.Equal(t, tls.VersionTLS12, int(cfg.MinVersion))
 }
+
+func TestLoad_CacheDir_FirstBootPersistsAndSecondReuses(t *testing.T) {
+	dir := t.TempDir()
+
+	// First boot: cache empty, expect generation + on-disk persistence.
+	cfg1, err := Load(Config{CacheDir: dir, Hostnames: []string{"localhost"}})
+	require.NoError(t, err)
+	require.Len(t, cfg1.Certificates, 1)
+
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+	_, err = os.Stat(certPath)
+	require.NoError(t, err, "cert should have been written to cache")
+	_, err = os.Stat(keyPath)
+	require.NoError(t, err, "key should have been written to cache")
+
+	firstFingerprint := cfg1.Certificates[0].Certificate[0]
+
+	// Second boot: cache populated, expect reuse of the same cert.
+	cfg2, err := Load(Config{CacheDir: dir, Hostnames: []string{"localhost"}})
+	require.NoError(t, err)
+	require.Len(t, cfg2.Certificates, 1)
+	secondFingerprint := cfg2.Certificates[0].Certificate[0]
+
+	assert.Equal(t, firstFingerprint, secondFingerprint,
+		"second boot should reuse the persisted cert, not regenerate")
+}
+
+func TestLoad_CacheDir_ExplicitFilesOverride(t *testing.T) {
+	// Both CacheDir AND CertFile/KeyFile set → explicit files win.
+	gen, err := generateSelfSigned([]string{"explicit"})
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "explicit.crt")
+	keyPath := filepath.Join(dir, "explicit.key")
+	require.NoError(t, os.WriteFile(certPath, gen.certPEM, 0o644))
+	require.NoError(t, os.WriteFile(keyPath, gen.keyPEM, 0o600))
+
+	cacheDir := t.TempDir()
+
+	cfg, err := Load(Config{
+		CertFile:  certPath,
+		KeyFile:   keyPath,
+		CacheDir:  cacheDir,
+		Hostnames: []string{"localhost"},
+	})
+	require.NoError(t, err)
+	require.Len(t, cfg.Certificates, 1)
+
+	// CacheDir should NOT have been touched.
+	_, err = os.Stat(filepath.Join(cacheDir, "tls.crt"))
+	assert.True(t, os.IsNotExist(err), "cache dir should be empty when explicit files override")
+
+	leaf, err := x509.ParseCertificate(cfg.Certificates[0].Certificate[0])
+	require.NoError(t, err)
+	assert.Contains(t, leaf.DNSNames, "explicit")
+}

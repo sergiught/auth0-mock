@@ -65,6 +65,7 @@ func main() {
 		tlsCfg, err := tlscert.Load(tlscert.Config{
 			CertFile:  cfg.TLSCertFile,
 			KeyFile:   cfg.TLSKeyFile,
+			CacheDir:  cfg.TLSCacheDir,
 			Hostnames: cfg.TLSHostnames,
 		})
 		if err != nil {

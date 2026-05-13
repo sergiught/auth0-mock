@@ -15,6 +15,7 @@ type Config struct {
 	HTTPSAddress         string        `env:"HTTPS_ADDR" envDefault:"0.0.0.0:8443"`
 	TLSCertFile          string        `env:"TLS_CERT_FILE"`
 	TLSKeyFile           string        `env:"TLS_KEY_FILE"`
+	TLSCacheDir          string        `env:"TLS_CACHE_DIR"`
 	TLSHostnames         []string      `env:"TLS_HOSTNAMES" envDefault:"localhost,127.0.0.1,::1"`
 	SigningKeyFile       string        `env:"SIGNING_KEY_FILE"`
 	IssuerURL            string        `env:"ISSUER_URL" envDefault:"https://localhost:8443/"`

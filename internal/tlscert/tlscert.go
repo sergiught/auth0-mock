@@ -1,5 +1,14 @@
 // Package tlscert produces a *tls.Config from either user-supplied cert/key
 // files or an auto-generated self-signed cert covering configured hostnames.
+//
+// Three modes, checked in order:
+//
+//  1. If CertFile and KeyFile are both set, load them directly. The user owns
+//     the cert's lifecycle.
+//  2. Otherwise, if CacheDir is set, attempt to load `<CacheDir>/tls.crt` +
+//     `<CacheDir>/tls.key`. If they don't exist, generate a fresh cert and
+//     persist it there so subsequent boots reuse it.
+//  3. Otherwise, generate a fresh cert in-memory for this process only.
 package tlscert
 
 import (
@@ -10,9 +19,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -20,6 +32,7 @@ import (
 type Config struct {
 	CertFile  string // if set together with KeyFile → load from disk
 	KeyFile   string
+	CacheDir  string   // if set, persist the auto-generated cert here and reuse on restart
 	Hostnames []string // SANs for the auto-generated cert
 }
 
@@ -30,18 +43,68 @@ func Load(cfg Config) (*tls.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load cert/key: %w", err)
 		}
-		return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
+		return tlsConfig(cert), nil
+	}
+
+	if cfg.CacheDir != "" {
+		if cert, ok, err := loadFromCache(cfg.CacheDir); err != nil {
+			return nil, err
+		} else if ok {
+			return tlsConfig(cert), nil
+		}
 	}
 
 	gen, err := generateSelfSigned(cfg.Hostnames)
 	if err != nil {
 		return nil, err
 	}
+
+	if cfg.CacheDir != "" {
+		if err := persistToCache(cfg.CacheDir, gen); err != nil {
+			return nil, err
+		}
+	}
+
 	cert, err := tls.X509KeyPair(gen.certPEM, gen.keyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("parse generated cert: %w", err)
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
+	return tlsConfig(cert), nil
+}
+
+func tlsConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+}
+
+// loadFromCache returns (cert, true, nil) on success, (zero, false, nil) when
+// the cache files are missing, and (zero, false, err) for hard errors.
+func loadFromCache(dir string) (tls.Certificate, bool, error) {
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+	if _, err := os.Stat(certPath); errors.Is(err, os.ErrNotExist) {
+		return tls.Certificate{}, false, nil
+	}
+	if _, err := os.Stat(keyPath); errors.Is(err, os.ErrNotExist) {
+		return tls.Certificate{}, false, nil
+	}
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return tls.Certificate{}, false, fmt.Errorf("load cached cert/key: %w", err)
+	}
+	return cert, true, nil
+}
+
+func persistToCache(dir string, gen *generated) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create cache dir %s: %w", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tls.crt"), gen.certPEM, 0o644); err != nil {
+		return fmt.Errorf("write cert: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tls.key"), gen.keyPEM, 0o600); err != nil {
+		return fmt.Errorf("write key: %w", err)
+	}
+	return nil
 }
 
 type generated struct{ certPEM, keyPEM []byte }
