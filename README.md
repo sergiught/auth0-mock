@@ -186,6 +186,8 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). Identical TLS behaviour on macOS and Linux — but it's self-signed, so clients reject it unless told otherwise. Three options:
 
+> **⚠️ macOS gotcha** — Go on **macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR`** (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below — easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
+
 ### 1. `mkcert` (recommended for local dev)
 
 [`mkcert`](https://github.com/FiloSottile/mkcert) installs a local CA into your platform's trust store and signs certs with it. Browsers, Go, and `curl` accept the result without flags:
