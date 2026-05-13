@@ -56,6 +56,11 @@ vuln: $(BINARIES_DIR)/govulncheck ## Scan the module graph for known Go vulnerab
 	@echo "==> Scanning module graph for known Go vulnerabilities"
 	@$(BINARIES_DIR)/govulncheck ./...
 
+.PHONY: openapi
+openapi: ## Regenerate the merged OpenAPI spec at api/auth0-mock.openapi.json
+	@echo "==> Generating merged OpenAPI spec"
+	@go run ./cmd/genopenapi -out api/auth0-mock.openapi.json
+
 .PHONY: pre-commit
 pre-commit: ## Install local pre-commit and commit-msg hooks
 	@if ! command -v pre-commit >/dev/null 2>&1; then \
