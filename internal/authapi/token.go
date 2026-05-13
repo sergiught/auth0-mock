@@ -71,6 +71,8 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.respondClientCredentials(w, r, req, aud)
 	case "password":
 		h.respondPassword(w, r, req, aud)
+	case "http://auth0.com/oauth/grant-type/password-realm":
+		h.respondPasswordRealm(w, r, req, aud)
 	case "refresh_token":
 		h.respondRefreshToken(w, r, req, aud)
 	case "authorization_code":
@@ -79,6 +81,60 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httperr.WriteAuth(w, http.StatusBadRequest, "unsupported_grant_type",
 			"grant_type "+req.GrantType+" is not supported")
 	}
+}
+
+// respondPasswordRealm handles Auth0's password-realm grant, which is the
+// password grant plus a `realm` parameter selecting which connection to
+// authenticate against (e.g. "Username-Password-Authentication" vs an
+// enterprise connection). Used by Auth0 Native SDKs.
+func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	if req.Realm == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "missing realm")
+		return
+	}
+	subject := req.Username
+	if subject == "" {
+		subject = "auth0|" + uuid.NewString()
+	}
+	access, err := h.Keys.Mint(jwks.MintOpts{
+		Subject:  subject,
+		Audience: []string{aud},
+		Scope:    req.Scope,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
+		Extra: h.augmentExtra(map[string]any{
+			"gty":              "password-realm",
+			"azp":              req.ClientID,
+			"connection":       req.Realm,
+			"https://auth0.com/realm": req.Realm,
+		}, aud),
+	})
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	id, err := h.Keys.Mint(jwks.MintOpts{
+		Subject:  subject,
+		Audience: []string{req.ClientID},
+		TTL:      h.Keys.Cfg().IDTokenTTL,
+		Extra: map[string]any{
+			"email":          subject,
+			"email_verified": true,
+			"name":           subject,
+			"connection":     req.Realm,
+		},
+	})
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	render.JSON(w, r, tokenResponse{
+		AccessToken:  access,
+		IDToken:      id,
+		RefreshToken: uuid.NewString(),
+		TokenType:    "Bearer",
+		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
+		Scope:        req.Scope,
+	})
 }
 
 // parseTokenRequest accepts either application/json or
@@ -116,6 +172,7 @@ func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
 		Code:         r.PostForm.Get("code"),
 		RedirectURI:  r.PostForm.Get("redirect_uri"),
 		CodeVerifier: r.PostForm.Get("code_verifier"),
+		Realm:        r.PostForm.Get("realm"),
 	}, nil
 }
 

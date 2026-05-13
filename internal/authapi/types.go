@@ -14,6 +14,7 @@ type tokenRequest struct {
 	Code         string `json:"code" form:"code"`
 	RedirectURI  string `json:"redirect_uri" form:"redirect_uri"`
 	CodeVerifier string `json:"code_verifier" form:"code_verifier"`
+	Realm        string `json:"realm" form:"realm"`
 }
 
 // tokenResponse is the JSON body returned for a successful /oauth/token call.
