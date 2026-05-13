@@ -52,6 +52,9 @@ func New(d Deps) (http.Handler, error) {
 		MFA:         d.MFA,
 	})
 	mountJWKS(r, d.Keys)
+	if err := MountOpenAPI(r); err != nil {
+		return nil, fmt.Errorf("mount openapi: %w", err)
+	}
 
 	authapi.Mount(authapi.Deps{
 		Router:          r,
