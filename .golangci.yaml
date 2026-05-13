@@ -1,0 +1,63 @@
+version: "2"
+
+run:
+  allow-parallel-runners: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gocritic
+    - gocyclo
+    - godot
+    - gosec
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+    - whitespace
+  settings:
+    gocyclo:
+      min-complexity: 15
+    godot:
+      scope: all
+      capital: true
+      period: true
+    staticcheck:
+      checks:
+        - all
+  exclusions:
+    generated: lax
+    rules:
+      # No test-file-specific lints for gosec (test code may use http.Get,
+      # G404, etc. without ceremony).
+      - linters: [gosec]
+        path: (.+)_test.go
+      # Style nits we don't want to enforce on every exported identifier.
+      - path: (.+)\.go$
+        text: should have a package comment
+      - path: (.+)\.go$
+        text: unused-parameter
+      # godog scenario harness is test-adjacent code with broad surface.
+      - linters: [errcheck, gocyclo, gosec, godot]
+        path: features/scenario/(.+)\.go$
+      # tlscert/jwks deliberately do user-configurable file I/O on
+      # config-supplied paths. The whole point of the env vars is to
+      # let users point at their cert/key/cache — gosec's "potential file
+      # inclusion via variable" is the intended behaviour.
+      - linters: [gosec]
+        path: internal/(tlscert|jwks)/(.+)\.go$
+        text: (G304|G301|G306)
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/sergiught/auth0-mock
+  exclusions:
+    generated: lax

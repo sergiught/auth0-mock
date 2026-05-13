@@ -1,6 +1,11 @@
 BINARIES_DIR = $(CURDIR)/bin
 BINARY_NAME = auth0-mock
 
+# Tooling versions (pinned to commit SHAs for reproducibility).
+GOLANGCI_LINT_VERSION = v2.5.0
+GOLANGCI_LINT_SHA     = ff63786c30d6c2926f99d677ab2ecf089e9390ad
+AIR_REF               = latest
+
 .PHONY: build
 build:
 	@echo "==> Building $(BINARY_NAME) into $(BINARIES_DIR)"
@@ -14,21 +19,29 @@ test:
 test-features:
 	@go test -tags=features -count=1 ./cmd/api/...
 
+# ---- Tooling installs (idempotent; pinned where possible) ----
+
+$(BINARIES_DIR)/golangci-lint:
+	@echo "==> Installing golangci-lint $(GOLANGCI_LINT_VERSION) into $(BINARIES_DIR)"
+	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_SHA)
+
+$(BINARIES_DIR)/air:
+	@echo "==> Installing air into $(BINARIES_DIR)"
+	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@$(AIR_REF)
+
+# ---- Quality gates ----
+
 .PHONY: lint
-lint:
-	@go vet ./...
+lint: $(BINARIES_DIR)/golangci-lint
+	@echo "==> Running golangci-lint"
+	@$(BINARIES_DIR)/golangci-lint run -v --fix -c .golangci.yaml ./...
+
+# ---- Local dev loop ----
 
 .PHONY: dev-env
 dev-env:
 	@cp -n .env.example .env || true
 
-# Install air (live-reload) into ./bin if not already present.
-$(BINARIES_DIR)/air:
-	@echo "==> Installing air into $(BINARIES_DIR)"
-	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@latest
-
-# Native dev loop: rebuild + restart on every save under ./cmd or ./internal.
-# No docker, no bind-mounts — sub-second iteration.
 .PHONY: watch
 watch: dev-env $(BINARIES_DIR)/air
 	@$(BINARIES_DIR)/air
