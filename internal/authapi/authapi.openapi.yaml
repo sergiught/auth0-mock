@@ -13,8 +13,7 @@ paths:
       description: |
         Supports every grant type the mock implements: `client_credentials`,
         `password`, `refresh_token`, `authorization_code` (with optional PKCE),
-        `http://auth0.com/oauth/grant-type/password-realm`,
-        `http://auth0.com/oauth/grant-type/passwordless/otp`, and the MFA
+        `http://auth0.com/oauth/grant-type/password-realm`, and the MFA
         step-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`).
       requestBody:
         required: true
@@ -52,7 +51,7 @@ paths:
       tags: [auth-api]
       summary: Start the Authorization Code flow.
       parameters:
-        - { name: response_type,        in: query, required: true,  schema: { type: string, enum: [code] } }
+        - { name: response_type,        in: query, required: true,  schema: { type: string, enum: [code, token] } }
         - { name: client_id,            in: query, required: true,  schema: { type: string } }
         - { name: redirect_uri,         in: query, required: true,  schema: { type: string, format: uri } }
         - { name: scope,                in: query, required: false, schema: { type: string } }
@@ -63,6 +62,11 @@ paths:
       responses:
         "302":
           description: Redirect to `redirect_uri` with `code` and `state` query parameters.
+        "400":
+          description: Missing or invalid `redirect_uri`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /userinfo:
     get:
       tags: [auth-api]
@@ -78,6 +82,9 @@ paths:
                 type: object
         "401":
           description: Missing or invalid bearer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /.well-known/openid-configuration:
     get:
       tags: [auth-api]
@@ -99,8 +106,6 @@ paths:
       responses:
         "302":
           description: Redirect to `returnTo`.
-        "200":
-          description: Logout acknowledged.
   /oauth/revoke:
     post:
       tags: [auth-api]
@@ -138,7 +143,7 @@ paths:
                 username:   { type: string }
                 user_metadata: { type: object }
       responses:
-        "200":
+        "201":
           description: User created (mock returns a canned profile).
           content:
             application/json:
@@ -189,16 +194,16 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               type: object
-              required: [client_id, connection, otp]
+              required: [grant_type, client_id, username, otp]
               properties:
+                grant_type: { type: string, enum: ["http://auth0.com/oauth/grant-type/passwordless/otp"] }
                 client_id:  { type: string }
-                connection: { type: string, enum: [email, sms] }
+                username:   { type: string }
                 otp:        { type: string }
-                email:      { type: string, format: email }
-                phone_number: { type: string }
+                realm:      { type: string, enum: [email, sms] }
       responses:
         "200":
           description: Token issued.
@@ -232,6 +237,7 @@ components:
         otp:           { type: string }
         mfa_token:     { type: string }
         oob_code:      { type: string }
+        binding_code:  { type: string }
         recovery_code: { type: string }
     OAuthTokenResponse:
       type: object
