@@ -33,6 +33,16 @@ paths:
                     type: array
                     items:
                       type: object
+                      required: [method, path, status]
+                      properties:
+                        method:  { type: string, description: "HTTP verb of the matched operation." }
+                        path:    { type: string, description: "Path the match was registered against." }
+                        status:  { type: integer, description: "HTTP status the mock will return." }
+                        headers:
+                          type: object
+                          additionalProperties: { type: string }
+                        body:
+                          description: Programmed response body (any JSON-serialisable value).
   /admin0/claims:
     get:
       tags: [admin0]
