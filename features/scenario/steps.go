@@ -212,7 +212,7 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	sc.Step(`^the response Location header contains "([^"]+)"$`, func(needle string) error {
 		loc := c.LastResp.Header.Get("Location")
 		if !strings.Contains(loc, needle) {
-			return fmt.Errorf("Location %q does not contain %q", loc, needle)
+			return fmt.Errorf("location %q does not contain %q", loc, needle)
 		}
 		return nil
 	})
@@ -360,7 +360,7 @@ func codeFromLastLocation(c *Context) (string, error) {
 	}
 	code := u.Query().Get("code")
 	if code == "" {
-		return "", fmt.Errorf("Location %q has no code param", loc)
+		return "", fmt.Errorf("location %q has no code param", loc)
 	}
 	return code, nil
 }

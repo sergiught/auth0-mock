@@ -44,7 +44,7 @@ type Context struct {
 	Audience  string
 	Scope     string
 	Subject   string
-	Realm     string // empty for plain password grant
+	Realm     string // Empty for plain password grant.
 	expiresAt time.Time
 }
 

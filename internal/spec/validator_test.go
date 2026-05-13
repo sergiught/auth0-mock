@@ -110,5 +110,5 @@ func TestValidator_ValidateRegistration_RejectsUndeclaredStatus(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// silence unused-import linter for openapi3 in some Go versions
+// silence unused-import linter for openapi3 in some Go versions.
 var _ = openapi3.NewLoader

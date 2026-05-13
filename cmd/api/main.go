@@ -3,7 +3,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	stdLog "log"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -23,9 +25,20 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		stdLog.Printf("fatal: %v", err)
+		os.Exit(1)
+	}
+}
+
+// run wires every dependency, starts the listeners, and blocks until the
+// orchestrator returns. Returning an error here lets main() defer cleanups
+// before exiting non-zero — using log.Fatal / os.Exit directly would skip
+// any pending defers (signal.NotifyContext's stop, in particular).
+func run() error {
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
-		stdLog.Fatalf("config: %v", err)
+		return fmt.Errorf("config: %w", err)
 	}
 	log := logger.New(cfg.Environment)
 
@@ -36,12 +49,12 @@ func main() {
 		IDTokenTTL:     cfg.IDTokenTTL,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("jwks init")
+		return fmt.Errorf("jwks init: %w", err)
 	}
 
 	openapiSpec, err := spec.Load(api.ManagementOpenAPIJSON)
 	if err != nil {
-		log.Fatal().Err(err).Msg("openapi load")
+		return fmt.Errorf("openapi load: %w", err)
 	}
 	validator := spec.NewValidator(openapiSpec)
 
@@ -65,7 +78,7 @@ func main() {
 		SpecValidationStrict: cfg.SpecValidationStrict,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("router init")
+		return fmt.Errorf("router init: %w", err)
 	}
 
 	servers := []server.Server{}
@@ -81,7 +94,7 @@ func main() {
 			Hostnames: cfg.TLSHostnames,
 		})
 		if err != nil {
-			log.Fatal().Err(err).Msg("tls init")
+			return fmt.Errorf("tls init: %w", err)
 		}
 		servers = append(servers, server.NewHTTPS(cfg.HTTPSAddress, handler, tlsCfg, cfg.ReadHeaderTimeout))
 		log.Info().Str("addr", cfg.HTTPSAddress).Msg("https listener")
@@ -93,7 +106,8 @@ func main() {
 	defer stop()
 
 	if err := orc.Start(ctx); err != nil {
-		log.Fatal().Err(err).Msg("server failure")
+		return fmt.Errorf("server: %w", err)
 	}
 	log.Info().Msg("shutdown complete")
+	return nil
 }

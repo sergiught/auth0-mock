@@ -28,7 +28,7 @@ type passwordlessStartRequest struct {
 
 type passwordlessStartResponse struct {
 	ID         string `json:"_id"`
-	Connection string `json:"email,omitempty"` // Auth0's response uses key "email" for the connection name on email flows
+	Connection string `json:"email,omitempty"` // Auth0's response uses key "email" for the connection name on email flows.
 	Phone      string `json:"phone_number,omitempty"`
 }
 

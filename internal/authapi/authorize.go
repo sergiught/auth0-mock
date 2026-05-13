@@ -57,7 +57,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if challenge := q.Get("code_challenge"); challenge != "" {
 			method := pkce.Method(q.Get("code_challenge_method"))
 			if method == "" {
-				method = pkce.MethodPlain // RFC 7636 default when method omitted
+				method = pkce.MethodPlain // RFC 7636 default when method omitted.
 			}
 			h.PKCE.Put(issuedCode, pkce.Entry{
 				Challenge: challenge,

@@ -22,7 +22,7 @@ type MountOpts struct {
 	Store     *matches.Store
 	Keys      *jwks.KeySet
 	Log       zerolog.Logger
-	Strict    bool // SPEC_VALIDATION_STRICT
+	Strict    bool // SPEC_VALIDATION_STRICT.
 }
 
 // Mount walks the spec and registers three routes per operation: the original
@@ -30,7 +30,7 @@ type MountOpts struct {
 // (no bearer; spec-validates the registration body), and the /reset sibling
 // (no bearer; clears scope).
 //
-// chi resolves static paths before parameterised paths at the same level, so
+// Chi resolves static paths before parameterised paths at the same level, so
 // no static-before-wildcard sort is needed. Siblings (/match, /reset) are
 // skipped only when the path is already a real spec operation (not because
 // of router tree constraints).
@@ -43,7 +43,7 @@ func Mount(opts MountOpts) error {
 	bearerMW := bearer.Middleware(opts.Keys)
 
 	for op := range opts.Spec.Operations() {
-		base := op.Template // chi uses {id} natively, no translation needed
+		base := op.Template // Chi uses {id} natively, no translation needed.
 		matchPath := base + "/match"
 		resetPath := base + "/reset"
 

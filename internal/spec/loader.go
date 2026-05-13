@@ -12,7 +12,7 @@ import (
 // Spec wraps an openapi3.T plus a router for request matching.
 type Spec struct {
 	Doc      *openapi3.T
-	BasePath string // e.g. "/api/v2" (derived from servers[0].url path component)
+	BasePath string // E.g. "/api/v2" (derived from servers[0].url path component).
 }
 
 // Load parses the given OpenAPI 3.1 JSON document.
@@ -39,7 +39,7 @@ func Load(jsonDoc []byte) (*Spec, error) {
 // Auth0's spec sets servers[0].url like "https://{tenantDomain}/api/v2".
 // We only need the suffix after the host: "/api/v2".
 func deriveBasePath(doc *openapi3.T) string {
-	if doc.Servers == nil || len(doc.Servers) == 0 {
+	if len(doc.Servers) == 0 {
 		return ""
 	}
 	url := doc.Servers[0].URL

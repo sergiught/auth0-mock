@@ -64,7 +64,7 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 		return fmt.Errorf("status %d not declared for operation %s", status, op.Op.OperationID)
 	}
 	// Status with no content is fine only if body is empty.
-	if resp.Value.Content == nil || len(resp.Value.Content) == 0 {
+	if len(resp.Value.Content) == 0 {
 		if len(bytes.TrimSpace(body)) == 0 {
 			return nil
 		}

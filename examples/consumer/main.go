@@ -46,7 +46,7 @@ func mintToken(base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out struct {
 		AccessToken string `json:"access_token"`
 	}
@@ -88,7 +88,7 @@ func registerAndCall(base, tok string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		buf, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("expected 200, got %d: %s", resp.StatusCode, string(buf))

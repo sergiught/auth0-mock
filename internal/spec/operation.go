@@ -9,8 +9,8 @@ import (
 
 // Operation is one (method, path, openapi3.Operation) triple from the spec.
 type Operation struct {
-	Method   string // upper-case HTTP verb, e.g. "GET"
-	Template string // full path including BasePath, e.g. "/api/v2/users/{id}"
+	Method   string // Upper-case HTTP verb, e.g. "GET".
+	Template string // Full path including BasePath, e.g. "/api/v2/users/{id}".
 	Op       *openapi3.Operation
 }
 

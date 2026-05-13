@@ -31,7 +31,7 @@ func TestPasswordless_StartEmail_200(t *testing.T) {
 func TestPasswordless_VerifyAfterStart_MintsToken(t *testing.T) {
 	r, _ := newAuthRouter(t)
 
-	// Start
+	// Start.
 	startBody := `{"client_id":"abc","connection":"email","email":"alice@example.com","send":"code"}`
 	startReq := httptest.NewRequest("POST", "/passwordless/start", strings.NewReader(startBody))
 	startReq.Header.Set("Content-Type", "application/json")

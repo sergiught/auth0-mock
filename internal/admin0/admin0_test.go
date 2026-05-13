@@ -53,13 +53,13 @@ func TestMFARequired_PutGet(t *testing.T) {
 	d := newDeps()
 	r := newRouter(d)
 
-	// PUT true
+	// PUT true.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/mfa-required", strings.NewReader(`{"required":true}`)))
 	require.Equal(t, 204, w.Code)
 	assert.True(t, d.MFA.IsRequired())
 
-	// GET
+	// GET.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/mfa-required", nil))
 	require.Equal(t, 200, w.Code)
@@ -67,7 +67,7 @@ func TestMFARequired_PutGet(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.True(t, body["required"])
 
-	// PUT false
+	// PUT false.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/mfa-required", strings.NewReader(`{"required":false}`)))
 	require.Equal(t, 204, w.Code)
@@ -94,13 +94,13 @@ func TestClaims_PutGetDelete(t *testing.T) {
 	d := newDeps()
 	r := newRouter(d)
 
-	// PUT
+	// PUT.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims", strings.NewReader(`{"role":"admin","org_id":"o1"}`)))
 	require.Equal(t, 204, w.Code)
 	assert.Equal(t, "admin", d.Claims.Get()["role"])
 
-	// GET
+	// GET.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/claims", nil))
 	require.Equal(t, 200, w.Code)
@@ -109,7 +109,7 @@ func TestClaims_PutGetDelete(t *testing.T) {
 	assert.Equal(t, "admin", got["role"])
 	assert.Equal(t, "o1", got["org_id"])
 
-	// DELETE
+	// DELETE.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("DELETE", "/admin0/claims", nil))
 	require.Equal(t, 204, w.Code)
@@ -129,13 +129,13 @@ func TestPermissions_PutGetDeletePerAudience(t *testing.T) {
 	d := newDeps()
 	r := newRouter(d)
 
-	// PUT myapi
+	// PUT myapi.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/permissions/myapi", strings.NewReader(`["read:users","write:users"]`)))
 	require.Equal(t, 204, w.Code)
 	assert.ElementsMatch(t, []string{"read:users", "write:users"}, d.Permissions.Get("myapi"))
 
-	// GET single audience
+	// GET single audience.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/permissions/myapi", nil))
 	require.Equal(t, 200, w.Code)
@@ -143,7 +143,7 @@ func TestPermissions_PutGetDeletePerAudience(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &perms))
 	assert.ElementsMatch(t, []string{"read:users", "write:users"}, perms)
 
-	// GET unregistered audience → empty array
+	// GET unregistered audience → empty array.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/permissions/other", nil))
 	require.Equal(t, 200, w.Code)
@@ -151,7 +151,7 @@ func TestPermissions_PutGetDeletePerAudience(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &none))
 	assert.Empty(t, none)
 
-	// DELETE single
+	// DELETE single.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("DELETE", "/admin0/permissions/myapi", nil))
 	require.Equal(t, 204, w.Code)

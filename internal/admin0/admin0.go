@@ -38,7 +38,7 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodGet, "/admin0/permissions", &GetAllPermissionsHandler{Store: d.Permissions})
 	r.Method(http.MethodDelete, "/admin0/permissions", &DeleteAllPermissionsHandler{Store: d.Permissions})
 	// Audiences are often URLs (e.g. "https://api.example.com/") that contain
-	// slashes. chi's single-segment "{audience}" param won't match those, so
+	// slashes. Chi's single-segment "{audience}" param won't match those, so
 	// we use a catch-all wildcard.
 	r.Method(http.MethodGet, "/admin0/permissions/*", &GetPermissionsHandler{Store: d.Permissions})
 	r.Method(http.MethodPut, "/admin0/permissions/*", &PutPermissionsHandler{Store: d.Permissions})
@@ -70,7 +70,7 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- mfa ------------------------------------------------------------------
+// --- mfa ------------------------------------------------------------------.
 
 type mfaRequiredBody struct {
 	Required bool `json:"required"`
@@ -101,7 +101,7 @@ func (h *PutMFARequiredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- matches ---------------------------------------------------------------
+// --- matches ---------------------------------------------------------------.
 
 type listMatchesResponse struct {
 	Matches []matches.Match `json:"matches"`
@@ -116,7 +116,7 @@ func (h *ListMatchesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, listMatchesResponse{Matches: h.Store.List()})
 }
 
-// --- claims ----------------------------------------------------------------
+// --- claims ----------------------------------------------------------------.
 
 // GetClaimsHandler returns the per-process custom-claim map.
 type GetClaimsHandler struct {
@@ -153,7 +153,7 @@ func (h *DeleteClaimsHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- permissions -----------------------------------------------------------
+// --- permissions -----------------------------------------------------------.
 
 // GetAllPermissionsHandler returns the full per-audience permission map.
 type GetAllPermissionsHandler struct {

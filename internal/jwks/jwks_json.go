@@ -22,9 +22,17 @@ type jwks struct {
 // JWKSJSON returns the JWKS document for /.well-known/jwks.json.
 func (k *KeySet) JWKSJSON() []byte {
 	pub := k.PublicKey()
+	// RSA public exponents are tiny positive ints (typically 65537) — Go's
+	// crypto/rsa generates only odd primes with E in {3, 17, 65537}, so the
+	// int → uint32 conversion is always safe; the explicit clamp is
+	// defence-in-depth.
+	e := pub.E
+	if e < 0 || e > 0xFFFFFFFF {
+		e = 65537
+	}
 	eBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(eBytes, uint32(pub.E))
-	// trim leading zero bytes
+	binary.BigEndian.PutUint32(eBytes, uint32(e)) //nolint:gosec // bounded above.
+	// Trim leading zero bytes.
 	for len(eBytes) > 1 && eBytes[0] == 0 {
 		eBytes = eBytes[1:]
 	}

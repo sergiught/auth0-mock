@@ -16,9 +16,9 @@ import (
 
 // Config controls KeySet construction.
 type Config struct {
-	Issuer         string        // iss claim and OIDC discovery base
-	KeyFile        string        // optional: PEM-encoded RSA private key
-	AccessTokenTTL time.Duration // default ttl for mint
+	Issuer         string        // The iss claim and OIDC discovery base.
+	KeyFile        string        // Optional: PEM-encoded RSA private key.
+	AccessTokenTTL time.Duration // Default TTL for mint.
 	IDTokenTTL     time.Duration
 }
 
@@ -89,6 +89,6 @@ func loadOrGenerate(path string) (*rsa.PrivateKey, error) {
 
 // keyIDFromKey produces a stable kid by hashing the public modulus.
 func keyIDFromKey(priv *rsa.PrivateKey) string {
-	sum := sha256.Sum256(priv.PublicKey.N.Bytes())
+	sum := sha256.Sum256(priv.N.Bytes())
 	return base64.RawURLEncoding.EncodeToString(sum[:8])
 }

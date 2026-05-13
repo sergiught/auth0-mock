@@ -62,7 +62,7 @@ func TestStore_OverwriteSameKey(t *testing.T) {
 func TestStore_ConcurrentAccess(t *testing.T) {
 	s := NewStore()
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -91,7 +91,7 @@ func TestStore_ResetEndpoint_Exact(t *testing.T) {
 	s.ResetEndpoint("GET", "/api/v2/users/123", KindExact)
 
 	assert.Nil(t, s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}-other-template"))
-	// template still serves any concrete id
+	// Template still serves any concrete id.
 	assert.NotNil(t, s.Find("GET", "/api/v2/users/999", "/api/v2/users/{id}"))
 }
 
@@ -102,9 +102,9 @@ func TestStore_ResetEndpoint_Template(t *testing.T) {
 
 	s.ResetEndpoint("GET", "/api/v2/users/{id}", KindTemplate)
 
-	// concrete remains
+	// Concrete remains.
 	assert.NotNil(t, s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}"))
-	// template gone
+	// Template gone.
 	assert.Nil(t, s.Find("GET", "/api/v2/users/999", "/api/v2/users/{id}"))
 }
 

@@ -37,10 +37,9 @@ type Context struct {
 	t          *testing.T
 	BaseURL    string
 	BearerTok  string
-	MFAToken   string // captured from a 403 mfa_required response
+	MFAToken   string // captured from a 403 mfa_required response.
 	LastResp   *http.Response
 	LastBody   []byte
-	client     *http.Client
 	cancelBoot context.CancelFunc
 }
 

@@ -30,10 +30,10 @@ import (
 
 // Config selects how the TLS config is built.
 type Config struct {
-	CertFile  string // if set together with KeyFile → load from disk
+	CertFile  string // If set together with KeyFile → load from disk.
 	KeyFile   string
-	CacheDir  string   // if set, persist the auto-generated cert here and reuse on restart
-	Hostnames []string // SANs for the auto-generated cert
+	CacheDir  string   // If set, persist the auto-generated cert here and reuse on restart.
+	Hostnames []string // SANs for the auto-generated cert.
 }
 
 // Load returns a *tls.Config ready for an http.Server.

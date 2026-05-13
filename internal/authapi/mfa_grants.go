@@ -36,7 +36,7 @@ func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "missing oob_code")
 		return
 	}
-	// binding_code is required when the user is asked to type a number they
+	// Binding_code is required when the user is asked to type a number they
 	// see on a second device (e.g. SMS code, push-with-numbers).
 	if req.BindingCode != mfa.AcceptedBindingCode {
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong binding code")

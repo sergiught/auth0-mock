@@ -2,6 +2,7 @@ package jwks
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,7 +14,7 @@ type MintOpts struct {
 	Audience []string
 	Scope    string
 	TTL      time.Duration
-	Extra    map[string]any // additional claims (e.g. gty, azp, name)
+	Extra    map[string]any // Additional claims (e.g. gty, azp, name).
 }
 
 // Mint issues a signed RS256 JWT.
@@ -29,9 +30,7 @@ func (k *KeySet) Mint(opts MintOpts) (string, error) {
 	if opts.Scope != "" {
 		claims["scope"] = opts.Scope
 	}
-	for kk, vv := range opts.Extra {
-		claims[kk] = vv
-	}
+	maps.Copy(claims, opts.Extra)
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = k.keyID
 	signed, err := tok.SignedString(k.priv)
