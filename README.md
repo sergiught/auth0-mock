@@ -21,8 +21,6 @@ A self-contained Go service that **looks and behaves like Auth0** to a calling c
 - 🛠 **Shapes runtime state via HTTP** — custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
-It's what we wish [`primait/localauth0`](https://github.com/primait/localauth0) had been when we needed to test code that hit Auth0's `/api/v2/*` Management API surface.
-
 ## 🎯 Who is this for?
 
 Anyone whose service talks to Auth0 in tests or local dev:
@@ -33,7 +31,7 @@ Anyone whose service talks to Auth0 in tests or local dev:
 - **Resilience tests** for code paths that hit `/api/v2/users`, `/api/v2/clients`, `/api/v2/roles`, etc.
 - **Service-to-service** flows using `client_credentials`, with realistic scopes and `permissions` claim shapes.
 
-It's NOT for: production traffic, replacing your IdP, or anything that needs a real RBAC engine. Use [Keycloak](https://www.keycloak.org/) or actual Auth0 for those.
+It's NOT for: production traffic, replacing your IdP, or anything that needs a real RBAC engine.
 
 ## 🚀 Quick start
 

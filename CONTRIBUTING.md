@@ -163,7 +163,7 @@ If your work surfaces a recipe other users will want (e.g. "how do I test refres
 
 Some asks are out of scope:
 
-- **Stateful Mgmt API CRUD** — auth0-mock is a stub registrar, not a state machine. Tests register the response they want; the mock doesn't track "the user with id X was created and now exists". If you need a stateful mock, [Keycloak](https://www.keycloak.org/) exists.
+- **Stateful Mgmt API CRUD** — auth0-mock is a stub registrar, not a state machine. Tests register the response they want; the mock doesn't track "the user with id X was created and now exists". If you need stateful behaviour, layer it in your test fixtures.
 - **Production-grade OIDC certification** — we're a mock. Spec compliance is best-effort; we deliberately skip things like full client-secret-jwt validation, full PKCE plain-method rejection toggles, etc.
 - **Other IdPs** (Okta, Cognito, etc.) — the project is Auth0-shaped end-to-end. A separate project is the right answer.
 - **Persistence to disk for registered stubs** — explicit non-goal. Each restart is a clean slate; that's a feature.
