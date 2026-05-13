@@ -41,12 +41,22 @@ It's NOT for: production traffic, replacing your IdP, or anything that needs a r
 make build && ./bin/auth0-mock
 ```
 
-### Docker (development)
+### Live-reload dev loop (`air`)
+
+Sub-second rebuild on every save under `cmd/` or `internal/` — no docker, no bind-mounts, no flakiness:
+
+```bash
+make watch     # installs air into ./bin on first run
+```
+
+### Docker
 
 ```bash
 docker compose up -d --build
 docker compose logs -f auth0-mock
 ```
+
+`docker compose` runs the same production-grade image used for releases. After source changes, restart with `--build`.
 
 ### Smoke test
 

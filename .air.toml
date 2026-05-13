@@ -1,0 +1,41 @@
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  entrypoint = "tmp/auth0-mock"
+  cmd = "go build -o ./tmp/auth0-mock ./cmd/api"
+  delay = 200
+  exclude_dir = [
+    "tmp",
+    "bin",
+    "dist",
+    "vendor",
+    "features",
+    "examples",
+    "docs",
+    ".claude",
+    ".git",
+  ]
+  exclude_regex = ["_test\\.go$"]
+  exclude_unchanged = true
+  follow_symlink = false
+  include_dir = []
+  include_ext = ["go"]
+  kill_delay = "5s"
+  log = "build-errors.log"
+  send_interrupt = true
+  stop_on_error = true
+
+[color]
+  app     = "magenta"
+  build   = "yellow"
+  main    = "blue"
+  runner  = "green"
+  watcher = "cyan"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

@@ -24,6 +24,11 @@ All notable changes to this project will be documented here. Format follows [Kee
 - Bumped Go directive to 1.26.
 - Consolidated to a **single root-level `Dockerfile`** (was: separate `infrastructure/dockerfiles/{development,production}/Dockerfile`). Same production-grade image is used for local `docker compose up` and Docker Hub publishing. `docker-compose.yaml` no longer mounts source — code changes require a `docker compose up --build`. Image now uses `tini` as PID 1 for clean SIGTERM, runs as `nobody`, and exposes a built-in healthcheck via `/healthz`.
 
+### Dev experience
+
+- **`make watch`** — sub-second hot-reload via [`air`](https://github.com/air-verse/air). Installs air into `./bin` on first run; watches `cmd/`, `internal/`, `api/`; rebuilds + restarts the binary on every save. `.air.toml` lives at the repo root. Native filesystem events, no docker, no bind-mount.
+- **`make test-features`** — run the godog acceptance suite (was: `go test -tags=features -count=1 ./cmd/api/...`).
+
 ## Earlier work (pre-release, unversioned)
 
 Foundations landed in a series of milestones before the first tagged release:

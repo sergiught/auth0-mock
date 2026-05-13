@@ -47,6 +47,8 @@ make build                   # builds ./bin/auth0-mock
 ./bin/auth0-mock             # runs on :8080 + :8443
 ```
 
+Day-to-day iteration uses **`make watch`** — it installs [`air`](https://github.com/air-verse/air) into `./bin` on first run, then watches `cmd/` + `internal/` + `api/` and rebuilds + restarts the binary on every save. Sub-second loop; no docker.
+
 The Auth0 OpenAPI spec is already embedded at `api/auth0-management-api.openapi.json` — nothing to download.
 
 ## 🧪 Testing

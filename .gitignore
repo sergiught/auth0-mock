@@ -34,6 +34,10 @@ go.work
 # Coverage
 coverage.out
 
+# air (live-reload) scratch
+/tmp/
+build-errors.log
+
 # Local-only Claude Code permission allowlist (workstation-specific).
 .claude/
 
