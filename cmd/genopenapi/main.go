@@ -91,7 +91,7 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 			return nil, fmt.Errorf("load fragment %d: %w", i, err)
 		}
 		if err := mergeFragment(base, frag); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("fragment %d: %w", i, err)
 		}
 	}
 
@@ -160,12 +160,23 @@ func mergeFragment(base, frag *openapi3.T) error {
 	return nil
 }
 
+// securitySchemesEqual reports whether two security-scheme references describe
+// the same authentication shape. We compare the load-bearing fields directly
+// (case-insensitively, because `bearerFormat` is "jwt" in the upstream Mgmt
+// API spec but "JWT" in the authapi fragment) rather than round-tripping
+// through JSON — the latter is sensitive to map ordering and would treat
+// trivial description edits as conflicts.
 func securitySchemesEqual(a, b *openapi3.SecuritySchemeRef) bool {
-	ja, _ := json.Marshal(a)
-	jb, _ := json.Marshal(b)
-	// Normalise to lower-case before comparing so that bearerFormat "JWT" and
-	// "jwt" are treated as the same definition.
-	return strings.EqualFold(string(ja), string(jb))
+	if a == nil || b == nil {
+		return a == b
+	}
+	av, bv := a.Value, b.Value
+	if av == nil || bv == nil {
+		return av == bv
+	}
+	return strings.EqualFold(av.Type, bv.Type) &&
+		strings.EqualFold(av.Scheme, bv.Scheme) &&
+		strings.EqualFold(av.BearerFormat, bv.BearerFormat)
 }
 
 // basePath extracts the path component of a server URL, e.g.
