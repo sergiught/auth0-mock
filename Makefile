@@ -6,6 +6,7 @@ GOLANGCI_LINT_VERSION = v2.5.0
 GOLANGCI_LINT_SHA     = ff63786c30d6c2926f99d677ab2ecf089e9390ad
 COMMITLINT_VERSION    = v0.10.1
 COMMITLINT_SHA        = e9a606ce7074ac884ea091765be1651be18356d4
+GOVULNCHECK_REF       = latest
 AIR_REF               = latest
 
 .PHONY: build
@@ -31,6 +32,10 @@ $(BINARIES_DIR)/commitlint:
 	@echo "==> Installing commitlint $(COMMITLINT_VERSION) into $(BINARIES_DIR)"
 	@GOBIN=$(BINARIES_DIR) go install github.com/conventionalcommit/commitlint@$(COMMITLINT_SHA)
 
+$(BINARIES_DIR)/govulncheck:
+	@echo "==> Installing govulncheck@$(GOVULNCHECK_REF) into $(BINARIES_DIR)"
+	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_REF)
+
 $(BINARIES_DIR)/air:
 	@echo "==> Installing air into $(BINARIES_DIR)"
 	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@$(AIR_REF)
@@ -45,6 +50,11 @@ lint: $(BINARIES_DIR)/golangci-lint
 .PHONY: lint-commits
 lint-commits: $(BINARIES_DIR)/commitlint
 	@$(BINARIES_DIR)/commitlint lint
+
+.PHONY: vuln
+vuln: $(BINARIES_DIR)/govulncheck
+	@echo "==> Scanning module graph for known Go vulnerabilities"
+	@$(BINARIES_DIR)/govulncheck ./...
 
 # ---- Local dev loop ----
 
