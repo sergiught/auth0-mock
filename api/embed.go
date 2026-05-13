@@ -1,6 +1,6 @@
 // Package api embeds the OpenAPI assets the auth0-mock binary needs:
-// the upstream Auth0 Management API spec (input to the bundler), the
-// mock-control shared schemas, and the generated merged spec.
+// the upstream Auth0 Management API spec (input to the bundler) and the
+// mock-control shared schemas for /match and /reset bodies.
 package api
 
 import _ "embed"

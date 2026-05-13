@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -16,7 +17,9 @@ func TestMockControlOpenAPIYAMLParses(t *testing.T) {
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(MockControlOpenAPIYAML)
 	require.NoError(t, err)
+	require.NoError(t, doc.Validate(context.Background()))
 	require.NotNil(t, doc.Components)
 	require.Contains(t, doc.Components.Schemas, "MatchRegistration")
 	require.Contains(t, doc.Components.Schemas, "MatchRegistrationResponse")
+	require.Contains(t, doc.Components.Schemas, "ResetResponse")
 }
