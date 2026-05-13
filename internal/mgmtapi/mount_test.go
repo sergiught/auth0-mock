@@ -1,8 +1,10 @@
 package mgmtapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,4 +64,42 @@ func TestMount_RegistersOriginalAndSiblingRoutes(t *testing.T) {
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/reset", nil))
 	assert.NotEqual(t, http.StatusNotFound, w.Code, "reset route should be registered")
+}
+
+func mintBearer(t *testing.T, ks *jwks.KeySet) string {
+	t.Helper()
+	tok, err := ks.Mint(jwks.MintOpts{Subject: "test", Audience: []string{"a"}, TTL: time.Hour})
+	require.NoError(t, err)
+	return tok
+}
+
+func TestGeneric_NoMatch_404(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	req := httptest.NewRequest("GET", "/api/v2/widgets/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+mintBearer(t, ks))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 404, w.Code)
+	assert.True(t, strings.Contains(w.Body.String(), `"statusCode":404`))
+}
+
+func TestGeneric_ExactMatchWins(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/{id}", Kind: matches.KindTemplate, Status: 200, Body: json.RawMessage(`{"id":"any"}`)})
+	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/abc", Kind: matches.KindExact, Status: 200, Body: json.RawMessage(`{"id":"abc"}`)})
+
+	req := httptest.NewRequest("GET", "/api/v2/widgets/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+mintBearer(t, ks))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.JSONEq(t, `{"id":"abc"}`, w.Body.String())
 }
