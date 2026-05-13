@@ -44,3 +44,71 @@ paths:
 	assert.Contains(t, err.Error(), "conflict")
 	assert.Contains(t, err.Error(), "/oauth/token")
 }
+
+func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
+	doc, err := bundle("http://localhost:8080")
+	require.NoError(t, err)
+
+	// Spot-check: a known Mgmt API path has both siblings.
+	basePath := "/api/v2/users/{id}"
+	require.NotNil(t, doc.Paths.Value(basePath),
+		"sanity: base path missing — the upstream spec changed?")
+	for _, suffix := range []string{"/match", "/reset"} {
+		item := doc.Paths.Value(basePath + suffix)
+		require.NotNilf(t, item, "missing sibling %s%s", basePath, suffix)
+		op := item.GetOperation("POST")
+		require.NotNilf(t, op, "missing POST sibling at %s%s", basePath, suffix)
+		assert.Contains(t, op.Tags, "mock-control")
+	}
+
+	// Sweep: every Mgmt API operation must have a POST /match sibling and a
+	// POST /reset sibling unless a real operation already occupies that slot.
+	// Snapshot first because we'll be reading paths the synthesiser added.
+	mgmtPaths := []string{}
+	for p := range doc.Paths.Map() {
+		if len(p) >= len("/api/v2/") && p[:len("/api/v2/")] == "/api/v2/" {
+			mgmtPaths = append(mgmtPaths, p)
+		}
+	}
+	for _, p := range mgmtPaths {
+		// Skip paths that are themselves /match or /reset.
+		if endsWithAny(p, "/match", "/reset") {
+			continue
+		}
+		for _, suffix := range []string{"/match", "/reset"} {
+			sib := doc.Paths.Value(p + suffix)
+			require.NotNilf(t, sib, "missing sibling %s%s", p, suffix)
+		}
+	}
+}
+
+func endsWithAny(s string, suffixes ...string) bool {
+	for _, suf := range suffixes {
+		if len(s) >= len(suf) && s[len(s)-len(suf):] == suf {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBundleSkipsSiblingsThatCollideWithRealOps(t *testing.T) {
+	doc, err := bundle("http://localhost:8080")
+	require.NoError(t, err)
+
+	// The Auth0 spec has PATCH /branding/phone/templates/{id}/reset as a real
+	// endpoint. The synthesiser must not add a mock-control POST on top of it.
+	colliding := "/api/v2/branding/phone/templates/{id}/reset"
+	item := doc.Paths.Value(colliding)
+	require.NotNil(t, item)
+
+	// The real PATCH must not be tagged mock-control.
+	patchOp := item.GetOperation("PATCH")
+	require.NotNil(t, patchOp, "expected real PATCH op to survive")
+	assert.NotContains(t, patchOp.Tags, "mock-control",
+		"real spec op was clobbered by synthesised /reset sibling")
+
+	// No synthetic POST must have been inserted on top of the real path item.
+	postOp := item.GetOperation("POST")
+	assert.Nil(t, postOp,
+		"synthesiser must not inject a POST at a path that already exists in the real spec")
+}

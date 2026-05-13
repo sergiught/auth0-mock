@@ -95,6 +95,10 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 		}
 	}
 
+	if err := synthesiseMockControlSiblings(base); err != nil {
+		return nil, err
+	}
+
 	// Servers rewrite (kept here so bundle() returns a fully-formed doc).
 	base.Servers = openapi3.Servers{{
 		URL:         server,
@@ -194,3 +198,104 @@ func basePath(url string) string {
 	}
 	return url
 }
+
+// synthesiseMockControlSiblings adds POST {path}/match and POST {path}/reset
+// for every Management API path in base.Paths, skipping siblings whose
+// path+method would collide with a real operation already in the spec.
+func synthesiseMockControlSiblings(base *openapi3.T) error {
+	if base.Paths == nil {
+		return nil
+	}
+	// Snapshot the existing paths (we mutate base.Paths as we go).
+	existing := map[string]*openapi3.PathItem{}
+	for p, item := range base.Paths.Map() {
+		existing[p] = item
+	}
+	for path, item := range existing {
+		if !isManagementOp(path) {
+			continue
+		}
+		for _, suffix := range []string{"/match", "/reset"} {
+			siblingPath := path + suffix
+			if base.Paths.Value(siblingPath) != nil {
+				// Real spec operation already lives here (e.g.
+				// /branding/phone/templates/{id}/reset) — leave it alone.
+				continue
+			}
+			sibling := &openapi3.PathItem{}
+			sibling.SetOperation("POST", mockControlOperation(suffix, item))
+			base.Paths.Set(siblingPath, sibling)
+		}
+	}
+	return nil
+}
+
+// isManagementOp reports whether path looks like a Mgmt API path (lives under
+// the spec's BasePath). Fragments add paths like /healthz or /admin0/reset
+// which must not get synthetic siblings.
+func isManagementOp(path string) bool {
+	const basePrefix = "/api/v2/"
+	return len(path) >= len(basePrefix) && path[:len(basePrefix)] == basePrefix
+}
+
+// mockControlOperation builds the synthesised OpenAPI operation for /match or
+// /reset siblings. Bodies reference the shared schemas in MockControlOpenAPIYAML.
+func mockControlOperation(suffix string, parent *openapi3.PathItem) *openapi3.Operation {
+	op := &openapi3.Operation{
+		Tags:        []string{"mock-control"},
+		Summary:     summaryFor(suffix, parent),
+		Description: descriptionFor(suffix),
+		Responses:   openapi3.NewResponses(),
+	}
+	switch suffix {
+	case "/match":
+		op.RequestBody = &openapi3.RequestBodyRef{
+			Value: &openapi3.RequestBody{
+				Required: true,
+				Content: openapi3.NewContentWithJSONSchemaRef(&openapi3.SchemaRef{
+					Ref: "#/components/schemas/MatchRegistration",
+				}),
+			},
+		}
+		op.Responses.Set("204", &openapi3.ResponseRef{
+			Value: &openapi3.Response{
+				Description: ptr("Registration stored. Subsequent matching requests will receive the programmed response."),
+			},
+		})
+	case "/reset":
+		op.Responses.Set("204", &openapi3.ResponseRef{
+			Value: &openapi3.Response{
+				Description: ptr("Programmed responses cleared for the paired operation."),
+			},
+		})
+	}
+	op.Responses.Set("400", &openapi3.ResponseRef{
+		Value: &openapi3.Response{
+			Description: ptr("Body could not be parsed or violated the response schema for the paired operation."),
+		},
+	})
+	return op
+}
+
+func summaryFor(suffix string, parent *openapi3.PathItem) string {
+	switch suffix {
+	case "/match":
+		return "Programme the next canned response for the paired operation."
+	case "/reset":
+		return "Clear programmed responses for the paired operation."
+	}
+	_ = parent
+	return ""
+}
+
+func descriptionFor(suffix string) string {
+	switch suffix {
+	case "/match":
+		return "Send a `MatchRegistration` body. The mock validates `body` against the paired operation's response schema for the given `status` before storing."
+	case "/reset":
+		return "No request body. Clears any registered match for the paired operation."
+	}
+	return ""
+}
+
+func ptr[T any](v T) *T { return &v }
