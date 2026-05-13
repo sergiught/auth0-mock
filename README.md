@@ -80,6 +80,41 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 
 That's it. No SDK changes, no monkey-patching, your code calls auth0-mock the same way it calls Auth0.
 
+## Calling the API from Postman or Insomnia
+
+The mock ships a merged OpenAPI 3.1 document that covers every HTTP surface
+it exposes:
+
+- The Auth0 **Authentication API** (`/oauth/token`, `/authorize`,
+  `/userinfo`, `/v2/logout`, `/dbconnections/*`, `/passwordless/*`).
+- The Auth0 **Management API** (everything under `/api/v2`), plus a
+  `POST {path}/match` and `POST {path}/reset` sibling for every operation so
+  you can programme canned responses from the same collection.
+- The **admin0** control plane (`/admin0/*`).
+- The **service** endpoints (`/healthz`, `/.well-known/jwks.json`,
+  `/openapi.json`, `/openapi.yaml`).
+
+### Importing
+
+- **From the repo:** import `api/auth0-mock.openapi.json` directly.
+- **From a running instance:** point your client at
+  `http://localhost:8080/openapi.json` (or `/openapi.yaml`).
+
+Both Postman and Insomnia will create a folder per tag (`auth-api`,
+`admin0`, `service`, `mock-control`, plus the Mgmt API's existing tags) and
+fill in request bodies from the schemas.
+
+### Regenerating the spec
+
+The merged JSON is committed and checked for drift in CI. Re-run
+`make openapi` after editing any of:
+
+- `api/mock-control.openapi.yaml`
+- `internal/authapi/authapi.openapi.yaml`
+- `internal/admin0/admin0.openapi.yaml`
+- `internal/router/service.openapi.yaml`
+- `api/auth0-management-api.openapi.json`
+
 ## 📋 What's mocked
 
 ### 🎫 Authentication API (hand-coded, fully functional)
