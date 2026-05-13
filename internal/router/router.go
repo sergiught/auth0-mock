@@ -36,6 +36,7 @@ func New(d Deps) (http.Handler, error) {
 	r.Use(middleware.Recovery(d.Log))
 	r.Use(middleware.Logging(d.Log))
 
+	mountHealthz(r)
 	admin0.Mount(r, d.Store)
 	mountJWKS(r, d.Keys)
 
@@ -61,5 +62,14 @@ func mountJWKS(r chi.Router, keys *jwks.KeySet) {
 	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(keys.JWKSJSON())
+	})
+}
+
+// mountHealthz exposes a Kubernetes-style liveness probe. Cheap, no auth, no
+// dependencies — returns 200 if the process is up at all.
+func mountHealthz(r chi.Router) {
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 }
