@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -21,6 +22,6 @@ func main() {
 	}
 }
 
-func run(_ /* out */, _ /* server */ string) error {
-	return fmt.Errorf("not implemented")
+func run(out, server string) error {
+	return errors.New("not implemented")
 }
