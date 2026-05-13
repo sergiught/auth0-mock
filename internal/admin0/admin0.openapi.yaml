@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: auth0-mock admin0 control plane
+  version: 1.0.0
+tags:
+  - name: admin0
+    description: |
+      Mock control plane. Endpoints under `/admin0/*` manipulate in-memory
+      state (claims, permissions, MFA flags, registered matches) so tests can
+      set up scenarios without going through bearer-protected Mgmt API routes.
+      None of these require authentication.
+paths:
+  /admin0/reset:
+    post:
+      tags: [admin0]
+      summary: Wipe every store admin0 governs (matches, claims, permissions, mfa-required).
+      responses:
+        "204": { description: Reset complete. }
+  /admin0/matches:
+    get:
+      tags: [admin0]
+      summary: List every registered `/match` entry across the Mgmt API surface.
+      responses:
+        "200":
+          description: Match entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [matches]
+                properties:
+                  matches:
+                    type: array
+                    items:
+                      type: object
+  /admin0/claims:
+    get:
+      tags: [admin0]
+      summary: Read the global custom claim overlay applied to minted tokens.
+      responses:
+        "200":
+          description: Current claims map.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    put:
+      tags: [admin0]
+      summary: Replace the global custom claim overlay.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204": { description: Claims updated. }
+    delete:
+      tags: [admin0]
+      summary: Clear the global custom claim overlay.
+      responses:
+        "204": { description: Claims cleared. }
+  /admin0/permissions:
+    get:
+      tags: [admin0]
+      summary: List every audience that has a permissions overlay configured.
+      responses:
+        "200":
+          description: Map of audience to permission list.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items: { type: string }
+    delete:
+      tags: [admin0]
+      summary: Clear every per-audience permissions overlay.
+      responses:
+        "204": { description: All overlays cleared. }
+  /admin0/permissions/{audience}:
+    parameters:
+      - name: audience
+        in: path
+        required: true
+        description: |
+          API identifier — may include `/` characters. Chi mounts the
+          underlying handler with a `*` wildcard so the slashes round-trip; the
+          OpenAPI path uses the canonical `{audience}` form for tools that
+          can't represent wildcard paths.
+        schema: { type: string }
+    get:
+      tags: [admin0]
+      summary: Read the permissions overlay for one audience.
+      responses:
+        "200":
+          description: Permission list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+    put:
+      tags: [admin0]
+      summary: Replace the permissions overlay for one audience.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { type: string }
+      responses:
+        "204": { description: Overlay updated. }
+    delete:
+      tags: [admin0]
+      summary: Clear the permissions overlay for one audience.
+      responses:
+        "204": { description: Overlay cleared. }
+  /admin0/mfa-required:
+    get:
+      tags: [admin0]
+      summary: Read the current MFA-required flag.
+      responses:
+        "200":
+          description: Current flag.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [required]
+                properties:
+                  required: { type: boolean }
+    put:
+      tags: [admin0]
+      summary: Set the MFA-required flag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [required]
+              properties:
+                required: { type: boolean }
+      responses:
+        "204": { description: Flag updated. }
