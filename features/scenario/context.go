@@ -6,14 +6,18 @@ package scenario
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/cucumber/godog"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/api"
@@ -31,7 +35,16 @@ type Context struct {
 	BearerTok  string
 	LastResp   *http.Response
 	LastBody   []byte
+	client     *http.Client
 	cancelBoot context.CancelFunc
+}
+
+// nonFollowingClient is used by all step requests so the tests can assert on
+// 302 responses (e.g. /authorize, /v2/logout) instead of silently following.
+var nonFollowingClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
 }
 
 // New constructs a fresh Context, boots the service in-process on a random
@@ -111,7 +124,7 @@ func (c *Context) MintBearer() {
 	body := strings.NewReader("grant_type=client_credentials&client_id=test&client_secret=x&audience=" + c.BaseURL + "/api/v2/")
 	req, _ := http.NewRequest("POST", c.BaseURL+"/oauth/token", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := nonFollowingClient.Do(req)
 	if err != nil {
 		c.t.Fatalf("mint bearer: %v", err)
 	}
@@ -121,6 +134,35 @@ func (c *Context) MintBearer() {
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&tr)
 	c.BearerTok = tr.AccessToken
+}
+
+// DoForm sends a POST with application/x-www-form-urlencoded body.
+func (c *Context) DoForm(method, path string, form url.Values, withBearer bool) {
+	req, _ := http.NewRequest(method, c.BaseURL+path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if withBearer {
+		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
+	}
+	resp, err := nonFollowingClient.Do(req)
+	if err != nil {
+		c.t.Fatalf("do form: %v", err)
+	}
+	c.LastResp = resp
+	c.LastBody, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+}
+
+// VerifyAccessTokenAgainstJWKS fetches the mock's JWKS and verifies the
+// token's RS256 signature using golang-jwt + MicahParks/keyfunc.
+func (c *Context) VerifyAccessTokenAgainstJWKS(tok string) error {
+	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{c.BaseURL + "/.well-known/jwks.json"})
+	if err != nil {
+		return fmt.Errorf("fetch jwks: %w", err)
+	}
+	if _, err := jwt.Parse(tok, k.Keyfunc); err != nil {
+		return fmt.Errorf("verify: %w", err)
+	}
+	return nil
 }
 
 // Do sends an HTTP request and stores the response on the context.
@@ -136,7 +178,7 @@ func (c *Context) Do(method, path string, body string, withBearer bool) {
 	if withBearer {
 		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := nonFollowingClient.Do(req)
 	if err != nil {
 		c.t.Fatalf("do: %v", err)
 	}
