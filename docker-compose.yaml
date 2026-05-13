@@ -2,11 +2,15 @@ services:
   auth0-mock:
     build:
       context: .
-      dockerfile: infrastructure/dockerfiles/development/Dockerfile
     container_name: auth0-mock
     ports:
       - "8080:8080"
       - "8443:8443"
     env_file: .env
-    volumes:
-      - ./:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+      start_period: 5s

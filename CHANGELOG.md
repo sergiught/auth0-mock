@@ -22,6 +22,7 @@ All notable changes to this project will be documented here. Format follows [Kee
 - Migrated router from `julienschmidt/httprouter` to `go-chi/chi v5`; every handler is now a struct holding its dependencies as fields, implementing `ServeHTTP`.
 - JSON responses go through `go-chi/render` everywhere.
 - Bumped Go directive to 1.26.
+- Consolidated to a **single root-level `Dockerfile`** (was: separate `infrastructure/dockerfiles/{development,production}/Dockerfile`). Same production-grade image is used for local `docker compose up` and Docker Hub publishing. `docker-compose.yaml` no longer mounts source — code changes require a `docker compose up --build`. Image now uses `tini` as PID 1 for clean SIGTERM, runs as `nobody`, and exposes a built-in healthcheck via `/healthz`.
 
 ## Earlier work (pre-release, unversioned)
 
