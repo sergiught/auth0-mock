@@ -1,6 +1,7 @@
 package router_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -13,12 +14,13 @@ import (
 func TestServiceFragmentDescribesEveryServiceEndpoint(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromData(router.ServiceFragment)
 	require.NoError(t, err)
+	require.NoError(t, doc.Validate(context.Background()))
 	require.NotNil(t, doc.Paths)
 	want := map[string][]string{
-		"/healthz":                       {"GET"},
-		"/.well-known/jwks.json":         {"GET"},
-		"/openapi.json":                  {"GET"},
-		"/openapi.yaml":                  {"GET"},
+		"/healthz":               {"GET"},
+		"/.well-known/jwks.json": {"GET"},
+		"/openapi.json":          {"GET"},
+		"/openapi.yaml":          {"GET"},
 	}
 	for path, methods := range want {
 		item := doc.Paths.Value(path)
