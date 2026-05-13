@@ -6,15 +6,15 @@ All notable changes to this project will be documented here. Format follows [Kee
 
 ### Added
 
-- **MFA challenge flow** — initial `password` / `password-realm` grants return `403 mfa_required` + `mfa_token` when MFA enforcement is on. Three new Auth0 grants accept canned factors: `mfa-otp` (`otp=123456`), `mfa-oob` (`oob_code=any` + `binding_code=123456`), `mfa-recovery-code` (`recovery_code=ABCDEFGHIJKLMNOP`). `GET/PUT /admin0/mfa-required` toggles enforcement at runtime. `POST /admin0/reset` now clears MFA state.
-- **`password-realm` grant** — Auth0-specific `http://auth0.com/oauth/grant-type/password-realm`; same shape as `password` with an extra `realm` field threaded into the issued token's claims (`connection`, `https://auth0.com/realm`, `gty=password-realm`). Used by Auth0 Native SDKs.
-- **PKCE validation on `authorization_code` grant** — `/authorize` stashes any `code_challenge` (S256 or plain) keyed by the issued code; `/oauth/token` verifies the `code_verifier` on exchange. 10-min TTL, single-use. Codes that never came through `/authorize` still mint (backward compat).
-- **`/admin0/claims`** (GET / PUT / DELETE) — per-process custom JWT claim map merged into every minted token. Custom claims overwrite reserved keys by design.
-- **`/admin0/permissions[/{audience}]`** (GET / PUT / DELETE) — per-audience RBAC injection. Audiences may be URLs (chi wildcard route).
-- **`/healthz`** — Kubernetes-style liveness probe.
-- **`TLS_CACHE_DIR` env** — persist auto-generated TLS cert across restarts. Trust-store imports now survive container restarts.
+- **MFA challenge flow**: initial `password` / `password-realm` grants return `403 mfa_required` + `mfa_token` when MFA enforcement is on. Three new Auth0 grants accept canned factors: `mfa-otp` (`otp=123456`), `mfa-oob` (`oob_code=any` + `binding_code=123456`), `mfa-recovery-code` (`recovery_code=ABCDEFGHIJKLMNOP`). `GET/PUT /admin0/mfa-required` toggles enforcement at runtime. `POST /admin0/reset` now clears MFA state.
+- **`password-realm` grant**: Auth0-specific `http://auth0.com/oauth/grant-type/password-realm`; same shape as `password` with an extra `realm` field threaded into the issued token's claims (`connection`, `https://auth0.com/realm`, `gty=password-realm`). Used by Auth0 Native SDKs.
+- **PKCE validation on `authorization_code` grant**: `/authorize` stashes any `code_challenge` (S256 or plain) keyed by the issued code; `/oauth/token` verifies the `code_verifier` on exchange. 10-min TTL, single-use. Codes that never came through `/authorize` still mint (backward compat).
+- **`/admin0/claims`** (GET / PUT / DELETE): per-process custom JWT claim map merged into every minted token. Custom claims overwrite reserved keys by design.
+- **`/admin0/permissions[/{audience}]`** (GET / PUT / DELETE): per-audience RBAC injection. Audiences may be URLs (chi wildcard route).
+- **`/healthz`**: Kubernetes-style liveness probe.
+- **`TLS_CACHE_DIR` env**: persist auto-generated TLS cert across restarts. Trust-store imports now survive container restarts.
 - **README, ARCHITECTURE, COOKBOOK, COMPARISON, CONTRIBUTING, CHANGELOG** docs.
-- **examples/consumer** — stand-alone Go consumer demonstrating end-to-end drop-in compatibility.
+- **examples/consumer**: stand-alone Go consumer demonstrating end-to-end drop-in compatibility.
 
 ### Changed
 
@@ -22,25 +22,25 @@ All notable changes to this project will be documented here. Format follows [Kee
 - Migrated router from `julienschmidt/httprouter` to `go-chi/chi v5`; every handler is now a struct holding its dependencies as fields, implementing `ServeHTTP`.
 - JSON responses go through `go-chi/render` everywhere.
 - Bumped Go directive to 1.26.
-- Consolidated to a **single root-level `Dockerfile`** (was: separate `infrastructure/dockerfiles/{development,production}/Dockerfile`). Same production-grade image is used for local `docker compose up` and Docker Hub publishing. `docker-compose.yaml` no longer mounts source — code changes require a `docker compose up --build`. Image now uses `tini` as PID 1 for clean SIGTERM, runs as `nobody`, and exposes a built-in healthcheck via `/healthz`.
+- Consolidated to a **single root-level `Dockerfile`** (was: separate `infrastructure/dockerfiles/{development,production}/Dockerfile`). Same production-grade image is used for local `docker compose up` and Docker Hub publishing. `docker-compose.yaml` no longer mounts source, code changes require a `docker compose up --build`. Image now uses `tini` as PID 1 for clean SIGTERM, runs as `nobody`, and exposes a built-in healthcheck via `/healthz`.
 
 ### Dev experience
 
-- **`make watch`** — sub-second hot-reload via [`air`](https://github.com/air-verse/air). Installs air into `./bin` on first run; watches `cmd/`, `internal/`, `api/`; rebuilds + restarts the binary on every save. `.air.toml` lives at the repo root. Native filesystem events, no docker, no bind-mount.
-- **`make test-features`** — run the godog acceptance suite (was: `go test -tags=features -count=1 ./cmd/api/...`).
-- **`make lint`** — runs `golangci-lint` v2.5.0 with the project's `.golangci.yaml` (errcheck, gocritic, gocyclo, godot, gosec, revive, staticcheck, unconvert, unused, whitespace). Auto-installed into `./bin` on first invocation.
-- **`make lint-commits`** — runs `commitlint` v0.10.1 against the conventional-commit `commitlint.yaml` profile.
-- **`make vuln`** — runs `govulncheck` against the module graph to surface known Go vulnerabilities.
-- **`make pre-commit`** — installs the `pre-commit` framework hooks (`.pre-commit-config.yaml`) so commitlint / gofmt / golangci-lint / govulncheck run automatically on every commit.
-- **GitHub Actions CI** (`.github/workflows/ci.yml`) — five parallel jobs: `lint`, `test`, `test-features`, `vuln`, `commitlint` (PR-only). Go 1.26.
+- **`make watch`**: sub-second hot-reload via [`air`](https://github.com/air-verse/air). Installs air into `./bin` on first run; watches `cmd/`, `internal/`, `api/`; rebuilds + restarts the binary on every save. `.air.toml` lives at the repo root. Native filesystem events, no docker, no bind-mount.
+- **`make test-features`**: run the godog acceptance suite (was: `go test -tags=features -count=1 ./cmd/api/...`).
+- **`make lint`**: runs `golangci-lint` v2.5.0 with the project's `.golangci.yaml` (errcheck, gocritic, gocyclo, godot, gosec, revive, staticcheck, unconvert, unused, whitespace). Auto-installed into `./bin` on first invocation.
+- **`make lint-commits`**: runs `commitlint` v0.10.1 against the conventional-commit `commitlint.yaml` profile.
+- **`make vuln`**: runs `govulncheck` against the module graph to surface known Go vulnerabilities.
+- **`make pre-commit`**: installs the `pre-commit` framework hooks (`.pre-commit-config.yaml`) so commitlint / gofmt / golangci-lint / govulncheck run automatically on every commit.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): five parallel jobs (`lint`, `test`, `test-features`, `vuln`, `commitlint` (PR-only)). Go 1.26.
 
 ## Earlier work (pre-release, unversioned)
 
 Foundations landed in a series of milestones before the first tagged release:
 
-- **M0 — Foundation:** project scaffolding, `internal/{config,logger,httperr,middleware,matches,admin0,server,router}`, Dockerfile, docker-compose, `.env.example`.
-- **M1 — TLS + JWKS + bearer:** `internal/{tlscert,jwks,bearer}`; HTTPS listener; `/.well-known/jwks.json`.
-- **M2 — Spec-driven Mgmt API:** embedded Auth0 OpenAPI 3.1 spec, `internal/spec`, `internal/mgmtapi` with one generic handler covering ~400 operations; OpenAPI-validated registered stubs.
-- **M3 — Auth API core:** `internal/authapi` with `/oauth/token` (`client_credentials`, `password`, `refresh_token`, `authorization_code`), `/authorize`, `/userinfo`, `/v2/logout`, `/oauth/revoke`, `/.well-known/openid-configuration`.
-- **M4 — Auth API extensions:** `/dbconnections/{signup,change_password}`, `/passwordless/{start,verify}`.
-- **M5 — Acceptance tests + docs:** godog harness, initial 33 scenarios; examples/consumer; production Dockerfile.
+- **M0 Foundation:** project scaffolding, `internal/{config,logger,httperr,middleware,matches,admin0,server,router}`, Dockerfile, docker-compose, `.env.example`.
+- **M1 TLS + JWKS + bearer:** `internal/{tlscert,jwks,bearer}`; HTTPS listener; `/.well-known/jwks.json`.
+- **M2 Spec-driven Mgmt API:** embedded Auth0 OpenAPI 3.1 spec, `internal/spec`, `internal/mgmtapi` with one generic handler covering ~400 operations; OpenAPI-validated registered stubs.
+- **M3 Auth API core:** `internal/authapi` with `/oauth/token` (`client_credentials`, `password`, `refresh_token`, `authorization_code`), `/authorize`, `/userinfo`, `/v2/logout`, `/oauth/revoke`, `/.well-known/openid-configuration`.
+- **M4 Auth API extensions:** `/dbconnections/{signup,change_password}`, `/passwordless/{start,verify}`.
+- **M5 Acceptance tests + docs:** godog harness, initial 33 scenarios; examples/consumer; production Dockerfile.

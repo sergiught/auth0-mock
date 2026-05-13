@@ -2,7 +2,7 @@
 
 # 🔐 auth0-mock
 
-**A drop-in mock of Auth0's HTTP API — both the Authentication API and the Management API — that you can point any Auth0-using service at, with no code changes.**
+**A drop-in mock of Auth0's HTTP API, both the Authentication API and the Management API, that you can point any Auth0-using service at, with no code changes.**
 
 Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injection · MFA flow · PKCE · OIDC discovery · HTTP & HTTPS
 
@@ -16,9 +16,9 @@ Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injecti
 
 A self-contained Go service that **looks and behaves like Auth0** to a calling client:
 
-- 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally — no `InsecureSkipVerify`, no fake-token kludges.
+- 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally, no `InsecureSkipVerify`, no fake-token kludges.
 - 📦 **Mocks the Management API spec-completely** by embedding Auth0's published OpenAPI 3.1 document (~400 operations) and routing every endpoint to a single generic handler. You stub responses with `<verb> /api/v2/.../match`; the OpenAPI schema validates the stubbed body.
-- 🛠 **Shapes runtime state via HTTP** — custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
+- 🛠 **Shapes runtime state via HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
 ## 🎯 Who is this for?
@@ -43,7 +43,7 @@ make build && ./bin/auth0-mock
 
 ### Live-reload dev loop (`air`)
 
-Sub-second rebuild on every save under `cmd/` or `internal/` — no docker, no bind-mounts, no flakiness:
+Sub-second rebuild on every save under `cmd/` or `internal/`, no docker, no bind-mounts, no flakiness:
 
 ```bash
 make watch     # installs air into ./bin on first run
@@ -78,7 +78,7 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 # => {"user_id":"auth0|123","email":"alice@example.com"}
 ```
 
-That's it. No SDK changes, no monkey-patching — your code calls auth0-mock the same way it calls Auth0.
+That's it. No SDK changes, no monkey-patching, your code calls auth0-mock the same way it calls Auth0.
 
 ## 📋 What's mocked
 
@@ -102,7 +102,7 @@ That's it. No SDK changes, no monkey-patching — your code calls auth0-mock the
 
 | `grant_type` | Notes |
 |---|---|
-| `client_credentials` | M2M flow — returns `access_token` only |
+| `client_credentials` | M2M flow, returns `access_token` only |
 | `password` | Returns access + id + refresh; gates on the MFA flag |
 | `refresh_token` | New `access_token`; no refresh state tracked |
 | `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize` |
@@ -128,7 +128,7 @@ curl -X GET http://localhost:8080/api/v2/users/{id}/match \
   -d '{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}'
 ```
 
-> Concrete URL stubs win over template stubs. Schemas are validated at registration time — invalid bodies are rejected with `400 invalid_match`. `/match` siblings mirror the original verb (so for `GET /users/{id}` the sibling is `GET …/match` — yes, GET-with-body).
+> Concrete URL stubs win over template stubs. Schemas are validated at registration time, invalid bodies are rejected with `400 invalid_match`. `/match` siblings mirror the original verb (so for `GET /users/{id}` the sibling is `GET …/match`, yes, GET-with-body).
 
 ### 🛠 Admin surface (no auth, JSON-driven)
 
@@ -138,14 +138,14 @@ curl -X GET http://localhost:8080/api/v2/users/{id}/match \
 | `/admin0/matches` | GET | List currently registered match stubs |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
-| `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL — chi wildcard) |
+| `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
 
 ### 🩺 Operations
 
 | Endpoint | Notes |
 |---|---|
-| `/healthz` | Kubernetes-style liveness probe — `200 {"status":"ok"}`, no auth |
+| `/healthz` | Kubernetes-style liveness probe, `200 {"status":"ok"}`, no auth |
 
 ## 💡 Common recipes
 
@@ -194,9 +194,9 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 ## 🔒 HTTPS / TLS
 
-The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). Identical TLS behaviour on macOS and Linux — but it's self-signed, so clients reject it unless told otherwise. Three options:
+The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). Identical TLS behaviour on macOS and Linux, but it's self-signed, so clients reject it unless told otherwise. Three options:
 
-> **⚠️ macOS gotcha** — Go on **macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR`** (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below — easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
+> **⚠️ macOS gotcha**: Go on **macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR`** (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
 
 ### 1. `mkcert` (recommended for local dev)
 

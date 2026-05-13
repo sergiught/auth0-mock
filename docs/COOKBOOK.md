@@ -1,6 +1,6 @@
 # Cookbook
 
-Practical recipes for using auth0-mock in tests. Each recipe is self-contained — copy, paste, adjust.
+Practical recipes for using auth0-mock in tests. Each recipe is self-contained: copy, paste, adjust.
 
 ## 📑 Table of contents
 
@@ -42,7 +42,7 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 # => {"user_id":"auth0|123","email":"alice@x"}
 ```
 
-Note `%7C` is URL-encoded `|` — required because `|` is reserved in URLs.
+Note `%7C` is URL-encoded `|`, required because `|` is reserved in URLs.
 
 ## Stub multiple users at once
 
@@ -104,7 +104,7 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.role, .org_id'
 # => "o-42"
 ```
 
-**Custom claims overwrite reserved claims** (`gty`, `azp`, `permissions`, etc.) on purpose — tests can override anything they need.
+**Custom claims overwrite reserved claims** (`gty`, `azp`, `permissions`, etc.) on purpose, tests can override anything they need.
 
 ## Test a PKCE flow end-to-end
 
@@ -113,7 +113,7 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.role, .org_id'
 VERIFIER="the-quick-brown-fox-jumps-over-the-lazy-dog-43"
 CHALLENGE=$(echo -n "$VERIFIER" | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=')
 
-# 2. Hit /authorize with the challenge — server stashes it against the issued code
+# 2. Hit /authorize with the challenge, server stashes it against the issued code
 LOCATION=$(curl -s -i "http://localhost:8080/authorize?client_id=demo&redirect_uri=https://app/cb&state=s1&response_type=code&code_challenge=${CHALLENGE}&code_challenge_method=S256" \
   | grep -i '^location:' | cut -d' ' -f2 | tr -d '\r')
 
@@ -216,7 +216,7 @@ Registered headers come through on the response, so you can test client-side rat
 
 ## Reset state between tests
 
-The cheapest possible teardown — one POST wipes everything:
+The cheapest possible teardown: one POST wipes everything:
 
 ```bash
 curl -X POST http://localhost:8080/admin0/reset
@@ -255,7 +255,7 @@ curl http://localhost:8080/admin0/mfa-required | jq .
 
 ## Run against HTTPS with a trusted cert
 
-> **⚠️ macOS Go ignores `SSL_CERT_FILE` and `SSL_CERT_DIR`** — those env vars are honored on Linux but not on macOS, where Go reads roots from the system Security framework. So the Linux shortcut (`SSL_CERT_FILE=./tls.crt go run …`) won't work on macOS. Use `mkcert` (which writes its CA into the keychain), the [trust-store recipe](#trusting-the-self-signed-cert) below (`security add-trusted-cert …`), or construct a `tls.Config{RootCAs: pool}` in client code.
+> **⚠️ macOS Go ignores `SSL_CERT_FILE` and `SSL_CERT_DIR`**: those env vars are honored on Linux but not on macOS, where Go reads roots from the system Security framework. So the Linux shortcut (`SSL_CERT_FILE=./tls.crt go run …`) won't work on macOS. Use `mkcert` (which writes its CA into the keychain), the [trust-store recipe](#trusting-the-self-signed-cert) below (`security add-trusted-cert …`), or construct a `tls.Config{RootCAs: pool}` in client code.
 
 For local dev, use [`mkcert`](https://github.com/FiloSottile/mkcert):
 
@@ -276,7 +276,7 @@ For ephemeral CI tests that just need to skip verification, set `InsecureSkipVer
 
 Until we ship a stable public Go API (planned), the simplest pattern is to start the binary as a subprocess in a `TestMain`. For a worked end-to-end example, see [`examples/consumer/main.go`](../examples/consumer/main.go).
 
-For the in-process pattern used by our own godog suite, see [`features/scenario/context.go`](../features/scenario/context.go) — it's the canonical reference for boot/teardown.
+For the in-process pattern used by our own godog suite, see [`features/scenario/context.go`](../features/scenario/context.go), it's the canonical reference for boot/teardown.
 
 ## Trusting the self-signed cert
 
@@ -305,6 +305,6 @@ After this, `curl https://localhost:8443/...` works without `-k`, browsers stop 
 
 ## See also
 
-- [README.md](../README.md) — top-level overview
-- [docs/ARCHITECTURE.md](ARCHITECTURE.md) — internals
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — adding new functionality
+- [README.md](../README.md): top-level overview
+- [docs/ARCHITECTURE.md](ARCHITECTURE.md): internals
+- [CONTRIBUTING.md](../CONTRIBUTING.md): adding new functionality

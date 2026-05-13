@@ -47,9 +47,9 @@ make build                   # builds ./bin/auth0-mock
 ./bin/auth0-mock             # runs on :8080 + :8443
 ```
 
-Day-to-day iteration uses **`make watch`** — it installs [`air`](https://github.com/air-verse/air) into `./bin` on first run, then watches `cmd/` + `internal/` + `api/` and rebuilds + restarts the binary on every save. Sub-second loop; no docker.
+Day-to-day iteration uses **`make watch`**, it installs [`air`](https://github.com/air-verse/air) into `./bin` on first run, then watches `cmd/` + `internal/` + `api/` and rebuilds + restarts the binary on every save. Sub-second loop; no docker.
 
-The Auth0 OpenAPI spec is already embedded at `api/auth0-management-api.openapi.json` — nothing to download.
+The Auth0 OpenAPI spec is already embedded at `api/auth0-management-api.openapi.json`, nothing to download.
 
 ## 🧪 Testing
 
@@ -74,7 +74,7 @@ go test -tags=features ./cmd/api/... # godog acceptance suite
 ### Adding a godog scenario
 
 1. Pick or add a `.feature` file under `features/`.
-2. Use existing step phrases when possible — see [`features/scenario/steps.go`](features/scenario/steps.go) for the catalogue. Common phrases:
+2. Use existing step phrases when possible, see [`features/scenario/steps.go`](features/scenario/steps.go) for the catalogue. Common phrases:
    - `Given the mock is running`
    - `And I have a valid bearer token`
    - `When I PUT "/admin0/..." with body:`
@@ -88,7 +88,7 @@ If you need a new step phrase, add it to `features/scenario/steps.go` and write 
 
 ## 🔍 Lint, security, commit checks
 
-The project ships a `.golangci.yaml`, `commitlint.yaml`, and `.pre-commit-config.yaml`. They are wired into both the Makefile and GitHub Actions CI — keep them green locally before pushing.
+The project ships a `.golangci.yaml`, `commitlint.yaml`, and `.pre-commit-config.yaml`. They are wired into both the Makefile and GitHub Actions CI, keep them green locally before pushing.
 
 ```bash
 make lint            # golangci-lint v2.5.0 against ./...
@@ -97,7 +97,7 @@ make vuln            # govulncheck against the module graph
 make pre-commit      # install the pre-commit hooks (one-time)
 ```
 
-`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework — install it once and the hooks will run `gofmt`, `golangci-lint`, `govulncheck` on every `git commit`, plus `commitlint` on the commit message. CI runs the same checks on every PR (see `.github/workflows/ci.yml`).
+`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework, install it once and the hooks will run `gofmt`, `golangci-lint`, `govulncheck` on every `git commit`, plus `commitlint` on the commit message. CI runs the same checks on every PR (see `.github/workflows/ci.yml`).
 
 ## ✍️ Code style
 
@@ -115,7 +115,7 @@ Standard Go formatting plus a few specific conventions:
 
 ### Commit messages
 
-Conventional commits — same shape as the existing history:
+Conventional commits, same shape as the existing history:
 
 ```
 feat(authapi): add /oauth/introspect (RFC 7662)
@@ -153,14 +153,14 @@ One subject line ≤ 72 chars, blank line, body wrapping at ~80 chars explaining
 
 ### A new Auth0 Management API endpoint
 
-You probably don't need to do anything. The Mgmt API is **spec-driven** — every operation in the embedded `api/auth0-management-api.openapi.json` already has its three routes (`<verb> <path>`, `<verb> <path>/match`, `<verb> <path>/reset`) registered automatically by `mgmtapi.Mount`.
+You probably don't need to do anything. The Mgmt API is **spec-driven**, every operation in the embedded `api/auth0-management-api.openapi.json` already has its three routes (`<verb> <path>`, `<verb> <path>/match`, `<verb> <path>/reset`) registered automatically by `mgmtapi.Mount`.
 
 If Auth0 publishes a new endpoint:
 
 1. Re-download the spec to `api/auth0-management-api.openapi.json`.
 2. Run `go test ./...`. Boot the service. The new endpoint is live with no code changes.
 
-If you need to **change the generic handler's behaviour** (e.g. inject latency, log differently), edit `internal/mgmtapi/handler.go` — but keep in mind it serves all ~400 endpoints uniformly.
+If you need to **change the generic handler's behaviour** (e.g. inject latency, log differently), edit `internal/mgmtapi/handler.go`, but keep in mind it serves all ~400 endpoints uniformly.
 
 ### A new test recipe
 
@@ -168,7 +168,7 @@ If your work surfaces a recipe other users will want (e.g. "how do I test refres
 
 ## 🚦 PR workflow
 
-1. Open an issue first for anything non-trivial — saves rework if the maintainers think differently about the design.
+1. Open an issue first for anything non-trivial, saves rework if the maintainers think differently about the design.
 2. Branch from `main`. One coherent change per PR; smaller is better.
 3. Update `CHANGELOG.md` under `## [Unreleased]` with a one-line entry under the appropriate section (Added / Changed / Fixed / Removed).
 4. If you add a new env var, endpoint, or grant: update **README** and **`docs/ARCHITECTURE.md`** alongside the code.
@@ -179,10 +179,10 @@ If your work surfaces a recipe other users will want (e.g. "how do I test refres
 
 Some asks are out of scope:
 
-- **Stateful Mgmt API CRUD** — auth0-mock is a stub registrar, not a state machine. Tests register the response they want; the mock doesn't track "the user with id X was created and now exists". If you need stateful behaviour, layer it in your test fixtures.
-- **Production-grade OIDC certification** — we're a mock. Spec compliance is best-effort; we deliberately skip things like full client-secret-jwt validation, full PKCE plain-method rejection toggles, etc.
-- **Other IdPs** (Okta, Cognito, etc.) — the project is Auth0-shaped end-to-end. A separate project is the right answer.
-- **Persistence to disk for registered stubs** — explicit non-goal. Each restart is a clean slate; that's a feature.
+- **Stateful Mgmt API CRUD**: auth0-mock is a stub registrar, not a state machine. Tests register the response they want; the mock doesn't track "the user with id X was created and now exists". If you need stateful behaviour, layer it in your test fixtures.
+- **Production-grade OIDC certification**: we're a mock. Spec compliance is best-effort; we deliberately skip things like full client-secret-jwt validation, full PKCE plain-method rejection toggles, etc.
+- **Other IdPs** (Okta, Cognito, etc.): the project is Auth0-shaped end-to-end. A separate project is the right answer.
+- **Persistence to disk for registered stubs**: explicit non-goal. Each restart is a clean slate; that's a feature.
 
 ## 📬 Questions?
 
