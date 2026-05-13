@@ -67,8 +67,10 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 	// (e.g. "/api/v2") so that the merged document carries the full path.
 	// Fragment paths (Auth API, admin0, service) are left untouched because
 	// those surfaces are mounted at the chi root without any prefix.
+	var bp string
 	if len(base.Servers) > 0 {
-		if bp := basePath(base.Servers[0].URL); bp != "" {
+		bp = basePath(base.Servers[0].URL)
+		if bp != "" {
 			prefixed := openapi3.NewPaths()
 			for path, item := range base.Paths.Map() {
 				prefixed.Set(bp+path, item)
@@ -95,9 +97,7 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 		}
 	}
 
-	if err := synthesiseMockControlSiblings(base); err != nil {
-		return nil, err
-	}
+	synthesiseMockControlSiblings(base, bp)
 
 	// Servers rewrite (kept here so bundle() returns a fully-formed doc).
 	base.Servers = openapi3.Servers{{
@@ -223,17 +223,17 @@ func basePath(url string) string {
 // synthesiseMockControlSiblings adds POST {path}/match and POST {path}/reset
 // for every Management API path in base.Paths, skipping siblings whose
 // path+method would collide with a real operation already in the spec.
-func synthesiseMockControlSiblings(base *openapi3.T) error {
+func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 	if base.Paths == nil {
-		return nil
+		return
 	}
 	// Snapshot the existing paths (we mutate base.Paths as we go).
 	existing := map[string]*openapi3.PathItem{}
 	for p, item := range base.Paths.Map() {
 		existing[p] = item
 	}
-	for path, item := range existing {
-		if !isManagementOp(path) {
+	for path := range existing {
+		if mgmtPrefix == "" || !strings.HasPrefix(path, mgmtPrefix+"/") {
 			continue
 		}
 		for _, suffix := range []string{"/match", "/reset"} {
@@ -244,27 +244,18 @@ func synthesiseMockControlSiblings(base *openapi3.T) error {
 				continue
 			}
 			sibling := &openapi3.PathItem{}
-			sibling.SetOperation("POST", mockControlOperation(suffix, item))
+			sibling.SetOperation("POST", mockControlOperation(suffix))
 			base.Paths.Set(siblingPath, sibling)
 		}
 	}
-	return nil
-}
-
-// isManagementOp reports whether path looks like a Mgmt API path (lives under
-// the spec's BasePath). Fragments add paths like /healthz or /admin0/reset
-// which must not get synthetic siblings.
-func isManagementOp(path string) bool {
-	const basePrefix = "/api/v2/"
-	return len(path) >= len(basePrefix) && path[:len(basePrefix)] == basePrefix
 }
 
 // mockControlOperation builds the synthesised OpenAPI operation for /match or
 // /reset siblings. Bodies reference the shared schemas in MockControlOpenAPIYAML.
-func mockControlOperation(suffix string, parent *openapi3.PathItem) *openapi3.Operation {
+func mockControlOperation(suffix string) *openapi3.Operation {
 	op := &openapi3.Operation{
 		Tags:        []string{"mock-control"},
-		Summary:     summaryFor(suffix, parent),
+		Summary:     summaryFor(suffix),
 		Description: descriptionFor(suffix),
 		Responses:   openapi3.NewResponses(),
 	}
@@ -298,14 +289,13 @@ func mockControlOperation(suffix string, parent *openapi3.PathItem) *openapi3.Op
 	return op
 }
 
-func summaryFor(suffix string, parent *openapi3.PathItem) string {
+func summaryFor(suffix string) string {
 	switch suffix {
 	case "/match":
 		return "Programme the next canned response for the paired operation."
 	case "/reset":
 		return "Clear programmed responses for the paired operation."
 	}
-	_ = parent
 	return ""
 }
 

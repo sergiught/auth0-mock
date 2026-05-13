@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,7 +73,7 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 	}
 	for _, p := range mgmtPaths {
 		// Skip paths that are themselves /match or /reset.
-		if endsWithAny(p, "/match", "/reset") {
+		if strings.HasSuffix(p, "/match") || strings.HasSuffix(p, "/reset") {
 			continue
 		}
 		for _, suffix := range []string{"/match", "/reset"} {
@@ -80,15 +81,6 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 			require.NotNilf(t, sib, "missing sibling %s%s", p, suffix)
 		}
 	}
-}
-
-func endsWithAny(s string, suffixes ...string) bool {
-	for _, suf := range suffixes {
-		if len(s) >= len(suf) && s[len(s)-len(suf):] == suf {
-			return true
-		}
-	}
-	return false
 }
 
 func TestBundleSkipsSiblingsThatCollideWithRealOps(t *testing.T) {
