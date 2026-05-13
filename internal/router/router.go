@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/internal/admin0"
@@ -31,7 +31,11 @@ type Deps struct {
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
 func New(d Deps) (http.Handler, error) {
-	r := httprouter.New()
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Recovery(d.Log))
+	r.Use(middleware.Logging(d.Log))
+
 	admin0.Mount(r, d.Store)
 	mountJWKS(r, d.Keys)
 
@@ -50,15 +54,12 @@ func New(d Deps) (http.Handler, error) {
 		return nil, fmt.Errorf("mount mgmtapi: %w", err)
 	}
 
-	return middleware.RequestID(
-		middleware.Recovery(d.Log)(
-			middleware.Logging(d.Log)(r))), nil
+	return r, nil
 }
 
-func mountJWKS(r *httprouter.Router, keys *jwks.KeySet) {
-	r.HandlerFunc(http.MethodGet, "/.well-known/jwks.json",
-		func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(keys.JWKSJSON())
-		})
+func mountJWKS(r chi.Router, keys *jwks.KeySet) {
+	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(keys.JWKSJSON())
+	})
 }

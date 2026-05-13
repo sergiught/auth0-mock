@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/go-chi/render"
 	"github.com/google/uuid"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
@@ -29,40 +30,41 @@ type changePasswordRequest struct {
 	Connection string `json:"connection"`
 }
 
-func dbconnectionsSignup(_ Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req signupRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", err.Error())
-			return
-		}
-		if req.Email == "" || req.Connection == "" {
-			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "email and connection are required")
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(signupResponse{
-			ID:            uuid.NewString(),
-			Email:         req.Email,
-			EmailVerified: false,
-		})
+// DBConnectionsSignupHandler handles user signup via database connections.
+type DBConnectionsSignupHandler struct{}
+
+func (h *DBConnectionsSignupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req signupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
 	}
+	if req.Email == "" || req.Connection == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "email and connection are required")
+		return
+	}
+	render.Status(r, http.StatusCreated)
+	render.JSON(w, r, signupResponse{
+		ID:            uuid.NewString(),
+		Email:         req.Email,
+		EmailVerified: false,
+	})
 }
 
-func dbconnectionsChangePassword(_ Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req changePasswordRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", err.Error())
-			return
-		}
-		if req.Email == "" || req.Connection == "" {
-			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "email and connection are required")
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("We've just sent you an email to reset your password."))
+// DBConnectionsChangePasswordHandler handles password change requests.
+type DBConnectionsChangePasswordHandler struct{}
+
+func (h *DBConnectionsChangePasswordHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
 	}
+	if req.Email == "" || req.Connection == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "email and connection are required")
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("We've just sent you an email to reset your password."))
 }

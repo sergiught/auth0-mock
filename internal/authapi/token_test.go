@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,13 +17,13 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 )
 
-func newAuthRouter(t *testing.T) (*httprouter.Router, *jwks.KeySet) {
+func newAuthRouter(t *testing.T) (chi.Router, *jwks.KeySet) {
 	t.Helper()
 	ks, err := jwks.NewKeySet(jwks.Config{
 		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
 	})
 	require.NoError(t, err)
-	r := httprouter.New()
+	r := chi.NewRouter()
 	Mount(Deps{Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/", Log: zerolog.Nop()})
 	return r, ks
 }

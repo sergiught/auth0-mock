@@ -1,29 +1,33 @@
 package authapi
 
 import (
-	"encoding/json"
 	"maps"
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/render"
+
 	"github.com/sergiught/auth0-mock/internal/httperr"
+	"github.com/sergiught/auth0-mock/internal/jwks"
 )
 
-func userinfo(d Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
-			httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", "missing bearer token")
-			return
-		}
-		claims, err := d.Keys.Verify(strings.TrimPrefix(h, "Bearer "))
-		if err != nil {
-			httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", err.Error())
-			return
-		}
-		out := map[string]any{"sub": claims.Subject}
-		maps.Copy(out, claims.Extra)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
+// UserInfoHandler returns claims for the authenticated user.
+type UserInfoHandler struct {
+	Keys *jwks.KeySet
+}
+
+func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	hdr := r.Header.Get("Authorization")
+	if !strings.HasPrefix(hdr, "Bearer ") {
+		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", "missing bearer token")
+		return
 	}
+	claims, err := h.Keys.Verify(strings.TrimPrefix(hdr, "Bearer "))
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", err.Error())
+		return
+	}
+	out := map[string]any{"sub": claims.Subject}
+	maps.Copy(out, claims.Extra)
+	render.JSON(w, r, out)
 }

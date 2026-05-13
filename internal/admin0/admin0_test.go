@@ -6,15 +6,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sergiught/auth0-mock/internal/matches"
 )
 
-func newRouter(store *matches.Store) *httprouter.Router {
-	r := httprouter.New()
+func newRouter(store *matches.Store) chi.Router {
+	r := chi.NewRouter()
 	Mount(r, store)
 	return r
 }

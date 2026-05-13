@@ -7,21 +7,23 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/render"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 )
 
-type tokenHandler struct {
-	deps Deps
+// TokenHandler handles OAuth token requests.
+type TokenHandler struct {
+	Keys            *jwks.KeySet
+	Issuer          string
+	DefaultAudience string
+	Log             zerolog.Logger
 }
 
-func newTokenHandler(d Deps) *tokenHandler {
-	return &tokenHandler{deps: d}
-}
-
-func (h *tokenHandler) handle(w http.ResponseWriter, r *http.Request) {
+func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req, err := parseTokenRequest(r)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -34,18 +36,18 @@ func (h *tokenHandler) handle(w http.ResponseWriter, r *http.Request) {
 
 	aud := req.Audience
 	if aud == "" {
-		aud = h.deps.DefaultAudience
+		aud = h.DefaultAudience
 	}
 
 	switch req.GrantType {
 	case "client_credentials":
-		h.respondClientCredentials(w, req, aud)
+		h.respondClientCredentials(w, r, req, aud)
 	case "password":
-		h.respondPassword(w, req, aud)
+		h.respondPassword(w, r, req, aud)
 	case "refresh_token":
-		h.respondRefreshToken(w, req, aud)
+		h.respondRefreshToken(w, r, req, aud)
 	case "authorization_code":
-		h.respondAuthorizationCode(w, req, aud)
+		h.respondAuthorizationCode(w, r, req, aud)
 	default:
 		httperr.WriteAuth(w, http.StatusBadRequest, "unsupported_grant_type",
 			"grant_type "+req.GrantType+" is not supported")
@@ -90,46 +92,46 @@ func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
 	}, nil
 }
 
-func (h *tokenHandler) respondClientCredentials(w http.ResponseWriter, req *tokenRequest, aud string) {
-	access, err := h.deps.Keys.Mint(jwks.MintOpts{
+func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  req.ClientID + "@clients",
 		Audience: []string{aud},
 		Scope:    req.Scope,
-		TTL:      h.deps.Keys.Cfg().AccessTokenTTL,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    map[string]any{"gty": "client-credentials", "azp": req.ClientID},
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	writeTokenResponse(w, tokenResponse{
+	render.JSON(w, r, tokenResponse{
 		AccessToken: access,
 		TokenType:   "Bearer",
-		ExpiresIn:   int64(h.deps.Keys.Cfg().AccessTokenTTL.Seconds()),
+		ExpiresIn:   int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:       req.Scope,
 	})
 }
 
-func (h *tokenHandler) respondPassword(w http.ResponseWriter, req *tokenRequest, aud string) {
+func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	subject := req.Username
 	if subject == "" {
 		subject = "auth0|" + uuid.NewString()
 	}
-	access, err := h.deps.Keys.Mint(jwks.MintOpts{
+	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
-		TTL:      h.deps.Keys.Cfg().AccessTokenTTL,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    map[string]any{"gty": "password", "azp": req.ClientID},
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	id, err := h.deps.Keys.Mint(jwks.MintOpts{
+	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
-		TTL:      h.deps.Keys.Cfg().IDTokenTTL,
+		TTL:      h.Keys.Cfg().IDTokenTTL,
 		Extra: map[string]any{
 			"email":          subject,
 			"email_verified": true,
@@ -140,69 +142,63 @@ func (h *tokenHandler) respondPassword(w http.ResponseWriter, req *tokenRequest,
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	writeTokenResponse(w, tokenResponse{
+	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
 		RefreshToken: uuid.NewString(),
 		TokenType:    "Bearer",
-		ExpiresIn:    int64(h.deps.Keys.Cfg().AccessTokenTTL.Seconds()),
+		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
 	})
 }
 
-func (h *tokenHandler) respondRefreshToken(w http.ResponseWriter, req *tokenRequest, aud string) {
-	access, err := h.deps.Keys.Mint(jwks.MintOpts{
+func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
-		TTL:      h.deps.Keys.Cfg().AccessTokenTTL,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    map[string]any{"gty": "refresh-token", "azp": req.ClientID},
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	writeTokenResponse(w, tokenResponse{
+	render.JSON(w, r, tokenResponse{
 		AccessToken: access,
 		TokenType:   "Bearer",
-		ExpiresIn:   int64(h.deps.Keys.Cfg().AccessTokenTTL.Seconds()),
+		ExpiresIn:   int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 	})
 }
 
-func (h *tokenHandler) respondAuthorizationCode(w http.ResponseWriter, req *tokenRequest, aud string) {
+func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	subject := "auth0|" + uuid.NewString()
-	access, err := h.deps.Keys.Mint(jwks.MintOpts{
+	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
-		TTL:      h.deps.Keys.Cfg().AccessTokenTTL,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    map[string]any{"gty": "authorization-code", "azp": req.ClientID},
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	id, err := h.deps.Keys.Mint(jwks.MintOpts{
+	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
-		TTL:      h.deps.Keys.Cfg().IDTokenTTL,
+		TTL:      h.Keys.Cfg().IDTokenTTL,
 		Extra:    map[string]any{"email": subject + "@example.com"},
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	writeTokenResponse(w, tokenResponse{
+	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
 		RefreshToken: uuid.NewString(),
 		TokenType:    "Bearer",
-		ExpiresIn:    int64(h.deps.Keys.Cfg().AccessTokenTTL.Seconds()),
+		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
 	})
-}
-
-func writeTokenResponse(w http.ResponseWriter, body tokenResponse) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(body)
 }

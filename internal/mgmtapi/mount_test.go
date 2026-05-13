@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +33,7 @@ const tinySpec = `{
   }
 }`
 
-func newDeps(t *testing.T) (*spec.Spec, *spec.Validator, *matches.Store, *jwks.KeySet, *httprouter.Router) {
+func newDeps(t *testing.T) (*spec.Spec, *spec.Validator, *matches.Store, *jwks.KeySet, chi.Router) {
 	t.Helper()
 	s, err := spec.Load([]byte(tinySpec))
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func newDeps(t *testing.T) (*spec.Spec, *spec.Validator, *matches.Store, *jwks.K
 	store := matches.NewStore()
 	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
 	require.NoError(t, err)
-	r := httprouter.New()
+	r := chi.NewRouter()
 	return s, v, store, ks, r
 }
 
