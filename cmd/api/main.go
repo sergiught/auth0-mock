@@ -48,6 +48,8 @@ func main() {
 		Keys:                 keys,
 		Spec:                 openapiSpec,
 		Validator:            validator,
+		Issuer:               cfg.IssuerURL,
+		DefaultAudience:      cfg.DefaultAudience,
 		SpecValidationStrict: cfg.SpecValidationStrict,
 	})
 	if err != nil {

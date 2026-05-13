@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/internal/admin0"
+	"github.com/sergiught/auth0-mock/internal/authapi"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mgmtapi"
@@ -23,15 +24,24 @@ type Deps struct {
 	Keys                 *jwks.KeySet
 	Spec                 *spec.Spec
 	Validator            *spec.Validator
+	Issuer               string
+	DefaultAudience      string
 	SpecValidationStrict bool
 }
 
-// New constructs the http.Handler with admin0, JWKS, and Mgmt API mounts.
-// (Auth API is added in M3.)
+// New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
 func New(d Deps) (http.Handler, error) {
 	r := httprouter.New()
 	admin0.Mount(r, d.Store)
 	mountJWKS(r, d.Keys)
+
+	authapi.Mount(authapi.Deps{
+		Router:          r,
+		Keys:            d.Keys,
+		Issuer:          d.Issuer,
+		DefaultAudience: d.DefaultAudience,
+		Log:             d.Log,
+	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{
 		Router: r, Spec: d.Spec, Validator: d.Validator,
