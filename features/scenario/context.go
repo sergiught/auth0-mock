@@ -25,6 +25,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
 	"github.com/sergiught/auth0-mock/internal/server"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -68,11 +69,13 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	store := matches.NewStore()
 	claimsStore := claims.NewStore()
 	permsStore := permissions.NewStore()
+	pkceStore := pkce.NewStore()
 	handler, err := router.New(router.Deps{
 		Log:                  zerolog.Nop(),
 		Store:                store,
 		Claims:               claimsStore,
 		Permissions:          permsStore,
+		PKCE:                 pkceStore,
 		Keys:                 ks,
 		Spec:                 openapiSpec,
 		Validator:            spec.NewValidator(openapiSpec),

@@ -15,6 +15,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 )
 
 // TokenHandler handles OAuth token requests.
@@ -25,6 +26,10 @@ type TokenHandler struct {
 	Log             zerolog.Logger
 	Claims          *claims.Store
 	Permissions     *permissions.Store
+	// PKCE may be nil. When set and the authorization_code grant supplies a
+	// code that was stashed at /authorize with a code_challenge, the matching
+	// code_verifier is required and verified.
+	PKCE *pkce.Store
 }
 
 // augmentExtra layers per-audience permissions and per-process custom claims
@@ -193,6 +198,16 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	// Verify PKCE if the /authorize step stashed a challenge for this code.
+	if h.PKCE != nil && req.Code != "" {
+		if entry, ok := h.PKCE.Consume(req.Code); ok {
+			if err := entry.Verify(req.CodeVerifier); err != nil {
+				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
+					"PKCE verification failed: "+err.Error())
+				return
+			}
+		}
+	}
 	subject := "auth0|" + uuid.NewString()
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,

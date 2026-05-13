@@ -12,6 +12,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 )
 
 // Deps is the parameter object for Mount.
@@ -23,6 +24,7 @@ type Deps struct {
 	Log             zerolog.Logger
 	Claims          *claims.Store
 	Permissions     *permissions.Store
+	PKCE            *pkce.Store
 }
 
 // Mount registers all Auth API endpoints on d.Router.
@@ -34,8 +36,9 @@ func Mount(d Deps) {
 		Log:             d.Log,
 		Claims:          d.Claims,
 		Permissions:     d.Permissions,
+		PKCE:            d.PKCE,
 	})
-	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{})
+	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{PKCE: d.PKCE})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", &DiscoveryHandler{Issuer: d.Issuer})
 	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{})

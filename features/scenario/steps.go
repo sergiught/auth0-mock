@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -230,6 +231,51 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	// PKCE: capture the `code` from the last /authorize redirect and POST it
+	// through /oauth/token with the supplied verifier. The challenge is the
+	// S256 hash of the verifier.
+	sc.Step(`^I start /authorize with code_verifier "([^"]+)"$`, func(verifier string) error {
+		challenge := pkceS256Challenge(verifier)
+		q := url.Values{}
+		q.Set("client_id", "demo")
+		q.Set("redirect_uri", "https://app/cb")
+		q.Set("state", "s1")
+		q.Set("response_type", "code")
+		q.Set("code_challenge", challenge)
+		q.Set("code_challenge_method", "S256")
+		c.Do("GET", "/authorize?"+q.Encode(), "", false)
+		return nil
+	})
+
+	sc.Step(`^I exchange the code with verifier "([^"]+)"$`, func(verifier string) error {
+		code, err := codeFromLastLocation(c)
+		if err != nil {
+			return err
+		}
+		form := url.Values{}
+		form.Set("grant_type", "authorization_code")
+		form.Set("client_id", "demo")
+		form.Set("code", code)
+		form.Set("redirect_uri", "https://app/cb")
+		form.Set("code_verifier", verifier)
+		c.DoForm("POST", "/oauth/token", form, false)
+		return nil
+	})
+
+	sc.Step(`^I exchange the code without a verifier$`, func() error {
+		code, err := codeFromLastLocation(c)
+		if err != nil {
+			return err
+		}
+		form := url.Values{}
+		form.Set("grant_type", "authorization_code")
+		form.Set("client_id", "demo")
+		form.Set("code", code)
+		form.Set("redirect_uri", "https://app/cb")
+		c.DoForm("POST", "/oauth/token", form, false)
+		return nil
+	})
+
 	sc.Step(`^the access_token claim "([^"]+)" array contains "([^"]+)"$`, func(claim, item string) error {
 		got, err := claimValueFromAccessToken(c.LastBody, claim)
 		if err != nil {
@@ -245,6 +291,32 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		}
 		return fmt.Errorf("claim %q array does not contain %q (got %s)", claim, item, got.Raw)
 	})
+}
+
+// codeFromLastLocation extracts the `code` query parameter from the Location
+// header of the last response. Used to wire /authorize → /oauth/token in
+// godog scenarios.
+func codeFromLastLocation(c *Context) (string, error) {
+	loc := c.LastResp.Header.Get("Location")
+	if loc == "" {
+		return "", fmt.Errorf("no Location header on last response")
+	}
+	u, err := url.Parse(loc)
+	if err != nil {
+		return "", fmt.Errorf("parse Location: %w", err)
+	}
+	code := u.Query().Get("code")
+	if code == "" {
+		return "", fmt.Errorf("Location %q has no code param", loc)
+	}
+	return code, nil
+}
+
+// pkceS256Challenge returns the base64url(sha256(verifier)) S256 challenge for
+// the given verifier — useful for scripting PKCE scenarios.
+func pkceS256Challenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 // claimValueFromAccessToken decodes the JWT payload from the access_token in

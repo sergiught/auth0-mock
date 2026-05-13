@@ -16,6 +16,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/mgmtapi"
 	"github.com/sergiught/auth0-mock/internal/middleware"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
@@ -25,6 +26,7 @@ type Deps struct {
 	Store                *matches.Store
 	Claims               *claims.Store
 	Permissions          *permissions.Store
+	PKCE                 *pkce.Store
 	Keys                 *jwks.KeySet
 	Spec                 *spec.Spec
 	Validator            *spec.Validator
@@ -56,6 +58,7 @@ func New(d Deps) (http.Handler, error) {
 		Log:             d.Log,
 		Claims:          d.Claims,
 		Permissions:     d.Permissions,
+		PKCE:            d.PKCE,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{

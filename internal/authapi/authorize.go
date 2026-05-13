@@ -7,10 +7,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 )
 
 // AuthorizeHandler handles OIDC authorization requests.
-type AuthorizeHandler struct{}
+type AuthorizeHandler struct {
+	// PKCE may be nil; when set, /authorize will stash any code_challenge it
+	// receives so the matching /oauth/token exchange can verify the
+	// code_verifier.
+	PKCE *pkce.Store
+}
 
 func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -31,17 +37,36 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := u.Query()
+	var issuedCode string
 	switch responseType {
 	case "token":
 		params.Set("access_token", "mock-implicit-token-"+uuid.NewString())
 		params.Set("token_type", "Bearer")
 	default:
-		params.Set("code", uuid.NewString())
+		issuedCode = uuid.NewString()
+		params.Set("code", issuedCode)
 	}
 	if state != "" {
 		params.Set("state", state)
 	}
 	u.RawQuery = params.Encode()
+
+	// Stash the PKCE challenge so /oauth/token can verify the verifier later.
+	// Only meaningful for the "code" response type.
+	if h.PKCE != nil && issuedCode != "" {
+		if challenge := q.Get("code_challenge"); challenge != "" {
+			method := pkce.Method(q.Get("code_challenge_method"))
+			if method == "" {
+				method = pkce.MethodPlain // RFC 7636 default when method omitted
+			}
+			h.PKCE.Put(issuedCode, pkce.Entry{
+				Challenge: challenge,
+				Method:    method,
+				ClientID:  q.Get("client_id"),
+				Redirect:  redirect,
+			})
+		}
+	}
 
 	w.Header().Set("Location", u.String())
 	w.WriteHeader(http.StatusFound)
