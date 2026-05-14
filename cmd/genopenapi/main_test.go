@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,85 +46,6 @@ paths:
 	assert.Contains(t, err.Error(), "/oauth/token")
 }
 
-func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
-	doc, err := bundle("http://localhost:8080")
-	require.NoError(t, err)
-
-	// Spot-check: a known multi-method Mgmt API path. Its /match and /reset
-	// siblings must carry one operation per parent method — the running mock
-	// registers siblings on the parent operation's own method, not always
-	// POST (see internal/mgmtapi/mount.go).
-	basePath := "/api/v2/users/{id}"
-	parent := doc.Paths.Value(basePath)
-	require.NotNil(t, parent,
-		"sanity: base path missing — the upstream spec changed?")
-	parentOps := parent.Operations()
-	require.GreaterOrEqual(t, len(parentOps), 2,
-		"sanity: expected a multi-method parent for this assertion")
-
-	for _, suffix := range []string{"/match", "/reset"} {
-		item := doc.Paths.Value(basePath + suffix)
-		require.NotNilf(t, item, "missing sibling path %s%s", basePath, suffix)
-		for method, parentOp := range parentOps {
-			op := item.GetOperation(method)
-			require.NotNilf(t, op, "sibling %s%s missing %s operation", basePath, suffix, method)
-			if len(parentOp.Tags) > 0 {
-				assert.Containsf(t, op.Tags, parentOp.Tags[0],
-					"%s %s%s must inherit the parent's tag", method, basePath, suffix)
-			}
-			assert.NotContains(t, op.Tags, "mock-control",
-				"siblings must not be tagged mock-control — that creates a separate sidebar bucket")
-			assert.Containsf(t, op.OperationID, "mock-control.",
-				"%s %s%s must have a synthesised operationId", method, basePath, suffix)
-			// The sidebar label echoes the parent's Auth0 summary, prefixed
-			// with the kind — e.g. "Match: Get a User".
-			wantPrefix := map[string]string{"/match": "Match: ", "/reset": "Reset: "}[suffix]
-			assert.Truef(t, strings.HasPrefix(op.Summary, wantPrefix),
-				"%s %s%s summary %q must start with %q", method, basePath, suffix, op.Summary, wantPrefix)
-			if parentOp.Summary != "" {
-				assert.Containsf(t, op.Summary, parentOp.Summary,
-					"%s %s%s summary must echo the parent's Auth0 summary %q",
-					method, basePath, suffix, parentOp.Summary)
-			}
-		}
-	}
-
-	// Sweep: for every Mgmt API parent operation, the /match and /reset
-	// siblings must carry a same-method operation with a globally-unique
-	// operationId. (Summaries are NOT unique — Auth0 reuses summary text
-	// across paths — so uniqueness is asserted on operationId only.)
-	parents := map[string]bool{}
-	for p := range doc.Paths.Map() {
-		if !strings.HasPrefix(p, "/api/v2/") ||
-			strings.HasSuffix(p, "/match") || strings.HasSuffix(p, "/reset") {
-			continue
-		}
-		parents[p] = true
-	}
-	seenIDs := map[string]string{}
-	for p := range parents {
-		parentItem := doc.Paths.Value(p)
-		for _, suffix := range []string{"/match", "/reset"} {
-			sib := doc.Paths.Value(p + suffix)
-			require.NotNilf(t, sib, "missing sibling path %s%s", p, suffix)
-			for method := range parentItem.Operations() {
-				op := sib.GetOperation(method)
-				require.NotNilf(t, op, "sibling %s%s missing %s operation", p, suffix, method)
-				if !strings.HasPrefix(op.OperationID, "mock-control.") {
-					// A real spec op occupies this method+path (collision
-					// case) — covered by TestBundleSkipsSiblingsThatCollideWithRealOps.
-					continue
-				}
-				where := method + " " + p + suffix
-				if prev, dup := seenIDs[op.OperationID]; dup {
-					t.Errorf("duplicate operationId %q on %s (also %s)", op.OperationID, where, prev)
-				}
-				seenIDs[op.OperationID] = where
-			}
-		}
-	}
-}
-
 func TestBundleStripsUpstreamProse(t *testing.T) {
 	doc, err := bundle("http://localhost:8080")
 	require.NoError(t, err)
@@ -161,34 +81,6 @@ func TestBundleStripsUpstreamProse(t *testing.T) {
 	// OAuth grant-type URNs are protocol identifiers, not prose — kept.
 	assert.Contains(t, body, "http://auth0.com/oauth/grant-type/",
 		"grant-type URNs are protocol identifiers and must survive")
-}
-
-func TestBundleSkipsSiblingsThatCollideWithRealOps(t *testing.T) {
-	doc, err := bundle("http://localhost:8080")
-	require.NoError(t, err)
-
-	// The Auth0 spec has a real PATCH /branding/phone/templates/{id}/reset.
-	// Its parent /branding/phone/templates/{id} has GET, PATCH and DELETE — so
-	// the synthesiser must add GET and DELETE /reset siblings but must NOT
-	// overwrite the real PATCH operation that already occupies that slot.
-	colliding := "/api/v2/branding/phone/templates/{id}/reset"
-	item := doc.Paths.Value(colliding)
-	require.NotNil(t, item)
-
-	// The PATCH op must still be the real one — not a synthesised sibling.
-	patchOp := item.GetOperation("PATCH")
-	require.NotNil(t, patchOp, "expected real PATCH op to survive")
-	assert.NotContains(t, patchOp.OperationID, "mock-control",
-		"real PATCH op was clobbered by a synthesised /reset sibling")
-	assert.NotContains(t, patchOp.Tags, "mock-control")
-
-	// The non-colliding parent methods still get synthesised reset siblings.
-	for _, method := range []string{"GET", "DELETE"} {
-		op := item.GetOperation(method)
-		require.NotNilf(t, op, "expected a synthesised %s reset sibling", method)
-		assert.Containsf(t, op.OperationID, "mock-control.reset.",
-			"%s op on %s should be a synthesised reset sibling", method, colliding)
-	}
 }
 
 func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {

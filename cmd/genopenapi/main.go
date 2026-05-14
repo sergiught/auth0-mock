@@ -1,8 +1,8 @@
 // Command genopenapi bundles the embedded Auth0 Management API skeleton, the
 // per-package OpenAPI fragments shipped by each surface (authapi, admin0,
-// router service endpoints), and synthesised /match + /reset siblings into a
-// single OpenAPI 3.1 document. With -strip-raw it instead runs the vendoring
-// step that produces the skeleton from a manually-downloaded raw Auth0 spec.
+// router service endpoints) into a single OpenAPI 3.1 document. With
+// -strip-raw it instead runs the vendoring step that produces the skeleton
+// from a manually-downloaded raw Auth0 spec.
 package main
 
 import (
@@ -124,7 +124,6 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 	titleizeManagementTags(base)
 
 	fragments := [][]byte{
-		api.MockControlOpenAPIYAML,
 		router.ServiceFragment,
 		authapi.Fragment,
 		admin0.Fragment,
@@ -141,8 +140,6 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 		}
 	}
 
-	synthesiseMockControlSiblings(base, bp)
-
 	// Servers rewrite (kept here so bundle() returns a fully-formed doc).
 	base.Servers = openapi3.Servers{{
 		URL:         server,
@@ -158,11 +155,7 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 // the rendered docs sidebar splits into four top-level sections instead of
 // the ~50 flat tags the upstream Mgmt API ships. Authentication API and
 // admin0 carry several sub-tags each (declared in their fragments) so the
-// group→tag nesting is meaningful rather than redundant. The /match and
-// /reset siblings are intentionally NOT in a separate group: each inherits
-// the tag of the parent operation it pairs with (see
-// synthesiseMockControlSiblings) and so appears adjacent to it inside the
-// Management API group.
+// group→tag nesting is meaningful rather than redundant.
 //
 // Note: with x-tagGroups, a tag that is in no group is dropped from the
 // sidebar entirely. Management API is computed as "every used tag not claimed
@@ -257,10 +250,7 @@ const docsDescription = "" +
 	"- **Authentication API** — `/oauth/token`, `/authorize`, `/userinfo`, " +
 	"`/v2/logout`, `/dbconnections/*`, `/passwordless/*`.\n" +
 	"- **Management API** — every endpoint under `/api/v2` from the upstream " +
-	"Auth0 spec, plus a `{path}/match` and `{path}/reset` sibling per operation " +
-	"so you can programme canned responses from this same page. Each sibling " +
-	"uses the same HTTP method as the operation it pairs with — `GET {path}/match` " +
-	"programmes the GET, `POST {path}/match` programmes the POST.\n" +
+	"Auth0 spec.\n" +
 	"- **admin0** — control plane under `/admin0/*` for direct manipulation " +
 	"of in-memory state (registered matches, claim overlay, per-audience " +
 	"permissions, MFA-required flag).\n" +
@@ -618,140 +608,3 @@ func titleizeTag(tag string) string {
 	}
 	return strings.Join(parts, " ")
 }
-
-// synthesiseMockControlSiblings adds {path}/match and {path}/reset operations
-// for every Management API operation in base.Paths.
-//
-// The siblings are method-aware: the running mock (see
-// internal/mgmtapi/mount.go) registers one sibling per parent operation, on
-// that operation's own method — so GET /api/v2/actions/actions and
-// POST /api/v2/actions/actions each get their own GET .../match and
-// POST .../match. A sibling method is skipped only when a real spec operation
-// already occupies that exact method+path (e.g. the real
-// PATCH /branding/phone/templates/{id}/reset).
-func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
-	if base.Paths == nil {
-		return
-	}
-	// Snapshot the existing paths (we mutate base.Paths as we go).
-	existing := map[string]*openapi3.PathItem{}
-	for p, item := range base.Paths.Map() {
-		existing[p] = item
-	}
-	for path, parentItem := range existing {
-		if mgmtPrefix == "" || !strings.HasPrefix(path, mgmtPrefix+"/") {
-			continue
-		}
-		for _, suffix := range []string{"/match", "/reset"} {
-			siblingPath := path + suffix
-			// Reuse the path item if a real spec operation already lives here
-			// (e.g. the real PATCH /branding/phone/templates/{id}/reset) so we
-			// only add the non-colliding methods; otherwise start fresh.
-			sibling := base.Paths.Value(siblingPath)
-			if sibling == nil {
-				sibling = &openapi3.PathItem{}
-			}
-			for method, parentOp := range parentItem.Operations() {
-				if sibling.GetOperation(method) != nil {
-					// Real spec operation occupies this method+path — the
-					// running mock skips the sibling here too.
-					continue
-				}
-				sibling.SetOperation(method,
-					mockControlOperation(suffix, method, path, parentOp.Summary, parentOp.Tags))
-			}
-			base.Paths.Set(siblingPath, sibling)
-		}
-	}
-}
-
-// mockControlOperation builds the synthesised OpenAPI operation for a /match or
-// /reset sibling. Bodies reference the shared schemas in MockControlOpenAPIYAML.
-// ParentTags is lifted from the paired parent operation so the sibling renders
-// under the same tag; method and parentPath identify the exact parent
-// operation and feed the globally-unique operationId; parentSummary is the
-// parent's Auth0 summary, echoed into the sidebar label.
-func mockControlOperation(suffix, method, parentPath, parentSummary string, parentTags []string) *openapi3.Operation {
-	op := &openapi3.Operation{
-		Tags:        parentTags,
-		OperationID: operationIDFor(suffix, method, parentPath),
-		Summary:     summaryFor(suffix, method, parentPath, parentSummary),
-		Description: descriptionFor(suffix),
-		Responses:   openapi3.NewResponses(),
-	}
-	switch suffix {
-	case "/match":
-		op.RequestBody = &openapi3.RequestBodyRef{
-			Value: &openapi3.RequestBody{
-				Required: true,
-				Content: openapi3.NewContentWithJSONSchemaRef(&openapi3.SchemaRef{
-					Ref: "#/components/schemas/MatchRegistration",
-				}),
-			},
-		}
-		op.Responses.Set("204", &openapi3.ResponseRef{
-			Value: &openapi3.Response{
-				Description: ptr("Registration stored. Subsequent matching requests will receive the programmed response."),
-			},
-		})
-	case "/reset":
-		op.Responses.Set("204", &openapi3.ResponseRef{
-			Value: &openapi3.Response{
-				Description: ptr("Programmed responses cleared for the paired operation."),
-			},
-		})
-	}
-	op.Responses.Set("400", &openapi3.ResponseRef{
-		Value: &openapi3.Response{
-			Description: ptr("Body could not be parsed or violated the response schema for the paired operation."),
-		},
-	})
-	return op
-}
-
-// operationIDFor builds a unique, stable operationId for a synthesised sibling
-// from its kind ("match"/"reset"), the parent operation's HTTP method, and the
-// parent path, e.g. "mock-control.match.get.api.v2.actions.actions". The method
-// is part of the id because a single path can host several parent operations
-// (GET + POST), each of which gets its own same-method sibling. Path parameter
-// braces are stripped and slashes become dots so the id is a clean slug.
-func operationIDFor(suffix, method, parentPath string) string {
-	kind := strings.TrimPrefix(suffix, "/")
-	slug := strings.NewReplacer("/", ".", "{", "", "}", "").
-		Replace(strings.TrimPrefix(parentPath, "/"))
-	return "mock-control." + kind + "." + strings.ToLower(method) + "." + slug
-}
-
-// summaryFor returns the sidebar label for a synthesised sibling. It echoes the
-// parent endpoint's own Auth0 summary so the sibling reads as a sub-action of
-// it — e.g. "Match: Get a User". When the parent has no summary it falls back
-// to the method+path form ("Match: GET /api/v2/...") so the label is never
-// blank.
-func summaryFor(suffix, method, parentPath, parentSummary string) string {
-	var kind string
-	switch suffix {
-	case "/match":
-		kind = "Match"
-	case "/reset":
-		kind = "Reset"
-	default:
-		return ""
-	}
-	target := parentSummary
-	if target == "" {
-		target = method + " " + parentPath
-	}
-	return kind + ": " + target
-}
-
-func descriptionFor(suffix string) string {
-	switch suffix {
-	case "/match":
-		return "Send a `MatchRegistration` body. The mock validates `body` against the paired operation's response schema for the given `status` before storing."
-	case "/reset":
-		return "No request body. Clears any registered match for the paired operation."
-	}
-	return ""
-}
-
-func ptr[T any](v T) *T { return &v }
