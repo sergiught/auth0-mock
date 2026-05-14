@@ -109,6 +109,6 @@ Feature: Per-audience permission injection
       """
       ["x"]
       """
-    And I reset all matches
+    And I reset all mock state
     When I send "GET /admin0/permissions" without a bearer
     Then the response body contains "{}"

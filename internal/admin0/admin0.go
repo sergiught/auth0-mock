@@ -31,7 +31,6 @@ type Deps struct {
 // Mount registers every /admin0/* route on r.
 func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
-	r.Method(http.MethodGet, "/admin0/matches", &ListMatchesHandler{Store: d.Matches})
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
 	r.Method(http.MethodDelete, "/admin0/expectations", &DeleteExpectationsHandler{Store: d.Matches})
@@ -104,21 +103,6 @@ func (h *PutMFARequiredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	h.Store.SetRequired(body.Required)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- matches ---------------------------------------------------------------.
-
-type listMatchesResponse struct {
-	Matches []matches.Match `json:"matches"`
-}
-
-// ListMatchesHandler returns the entire set of registered Mgmt API matches.
-type ListMatchesHandler struct {
-	Store *matches.Store
-}
-
-func (h *ListMatchesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	render.JSON(w, r, listMatchesResponse{Matches: h.Store.List()})
 }
 
 // --- claims ----------------------------------------------------------------.

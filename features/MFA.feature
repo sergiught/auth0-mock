@@ -145,7 +145,7 @@ Feature: MFA challenge flow
       """
       {"required":true}
       """
-    And I reset all matches
+    And I reset all mock state
     When I send "GET /admin0/mfa-required" without a bearer
     Then I receive a 200 response
     And the response JSON path "required" equals "false"

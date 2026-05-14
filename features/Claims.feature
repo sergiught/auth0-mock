@@ -52,7 +52,7 @@ Feature: Per-process custom JWT claims
       """
       {"role":"admin"}
       """
-    And I reset all matches
+    And I reset all mock state
     When I send "GET /admin0/claims" without a bearer
     Then I receive a 200 response
     And the response body contains "{}"

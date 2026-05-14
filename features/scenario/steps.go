@@ -3,6 +3,7 @@ package scenario
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -33,26 +34,87 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
-	// Registration that's expected to succeed (4xx fails the step).
-	sc.Step(`^I register "([^"]+)" with body:$`, func(target string, body *godog.DocString) error {
-		method, path, err := splitTarget(target)
+	// Registration expected to succeed (4xx fails the step).
+	sc.Step(`^I register an expectation for "([^"]+)" with response:$`, func(target string, body *godog.DocString) error {
+		payload, err := expectationBody(target, body.Content)
 		if err != nil {
 			return err
 		}
-		c.Do(method, path, body.Content, false)
+		c.Do("POST", "/admin0/expectations", payload, false)
 		if c.LastResp.StatusCode >= 400 {
 			return fmt.Errorf("registration failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
 		}
 		return nil
 	})
 
-	// Registration that's expected to fail (we want to assert the 4xx).
-	sc.Step(`^I attempt to register "([^"]+)" with body:$`, func(target string, body *godog.DocString) error {
+	// Registration expected to fail (assert the 4xx afterwards).
+	sc.Step(`^I attempt to register an expectation for "([^"]+)" with response:$`, func(target string, body *godog.DocString) error {
+		payload, err := expectationBody(target, body.Content)
+		if err != nil {
+			return err
+		}
+		c.Do("POST", "/admin0/expectations", payload, false)
+		return nil
+	})
+
+	sc.Step(`^I clear the expectation for "([^"]+)"$`, func(target string) error {
 		method, path, err := splitTarget(target)
 		if err != nil {
 			return err
 		}
-		c.Do(method, path, body.Content, false)
+		payload := fmt.Sprintf(`{"method":%q,"path":%q}`, method, path)
+		c.Do("DELETE", "/admin0/expectations", payload, false)
+		if c.LastResp.StatusCode != 204 {
+			return fmt.Errorf("clear failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
+		}
+		return nil
+	})
+
+	sc.Step(`^I clear all expectations$`, func() error {
+		c.Do("DELETE", "/admin0/expectations", "", false)
+		if c.LastResp.StatusCode != 204 {
+			return fmt.Errorf("clear all failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
+		}
+		return nil
+	})
+
+	sc.Step(`^I reset all mock state$`, func() error {
+		c.Do("POST", "/admin0/reset", "", false)
+		if c.LastResp.StatusCode != 204 {
+			return fmt.Errorf("/admin0/reset failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
+		}
+		return nil
+	})
+
+	sc.Step(`^I list registered expectations$`, func() error {
+		c.Do("GET", "/admin0/expectations", "", false)
+		return nil
+	})
+
+	sc.Step(`^the expectations list has (\d+) entries$`, func(want int) error {
+		got := int(gjson.GetBytes(c.LastBody, "expectations.#").Int())
+		if got != want {
+			return fmt.Errorf("got %d entries, want %d (body=%s)", got, want, string(c.LastBody))
+		}
+		return nil
+	})
+
+	sc.Step(`^the expectations list contains "([^"]+)"$`, func(target string) error {
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		found := false
+		gjson.GetBytes(c.LastBody, "expectations").ForEach(func(_, v gjson.Result) bool {
+			if v.Get("method").String() == method && v.Get("path").String() == path {
+				found = true
+				return false
+			}
+			return true
+		})
+		if !found {
+			return fmt.Errorf("expectations list does not contain %s %s (body=%s)", method, path, string(c.LastBody))
+		}
 		return nil
 	})
 
@@ -80,58 +142,6 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 			return err
 		}
 		c.Do(method, path, body.Content, true)
-		return nil
-	})
-
-	sc.Step(`^I reset "([^"]+)"$`, func(target string) error {
-		method, path, err := splitTarget(target)
-		if err != nil {
-			return err
-		}
-		c.Do(method, path, "", false)
-		if c.LastResp.StatusCode != 204 {
-			return fmt.Errorf("reset failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
-		}
-		return nil
-	})
-
-	sc.Step(`^I reset all matches$`, func() error {
-		c.Do("POST", "/admin0/reset", "", false)
-		if c.LastResp.StatusCode != 204 {
-			return fmt.Errorf("/admin0/reset failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
-		}
-		return nil
-	})
-
-	sc.Step(`^I list registered matches$`, func() error {
-		c.Do("GET", "/admin0/matches", "", false)
-		return nil
-	})
-
-	sc.Step(`^the matches list has (\d+) entries$`, func(want int) error {
-		got := int(gjson.GetBytes(c.LastBody, "matches.#").Int())
-		if got != want {
-			return fmt.Errorf("got %d entries, want %d (body=%s)", got, want, string(c.LastBody))
-		}
-		return nil
-	})
-
-	sc.Step(`^the matches list contains "([^"]+)"$`, func(target string) error {
-		method, path, err := splitTarget(target)
-		if err != nil {
-			return err
-		}
-		found := false
-		gjson.GetBytes(c.LastBody, "matches").ForEach(func(_, v gjson.Result) bool {
-			if v.Get("method").String() == method && v.Get("path").String() == path {
-				found = true
-				return false
-			}
-			return true
-		})
-		if !found {
-			return fmt.Errorf("matches list does not contain %s %s (body=%s)", method, path, string(c.LastBody))
-		}
 		return nil
 	})
 
@@ -398,4 +408,28 @@ func splitTarget(target string) (method, path string, err error) {
 		return "", "", fmt.Errorf("expected 'METHOD /path', got %q", target)
 	}
 	return parts[0], parts[1], nil
+}
+
+// expectationBody merges a "METHOD /path" target into a response docstring
+// ({status, headers?, body?}) to form a POST /admin0/expectations payload.
+func expectationBody(target, responseJSON string) (string, error) {
+	method, path, err := splitTarget(target)
+	if err != nil {
+		return "", err
+	}
+	var resp map[string]any
+	if strings.TrimSpace(responseJSON) != "" {
+		if err := json.Unmarshal([]byte(responseJSON), &resp); err != nil {
+			return "", fmt.Errorf("response json: %w", err)
+		}
+	} else {
+		resp = map[string]any{}
+	}
+	resp["method"] = method
+	resp["path"] = path
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
