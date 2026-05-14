@@ -126,6 +126,43 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 	}
 }
 
+func TestBundleStripsUpstreamProse(t *testing.T) {
+	doc, err := bundle("http://localhost:8080")
+	require.NoError(t, err)
+
+	// An upstream Auth0 operation: prose stripped, structure kept.
+	usersGet := doc.Paths.Value("/api/v2/users/{id}").GetOperation("GET")
+	require.NotNil(t, usersGet)
+	assert.Empty(t, usersGet.Description, "upstream operation description must be blanked")
+	assert.Empty(t, usersGet.Extensions, "upstream operation x- extensions must be dropped")
+	assert.NotEmpty(t, usersGet.Summary, "summaries are kept — short factual labels")
+
+	// Response.description is required by OpenAPI: blanked, not removed.
+	resp200 := usersGet.Responses.Map()["200"]
+	require.NotNil(t, resp200)
+	require.NotNil(t, resp200.Value)
+	require.NotNil(t, resp200.Value.Description,
+		"Response.description is required — must stay non-nil after stripping")
+
+	// Auth0-mock's own fragment prose, merged after the strip, survives.
+	tokenPost := doc.Paths.Value("/oauth/token").GetOperation("POST")
+	require.NotNil(t, tokenPost)
+	assert.NotEmpty(t, tokenPost.Description,
+		"auth0-mock's own fragment descriptions must be preserved")
+
+	raw, err := json.Marshal(doc)
+	require.NoError(t, err)
+	body := string(raw)
+	// Auth0's documentation links and x-description prose are gone.
+	assert.NotContains(t, body, "auth0.com/docs",
+		"Auth0 documentation links must not survive in the merged spec")
+	assert.NotContains(t, body, "x-description-",
+		"Auth0's x-description-N prose extensions must be dropped")
+	// OAuth grant-type URNs are protocol identifiers, not prose — kept.
+	assert.Contains(t, body, "http://auth0.com/oauth/grant-type/",
+		"grant-type URNs are protocol identifiers and must survive")
+}
+
 func TestBundleSkipsSiblingsThatCollideWithRealOps(t *testing.T) {
 	doc, err := bundle("http://localhost:8080")
 	require.NoError(t, err)

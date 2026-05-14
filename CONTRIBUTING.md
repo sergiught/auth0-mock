@@ -155,10 +155,15 @@ One subject line ≤ 72 chars, blank line, body wrapping at ~80 chars explaining
 
 You probably don't need to do anything. The Mgmt API is **spec-driven**, every operation in the embedded `api/auth0-management-api.openapi.json` already has its three routes (`<verb> <path>`, `<verb> <path>/match`, `<verb> <path>/reset`) registered automatically by `mgmtapi.Mount`.
 
-If Auth0 publishes a new endpoint:
+### Refreshing the Auth0 Management API spec
 
-1. Re-download the spec to `api/auth0-management-api.openapi.json`.
-2. Run `go test ./...`. Boot the service. The new endpoint is live with no code changes.
+`api/auth0-management-api.openapi.json` is **not** Auth0's published spec verbatim — it is a stripped *skeleton*: paths, methods, parameters, and schema shapes only. Every Auth0-authored `description`, `externalDocs` link, and `x-*` extension has been removed (see `stripUpstreamProse` in `cmd/genopenapi/main.go`). The skeleton is what the mock needs to route and validate; Auth0's prose is not, and is not ours to redistribute. The raw download is gitignored (`/api/*.raw.json`) and never committed.
+
+To pull in a newer Auth0 spec:
+
+1. **Manually** download the current Auth0 Management API OpenAPI document and save it to `api/auth0-management-api.raw.json` (a deliberate, one-time human action — nothing in this repo scrapes Auth0).
+2. Run `make refresh-spec`. It strips the raw file into the committed skeleton and regenerates the merged `api/auth0-mock.openapi.json`.
+3. Run `make test`, review the skeleton diff, and open a PR. The repo will drift from upstream between refreshes — that's expected; the mock's behaviour is pinned by tests, not by being current.
 
 If you need to **change the generic handler's behaviour** (e.g. inject latency, log differently), edit `internal/mgmtapi/handler.go`, but keep in mind it serves all ~400 endpoints uniformly.
 

@@ -61,6 +61,17 @@ openapi: ## Regenerate the merged OpenAPI spec at api/auth0-mock.openapi.json
 	@echo "==> Generating merged OpenAPI spec"
 	@go run ./cmd/genopenapi -out api/auth0-mock.openapi.json
 
+.PHONY: refresh-spec
+refresh-spec: ## Re-vendor the Auth0 Management API skeleton from a manually-downloaded raw spec
+	@test -f api/auth0-management-api.raw.json || { \
+		echo "Place the manually-downloaded Auth0 Management API OpenAPI spec at"; \
+		echo "  api/auth0-management-api.raw.json"; \
+		echo "(it is gitignored — only the stripped skeleton is committed)"; \
+		exit 1; }
+	@echo "==> Stripping Auth0 prose -> api/auth0-management-api.openapi.json"
+	@go run ./cmd/genopenapi -strip-raw api/auth0-management-api.raw.json -out api/auth0-management-api.openapi.json
+	@$(MAKE) openapi
+
 .PHONY: pre-commit
 pre-commit: ## Install local pre-commit and commit-msg hooks
 	@if ! command -v pre-commit >/dev/null 2>&1; then \

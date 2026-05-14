@@ -23,9 +23,16 @@ import (
 func main() {
 	out := flag.String("out", "api/auth0-mock.openapi.json", "output path for the merged OpenAPI JSON")
 	server := flag.String("server", "http://localhost:8080", "value for servers[0].url in the merged doc")
+	stripRaw := flag.String("strip-raw", "", "if set: read this raw Auth0 spec, strip Auth0's prose, write the skeleton to -out, and exit (the `make refresh-spec` vendoring step)")
 	flag.Parse()
 
-	if err := run(*out, *server); err != nil {
+	var err error
+	if *stripRaw != "" {
+		err = runStrip(*stripRaw, *out)
+	} else {
+		err = run(*out, *server)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "genopenapi:", err)
 		os.Exit(1)
 	}
@@ -39,6 +46,32 @@ func run(out, server string) error {
 	body, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
+	}
+	if err := os.WriteFile(out, append(body, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", out, err)
+	}
+	return nil
+}
+
+// runStrip loads a raw, manually-downloaded Auth0 Management API spec, removes
+// Auth0's authored prose (see stripUpstreamProse), and writes the structural
+// skeleton to out. This is the vendoring step behind `make refresh-spec`: the
+// raw download is never committed — only the skeleton is. Keeping it a
+// deliberate, manual step (rather than a build-time fetch) is intentional, so
+// nothing in the project scrapes Auth0's site.
+func runStrip(rawPath, out string) error {
+	raw, err := os.ReadFile(rawPath) //nolint:gosec // rawPath is a -strip-raw CLI flag supplied by a developer running the vendoring step, not untrusted input
+	if err != nil {
+		return fmt.Errorf("read raw spec: %w", err)
+	}
+	doc, err := openapi3.NewLoader().LoadFromData(raw)
+	if err != nil {
+		return fmt.Errorf("parse raw spec: %w", err)
+	}
+	stripUpstreamProse(doc)
+	body, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal skeleton: %w", err)
 	}
 	if err := os.WriteFile(out, append(body, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", out, err)
@@ -79,6 +112,10 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 			base.Paths = prefixed
 		}
 	}
+
+	// Strip Auth0's authored prose from the upstream spec before layering on
+	// auth0-mock's own surfaces — see stripUpstreamProse.
+	stripUpstreamProse(base)
 
 	fragments := [][]byte{
 		api.MockControlOpenAPIYAML,
@@ -371,6 +408,171 @@ func basePath(url string) string {
 		}
 	}
 	return url
+}
+
+// stripUpstreamProse removes Auth0's authored prose from the loaded upstream
+// spec, leaving the structural skeleton (paths, methods, parameters, schemas)
+// that the mock actually needs to route and validate requests. Every
+// `description` is blanked and every `externalDocs` dropped — that prose, and
+// the ~100 auth0.com documentation links embedded in it, is Auth0's
+// copyrightable content; the API structure itself is not. `summary` is kept:
+// it's a short factual label the sidebar and the /match-sibling summaries
+// depend on. `example` values are kept: sample data, functionally useful for
+// validation and "Try it".
+//
+// Called before the per-surface fragments are merged, so auth0-mock's own
+// authored descriptions (authapi, admin0, service, mock-control) are untouched.
+//
+// Response.Description is blanked to "" rather than removed because OpenAPI
+// requires it on every Response object — an empty string keeps the document
+// structurally valid.
+//
+// Vendor extensions (`x-*`) are dropped wholesale: the upstream spec carries
+// ~1000 `x-description-N` prose fields (plus `x-operation-name`,
+// `x-release-lifecycle`, …), all of which is Auth0 content, and nothing in the
+// mock's routing or validation reads any extension.
+func stripUpstreamProse(base *openapi3.T) {
+	base.ExternalDocs = nil
+	base.Extensions = nil
+	if base.Paths != nil {
+		base.Paths.Extensions = nil
+		for _, item := range base.Paths.Map() {
+			stripPathItem(item)
+		}
+	}
+	if base.Components == nil {
+		return
+	}
+	base.Components.Extensions = nil
+	for _, ref := range base.Components.Schemas {
+		stripSchemaRef(ref)
+	}
+	for _, ref := range base.Components.Parameters {
+		stripParameterRef(ref)
+	}
+	for _, ref := range base.Components.Headers {
+		if ref != nil && ref.Value != nil {
+			ref.Value.Description = ""
+			ref.Value.Extensions = nil
+			stripSchemaRef(ref.Value.Schema)
+		}
+	}
+	for _, ref := range base.Components.RequestBodies {
+		if ref != nil && ref.Value != nil {
+			ref.Value.Description = ""
+			ref.Value.Extensions = nil
+			stripContent(ref.Value.Content)
+		}
+	}
+	for _, ref := range base.Components.Responses {
+		stripResponseRef(ref)
+	}
+}
+
+func stripPathItem(item *openapi3.PathItem) {
+	if item == nil {
+		return
+	}
+	item.Description = ""
+	item.Extensions = nil
+	for _, p := range item.Parameters {
+		stripParameterRef(p)
+	}
+	for _, op := range item.Operations() {
+		if op == nil {
+			continue
+		}
+		op.Description = ""
+		op.ExternalDocs = nil
+		op.Extensions = nil
+		for _, p := range op.Parameters {
+			stripParameterRef(p)
+		}
+		if op.RequestBody != nil && op.RequestBody.Value != nil {
+			op.RequestBody.Value.Description = ""
+			op.RequestBody.Value.Extensions = nil
+			stripContent(op.RequestBody.Value.Content)
+		}
+		if op.Responses != nil {
+			for _, r := range op.Responses.Map() {
+				stripResponseRef(r)
+			}
+		}
+	}
+}
+
+func stripParameterRef(ref *openapi3.ParameterRef) {
+	if ref == nil || ref.Value == nil {
+		return
+	}
+	ref.Value.Description = ""
+	ref.Value.Extensions = nil
+	stripSchemaRef(ref.Value.Schema)
+	stripContent(ref.Value.Content)
+}
+
+func stripResponseRef(ref *openapi3.ResponseRef) {
+	if ref == nil || ref.Value == nil {
+		return
+	}
+	// Description is required on a Response — blank it, don't drop it.
+	empty := ""
+	ref.Value.Description = &empty
+	ref.Value.Extensions = nil
+	stripContent(ref.Value.Content)
+	for _, h := range ref.Value.Headers {
+		if h != nil && h.Value != nil {
+			h.Value.Description = ""
+			h.Value.Extensions = nil
+			stripSchemaRef(h.Value.Schema)
+		}
+	}
+}
+
+func stripContent(content openapi3.Content) {
+	for _, mt := range content {
+		if mt != nil {
+			mt.Extensions = nil
+			stripSchemaRef(mt.Schema)
+		}
+	}
+}
+
+// stripSchemaRef blanks prose on an inline schema and recurses. A $ref node is
+// skipped: its target is a named component schema walked at its own definition
+// site, so following the ref would double-process and could loop on recursive
+// schemas.
+func stripSchemaRef(ref *openapi3.SchemaRef) {
+	if ref == nil || ref.Ref != "" || ref.Value == nil {
+		return
+	}
+	s := ref.Value
+	s.Description = ""
+	s.ExternalDocs = nil
+	s.Extensions = nil
+	for _, p := range s.Properties {
+		stripSchemaRef(p)
+	}
+	for _, p := range s.PatternProperties {
+		stripSchemaRef(p)
+	}
+	stripSchemaRef(s.Items)
+	for _, sub := range s.PrefixItems {
+		stripSchemaRef(sub)
+	}
+	for _, sub := range s.AllOf {
+		stripSchemaRef(sub)
+	}
+	for _, sub := range s.AnyOf {
+		stripSchemaRef(sub)
+	}
+	for _, sub := range s.OneOf {
+		stripSchemaRef(sub)
+	}
+	stripSchemaRef(s.Not)
+	stripSchemaRef(s.AdditionalProperties.Schema)
+	stripSchemaRef(s.UnevaluatedProperties.Schema)
+	stripSchemaRef(s.UnevaluatedItems.Schema)
 }
 
 // synthesiseMockControlSiblings adds {path}/match and {path}/reset operations
