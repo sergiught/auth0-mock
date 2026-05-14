@@ -75,6 +75,7 @@ const scalarDocsHTML = `<!doctype html>
           layout: 'modern',
           darkMode: prefersDark,
           withDefaultFonts: false,
+          hideClientButton: true,
           agent: { disabled: true },
         };
         if (token) {
