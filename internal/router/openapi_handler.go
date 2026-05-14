@@ -77,6 +77,9 @@ const scalarDocsHTML = `<!doctype html>
           withDefaultFonts: false,
           hideClientButton: true,
           hideModels: true,
+          // Scalar's navbar dev-tools default to showing on localhost — which
+          // is exactly where this mock runs — so switch them off explicitly.
+          showDeveloperTools: 'never',
           defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
           // hiddenClients is a denylist, so to show only the curated set
           // (curl, python requests, go, rust, java okhttp, js axios, php
