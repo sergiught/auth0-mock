@@ -11,8 +11,8 @@ import (
 // Config holds all runtime settings.
 type Config struct {
 	Environment          string        `env:"ENVIRONMENT" envDefault:"development"`
-	HTTPAddress          string        `env:"HTTP_ADDR" envDefault:"0.0.0.0:8080"`
-	HTTPSAddress         string        `env:"HTTPS_ADDR" envDefault:"0.0.0.0:8443"`
+	HTTPAddress          string        `env:"HTTP_ADDR" envDefault:"127.0.0.1:8080"`
+	HTTPSAddress         string        `env:"HTTPS_ADDR" envDefault:"127.0.0.1:8443"`
 	TLSCertFile          string        `env:"TLS_CERT_FILE"`
 	TLSKeyFile           string        `env:"TLS_KEY_FILE"`
 	TLSCacheDir          string        `env:"TLS_CACHE_DIR"`

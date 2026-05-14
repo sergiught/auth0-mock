@@ -28,6 +28,13 @@ COPY --from=build /out/auth0-mock /usr/local/bin/auth0-mock
 
 EXPOSE 8080 8443
 
+# Bind on all interfaces inside the container so `docker run -p 8080:8080`
+# can reach the listener. The binary defaults to 127.0.0.1 for local dev safety;
+# this override re-enables the container use case without leaking that bind
+# choice to bare-metal runs.
+ENV HTTP_ADDR=0.0.0.0:8080 \
+    HTTPS_ADDR=0.0.0.0:8443
+
 # Run as nobody (UID/GID 65534) — both 8080 and 8443 are unprivileged ports.
 USER 65534:65534
 
