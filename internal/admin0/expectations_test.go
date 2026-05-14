@@ -3,6 +3,7 @@ package admin0_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -111,10 +112,19 @@ func TestPostExpectation_RegistersRequestBodyMatcher(t *testing.T) {
 }
 
 func TestPostExpectation_RegistersQueryMatcher(t *testing.T) {
-	r, _ := newExpectationsRouter(t)
+	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/{id}","request":{"query":{"fields":"id"}},"response":{"status":200,"body":{"id":"x"}}}`)
 	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+
+	hit := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}",
+		matches.MatchableRequest{Query: url.Values{"fields": {"id"}}})
+	require.NotNil(t, hit)
+	require.NotNil(t, hit.Request)
+
+	miss := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}",
+		matches.MatchableRequest{Query: url.Values{"fields": {"name"}}})
+	assert.Nil(t, miss)
 }
 
 func TestPostExpectation_EmptyRequestMatcherIsCatchAll(t *testing.T) {

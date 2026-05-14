@@ -77,14 +77,15 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	kind := matches.KindOf(p.Path)
 	storePath := p.Path
-	if matches.KindOf(p.Path) == matches.KindTemplate {
+	if kind == matches.KindTemplate {
 		storePath = op.Template
 	}
 	h.Store.Put(matches.Expectation{
 		Method:   p.Method,
 		Path:     storePath,
-		Kind:     matches.KindOf(p.Path),
+		Kind:     kind,
 		Request:  req,
 		Response: p.Response,
 	})
