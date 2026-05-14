@@ -6,6 +6,7 @@ All notable changes to this project will be documented here. Format follows [Kee
 
 ### Added
 
+- **Request-matcher validation at registration**: `request.body` is validated against the target operation's request schema with `required` relaxed (a matcher is partial by design), so unknown and mistyped fields are rejected up front (`invalid_request_match`); `request.query` keys are checked against the operation's declared query parameters.
 - **MFA challenge flow**: initial `password` / `password-realm` grants return `403 mfa_required` + `mfa_token` when MFA enforcement is on. Three new Auth0 grants accept canned factors: `mfa-otp` (`otp=123456`), `mfa-oob` (`oob_code=any` + `binding_code=123456`), `mfa-recovery-code` (`recovery_code=ABCDEFGHIJKLMNOP`). `GET/PUT /admin0/mfa-required` toggles enforcement at runtime. `POST /admin0/reset` now clears MFA state.
 - **`password-realm` grant**: Auth0-specific `http://auth0.com/oauth/grant-type/password-realm`; same shape as `password` with an extra `realm` field threaded into the issued token's claims (`connection`, `https://auth0.com/realm`, `gty=password-realm`). Used by Auth0 Native SDKs.
 - **PKCE validation on `authorization_code` grant**: `/authorize` stashes any `code_challenge` (S256 or plain) keyed by the issued code; `/oauth/token` verifies the `code_verifier` on exchange. 10-min TTL, single-use. Codes that never came through `/authorize` still mint (backward compat).
@@ -20,6 +21,7 @@ All notable changes to this project will be documented here. Format follows [Kee
 
 ### Changed
 
+- **`/admin0/expectations` payload is now nested** — `{method, path, request?, response}`. An optional `request` matcher (subset-matched `query` + `body`) conditions an expectation on the incoming request, so multiple expectations can be registered per operation; the most specific match wins, ties broken by newest-registered. `DELETE {method, path}` clears the whole operation's list. The `matches` store changed from one entry per `(method, path)` to an ordered list per key.
 - **`POST /admin0/reset`** now clears expectations + claims + permissions + MFA state in one shot.
 - **Auth0 Management API spec is now a stripped skeleton**, not Auth0's verbatim document. `stripUpstreamProse` removes every Auth0-authored description, `externalDocs` link, and `x-*` extension (~1000 `x-description-*` fields, 97 doc links), leaving only the paths/methods/parameters/schemas the mock needs to route and validate. `make refresh-spec` re-vendors the skeleton from a manually-downloaded raw spec (gitignored, never committed); see CONTRIBUTING.md.
 - **HTTP/HTTPS listeners default to `127.0.0.1`** (was `0.0.0.0`), so a bare-metal run is not reachable off-host without an explicit `HTTP_ADDR` / `HTTPS_ADDR` opt-in. The Docker image sets them back to `0.0.0.0` so `docker run -p` and compose still work.

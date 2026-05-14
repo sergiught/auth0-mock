@@ -26373,40 +26373,29 @@
         "type": "object"
       },
       "Expectation": {
-        "description": "A canned response registered for one Management API operation.",
+        "description": "A canned response registered for one Management API operation,\noptionally conditioned on the incoming request.\n",
         "properties": {
-          "body": {
-            "description": "Response body the mock should return. Validated against the target\noperation's response schema for `status` before it is stored.\n"
-          },
-          "headers": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "Optional headers to attach to the response.",
-            "type": "object"
-          },
           "method": {
             "description": "HTTP verb of the target operation.",
-            "example": "GET",
+            "example": "POST",
             "type": "string"
           },
           "path": {
             "description": "Target operation path — concrete (`/api/v2/users/auth0|1`) or an\nOpenAPI template (`/api/v2/users/{id}`).\n",
-            "example": "/api/v2/users/auth0|123",
+            "example": "/api/v2/users",
             "type": "string"
           },
-          "status": {
-            "description": "HTTP status code the mock should return.",
-            "example": 200,
-            "maximum": 599,
-            "minimum": 100,
-            "type": "integer"
+          "request": {
+            "$ref": "#/components/schemas/RequestMatcher"
+          },
+          "response": {
+            "$ref": "#/components/schemas/ResponseDef"
           }
         },
         "required": [
           "method",
           "path",
-          "status"
+          "response"
         ],
         "type": "object"
       },
@@ -43669,6 +43658,22 @@
         ],
         "type": "object"
       },
+      "RequestMatcher": {
+        "description": "Optional conditions the incoming request must satisfy for the\nexpectation to apply. Omit it (or send `{}`) for a catch-all. `query`\nand `body` are subset-matched: every key you specify must be present\nand equal in the real request; extra keys are allowed. Arrays and\nscalars must match exactly. The matcher is validated against the\noperation's request schema (with `required` relaxed) at registration.\n",
+        "properties": {
+          "body": {
+            "description": "JSON the request body must contain (subset match)."
+          },
+          "query": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Query parameters the request must carry.",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
       "ResetPhoneTemplateRequestContent": {},
       "ResetPhoneTemplateResponseContent": {
         "additionalProperties": false,
@@ -44004,6 +44009,32 @@
           }
         ],
         "type": "string"
+      },
+      "ResponseDef": {
+        "description": "The canned response the mock returns when the expectation applies.",
+        "properties": {
+          "body": {
+            "description": "Response body the mock should return. Validated against the target\noperation's response schema for `status` before it is stored.\n"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Optional headers to attach to the response.",
+            "type": "object"
+          },
+          "status": {
+            "description": "HTTP status code the mock should return.",
+            "example": 201,
+            "maximum": 599,
+            "minimum": 100,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
       },
       "RevokeRefreshTokensRequestContent": {
         "additionalProperties": false,
@@ -53911,7 +53942,7 @@
     },
     "/admin0/expectations": {
       "delete": {
-        "description": "With an empty body, clears every registered expectation. With a\n`{ \"method\": ..., \"path\": ... }` body, clears only that one.\n",
+        "description": "With an empty body, clears every registered expectation. With a\n`{ \"method\": ..., \"path\": ... }` body, clears every expectation\nregistered for that operation (the catch-all and every\nrequest-matched one).\n",
         "requestBody": {
           "content": {
             "application/json": {
@@ -53976,7 +54007,7 @@
         ]
       },
       "post": {
-        "description": "The target operation is identified by `method` + `path` in the body.\n`path` may be concrete (`/api/v2/users/auth0|1`) or an OpenAPI template\n(`/api/v2/users/{id}`); concrete registrations win over template ones at\nrequest time. The `body` is validated against the operation's response\nschema for the given `status` before it is stored.\n",
+        "description": "The target operation is identified by `method` + `path`. `path` may be\nconcrete (`/api/v2/users/auth0|1`) or an OpenAPI template\n(`/api/v2/users/{id}`); concrete registrations win over template ones\nat request time. The optional `request` matcher conditions the\nexpectation on the incoming query + body — multiple expectations may be\nregistered per operation, the most specific match wins, ties broken by\nnewest. `response.body` is validated against the operation's response\nschema for `response.status`, and the `request` matcher against the\noperation's request schema, before anything is stored.\n",
         "requestBody": {
           "content": {
             "application/json": {

@@ -69,7 +69,7 @@ func verifyToken(base, tok string) error {
 }
 
 func registerAndCall(base, tok string) error {
-	body := `{"method":"GET","path":"/api/v2/users/auth0|demo","status":200,"body":{"user_id":"auth0|demo","email":"demo@x"}}`
+	body := `{"method":"GET","path":"/api/v2/users/auth0|demo","response":{"status":200,"body":{"user_id":"auth0|demo","email":"demo@x"}}}`
 	expReq, _ := http.NewRequest("POST", base+"/admin0/expectations", strings.NewReader(body))
 	expReq.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(expReq)

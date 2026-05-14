@@ -94,9 +94,9 @@ for op := range opts.Spec.Operations() {
 
 One handler per operation, all in `internal/mgmtapi/`:
 
-- **`GenericHandler`**: validates the incoming request against the operation's OpenAPI schema, looks up a stub from `matches.Store` (exact path wins over template path), defensively re-validates the stored response against the spec, writes it. Returns `404 no_match` if nothing was registered.
+- **`GenericHandler`**: buffers the incoming request body, validates the request against the operation's OpenAPI schema, looks up the best-matching stub from `matches.Store` using 4-tier precedence (exact-path + request matcher, exact-path + catch-all, template-path + request matcher, template-path + catch-all — newest-wins within each tier), defensively re-validates the stored response against the spec, writes it. Returns `404 no_match` if nothing was registered.
 
-Canned responses are registered out-of-band via `POST /admin0/expectations` (handler in `internal/admin0/expectations.go`), which decodes a `{method, path, status, headers?, body?}` payload, validates `body` against the operation's response schema for the chosen `status`, and stores it in `matches.Store`. This separation keeps the Mgmt API surface bearer-protected while stub registration requires no token.
+Canned responses are registered out-of-band via `POST /admin0/expectations` (handler in `internal/admin0/expectations.go`), which decodes a `{method, path, request?, response}` payload. `response.body` is validated against the operation's response schema for `response.status`. The optional `request` matcher is validated against the operation's request schema with `required` relaxed (a matcher is partial by design), so unknown and mistyped fields are rejected up front. The validated expectation is appended to an ordered list keyed by `(method, path)` in `matches.Store`. This separation keeps the Mgmt API surface bearer-protected while stub registration requires no token.
 
 ### Why use a chi wildcard for paths?
 
@@ -131,7 +131,7 @@ The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.
 
 | Store | Owns | Mutated by | Consulted by |
 |---|---|---|---|
-| [`internal/matches/`](../internal/matches/) | Map of `(method, path) → {status, headers, body}` for Mgmt API stubs | `POST /admin0/expectations`, `DELETE /admin0/expectations`, `POST /admin0/reset` | `GenericHandler` |
+| [`internal/matches/`](../internal/matches/) | Ordered list of `Expectation` records per `(method, path)` key; each `Expectation` is an optional `RequestMatcher` (subset-matched `query` + `body`) plus a `ResponseDef` (`status`, `headers`, `body`). `Find` applies a 4-tier precedence: exact-path + matcher, exact-path + catch-all, template-path + matcher, template-path + catch-all — newest-wins within each tier. | `POST /admin0/expectations`, `DELETE /admin0/expectations`, `POST /admin0/reset` | `GenericHandler` |
 | [`internal/claims/`](../internal/claims/) | Per-process map of custom JWT claims | `PUT/DELETE /admin0/claims`, `POST /admin0/reset` | `TokenHandler.augmentExtra`, `PasswordlessVerifyHandler` |
 | [`internal/permissions/`](../internal/permissions/) | `map[audience] → []permission` for RBAC claim injection | `PUT/DELETE /admin0/permissions[/{audience}]`, `POST /admin0/reset` | `TokenHandler.augmentExtra` (looks up by audience), `PasswordlessVerifyHandler` |
 | [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | (none) |

@@ -32,11 +32,15 @@ paths:
       tags: [Expectations]
       summary: Register (upsert) a canned response for a Management API operation.
       description: |
-        The target operation is identified by `method` + `path` in the body.
-        `path` may be concrete (`/api/v2/users/auth0|1`) or an OpenAPI template
-        (`/api/v2/users/{id}`); concrete registrations win over template ones at
-        request time. The `body` is validated against the operation's response
-        schema for the given `status` before it is stored.
+        The target operation is identified by `method` + `path`. `path` may be
+        concrete (`/api/v2/users/auth0|1`) or an OpenAPI template
+        (`/api/v2/users/{id}`); concrete registrations win over template ones
+        at request time. The optional `request` matcher conditions the
+        expectation on the incoming query + body — multiple expectations may be
+        registered per operation, the most specific match wins, ties broken by
+        newest. `response.body` is validated against the operation's response
+        schema for `response.status`, and the `request` matcher against the
+        operation's request schema, before anything is stored.
       requestBody:
         required: true
         content:
@@ -66,7 +70,9 @@ paths:
       summary: Clear expectations — one (with a body) or all (with no body).
       description: |
         With an empty body, clears every registered expectation. With a
-        `{ "method": ..., "path": ... }` body, clears only that one.
+        `{ "method": ..., "path": ... }` body, clears every expectation
+        registered for that operation (the catch-all and every
+        request-matched one).
       requestBody:
         required: false
         content:
@@ -199,25 +205,52 @@ components:
   schemas:
     Expectation:
       type: object
-      description: A canned response registered for one Management API operation.
-      required: [method, path, status]
+      description: |
+        A canned response registered for one Management API operation,
+        optionally conditioned on the incoming request.
+      required: [method, path, response]
       properties:
         method:
           type: string
           description: HTTP verb of the target operation.
-          example: GET
+          example: POST
         path:
           type: string
           description: |
             Target operation path — concrete (`/api/v2/users/auth0|1`) or an
             OpenAPI template (`/api/v2/users/{id}`).
-          example: /api/v2/users/auth0|123
+          example: /api/v2/users
+        request:
+          $ref: "#/components/schemas/RequestMatcher"
+        response:
+          $ref: "#/components/schemas/ResponseDef"
+    RequestMatcher:
+      type: object
+      description: |
+        Optional conditions the incoming request must satisfy for the
+        expectation to apply. Omit it (or send `{}`) for a catch-all. `query`
+        and `body` are subset-matched: every key you specify must be present
+        and equal in the real request; extra keys are allowed. Arrays and
+        scalars must match exactly. The matcher is validated against the
+        operation's request schema (with `required` relaxed) at registration.
+      properties:
+        query:
+          type: object
+          additionalProperties: { type: string }
+          description: Query parameters the request must carry.
+        body:
+          description: JSON the request body must contain (subset match).
+    ResponseDef:
+      type: object
+      description: The canned response the mock returns when the expectation applies.
+      required: [status]
+      properties:
         status:
           type: integer
           minimum: 100
           maximum: 599
           description: HTTP status code the mock should return.
-          example: 200
+          example: 201
         headers:
           type: object
           additionalProperties: { type: string }

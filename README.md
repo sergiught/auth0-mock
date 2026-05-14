@@ -17,7 +17,7 @@ Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injecti
 A self-contained Go service that **looks and behaves like Auth0** to a calling client:
 
 - 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally, no `InsecureSkipVerify`, no fake-token kludges.
-- 📦 **Mocks the Management API spec-completely** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations — paths, methods and schemas; Auth0's prose removed) and routing every endpoint to a single generic handler. You stub responses by POSTing `{method, path, status, body}` to `/admin0/expectations`; the OpenAPI schema validates the stubbed body.
+- 📦 **Mocks the Management API spec-completely** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations — paths, methods and schemas; Auth0's prose removed) and routing every endpoint to a single generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`; the OpenAPI schema validates the stubbed body. An optional `request` matcher lets you register multiple responses per operation, with the most specific match winning.
 - 🛠 **Shapes runtime state via HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
@@ -70,7 +70,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
 # 2. Stub a Mgmt API response
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/auth0|123","status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}}'
 
 # 3. Call the stubbed endpoint with your bearer
 curl http://localhost:8080/api/v2/users/auth0%7C123 \
@@ -162,19 +162,15 @@ Every operation in the embedded Auth0 Management API skeleton is mounted. Defaul
 # Concrete-id stub
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/auth0|123","status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}}'
 
 # Template stub (catch-all for any user id)
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/{id}","status":200,"body":{"user_id":"auth0|*","email":"any@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/{id}","response":{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}}'
 ```
 
-> Concrete-path stubs win over template stubs at request time. The `body` is
-> validated against the operation's response schema at registration time —
-> invalid bodies are rejected with `400 invalid_match`, unknown operations with
-> `400 unknown_operation`, and unparseable or incomplete requests with
-> `400 invalid_body`.
+> Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation, with the most specific match winning. `response.body` is validated against the operation's response schema at registration time — invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, and unparseable or incomplete requests with `400 invalid_body`.
 
 ### 🛠 Admin surface (no auth, JSON-driven)
 

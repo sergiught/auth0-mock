@@ -6,6 +6,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 
 - [Mint a token and call a stubbed Mgmt API endpoint](#mint-a-token-and-call-a-stubbed-mgmt-api-endpoint)
 - [Stub multiple users at once](#stub-multiple-users-at-once)
+- [Different responses for different requests](#different-responses-for-different-requests)
 - [Test a code path that reads a specific `permissions` claim](#test-a-code-path-that-reads-a-specific-permissions-claim)
 - [Inject a custom claim into every minted token](#inject-a-custom-claim-into-every-minted-token)
 - [Test a PKCE flow end-to-end](#test-a-pkce-flow-end-to-end)
@@ -28,7 +29,7 @@ The hello-world of auth0-mock.
 # 1. Stub the response (no auth needed for /admin0/expectations)
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/auth0|123","status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}}'
 
 # 2. Mint a bearer
 TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
@@ -52,16 +53,46 @@ Concrete URLs stub one entity; template URLs (containing `{id}`) stub a fallback
 # Template fallback: any user lookup returns this
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/{id}","status":200,"body":{"user_id":"auth0|*","email":"anyone@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/{id}","response":{"status":200,"body":{"user_id":"auth0|*","email":"anyone@x"}}}'
 
 # Concrete override for alice
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/auth0|alice","status":200,"body":{"user_id":"auth0|alice","email":"alice@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|alice","response":{"status":200,"body":{"user_id":"auth0|alice","email":"alice@x"}}}'
 
 # alice returns her own data; everyone else gets the template fallback
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/auth0%7Calice  # → alice@x
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/auth0%7Cbob    # → anyone@x
+```
+
+## Different responses for different requests
+
+Multiple expectations can be registered for the same operation and conditioned on the incoming request body or query parameters. The mock matches the most specific expectation — the one whose `request` matcher covers the most fields. Ties are broken by newest-registered.
+
+```bash
+# Register two expectations on the same operation, matched by request body.
+# The most specific match wins; ties are broken by newest-registered.
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"POST","path":"/api/v2/users",
+       "request":{"body":{"email":"a@example.com"}},
+       "response":{"status":201,"body":{"user_id":"auth0|a"}}}'
+
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"POST","path":"/api/v2/users",
+       "request":{"body":{"email":"b@example.com"}},
+       "response":{"status":201,"body":{"user_id":"auth0|b"}}}'
+```
+
+A `POST /api/v2/users` request carrying `{"email":"a@example.com", ...}` returns `{"user_id":"auth0|a"}`; one carrying `{"email":"b@example.com", ...}` returns `{"user_id":"auth0|b"}`. Omit `request` entirely (or send `{}`) for a catch-all that fires when no more-specific matcher applies.
+
+To clear all expectations for an operation at once (catch-all + every request-matched one):
+
+```bash
+curl -X DELETE http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"POST","path":"/api/v2/users"}'
 ```
 
 ## Test a code path that reads a specific `permissions` claim
@@ -203,7 +234,7 @@ The registration validator rejects bodies that violate the spec for the chosen s
 # Force a 429 rate-limit on the next call to GET /api/v2/users/auth0|x
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/auth0|x","status":429,"headers":{"X-RateLimit-Limit":"50","Retry-After":"60"},"body":{"statusCode":429,"error":"Too Many Requests","message":"Rate limit exceeded"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|x","response":{"status":429,"headers":{"X-RateLimit-Limit":"50","Retry-After":"60"},"body":{"statusCode":429,"error":"Too Many Requests","message":"Rate limit exceeded"}}}'
 
 curl -i -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/auth0%7Cx
 # HTTP/1.1 429
