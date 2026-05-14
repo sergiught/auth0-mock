@@ -49,6 +49,7 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	assert.Contains(t, body, "layout: 'modern'")
 	assert.Contains(t, body, "withDefaultFonts: false")
 	assert.Contains(t, body, "hideClientButton: true")
+	assert.Contains(t, body, "hideModels: true")
 	assert.Contains(t, body, "agent: { disabled: true }",
 		"Scalar Agent (Ask AI) must stay disabled so the spec isn't uploaded")
 	assert.Contains(t, body, "prefers-color-scheme: dark",
