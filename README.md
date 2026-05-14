@@ -17,7 +17,7 @@ Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injecti
 A self-contained Go service that **looks and behaves like Auth0** to a calling client:
 
 - 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally, no `InsecureSkipVerify`, no fake-token kludges.
-- 📦 **Mocks the Management API spec-completely** by embedding Auth0's published OpenAPI 3.1 document (~400 operations) and routing every endpoint to a single generic handler. You stub responses with `<verb> /api/v2/.../match`; the OpenAPI schema validates the stubbed body.
+- 📦 **Mocks the Management API spec-completely** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations — paths, methods and schemas; Auth0's prose removed) and routing every endpoint to a single generic handler. You stub responses with `<verb> /api/v2/.../match`; the OpenAPI schema validates the stubbed body.
 - 🛠 **Shapes runtime state via HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
@@ -113,13 +113,16 @@ fill in request bodies from the schemas.
 ### Regenerating the spec
 
 The merged JSON is committed and checked for drift in CI. Re-run
-`make openapi` after editing any of:
+`make openapi` after editing any of the auth0-mock-authored fragments:
 
 - `api/mock-control.openapi.yaml`
 - `internal/authapi/authapi.openapi.yaml`
 - `internal/admin0/admin0.openapi.yaml`
 - `internal/router/service.openapi.yaml`
-- `api/auth0-management-api.openapi.json`
+
+`api/auth0-management-api.openapi.json` is a generated skeleton, not a
+hand-edited file. To pull in a newer Auth0 Management API spec, use
+`make refresh-spec` — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 📋 What's mocked
 
@@ -155,7 +158,7 @@ The merged JSON is committed and checked for drift in CI. Re-run
 
 ### 📦 Management API (spec-driven, ~400 endpoints)
 
-Every operation in Auth0's published OpenAPI 3.1 spec is mounted. Default response is `404 no_match`. Tests register stubs:
+Every operation in the embedded Auth0 Management API skeleton is mounted. Default response is `404 no_match`. Tests register stubs:
 
 ```bash
 # Concrete-id stub

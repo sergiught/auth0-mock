@@ -1,6 +1,7 @@
-// Package spec wraps Auth0's embedded OpenAPI document. It exposes operation
-// iteration, request validation, response validation, and registration-payload
-// validation — everything the mgmtapi package needs to drive the Mgmt API.
+// Package spec wraps the embedded Auth0 Management API skeleton. It exposes
+// operation iteration, request validation, response validation, and
+// registration-payload validation — everything the mgmtapi package needs to
+// drive the Mgmt API.
 package spec
 
 import (

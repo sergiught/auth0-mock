@@ -1,7 +1,8 @@
-// Command genopenapi bundles the upstream Auth0 Management API spec, the
+// Command genopenapi bundles the embedded Auth0 Management API skeleton, the
 // per-package OpenAPI fragments shipped by each surface (authapi, admin0,
 // router service endpoints), and synthesised /match + /reset siblings into a
-// single OpenAPI 3.1 document.
+// single OpenAPI 3.1 document. With -strip-raw it instead runs the vendoring
+// step that produces the skeleton from a manually-downloaded raw Auth0 spec.
 package main
 
 import (

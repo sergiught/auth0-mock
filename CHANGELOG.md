@@ -15,10 +15,14 @@ All notable changes to this project will be documented here. Format follows [Kee
 - **`TLS_CACHE_DIR` env**: persist auto-generated TLS cert across restarts. Trust-store imports now survive container restarts.
 - **README, ARCHITECTURE, COOKBOOK, COMPARISON, CONTRIBUTING, CHANGELOG** docs.
 - **examples/consumer**: stand-alone Go consumer demonstrating end-to-end drop-in compatibility.
+- **OpenAPI export**: a merged OpenAPI 3.1 document covering every HTTP surface — Auth API, Management API (plus a same-method `{path}/match` and `{path}/reset` sibling per operation), `admin0`, and service endpoints — served at `GET /openapi.json` and `GET /openapi.yaml`, with a Scalar-rendered reference at `GET /docs` (preloaded bearer for "Try it", OS-themed, navigable `x-tagGroups` sidebar). The `cmd/genopenapi` bundler stitches it from the Auth0 skeleton + per-surface fragments; `make openapi` regenerates `api/auth0-mock.openapi.json` and CI drift-checks it.
+- **Non-affiliation disclaimer** in the README: auth0-mock is an independent tool, not affiliated with or endorsed by Auth0 / Okta.
 
 ### Changed
 
 - **`POST /admin0/reset`** now clears matches + claims + permissions + MFA state in one shot.
+- **Auth0 Management API spec is now a stripped skeleton**, not Auth0's verbatim document. `stripUpstreamProse` removes every Auth0-authored description, `externalDocs` link, and `x-*` extension (~1000 `x-description-*` fields, 97 doc links), leaving only the paths/methods/parameters/schemas the mock needs to route and validate. `make refresh-spec` re-vendors the skeleton from a manually-downloaded raw spec (gitignored, never committed); see CONTRIBUTING.md.
+- **HTTP/HTTPS listeners default to `127.0.0.1`** (was `0.0.0.0`), so a bare-metal run is not reachable off-host without an explicit `HTTP_ADDR` / `HTTPS_ADDR` opt-in. The Docker image sets them back to `0.0.0.0` so `docker run -p` and compose still work.
 - Migrated router from `julienschmidt/httprouter` to `go-chi/chi v5`; every handler is now a struct holding its dependencies as fields, implementing `ServeHTTP`.
 - JSON responses go through `go-chi/render` everywhere.
 - Bumped Go directive to 1.26.

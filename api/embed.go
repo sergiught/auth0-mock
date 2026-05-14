@@ -1,12 +1,16 @@
 // Package api embeds the OpenAPI assets the auth0-mock binary needs:
-// the upstream Auth0 Management API spec (input to the bundler), the
+// the Auth0 Management API skeleton (input to the bundler), the
 // mock-control shared schemas for /match and /reset bodies, and the merged
 // OpenAPI document served at /openapi.json.
 package api
 
 import _ "embed"
 
-// ManagementOpenAPIJSON is the verbatim Auth0 Management API OpenAPI 3.1 spec.
+// ManagementOpenAPIJSON is the stripped skeleton of Auth0's Management API
+// OpenAPI 3.1 spec — paths, methods, parameters and schema shapes only, with
+// Auth0's authored prose (descriptions, externalDocs, x-* extensions) removed.
+// It is all the mock needs to route and validate requests. Regenerate via
+// `make refresh-spec`; see CONTRIBUTING.md.
 //
 //go:embed auth0-management-api.openapi.json
 var ManagementOpenAPIJSON []byte

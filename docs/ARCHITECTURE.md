@@ -83,7 +83,7 @@ The full list of grants and their dispatch lives in [`internal/authapi/token.go`
 
 ### Management API: spec-driven, generic
 
-`mgmtapi.Mount` walks Auth0's embedded OpenAPI 3.1 spec at boot:
+`mgmtapi.Mount` walks the embedded Auth0 Management API skeleton at boot:
 
 ```go
 for op := range opts.Spec.Operations() {
@@ -245,14 +245,14 @@ The auto-generated cert is ECDSA P-256, valid for 365 days, with SAN entries spl
 - **kin-openapi v0.x for OpenAPI**: only Go OpenAPI library that handles 3.1 well enough for Auth0's spec. We had to add `DisableSchemaPatternValidation` + `DisableSchemaDefaultsValidation` to its legacy router to cope with Auth0's regex lookahead patterns (Go's regexp doesn't support them).
 - **golang-jwt/jwt v5**: RS256 mint/verify with proper signing-method validation, native `WithIssuer` + `WithExpirationRequired`. We chose RS256 only on purpose: it's Auth0's default; HS256 is legacy; PS256 is Enterprise-tier; ES256/EdDSA aren't Auth0 features.
 - **Per-process in-memory stores, no persistence**: tests get isolation for free; `POST /admin0/reset` is a single round-trip cleanup; no schema migrations, no garbage in `/tmp`.
-- **Embedded OpenAPI spec via `//go:embed`**: the spec is the source of truth for the Mgmt API surface. Refresh it by re-downloading the file; no codegen step.
+- **Embedded OpenAPI skeleton via `//go:embed`**: a stripped skeleton of Auth0's spec (paths, methods, schemas — Auth0's prose removed) is the source of truth for the Mgmt API surface. Refresh it with `make refresh-spec`, which strips a manually-downloaded raw spec into the committed skeleton; see CONTRIBUTING.md.
 
 ## Project layout (recap)
 
 ```
 auth0-mock/
 ├── cmd/api/main.go                 entrypoint (wires config + stores + router)
-├── api/                            //go:embed Auth0 OpenAPI 3.1 spec
+├── api/                            //go:embed Auth0 API skeleton + merged spec
 ├── internal/                       private packages (see CONTRIBUTING.md)
 ├── features/                       godog acceptance tests
 └── examples/consumer/              end-to-end Go consumer

@@ -7,7 +7,7 @@ Thanks for considering a contribution. This document covers everything you need 
 ```
 auth0-mock/
 ├── cmd/api/                        # main entrypoint (binary)
-├── api/                            # embedded Auth0 OpenAPI spec (//go:embed)
+├── api/                            # embedded Auth0 API skeleton + merged spec (//go:embed)
 ├── internal/
 │   ├── config/                     # envconfig settings
 │   ├── logger/                     # zerolog setup
@@ -49,7 +49,7 @@ make build                   # builds ./bin/auth0-mock
 
 Day-to-day iteration uses **`make watch`**, it installs [`air`](https://github.com/air-verse/air) into `./bin` on first run, then watches `cmd/` + `internal/` + `api/` and rebuilds + restarts the binary on every save. Sub-second loop; no docker.
 
-The Auth0 OpenAPI spec is already embedded at `api/auth0-management-api.openapi.json`, nothing to download.
+The Auth0 Management API skeleton is already committed at `api/auth0-management-api.openapi.json` — nothing to download to build or run. (Refreshing it from a newer Auth0 spec is a separate, deliberate step — see [Refreshing the Auth0 Management API spec](#refreshing-the-auth0-management-api-spec).)
 
 ## 🧪 Testing
 
