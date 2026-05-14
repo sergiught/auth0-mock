@@ -45,7 +45,7 @@ func newDeps(t *testing.T) (*spec.Spec, *spec.Validator, *matches.Store, *jwks.K
 	return s, v, store, ks, r
 }
 
-func TestMount_RegistersOriginalAndSiblingRoutes(t *testing.T) {
+func TestMount_RegistersOriginalRoute(t *testing.T) {
 	s, v, store, ks, r := newDeps(t)
 	log := zerolog.Nop()
 	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: log}))
@@ -55,15 +55,10 @@ func TestMount_RegistersOriginalAndSiblingRoutes(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc", nil))
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
-	// /match should be reachable without a bearer (verb mirrors original = GET).
+	// No /match or /reset siblings are registered any more.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/match", nil))
-	assert.NotEqual(t, http.StatusNotFound, w.Code, "match route should be registered")
-
-	// /reset should be reachable without a bearer (verb mirrors original = GET).
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/reset", nil))
-	assert.NotEqual(t, http.StatusNotFound, w.Code, "reset route should be registered")
+	assert.Equal(t, http.StatusNotFound, w.Code, "sibling routes must not be registered")
 }
 
 func mintBearer(t *testing.T, ks *jwks.KeySet) string {
@@ -102,78 +97,4 @@ func TestGeneric_ExactMatchWins(t *testing.T) {
 
 	assert.Equal(t, 200, w.Code)
 	assert.JSONEq(t, `{"id":"abc"}`, w.Body.String())
-}
-
-func TestMatchHandler_RegistersValid(t *testing.T) {
-	s, v, store, ks, r := newDeps(t)
-	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
-
-	body := `{"status":200,"body":{"id":"abc"}}`
-	req := httptest.NewRequest("GET", "/api/v2/widgets/abc/match", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, 204, w.Code)
-	stored := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}")
-	if assert.NotNil(t, stored) {
-		assert.Equal(t, 200, stored.Status)
-		assert.JSONEq(t, `{"id":"abc"}`, string(stored.Body))
-	}
-}
-
-func TestMatchHandler_RejectsInvalid(t *testing.T) {
-	s, v, store, ks, r := newDeps(t)
-	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
-
-	body := `{"status":200,"body":{"unrelated":true}}`
-	req := httptest.NewRequest("GET", "/api/v2/widgets/abc/match", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, 400, w.Code)
-	assert.Empty(t, store.List())
-}
-
-func TestMatchHandler_TemplateRegistration(t *testing.T) {
-	s, v, store, ks, r := newDeps(t)
-	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
-
-	body := `{"status":200,"body":{"id":"any"}}`
-	req := httptest.NewRequest("GET", "/api/v2/widgets/{id}/match", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, 204, w.Code)
-	stored := store.Find("GET", "/api/v2/widgets/zzz", "/api/v2/widgets/{id}")
-	require.NotNil(t, stored)
-	assert.Equal(t, matches.KindTemplate, stored.Kind)
-}
-
-func TestResetHandler_ClearsConcrete(t *testing.T) {
-	s, v, store, ks, r := newDeps(t)
-	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
-
-	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/abc", Kind: matches.KindExact, Status: 200, Body: json.RawMessage(`{"id":"abc"}`)})
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/abc/reset", nil))
-
-	assert.Equal(t, 204, w.Code)
-	assert.Nil(t, store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}"))
-}
-
-func TestResetHandler_ClearsTemplate(t *testing.T) {
-	s, v, store, ks, r := newDeps(t)
-	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
-
-	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/{id}", Kind: matches.KindTemplate, Status: 200, Body: json.RawMessage(`{"id":"any"}`)})
-
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v2/widgets/{id}/reset", nil))
-
-	assert.Equal(t, 204, w.Code)
-	assert.Nil(t, store.Find("GET", "/api/v2/widgets/zzz", "/api/v2/widgets/{id}"))
 }
