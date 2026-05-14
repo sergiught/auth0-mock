@@ -290,6 +290,8 @@ At-a-glance:
 chi router
   ├── recovery + request_id + logging       (always-on middleware)
   ├── /healthz                               liveness
+  ├── /openapi.json /openapi.yaml            merged OpenAPI 3.1 spec
+  ├── /docs                                  Scalar-rendered API reference
   ├── /admin0/{reset, matches, claims, permissions/*, mfa-required}
   │                                          control plane (no auth)
   ├── /.well-known/{jwks.json, openid-configuration}
@@ -331,3 +333,17 @@ PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code styl
 ## ⚖️ License
 
 [MIT](LICENSE).
+
+## ⚠️ Disclaimer
+
+auth0-mock is an independent, community-built testing tool. It is **not
+affiliated with, endorsed by, or sponsored by Auth0 or Okta, Inc.** "Auth0" and
+"Okta" are trademarks of Okta, Inc.; they are used here only nominatively, to
+describe what this project mocks.
+
+The mock embeds Auth0's published Management API OpenAPI specification so it can
+route and validate every endpoint. That spec — and the operation/schema
+descriptions served at `/openapi.json`, `/openapi.yaml`, and `/docs` — is
+Auth0's content, reproduced here for interoperability. Auth0 does not attach an
+explicit redistribution license to the published spec; if that matters for your
+use, confirm the terms with Auth0/Okta directly.
