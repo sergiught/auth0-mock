@@ -26,6 +26,7 @@ func NewStore() *Store {
 	}
 }
 
+// bucket returns the map that holds expectations of kind k.
 func (s *Store) bucket(k Kind) map[key][]Expectation {
 	if k == KindTemplate {
 		return s.template
@@ -38,6 +39,9 @@ func (s *Store) bucket(k Kind) map[key][]Expectation {
 // re-registered expectation becomes the newest. The path is treated as exact
 // or template based on exp.Kind.
 func (s *Store) Put(exp Expectation) {
+	if exp.Request.IsEmpty() {
+		exp.Request = nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := s.bucket(exp.Kind)
@@ -100,14 +104,21 @@ func newestMatch(list []Expectation, req MatchableRequest, catchAll bool) *Expec
 func (s *Store) List() []Expectation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]Expectation, 0, len(s.exact)+len(s.template))
+	total := 0
+	for _, list := range s.exact {
+		total += len(list)
+	}
+	for _, list := range s.template {
+		total += len(list)
+	}
+	out := make([]Expectation, 0, total)
 	for _, list := range s.exact {
 		out = append(out, list...)
 	}
 	for _, list := range s.template {
 		out = append(out, list...)
 	}
-	sort.Slice(out, func(i, j int) bool {
+	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Method != out[j].Method {
 			return out[i].Method < out[j].Method
 		}

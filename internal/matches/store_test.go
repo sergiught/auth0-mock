@@ -177,6 +177,8 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			s.Put(Expectation{Method: "GET", Path: "/api/v2/users/x", Kind: KindExact, Response: resp(200, `{}`)})
 			_ = s.Find("GET", "/api/v2/users/x", "/api/v2/users/{id}", MatchableRequest{})
+			_ = s.List()
+			s.ResetAll()
 		}(i)
 	}
 	wg.Wait()
