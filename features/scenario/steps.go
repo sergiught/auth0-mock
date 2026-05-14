@@ -57,6 +57,29 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	// Full nested-payload registration expected to succeed.
+	sc.Step(`^I register the expectation "([^"]+)":$`, func(target string, body *godog.DocString) error {
+		payload, err := nestedExpectationBody(target, body.Content)
+		if err != nil {
+			return err
+		}
+		c.Do("POST", "/admin0/expectations", payload, false)
+		if c.LastResp.StatusCode >= 400 {
+			return fmt.Errorf("registration failed: %d %s", c.LastResp.StatusCode, string(c.LastBody))
+		}
+		return nil
+	})
+
+	// Full nested-payload registration expected to fail (assert 4xx after).
+	sc.Step(`^I attempt to register the expectation "([^"]+)":$`, func(target string, body *godog.DocString) error {
+		payload, err := nestedExpectationBody(target, body.Content)
+		if err != nil {
+			return err
+		}
+		c.Do("POST", "/admin0/expectations", payload, false)
+		return nil
+	})
+
 	sc.Step(`^I clear the expectation for "([^"]+)"$`, func(target string) error {
 		method, path, err := splitTarget(target)
 		if err != nil {
@@ -411,13 +434,14 @@ func splitTarget(target string) (method, path string, err error) {
 }
 
 // expectationBody merges a "METHOD /path" target into a response docstring
-// ({status, headers?, body?}) to form a POST /admin0/expectations payload.
+// ({status, headers?, body?}) to form a POST /admin0/expectations payload of
+// shape {method, path, response}.
 func expectationBody(target, responseJSON string) (string, error) {
 	method, path, err := splitTarget(target)
 	if err != nil {
 		return "", err
 	}
-	var resp map[string]any
+	var resp any
 	if strings.TrimSpace(responseJSON) != "" {
 		if err := json.Unmarshal([]byte(responseJSON), &resp); err != nil {
 			return "", fmt.Errorf("response json: %w", err)
@@ -425,9 +449,29 @@ func expectationBody(target, responseJSON string) (string, error) {
 	} else {
 		resp = map[string]any{}
 	}
-	resp["method"] = method
-	resp["path"] = path
-	out, err := json.Marshal(resp)
+	payload := map[string]any{"method": method, "path": path, "response": resp}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// nestedExpectationBody merges a "METHOD /path" target into a full nested
+// expectation docstring ({request?, response}) to form a POST
+// /admin0/expectations payload.
+func nestedExpectationBody(target, nestedJSON string) (string, error) {
+	method, path, err := splitTarget(target)
+	if err != nil {
+		return "", err
+	}
+	var nested map[string]any
+	if err := json.Unmarshal([]byte(nestedJSON), &nested); err != nil {
+		return "", fmt.Errorf("expectation json: %w", err)
+	}
+	nested["method"] = method
+	nested["path"] = path
+	out, err := json.Marshal(nested)
 	if err != nil {
 		return "", err
 	}
