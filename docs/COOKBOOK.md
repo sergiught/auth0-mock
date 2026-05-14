@@ -197,7 +197,7 @@ Missing `realm` returns `400 invalid_request`.
 
 ## Stub an error response (400, 429, 500)
 
-The match validator rejects bodies that violate the spec for the chosen status, but valid error shapes are fine.
+The registration validator rejects bodies that violate the spec for the chosen status, but valid error shapes are fine.
 
 ```bash
 # Force a 429 rate-limit on the next call to GET /api/v2/users/auth0|x

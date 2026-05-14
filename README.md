@@ -173,7 +173,8 @@ curl -X POST http://localhost:8080/admin0/expectations \
 > Concrete-path stubs win over template stubs at request time. The `body` is
 > validated against the operation's response schema at registration time —
 > invalid bodies are rejected with `400 invalid_match`, unknown operations with
-> `400 unknown_operation`.
+> `400 unknown_operation`, and unparseable or incomplete requests with
+> `400 invalid_body`.
 
 ### 🛠 Admin surface (no auth, JSON-driven)
 
