@@ -5,11 +5,12 @@ import (
 	"sync"
 )
 
-// Store holds registered Match entries in memory. Safe for concurrent use.
+// Store holds registered Expectation entries in memory as an ordered list
+// (oldest to newest) per (method, path) key. Safe for concurrent use.
 type Store struct {
 	mu       sync.RWMutex
-	exact    map[key]Match
-	template map[key]Match
+	exact    map[key][]Expectation
+	template map[key][]Expectation
 }
 
 type key struct {
@@ -20,49 +21,91 @@ type key struct {
 // NewStore returns an empty Store.
 func NewStore() *Store {
 	return &Store{
-		exact:    make(map[key]Match),
-		template: make(map[key]Match),
+		exact:    make(map[key][]Expectation),
+		template: make(map[key][]Expectation),
 	}
 }
 
-// Put inserts or overwrites a Match. The path is treated as exact or
-// template based on m.Kind.
-func (s *Store) Put(m Match) {
+func (s *Store) bucket(k Kind) map[key][]Expectation {
+	if k == KindTemplate {
+		return s.template
+	}
+	return s.exact
+}
+
+// Put inserts exp into its (method, path) list. If an entry with an equal
+// Request matcher already exists for that key it is removed first, so the
+// re-registered expectation becomes the newest. The path is treated as exact
+// or template based on exp.Kind.
+func (s *Store) Put(exp Expectation) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := key{Method: m.Method, Path: m.Path}
-	if m.Kind == KindTemplate {
-		s.template[k] = m
-		return
+	m := s.bucket(exp.Kind)
+	k := key{Method: exp.Method, Path: exp.Path}
+	var kept []Expectation
+	for _, e := range m[k] {
+		if !requestMatcherEqual(e.Request, exp.Request) {
+			kept = append(kept, e)
+		}
 	}
-	s.exact[k] = m
+	m[k] = append(kept, exp)
 }
 
-// Find returns the registered Match for (method, concretePath) preferring
-// an exact-path match; if none is found it falls back to the template
-// registered against opTemplate. Returns nil if neither is registered.
-func (s *Store) Find(method, concretePath, opTemplate string) *Match {
+// Find returns the Expectation that should serve (method, concretePath) given
+// the incoming request. It considers the exact-path list and the template
+// list registered against opTemplate, keeps only entries whose Request matches
+// req, and applies a 4-tier precedence:
+//
+//  1. exact path, request matcher, newest
+//  2. exact path, catch-all, newest
+//  3. template path, request matcher, newest
+//  4. template path, catch-all, newest
+//
+// Returns nil when nothing matches.
+func (s *Store) Find(method, concretePath, opTemplate string, req MatchableRequest) *Expectation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if m, ok := s.exact[key{Method: method, Path: concretePath}]; ok {
-		return &m
+	exact := s.exact[key{Method: method, Path: concretePath}]
+	tmpl := s.template[key{Method: method, Path: opTemplate}]
+	if e := newestMatch(exact, req, false); e != nil {
+		return e
 	}
-	if m, ok := s.template[key{Method: method, Path: opTemplate}]; ok {
-		return &m
+	if e := newestMatch(exact, req, true); e != nil {
+		return e
+	}
+	if e := newestMatch(tmpl, req, false); e != nil {
+		return e
+	}
+	return newestMatch(tmpl, req, true)
+}
+
+// newestMatch scans list newest-first and returns the first entry that both
+// matches req and has the requested catch-all-ness (catchAll == (Request is
+// nil)). Returns nil if none qualify.
+func newestMatch(list []Expectation, req MatchableRequest, catchAll bool) *Expectation {
+	for i := len(list) - 1; i >= 0; i-- {
+		e := list[i]
+		if (e.Request == nil) != catchAll {
+			continue
+		}
+		if e.Request.Matches(req) {
+			out := e
+			return &out
+		}
 	}
 	return nil
 }
 
-// List returns every registered Match, sorted by (method, path).
-func (s *Store) List() []Match {
+// List returns every registered Expectation, sorted by (method, path).
+func (s *Store) List() []Expectation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]Match, 0, len(s.exact)+len(s.template))
-	for _, m := range s.exact {
-		out = append(out, m)
+	out := make([]Expectation, 0, len(s.exact)+len(s.template))
+	for _, list := range s.exact {
+		out = append(out, list...)
 	}
-	for _, m := range s.template {
-		out = append(out, m)
+	for _, list := range s.template {
+		out = append(out, list...)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Method != out[j].Method {
@@ -73,23 +116,18 @@ func (s *Store) List() []Match {
 	return out
 }
 
-// ResetEndpoint removes the registered Match keyed by (method, path) within
-// the map indicated by kind. Calls for unregistered keys are no-ops.
+// ResetEndpoint removes every Expectation keyed by (method, path) within the
+// map indicated by kind. Calls for unregistered keys are no-ops.
 func (s *Store) ResetEndpoint(method, path string, kind Kind) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := key{Method: method, Path: path}
-	if kind == KindTemplate {
-		delete(s.template, k)
-		return
-	}
-	delete(s.exact, k)
+	delete(s.bucket(kind), key{Method: method, Path: path})
 }
 
-// ResetAll clears every registered Match.
+// ResetAll clears every registered Expectation.
 func (s *Store) ResetAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.exact = make(map[key]Match)
-	s.template = make(map[key]Match)
+	s.exact = make(map[key][]Expectation)
+	s.template = make(map[key][]Expectation)
 }
