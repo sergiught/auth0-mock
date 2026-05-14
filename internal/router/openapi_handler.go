@@ -77,6 +77,33 @@ const scalarDocsHTML = `<!doctype html>
           withDefaultFonts: false,
           hideClientButton: true,
           hideModels: true,
+          // hiddenClients is a denylist, so to show only the curated set
+          // (curl, python requests, go, rust, java okhttp, js axios, php
+          // guzzle) every other language is hidden outright and the kept
+          // languages list the *other* clients to hide.
+          hiddenClients: {
+            shell: ['httpie', 'wget'],
+            python: ['aiohttp', 'httpx_async', 'httpx_sync', 'python3'],
+            go: false,
+            rust: false,
+            java: ['asynchttp', 'nethttp', 'unirest'],
+            js: ['fetch', 'jquery', 'ofetch', 'xhr'],
+            php: ['curl', 'laravel'],
+            c: true,
+            clojure: true,
+            csharp: true,
+            dart: true,
+            fsharp: true,
+            http: true,
+            kotlin: true,
+            node: true,
+            objc: true,
+            ocaml: true,
+            powershell: true,
+            r: true,
+            ruby: true,
+            swift: true,
+          },
           agent: { disabled: true },
         };
         if (token) {

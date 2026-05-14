@@ -50,6 +50,12 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	assert.Contains(t, body, "withDefaultFonts: false")
 	assert.Contains(t, body, "hideClientButton: true")
 	assert.Contains(t, body, "hideModels: true")
+	// Curated code-snippet clients: a denylist that keeps curl, python
+	// requests, go, rust, java okhttp, js axios, php guzzle.
+	assert.Contains(t, body, "hiddenClients: {")
+	assert.Contains(t, body, "ruby: true")
+	assert.Contains(t, body, "js: ['fetch', 'jquery', 'ofetch', 'xhr']")
+	assert.Contains(t, body, "php: ['curl', 'laravel']")
 	assert.Contains(t, body, "agent: { disabled: true }",
 		"Scalar Agent (Ask AI) must stay disabled so the spec isn't uploaded")
 	assert.Contains(t, body, "prefers-color-scheme: dark",
