@@ -412,7 +412,7 @@ func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 					continue
 				}
 				sibling.SetOperation(method,
-					mockControlOperation(suffix, method, path, parentOp.Tags))
+					mockControlOperation(suffix, method, path, parentOp.Summary, parentOp.Tags))
 			}
 			base.Paths.Set(siblingPath, sibling)
 		}
@@ -423,14 +423,13 @@ func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 // /reset sibling. Bodies reference the shared schemas in MockControlOpenAPIYAML.
 // ParentTags is lifted from the paired parent operation so the sibling renders
 // under the same tag; method and parentPath identify the exact parent
-// operation, and are woven into the operationId and summary so every sibling
-// is a distinct, navigable sidebar entry (e.g. GET vs POST .../match on the
-// same path get separate rows).
-func mockControlOperation(suffix, method, parentPath string, parentTags []string) *openapi3.Operation {
+// operation and feed the globally-unique operationId; parentSummary is the
+// parent's Auth0 summary, echoed into the sidebar label.
+func mockControlOperation(suffix, method, parentPath, parentSummary string, parentTags []string) *openapi3.Operation {
 	op := &openapi3.Operation{
 		Tags:        parentTags,
 		OperationID: operationIDFor(suffix, method, parentPath),
-		Summary:     summaryFor(suffix, method, parentPath),
+		Summary:     summaryFor(suffix, method, parentPath, parentSummary),
 		Description: descriptionFor(suffix),
 		Responses:   openapi3.NewResponses(),
 	}
@@ -477,18 +476,26 @@ func operationIDFor(suffix, method, parentPath string) string {
 	return "mock-control." + kind + "." + strings.ToLower(method) + "." + slug
 }
 
-// summaryFor returns the sidebar label for a synthesised sibling. It embeds the
-// parent operation's method and path so every entry is distinct and visibly
-// tied to the operation it programmes, e.g.
-// "match · POST /api/v2/actions/actions".
-func summaryFor(suffix, method, parentPath string) string {
+// summaryFor returns the sidebar label for a synthesised sibling. It echoes the
+// parent endpoint's own Auth0 summary so the sibling reads as a sub-action of
+// it — e.g. "Match: Get a User". When the parent has no summary it falls back
+// to the method+path form ("Match: GET /api/v2/...") so the label is never
+// blank.
+func summaryFor(suffix, method, parentPath, parentSummary string) string {
+	var kind string
 	switch suffix {
 	case "/match":
-		return "match · " + method + " " + parentPath
+		kind = "Match"
 	case "/reset":
-		return "reset · " + method + " " + parentPath
+		kind = "Reset"
+	default:
+		return ""
 	}
-	return ""
+	target := parentSummary
+	if target == "" {
+		target = method + " " + parentPath
+	}
+	return kind + ": " + target
 }
 
 func descriptionFor(suffix string) string {

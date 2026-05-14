@@ -77,16 +77,23 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 				"siblings must not be tagged mock-control — that creates a separate sidebar bucket")
 			assert.Containsf(t, op.OperationID, "mock-control.",
 				"%s %s%s must have a synthesised operationId", method, basePath, suffix)
-			assert.Containsf(t, op.Summary, method,
-				"sibling summary must name the parent method")
-			assert.Containsf(t, op.Summary, basePath,
-				"sibling summary must name the parent path")
+			// The sidebar label echoes the parent's Auth0 summary, prefixed
+			// with the kind — e.g. "Match: Get a User".
+			wantPrefix := map[string]string{"/match": "Match: ", "/reset": "Reset: "}[suffix]
+			assert.Truef(t, strings.HasPrefix(op.Summary, wantPrefix),
+				"%s %s%s summary %q must start with %q", method, basePath, suffix, op.Summary, wantPrefix)
+			if parentOp.Summary != "" {
+				assert.Containsf(t, op.Summary, parentOp.Summary,
+					"%s %s%s summary must echo the parent's Auth0 summary %q",
+					method, basePath, suffix, parentOp.Summary)
+			}
 		}
 	}
 
 	// Sweep: for every Mgmt API parent operation, the /match and /reset
-	// siblings must carry a same-method operation, and every synthesised
-	// operationId + summary must be globally unique.
+	// siblings must carry a same-method operation with a globally-unique
+	// operationId. (Summaries are NOT unique — Auth0 reuses summary text
+	// across paths — so uniqueness is asserted on operationId only.)
 	parents := map[string]bool{}
 	for p := range doc.Paths.Map() {
 		if !strings.HasPrefix(p, "/api/v2/") ||
@@ -96,7 +103,6 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 		parents[p] = true
 	}
 	seenIDs := map[string]string{}
-	seenSummaries := map[string]string{}
 	for p := range parents {
 		parentItem := doc.Paths.Value(p)
 		for _, suffix := range []string{"/match", "/reset"} {
@@ -115,10 +121,6 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 					t.Errorf("duplicate operationId %q on %s (also %s)", op.OperationID, where, prev)
 				}
 				seenIDs[op.OperationID] = where
-				if prev, dup := seenSummaries[op.Summary]; dup {
-					t.Errorf("duplicate summary %q on %s (also %s)", op.Summary, where, prev)
-				}
-				seenSummaries[op.Summary] = where
 			}
 		}
 	}
