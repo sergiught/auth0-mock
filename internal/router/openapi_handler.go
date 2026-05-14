@@ -77,6 +77,7 @@ const scalarDocsHTML = `<!doctype html>
           withDefaultFonts: false,
           hideClientButton: true,
           hideModels: true,
+          defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
           // hiddenClients is a denylist, so to show only the curated set
           // (curl, python requests, go, rust, java okhttp, js axios, php
           // guzzle) every other language is hidden outright and the kept

@@ -50,6 +50,7 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	assert.Contains(t, body, "withDefaultFonts: false")
 	assert.Contains(t, body, "hideClientButton: true")
 	assert.Contains(t, body, "hideModels: true")
+	assert.Contains(t, body, "defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' }")
 	// Curated code-snippet clients: a denylist that keeps curl, python
 	// requests, go, rust, java okhttp, js axios, php guzzle.
 	assert.Contains(t, body, "hiddenClients: {")
