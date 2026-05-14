@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -52,14 +53,22 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 
 	// Spot-check: a known Mgmt API path has both siblings.
 	basePath := "/api/v2/users/{id}"
-	require.NotNil(t, doc.Paths.Value(basePath),
+	parent := doc.Paths.Value(basePath)
+	require.NotNil(t, parent,
 		"sanity: base path missing — the upstream spec changed?")
+	parentOp := parent.GetOperation("GET")
+	require.NotNil(t, parentOp, "parent /api/v2/users/{id} GET missing")
+	require.NotEmpty(t, parentOp.Tags,
+		"sanity: parent must declare at least one tag")
 	for _, suffix := range []string{"/match", "/reset"} {
 		item := doc.Paths.Value(basePath + suffix)
 		require.NotNilf(t, item, "missing sibling %s%s", basePath, suffix)
 		op := item.GetOperation("POST")
 		require.NotNilf(t, op, "missing POST sibling at %s%s", basePath, suffix)
-		assert.Contains(t, op.Tags, "mock-control")
+		assert.Contains(t, op.Tags, parentOp.Tags[0],
+			"sibling must inherit the parent's tag so it groups under the same section")
+		assert.NotContains(t, op.Tags, "mock-control",
+			"siblings must not be tagged mock-control — that creates a separate sidebar bucket")
 	}
 
 	// Sweep: every Mgmt API operation must have a POST /match sibling and a
@@ -132,4 +141,57 @@ func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {
 	assert.NotContains(t, doc.ExternalDocs.URL, "auth0.com",
 		"externalDocs.url must not be Auth0's; it shipped from the upstream spec")
 	assert.Contains(t, doc.ExternalDocs.URL, "github.com/sergiught/auth0-mock")
+}
+
+func TestBundleMergesFragmentTagsIntoBase(t *testing.T) {
+	doc, err := bundle("http://localhost:8080")
+	require.NoError(t, err)
+	names := map[string]string{}
+	for _, t := range doc.Tags {
+		if t == nil {
+			continue
+		}
+		names[t.Name] = t.Description
+	}
+	for _, expected := range []string{"auth-api", "admin0", "service"} {
+		desc, ok := names[expected]
+		require.Truef(t, ok, "merged base.Tags must include fragment tag %q", expected)
+		assert.NotEmptyf(t, desc, "tag %q must carry a description from its fragment", expected)
+	}
+}
+
+func TestBundleAppliesTagGroupsForSidebar(t *testing.T) {
+	doc, err := bundle("http://localhost:8080")
+	require.NoError(t, err)
+	require.NotNil(t, doc.Extensions)
+	raw, ok := doc.Extensions["x-tagGroups"]
+	require.True(t, ok, "merged doc must carry x-tagGroups for Scalar sidebar grouping")
+
+	// Marshal/unmarshal so we get back a plain Go shape we can inspect regardless
+	// of the source slice's typed elements.
+	body, err := json.Marshal(raw)
+	require.NoError(t, err)
+	var groups []struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	require.NoError(t, json.Unmarshal(body, &groups))
+
+	byName := map[string][]string{}
+	for _, g := range groups {
+		byName[g.Name] = g.Tags
+	}
+	require.Contains(t, byName, "Authentication API")
+	require.Contains(t, byName, "Management API")
+	require.Contains(t, byName, "admin0")
+	require.Contains(t, byName, "Service")
+	assert.NotContains(t, byName, "Mock Control",
+		"there must be no separate Mock Control bucket — siblings inherit the parent's group")
+
+	assert.Equal(t, []string{"auth-api"}, byName["Authentication API"])
+	assert.NotEmpty(t, byName["Management API"],
+		"Management API group must contain the upstream Auth0 tags")
+	assert.NotContains(t, byName["Management API"], "auth-api")
+	assert.NotContains(t, byName["Management API"], "admin0")
+	assert.NotContains(t, byName["Management API"], "service")
 }

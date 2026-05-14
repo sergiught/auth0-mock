@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -106,7 +107,63 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 	}}
 
 	rewriteInfo(base)
+	applyTagGroups(base)
 	return base, nil
+}
+
+// applyTagGroups injects the `x-tagGroups` Scalar/Redoc vendor extension so
+// the rendered docs sidebar splits into four top-level sections instead of
+// the ~50 flat tags the upstream Mgmt API ships. The /match and /reset
+// siblings are intentionally NOT in a separate group: they inherit their
+// parent's tag (see collectPathItemTags) and therefore appear adjacent to it
+// inside the Management API group.
+func applyTagGroups(base *openapi3.T) {
+	used := map[string]struct{}{}
+	if base.Paths != nil {
+		for _, item := range base.Paths.Map() {
+			for _, op := range item.Operations() {
+				if op == nil {
+					continue
+				}
+				for _, t := range op.Tags {
+					used[t] = struct{}{}
+				}
+			}
+		}
+	}
+	const (
+		tagAuthAPI = "auth-api"
+		tagAdmin0  = "admin0"
+		tagService = "service"
+	)
+	fragment := map[string]struct{}{
+		tagAuthAPI: {},
+		tagAdmin0:  {},
+		tagService: {},
+	}
+	var mgmtTags []string
+	for name := range used {
+		if _, isFragment := fragment[name]; isFragment {
+			continue
+		}
+		mgmtTags = append(mgmtTags, name)
+	}
+	sort.Strings(mgmtTags)
+
+	type tagGroup struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	groups := []tagGroup{
+		{Name: "Authentication API", Tags: []string{tagAuthAPI}},
+		{Name: "Management API", Tags: mgmtTags},
+		{Name: "admin0", Tags: []string{tagAdmin0}},
+		{Name: "Service", Tags: []string{tagService}},
+	}
+	if base.Extensions == nil {
+		base.Extensions = map[string]any{}
+	}
+	base.Extensions["x-tagGroups"] = groups
 }
 
 // rewriteInfo replaces the upstream Auth0 Management API's `info` block with
@@ -159,8 +216,9 @@ const docsDescription = "" +
 	"selector if your test needs a different one.\n\n" +
 	"Project source: <https://github.com/sergiught/auth0-mock>"
 
-// mergeFragment copies frag.paths and frag.components into base, returning an
-// error if any path+method or schema name is declared twice.
+// mergeFragment copies frag.paths, frag.components and frag.tags into base,
+// returning an error if any path+method, schema name, or tag name is declared
+// twice.
 func mergeFragment(base, frag *openapi3.T) error {
 	if err := mergePaths(base, frag); err != nil {
 		return err
@@ -168,7 +226,36 @@ func mergeFragment(base, frag *openapi3.T) error {
 	if err := mergeSchemas(base, frag); err != nil {
 		return err
 	}
-	return mergeSecuritySchemes(base, frag)
+	if err := mergeSecuritySchemes(base, frag); err != nil {
+		return err
+	}
+	return mergeTags(base, frag)
+}
+
+// mergeTags copies frag.Tags into base.Tags so the merged document carries a
+// top-level tag entry (with description) for every surface — Scalar uses these
+// to render sidebar section headers instead of bare tag names.
+func mergeTags(base, frag *openapi3.T) error {
+	if len(frag.Tags) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, t := range base.Tags {
+		if t != nil {
+			seen[t.Name] = struct{}{}
+		}
+	}
+	for _, t := range frag.Tags {
+		if t == nil {
+			continue
+		}
+		if _, dup := seen[t.Name]; dup {
+			return fmt.Errorf("conflict: tag %q declared in both base and fragment", t.Name)
+		}
+		base.Tags = append(base.Tags, t)
+		seen[t.Name] = struct{}{}
+	}
+	return nil
 }
 
 func mergePaths(base, frag *openapi3.T) error {
@@ -284,10 +371,11 @@ func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 	for p, item := range base.Paths.Map() {
 		existing[p] = item
 	}
-	for path := range existing {
+	for path, parentItem := range existing {
 		if mgmtPrefix == "" || !strings.HasPrefix(path, mgmtPrefix+"/") {
 			continue
 		}
+		parentTags := collectPathItemTags(parentItem)
 		for _, suffix := range []string{"/match", "/reset"} {
 			siblingPath := path + suffix
 			if base.Paths.Value(siblingPath) != nil {
@@ -296,17 +384,47 @@ func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 				continue
 			}
 			sibling := &openapi3.PathItem{}
-			sibling.SetOperation("POST", mockControlOperation(suffix))
+			sibling.SetOperation("POST", mockControlOperation(suffix, parentTags))
 			base.Paths.Set(siblingPath, sibling)
 		}
 	}
 }
 
+// collectPathItemTags returns the union of tags across every operation on a
+// path item, sorted for stable output. Used so /match and /reset siblings
+// inherit their parent endpoint's tag and therefore appear grouped with it in
+// the rendered docs instead of in a separate mock-control bucket.
+func collectPathItemTags(item *openapi3.PathItem) []string {
+	if item == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, op := range item.Operations() {
+		if op == nil {
+			continue
+		}
+		for _, t := range op.Tags {
+			seen[t] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // mockControlOperation builds the synthesised OpenAPI operation for /match or
 // /reset siblings. Bodies reference the shared schemas in MockControlOpenAPIYAML.
-func mockControlOperation(suffix string) *openapi3.Operation {
+// ParentTags is the deduplicated tag set lifted from the parent endpoint so the
+// sibling renders adjacent to it in the docs.
+func mockControlOperation(suffix string, parentTags []string) *openapi3.Operation {
 	op := &openapi3.Operation{
-		Tags:        []string{"mock-control"},
+		Tags:        parentTags,
 		Summary:     summaryFor(suffix),
 		Description: descriptionFor(suffix),
 		Responses:   openapi3.NewResponses(),
