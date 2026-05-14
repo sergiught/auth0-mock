@@ -123,6 +123,21 @@ func TestDocsFontRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestDocsRendersCustomHeader(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, `<link rel="stylesheet" href="/docs/docs.css"`)
+	assert.Contains(t, body, `class="docs-header"`)
+	assert.Contains(t, body, `class="docs-header__wordmark">auth0-mock<`) // wordmark
+	assert.Contains(t, body, ">MOCK<")                             // badge
+	assert.Contains(t, body, "github.com/sergiught/auth0-mock")    // repo link
+	assert.Contains(t, body, `id="theme-toggle"`)                  // toggle button
+}
+
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {
 	h := newOpenAPIRouter(t)
 	rec := httptest.NewRecorder()

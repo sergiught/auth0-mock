@@ -20,3 +20,110 @@
   --docs-font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --docs-font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
 }
+
+/* --- palette -------------------------------------------------------------
+   Electric-violet accent, dark-first. Light values live under .light-mode so
+   the same variables drive both themes. */
+:root,
+.dark-mode {
+  --docs-accent: #7c5cff;
+  --docs-accent-hover: #9579ff;
+  --docs-bg-1: #0d0d12;
+  --docs-bg-2: #15151c;
+  --docs-bg-3: #1c1c26;
+  --docs-text-1: #e8e8ee;
+  --docs-text-2: #a0a0b0;
+  --docs-border: #2a2a36;
+  --docs-radius: 8px;
+  --docs-header-height: 52px;
+}
+.light-mode {
+  --docs-accent: #6b3fff;
+  --docs-accent-hover: #5a2ee6;
+  --docs-bg-1: #ffffff;
+  --docs-bg-2: #f7f7f9;
+  --docs-bg-3: #ededf2;
+  --docs-text-1: #1a1a22;
+  --docs-text-2: #52525e;
+  --docs-border: #e2e2e8;
+  --docs-radius: 8px;
+}
+
+/* --- header bar ---------------------------------------------------------- */
+html, body { margin: 0; }
+body { font-family: var(--docs-font-sans); }
+
+.docs-header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--docs-header-height);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--docs-bg-1);
+  border-bottom: 1px solid var(--docs-border);
+  font-family: var(--docs-font-sans);
+}
+
+/* Push Scalar below the fixed header. */
+#app { padding-top: var(--docs-header-height); }
+
+.docs-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.docs-header__wordmark {
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--docs-text-1);
+}
+.docs-header__badge {
+  font-family: var(--docs-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  background: var(--docs-accent);
+}
+
+.docs-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.docs-header__link {
+  font-size: 13px;
+  color: var(--docs-text-2);
+  text-decoration: none;
+}
+.docs-header__link:hover { color: var(--docs-text-1); }
+
+.docs-header__toggle {
+  width: 32px; height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-bg-2);
+  cursor: pointer;
+}
+.docs-header__toggle:hover { border-color: var(--docs-accent); }
+
+/* Sun/moon glyph via CSS: a filled circle; in dark mode an offset inset
+   box-shadow carves it into a crescent. */
+.docs-header__toggle-icon {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--docs-text-1);
+}
+.dark-mode .docs-header__toggle-icon {
+  box-shadow: inset -4px -4px 0 0 var(--docs-bg-2);
+}
