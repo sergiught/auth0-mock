@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -53,6 +54,26 @@ func (v *Validator) ValidateRequest(r *http.Request, _ Operation) error {
 		},
 	}
 	return openapi3filter.ValidateRequest(r.Context(), input)
+}
+
+// Resolve finds the spec Operation that a (method, path) pair routes to. The
+// path may be concrete ("/api/v2/users/auth0|1") or a template
+// ("/api/v2/users/{id}") — the router treats a literal "{id}" segment as just
+// another path-parameter value, so both forms resolve to the same operation.
+// Returns an error when no operation matches. Used by the /admin0/expectations
+// handler, which receives method+path in a request body rather than from a
+// routed URL.
+func (v *Validator) Resolve(method, path string) (Operation, error) {
+	req := &http.Request{Method: method, URL: &url.URL{Path: path}, Header: make(http.Header)}
+	route, _, err := v.router.FindRoute(req)
+	if err != nil {
+		return Operation{}, fmt.Errorf("no operation for %s %s: %w", method, path, err)
+	}
+	return Operation{
+		Method:   route.Method,
+		Template: v.spec.BasePath + route.Path,
+		Op:       route.Operation,
+	}, nil
 }
 
 // ValidateRegistration checks a registered response payload against the

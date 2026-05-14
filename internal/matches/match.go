@@ -5,7 +5,10 @@
 // or templates from the OpenAPI spec (e.g. "/api/v2/users/{id}").
 package matches
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // Kind distinguishes how a Match's path is interpreted.
 type Kind int
@@ -25,4 +28,13 @@ type Match struct {
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
+}
+
+// KindOf reports whether path is a concrete URL (KindExact) or an OpenAPI
+// path template containing a "{...}" segment (KindTemplate).
+func KindOf(path string) Kind {
+	if strings.ContainsAny(path, "{}") {
+		return KindTemplate
+	}
+	return KindExact
 }

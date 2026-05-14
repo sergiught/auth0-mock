@@ -110,5 +110,32 @@ func TestValidator_ValidateRegistration_RejectsUndeclaredStatus(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestValidatorResolve(t *testing.T) {
+	s, err := Load([]byte(minSpec))
+	require.NoError(t, err)
+	v := NewValidator(s)
+
+	// Concrete path resolves to the template operation.
+	op, err := v.Resolve("GET", "/api/v2/widgets/abc")
+	require.NoError(t, err)
+	assert.Equal(t, "GET", op.Method)
+	assert.Equal(t, "/api/v2/widgets/{id}", op.Template)
+	require.NotNil(t, op.Op)
+	assert.Equal(t, "getWidget", op.Op.OperationID)
+
+	// A literal "{id}" segment resolves to the same operation.
+	op, err = v.Resolve("GET", "/api/v2/widgets/{id}")
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v2/widgets/{id}", op.Template)
+
+	// Unknown path errors.
+	_, err = v.Resolve("GET", "/api/v2/nonexistent")
+	require.Error(t, err)
+
+	// Unknown method on a known path errors.
+	_, err = v.Resolve("DELETE", "/api/v2/widgets/abc")
+	require.Error(t, err)
+}
+
 // silence unused-import linter for openapi3 in some Go versions.
 var _ = openapi3.NewLoader
