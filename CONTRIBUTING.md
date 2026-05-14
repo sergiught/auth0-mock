@@ -68,7 +68,7 @@ go test -tags=features ./cmd/api/... # godog acceptance suite
 | New Auth API endpoint | Unit test in `internal/authapi/*_test.go` **and** a godog scenario |
 | New admin0 endpoint | Unit test in `internal/admin0/admin0_test.go` **and** a godog scenario |
 | New OAuth grant | Godog scenario in `features/OAuthGrants.feature` (or a new file) |
-| Mgmt API behaviour change | Godog scenario in `features/{MatchRegistration,PatternFallback,Reset,BearerEnforcement}.feature` |
+| Mgmt API behaviour change | Godog scenario in `features/{Expectations,PatternFallback,Reset,BearerEnforcement}.feature` |
 | Bug fix | A failing test first, then the fix |
 
 ### Adding a godog scenario
