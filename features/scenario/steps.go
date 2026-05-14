@@ -458,12 +458,15 @@ func expectationBody(target, responseJSON string) (string, error) {
 }
 
 // nestedExpectationBody merges a "METHOD /path" target into a full nested
-// expectation docstring ({request?, response}) to form a POST
-// /admin0/expectations payload.
+// expectation docstring ({request?, response}) to produce a POST
+// /admin0/expectations payload of shape {method, path, request?, response}.
 func nestedExpectationBody(target, nestedJSON string) (string, error) {
 	method, path, err := splitTarget(target)
 	if err != nil {
 		return "", err
+	}
+	if strings.TrimSpace(nestedJSON) == "" {
+		return "", fmt.Errorf("expectation docstring must not be empty")
 	}
 	var nested map[string]any
 	if err := json.Unmarshal([]byte(nestedJSON), &nested); err != nil {
