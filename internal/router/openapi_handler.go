@@ -71,7 +71,7 @@ const scalarDocsHTML = `<!doctype html>
         const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
         const config = {
           url: '/openapi.json',
-          theme: 'moon',
+          theme: 'fastify',
           layout: 'modern',
           darkMode: prefersDark,
           withDefaultFonts: false,

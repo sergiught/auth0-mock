@@ -45,7 +45,7 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	assert.Contains(t, body, "@scalar/api-reference")
 	assert.Contains(t, body, "Scalar.createApiReference('#app'")
 	assert.Contains(t, body, "url: '/openapi.json'")
-	assert.Contains(t, body, "theme: 'moon'")
+	assert.Contains(t, body, "theme: 'fastify'")
 	assert.Contains(t, body, "layout: 'modern'")
 	assert.Contains(t, body, "withDefaultFonts: false")
 	assert.Contains(t, body, "agent: { disabled: true }",
