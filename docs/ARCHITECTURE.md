@@ -109,6 +109,32 @@ The bearer middleware wraps only the original endpoint handler, `/match` and `/r
 
 chi uses `{id}` natively (same as OpenAPI), so we pass `op.Template` straight to `r.Method` without translation. For one tricky case, `/admin0/permissions/{audience}` where audiences are often URLs containing slashes, we use chi's `/*` wildcard with `chi.URLParam(r, "*")`.
 
+## OpenAPI export
+
+The mock publishes one merged OpenAPI 3.1 document describing every HTTP surface it exposes — served at `GET /openapi.json` and `GET /openapi.yaml`, and rendered as an interactive reference at `GET /docs`. All three are unauthenticated (`router.MountOpenAPI`).
+
+### The bundler
+
+`cmd/genopenapi` builds the merged document at `make openapi` time from two kinds of input:
+
+- **The Auth0 skeleton** (`api/auth0-management-api.openapi.json`) — a stripped copy of Auth0's Management API spec: paths, methods, parameters, and schema shapes only, with every Auth0-authored `description`, `externalDocs`, and `x-*` extension removed (`stripUpstreamProse`). It is re-vendored from a manually-downloaded raw spec via `make refresh-spec`; the raw download is gitignored and never committed (see CONTRIBUTING.md for the why and how).
+- **Per-surface fragments** — hand-written partial OpenAPI docs for the surfaces the mock implements itself: `internal/authapi/authapi.openapi.yaml`, `internal/admin0/admin0.openapi.yaml`, `internal/router/service.openapi.yaml`, and the shared `api/mock-control.openapi.yaml`. Each package `//go:embed`s its own fragment.
+
+The pipeline (`bundle` in `cmd/genopenapi/main.go`):
+
+1. Load the skeleton, prefix its paths with `/api/v2`.
+2. `stripUpstreamProse` again — idempotent safety net, in case a non-stripped spec was ever committed.
+3. Merge each fragment's paths, schemas, security schemes, and tags (`mergeFragment`), erroring on any path+method or name collision.
+4. **Synthesise `/match` and `/reset` siblings**: for every Management API operation, add a *same-method* sibling at `{path}/match` and `{path}/reset` — mirroring exactly what `mgmtapi.Mount` registers at runtime. Each sibling inherits the parent's tag and gets a `Match: <summary>` / `Reset: <summary>` label; a method+path already occupied by a real spec operation is left alone.
+5. Rewrite `info` and `externalDocs` to auth0-mock's own identity (`rewriteInfo`).
+6. Add the `x-tagGroups` extension (`applyTagGroups`) so the rendered sidebar collapses into four sections — Authentication API, Management API, admin0, Service — instead of ~50 flat tags.
+
+The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.MockOpenAPIJSON`, and drift-checked in CI (`make openapi` then `git diff --exit-code`).
+
+### Serving it
+
+`/openapi.json` writes the embedded bytes directly. `/openapi.yaml` converts once, lazily, and caches the result. `/docs` is a small static HTML page that loads [Scalar](https://github.com/scalar/scalar) — pinned to an exact version and SRI-guarded — and points it at `/openapi.json`; on load it mints a `client_credentials` token and preloads it into Scalar's auth so the "Try it" panel works against the same instance with no manual setup.
+
 ## State stores (all in-memory)
 
 | Store | Owns | Mutated by | Consulted by |
