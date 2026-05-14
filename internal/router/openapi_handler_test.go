@@ -42,12 +42,21 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
 	body := rec.Body.String()
-	assert.Contains(t, body, `data-url="/openapi.json"`)
 	assert.Contains(t, body, "@scalar/api-reference")
-	assert.Contains(t, body, `"agent":{"disabled":true}`,
+	assert.Contains(t, body, "Scalar.createApiReference('#app'")
+	assert.Contains(t, body, "url: '/openapi.json'")
+	assert.Contains(t, body, "theme: 'moon'")
+	assert.Contains(t, body, "layout: 'modern'")
+	assert.Contains(t, body, "withDefaultFonts: false")
+	assert.Contains(t, body, "agent: { disabled: true }",
 		"Scalar Agent (Ask AI) must stay disabled so the spec isn't uploaded")
-	assert.Contains(t, body, `"theme":"moon"`)
-	assert.Contains(t, body, `"darkMode":true`)
+	assert.Contains(t, body, "prefers-color-scheme: dark",
+		"darkMode must follow the OS via prefers-color-scheme, not be hardcoded")
+	assert.Contains(t, body, "POST",
+		"docs must POST to /oauth/token to preload a bearer for Try-it")
+	assert.Contains(t, body, "/oauth/token")
+	assert.Contains(t, body, "grant_type=client_credentials")
+	assert.Contains(t, body, "preferredSecurityScheme: 'bearerAuth'")
 }
 
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {

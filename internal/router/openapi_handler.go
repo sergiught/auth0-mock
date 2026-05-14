@@ -33,9 +33,15 @@ func MountOpenAPI(r chi.Router) error {
 // servers[0].url already points at this same mock, so "Try it" works without
 // further config.
 //
-// `agent: { disabled: true }` switches off Scalar's "Ask AI" panel. Otherwise
-// the first message uploads the OpenAPI document to Scalar's Agent backend,
-// which has no documented retention policy.
+// Boot sequence on the client:
+//  1. Fetch a fresh access_token via `/oauth/token` (client_credentials).
+//  2. Read `prefers-color-scheme` so dark mode follows the OS.
+//  3. Mount Scalar with the token preloaded in the `bearerAuth` scheme so the
+//     "Try it" panel can call Mgmt API endpoints without any user input.
+//
+// `agent: { disabled: true }` switches off Scalar's "Ask AI" panel — that
+// feature would upload the OpenAPI document to Scalar's Agent backend, which
+// has no documented retention policy.
 const scalarDocsHTML = `<!doctype html>
 <html>
   <head>
@@ -44,11 +50,42 @@ const scalarDocsHTML = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body>
-    <script
-      id="api-reference"
-      data-url="/openapi.json"
-      data-configuration='{"agent":{"disabled":true},"theme":"moon","darkMode":true}'></script>
+    <div id="app"></div>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script>
+      (async () => {
+        let token = '';
+        try {
+          const resp = await fetch('/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'grant_type=client_credentials&client_id=docs&client_secret=docs',
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            token = data.access_token || '';
+          }
+        } catch (e) {
+          console.warn('docs: token preload failed', e);
+        }
+        const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        const config = {
+          url: '/openapi.json',
+          theme: 'moon',
+          layout: 'modern',
+          darkMode: prefersDark,
+          withDefaultFonts: false,
+          agent: { disabled: true },
+        };
+        if (token) {
+          config.authentication = {
+            preferredSecurityScheme: 'bearerAuth',
+            securitySchemes: { bearerAuth: { token: token } },
+          };
+        }
+        Scalar.createApiReference('#app', config);
+      })();
+    </script>
   </body>
 </html>
 `
