@@ -17,7 +17,7 @@ Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injecti
 A self-contained Go service that **looks and behaves like Auth0** to a calling client:
 
 - 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally, no `InsecureSkipVerify`, no fake-token kludges.
-- 📦 **Mocks the Management API spec-completely** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations — paths, methods and schemas; Auth0's prose removed) and routing every endpoint to a single generic handler. You stub responses with `<verb> /api/v2/.../match`; the OpenAPI schema validates the stubbed body.
+- 📦 **Mocks the Management API spec-completely** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations — paths, methods and schemas; Auth0's prose removed) and routing every endpoint to a single generic handler. You stub responses by POSTing `{method, path, status, body}` to `/admin0/expectations`; the OpenAPI schema validates the stubbed body.
 - 🛠 **Shapes runtime state via HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
@@ -68,9 +68,9 @@ TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
   | jq -r .access_token)
 
 # 2. Stub a Mgmt API response
-curl -X GET http://localhost:8080/api/v2/users/auth0%7C123/match \
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|123","status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}'
 
 # 3. Call the stubbed endpoint with your bearer
 curl http://localhost:8080/api/v2/users/auth0%7C123 \
@@ -93,9 +93,8 @@ it exposes:
 
 - The Auth0 **Authentication API** (`/oauth/token`, `/authorize`,
   `/userinfo`, `/v2/logout`, `/dbconnections/*`, `/passwordless/*`).
-- The Auth0 **Management API** (everything under `/api/v2`), plus a
-  `POST {path}/match` and `POST {path}/reset` sibling for every operation so
-  you can programme canned responses from the same collection.
+- The Auth0 **Management API** (everything under `/api/v2`). Canned responses
+  are programmed centrally via `POST /admin0/expectations`.
 - The **admin0** control plane (`/admin0/*`).
 - The **service** endpoints (`/healthz`, `/.well-known/jwks.json`,
   `/openapi.json`, `/openapi.yaml`).
@@ -107,7 +106,7 @@ it exposes:
   `http://localhost:8080/openapi.json` (or `/openapi.yaml`).
 
 Both Postman and Insomnia will create a folder per tag (`auth-api`,
-`admin0`, `service`, `mock-control`, plus the Mgmt API's existing tags) and
+`admin0`, `service`, plus the Mgmt API's existing tags) and
 fill in request bodies from the schemas.
 
 ### Regenerating the spec
@@ -115,7 +114,6 @@ fill in request bodies from the schemas.
 The merged JSON is committed and checked for drift in CI. Re-run
 `make openapi` after editing any of the auth0-mock-authored fragments:
 
-- `api/mock-control.openapi.yaml`
 - `internal/authapi/authapi.openapi.yaml`
 - `internal/admin0/admin0.openapi.yaml`
 - `internal/router/service.openapi.yaml`
@@ -162,24 +160,27 @@ Every operation in the embedded Auth0 Management API skeleton is mounted. Defaul
 
 ```bash
 # Concrete-id stub
-curl -X GET http://localhost:8080/api/v2/users/auth0%7C123/match \
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|123","status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
 
 # Template stub (catch-all for any user id)
-curl -X GET http://localhost:8080/api/v2/users/{id}/match \
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/{id}","status":200,"body":{"user_id":"auth0|*","email":"any@x"}}'
 ```
 
-> Concrete URL stubs win over template stubs. Schemas are validated at registration time, invalid bodies are rejected with `400 invalid_match`. `/match` siblings mirror the original verb (so for `GET /users/{id}` the sibling is `GET …/match`, yes, GET-with-body).
+> Concrete-path stubs win over template stubs at request time. The `body` is
+> validated against the operation's response schema at registration time —
+> invalid bodies are rejected with `400 invalid_match`, unknown operations with
+> `400 unknown_operation`.
 
 ### 🛠 Admin surface (no auth, JSON-driven)
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: matches, claims, permissions, MFA flag |
-| `/admin0/matches` | GET | List currently registered match stubs |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, permissions, MFA flag |
+| `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Mgmt API responses |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
@@ -295,16 +296,14 @@ chi router
   ├── /healthz                               liveness
   ├── /openapi.json /openapi.yaml            merged OpenAPI 3.1 spec
   ├── /docs                                  Scalar-rendered API reference
-  ├── /admin0/{reset, matches, claims, permissions/*, mfa-required}
+  ├── /admin0/{reset, expectations, claims, permissions/*, mfa-required}
   │                                          control plane (no auth)
   ├── /.well-known/{jwks.json, openid-configuration}
   ├── /oauth/* /authorize /userinfo /v2/logout
   │   /dbconnections/* /passwordless/*
   │                                          Auth API (hand-coded, functional)
-  └── /api/v2/*                              Management API (spec-driven)
-        /api/v2/.../{verb}                   ← bearer-enforced; generic handler
-        /api/v2/.../{verb}/match             ← stub register (no bearer)
-        /api/v2/.../{verb}/reset             ← stub clear (no bearer)
+  └── /api/v2/*                              Management API (spec-driven; one generic handler)
+        /api/v2/.../{verb}                   ← bearer-enforced; stubs via /admin0/expectations
 ```
 
 Every handler is a struct holding its dependencies as fields, implementing `http.Handler` via `ServeHTTP`. JSON responses go through `go-chi/render`.

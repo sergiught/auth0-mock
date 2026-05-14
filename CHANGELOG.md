@@ -20,6 +20,7 @@ All notable changes to this project will be documented here. Format follows [Kee
 
 ### Changed
 
+- **Canned responses are now registered centrally** via `POST /admin0/expectations` (`{method, path, status, headers?, body?}`), with `GET /admin0/expectations` to list and `DELETE /admin0/expectations` to clear one (body) or all (no body). This replaces the ~812 synthesised per-operation `POST {path}/match` / `{path}/reset` sibling endpoints and the `/admin0/matches` listing. Breaking change to the mock's control-plane HTTP contract.
 - **`POST /admin0/reset`** now clears matches + claims + permissions + MFA state in one shot.
 - **Auth0 Management API spec is now a stripped skeleton**, not Auth0's verbatim document. `stripUpstreamProse` removes every Auth0-authored description, `externalDocs` link, and `x-*` extension (~1000 `x-description-*` fields, 97 doc links), leaving only the paths/methods/parameters/schemas the mock needs to route and validate. `make refresh-spec` re-vendors the skeleton from a manually-downloaded raw spec (gitignored, never committed); see CONTRIBUTING.md.
 - **HTTP/HTTPS listeners default to `127.0.0.1`** (was `0.0.0.0`), so a bare-metal run is not reachable off-host without an explicit `HTTP_ADDR` / `HTTPS_ADDR` opt-in. The Docker image sets them back to `0.0.0.0` so `docker run -p` and compose still work.

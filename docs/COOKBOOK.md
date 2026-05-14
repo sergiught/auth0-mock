@@ -25,10 +25,10 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 The hello-world of auth0-mock.
 
 ```bash
-# 1. Stub the response (no auth needed for /match)
-curl -X GET http://localhost:8080/api/v2/users/auth0%7C123/match \
+# 1. Stub the response (no auth needed for /admin0/expectations)
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|123","status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}'
 
 # 2. Mint a bearer
 TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
@@ -50,14 +50,14 @@ Concrete URLs stub one entity; template URLs (containing `{id}`) stub a fallback
 
 ```bash
 # Template fallback: any user lookup returns this
-curl -X GET 'http://localhost:8080/api/v2/users/{id}/match' \
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|*","email":"anyone@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/{id}","status":200,"body":{"user_id":"auth0|*","email":"anyone@x"}}'
 
 # Concrete override for alice
-curl -X GET http://localhost:8080/api/v2/users/auth0%7Calice/match \
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":200,"body":{"user_id":"auth0|alice","email":"alice@x"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|alice","status":200,"body":{"user_id":"auth0|alice","email":"alice@x"}}'
 
 # alice returns her own data; everyone else gets the template fallback
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/auth0%7Calice  # → alice@x
@@ -201,9 +201,9 @@ The match validator rejects bodies that violate the spec for the chosen status, 
 
 ```bash
 # Force a 429 rate-limit on the next call to GET /api/v2/users/auth0|x
-curl -X GET 'http://localhost:8080/api/v2/users/auth0%7Cx/match' \
+curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
-  -d '{"status":429,"headers":{"X-RateLimit-Limit":"50","Retry-After":"60"},"body":{"statusCode":429,"error":"Too Many Requests","message":"Rate limit exceeded"}}'
+  -d '{"method":"GET","path":"/api/v2/users/auth0|x","status":429,"headers":{"X-RateLimit-Limit":"50","Retry-After":"60"},"body":{"statusCode":429,"error":"Too Many Requests","message":"Rate limit exceeded"}}'
 
 curl -i -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/auth0%7Cx
 # HTTP/1.1 429
@@ -226,7 +226,9 @@ Or use the more targeted resets:
 
 ```bash
 # Clear one Mgmt API stub
-curl -X GET http://localhost:8080/api/v2/users/auth0%7Cx/reset
+curl -X DELETE http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"GET","path":"/api/v2/users/auth0|x"}'
 
 # Clear just the custom-claim map
 curl -X DELETE http://localhost:8080/admin0/claims
@@ -247,7 +249,7 @@ curl -X PUT http://localhost:8080/admin0/mfa-required \
 When a test isn't behaving as expected, list the live state:
 
 ```bash
-curl http://localhost:8080/admin0/matches | jq .
+curl http://localhost:8080/admin0/expectations | jq .
 curl http://localhost:8080/admin0/claims | jq .
 curl http://localhost:8080/admin0/permissions | jq .
 curl http://localhost:8080/admin0/mfa-required | jq .

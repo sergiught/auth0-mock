@@ -22,7 +22,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │                                                                          │
 │   /healthz                                  liveness                     │
 │                                                                          │
-│   /admin0/{reset, matches, claims,          control plane (no bearer)    │
+│   /admin0/{reset, expectations, claims,      control plane (no bearer)    │
 │            permissions[/{audience}],        - wipes / inspects / shapes  │
 │            mfa-required}                    runtime state                │
 │                                                                          │
@@ -37,8 +37,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │   /api/v2/*                                 Mgmt API (spec-driven)       │
 │       <verb> <path>             ← bearer-enforced + spec-validated +    │
 │                                    consults stub store (404 by default)  │
-│       <verb> <path>/match       ← stub register (no bearer)              │
-│       <verb> <path>/reset       ← stub clear (no bearer)                 │
+│                                    stubs registered via /admin0/expectations│
 └─────────────────────────┬────────────────────────────────────────────────┘
                           │
                           ▼
@@ -88,22 +87,16 @@ The full list of grants and their dispatch lives in [`internal/authapi/token.go`
 ```go
 for op := range opts.Spec.Operations() {
     base := op.Template                    // "/api/v2/users/{id}"
-    matchPath := base + "/match"
-    resetPath := base + "/reset"
 
-    r.Method(op.Method, base,      bearer.Middleware(opts.Keys)(&GenericHandler{Op: op, ...}))
-    r.Method(op.Method, matchPath, &MatchHandler{Op: op, ...})
-    r.Method(op.Method, resetPath, &ResetHandler{Op: op, ...})
+    r.Method(op.Method, base, bearer.Middleware(opts.Keys)(&GenericHandler{Op: op, ...}))
 }
 ```
 
-Three handlers, all in `internal/mgmtapi/`:
+One handler per operation, all in `internal/mgmtapi/`:
 
 - **`GenericHandler`**: validates the incoming request against the operation's OpenAPI schema, looks up a stub from `matches.Store` (exact path wins over template path), defensively re-validates the stored response against the spec, writes it. Returns `404 no_match` if nothing was registered.
-- **`MatchHandler`**: decodes a `{status, headers, body}` payload, validates `body` against the operation's *response* schema for the chosen `status`, stores it.
-- **`ResetHandler`**: strips `/reset` from the URL, calls `matches.Store.ResetEndpoint`.
 
-The bearer middleware wraps only the original endpoint handler, `/match` and `/reset` siblings are bearer-free so test setup doesn't have to mint tokens first.
+Canned responses are registered out-of-band via `POST /admin0/expectations` (handler in `internal/admin0/expectations.go`), which decodes a `{method, path, status, headers?, body?}` payload, validates `body` against the operation's response schema for the chosen `status`, and stores it in `matches.Store`. This separation keeps the Mgmt API surface bearer-protected while stub registration requires no token.
 
 ### Why use a chi wildcard for paths?
 
@@ -118,16 +111,15 @@ The mock publishes one merged OpenAPI 3.1 document describing every HTTP surface
 `cmd/genopenapi` builds the merged document at `make openapi` time from two kinds of input:
 
 - **The Auth0 skeleton** (`api/auth0-management-api.openapi.json`) — a stripped copy of Auth0's Management API spec: paths, methods, parameters, and schema shapes only, with every Auth0-authored `description`, `externalDocs`, and `x-*` extension removed (`stripUpstreamProse`). It is re-vendored from a manually-downloaded raw spec via `make refresh-spec`; the raw download is gitignored and never committed (see CONTRIBUTING.md for the why and how).
-- **Per-surface fragments** — hand-written partial OpenAPI docs for the surfaces the mock implements itself: `internal/authapi/authapi.openapi.yaml`, `internal/admin0/admin0.openapi.yaml`, `internal/router/service.openapi.yaml`, and the shared `api/mock-control.openapi.yaml`. Each package `//go:embed`s its own fragment.
+- **Per-surface fragments** — hand-written partial OpenAPI docs for the surfaces the mock implements itself: `internal/authapi/authapi.openapi.yaml`, `internal/admin0/admin0.openapi.yaml`, `internal/router/service.openapi.yaml`. Each package `//go:embed`s its own fragment.
 
 The pipeline (`bundle` in `cmd/genopenapi/main.go`):
 
 1. Load the skeleton, prefix its paths with `/api/v2`.
 2. `stripUpstreamProse` again — idempotent safety net, in case a non-stripped spec was ever committed.
 3. Merge each fragment's paths, schemas, security schemes, and tags (`mergeFragment`), erroring on any path+method or name collision.
-4. **Synthesise `/match` and `/reset` siblings**: for every Management API operation, add a *same-method* sibling at `{path}/match` and `{path}/reset` — mirroring exactly what `mgmtapi.Mount` registers at runtime. Each sibling inherits the parent's tag and gets a `Match: <summary>` / `Reset: <summary>` label; a method+path already occupied by a real spec operation is left alone.
-5. Rewrite `info` and `externalDocs` to auth0-mock's own identity (`rewriteInfo`).
-6. Add the `x-tagGroups` extension (`applyTagGroups`) so the rendered sidebar collapses into four sections — Authentication API, Management API, admin0, Service — instead of ~50 flat tags.
+4. Rewrite `info` and `externalDocs` to auth0-mock's own identity (`rewriteInfo`).
+5. Add the `x-tagGroups` extension (`applyTagGroups`) so the rendered sidebar collapses into four sections — Authentication API, Management API, admin0, Service — instead of ~50 flat tags.
 
 The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.MockOpenAPIJSON`, and drift-checked in CI (`make openapi` then `git diff --exit-code`).
 
@@ -139,7 +131,7 @@ The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.
 
 | Store | Owns | Mutated by | Consulted by |
 |---|---|---|---|
-| [`internal/matches/`](../internal/matches/) | Map of `(method, path) → {status, headers, body}` for Mgmt API stubs | `/api/v2/.../match`, `/api/v2/.../reset`, `/admin0/reset` | `GenericHandler` |
+| [`internal/matches/`](../internal/matches/) | Map of `(method, path) → {status, headers, body}` for Mgmt API stubs | `POST /admin0/expectations`, `DELETE /admin0/expectations`, `POST /admin0/reset` | `GenericHandler` |
 | [`internal/claims/`](../internal/claims/) | Per-process map of custom JWT claims | `PUT/DELETE /admin0/claims`, `POST /admin0/reset` | `TokenHandler.augmentExtra`, `PasswordlessVerifyHandler` |
 | [`internal/permissions/`](../internal/permissions/) | `map[audience] → []permission` for RBAC claim injection | `PUT/DELETE /admin0/permissions[/{audience}]`, `POST /admin0/reset` | `TokenHandler.augmentExtra` (looks up by audience), `PasswordlessVerifyHandler` |
 | [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | (none) |
@@ -242,7 +234,7 @@ if entry, ok := h.PKCE.Consume(req.Code); ok {
 
 Two distinct shapes, matching real Auth0:
 
-**Management API** (`/api/v2/*`, `/admin0/*`, `/api/v2/.../{match,reset}`):
+**Management API** (`/api/v2/*`, `/admin0/*`):
 ```json
 { "statusCode": 400, "error": "Bad Request", "message": "...", "errorCode": "invalid_body" }
 ```

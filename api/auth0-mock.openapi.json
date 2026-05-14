@@ -54171,7 +54171,7 @@
             "description": "Reset complete."
           }
         },
-        "summary": "Wipe every store admin0 governs (matches, claims, permissions, mfa-required).",
+        "summary": "Wipe every store admin0 governs (expectations, claims, permissions, mfa-required).",
         "tags": [
           "Expectations"
         ]
