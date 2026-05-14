@@ -42,7 +42,14 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
 	body := rec.Body.String()
-	assert.Contains(t, body, "@scalar/api-reference")
+	assert.Contains(t, body, `<html lang="en">`)
+	// Scalar bundle must be pinned to an exact version and SRI-guarded — the
+	// page mints a real bearer token, so unpinned third-party JS is not OK.
+	assert.Contains(t, body, "@scalar/api-reference@1.55.3/dist/browser/standalone.min.js")
+	assert.Contains(t, body, `integrity="sha384-`)
+	assert.Contains(t, body, `crossorigin="anonymous"`)
+	// Fallback when the CDN bundle fails to load.
+	assert.Contains(t, body, "typeof Scalar === 'undefined'")
 	assert.Contains(t, body, "Scalar.createApiReference('#app'")
 	assert.Contains(t, body, "url: '/openapi.json'")
 	assert.Contains(t, body, "theme: 'fastify'")

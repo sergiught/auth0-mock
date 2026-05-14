@@ -33,17 +33,25 @@ func MountOpenAPI(r chi.Router) error {
 // servers[0].url already points at this same mock, so "Try it" works without
 // further config.
 //
+// The Scalar bundle is pinned to an exact version and guarded with a
+// Subresource Integrity hash — the page mints a real (if short-lived) bearer
+// token, so unpinned third-party JS is not something we want to run. To bump
+// Scalar: change the version, then recompute the hash with
+//
+//	curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+//
 // Boot sequence on the client:
 //  1. Fetch a fresh access_token via `/oauth/token` (client_credentials).
-//  2. Read `prefers-color-scheme` so dark mode follows the OS.
-//  3. Mount Scalar with the token preloaded in the `bearerAuth` scheme so the
+//  2. Bail out to a plain-text fallback if the Scalar bundle didn't load.
+//  3. Read `prefers-color-scheme` so dark mode follows the OS.
+//  4. Mount Scalar with the token preloaded in the `bearerAuth` scheme so the
 //     "Try it" panel can call Mgmt API endpoints without any user input.
 //
 // `agent: { disabled: true }` switches off Scalar's "Ask AI" panel — that
 // feature would upload the OpenAPI document to Scalar's Agent backend, which
 // has no documented retention policy.
 const scalarDocsHTML = `<!doctype html>
-<html>
+<html lang="en">
   <head>
     <title>auth0-mock API reference</title>
     <meta charset="utf-8" />
@@ -51,7 +59,10 @@ const scalarDocsHTML = `<!doctype html>
   </head>
   <body>
     <div id="app"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.55.3/dist/browser/standalone.min.js"
+      integrity="sha384-u/Zg79PtgsQJqvDyaod9gOK+Vd81OvakzjgLu6I6m35qTFuFb+MqepR1ErooTvp1"
+      crossorigin="anonymous"></script>
     <script>
       (async () => {
         let token = '';
@@ -67,6 +78,15 @@ const scalarDocsHTML = `<!doctype html>
           }
         } catch (e) {
           console.warn('docs: token preload failed', e);
+        }
+        if (typeof Scalar === 'undefined') {
+          document.getElementById('app').innerHTML =
+            '<p style="font-family: sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">' +
+            'The API reference UI failed to load (the Scalar bundle could not be fetched). ' +
+            'The raw OpenAPI document is still available at ' +
+            '<a href="/openapi.json">/openapi.json</a> and ' +
+            '<a href="/openapi.yaml">/openapi.yaml</a>.</p>';
+          return;
         }
         const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
         const config = {
