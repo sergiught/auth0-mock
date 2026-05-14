@@ -74,22 +74,6 @@ func TestMFARequired_PutGet(t *testing.T) {
 	assert.False(t, d.MFA.IsRequired())
 }
 
-func TestMatches_ReturnsRegisteredMatches(t *testing.T) {
-	d := newDeps()
-	d.Matches.Put(matches.Match{
-		Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate,
-		Status: 200, Body: json.RawMessage(`{"x":1}`),
-	})
-
-	r := newRouter(d)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/matches", nil))
-
-	require.Equal(t, 200, w.Code)
-	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-	assert.True(t, strings.Contains(w.Body.String(), `"path":"/api/v2/users/{id}"`))
-}
-
 func TestClaims_PutGetDelete(t *testing.T) {
 	d := newDeps()
 	r := newRouter(d)

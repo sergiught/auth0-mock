@@ -94,7 +94,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { _ = orc.Start(ctx) }()
-	waitReachable(t, "http://"+addr+"/admin0/matches")
+	waitReachable(t, "http://"+addr+"/admin0/expectations")
 
 	c := &Context{t: t, BaseURL: "http://" + addr, cancelBoot: cancel}
 
