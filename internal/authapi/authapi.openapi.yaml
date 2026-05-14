@@ -3,12 +3,16 @@ info:
   title: auth0-mock Authentication API
   version: 1.0.0
 tags:
-  - name: auth-api
-    description: Auth0 Authentication API endpoints — OAuth2/OIDC, dbconnections, passwordless.
+  - name: "OAuth & OIDC"
+    description: OAuth2 / OIDC endpoints — token exchange, authorization-code flow, userinfo, OIDC discovery, logout, and token revocation.
+  - name: Database Connections
+    description: Auth0 database-connection endpoints — user signup and password-change requests.
+  - name: Passwordless
+    description: Auth0 passwordless flow — start (email/SMS OTP) and verify.
 paths:
   /oauth/token:
     post:
-      tags: [auth-api]
+      tags: ["OAuth & OIDC"]
       summary: Exchange credentials for an access token.
       description: |
         Supports every grant type the mock implements: `client_credentials`,
@@ -48,7 +52,7 @@ paths:
               schema: { $ref: "#/components/schemas/MFARequiredError" }
   /authorize:
     get:
-      tags: [auth-api]
+      tags: ["OAuth & OIDC"]
       summary: Start the Authorization Code flow.
       parameters:
         - { name: response_type,        in: query, required: true,  schema: { type: string, enum: [code, token] } }
@@ -69,7 +73,7 @@ paths:
               schema: { $ref: "#/components/schemas/OAuthError" }
   /userinfo:
     get:
-      tags: [auth-api]
+      tags: ["OAuth & OIDC"]
       summary: Resolve the authenticated user from an access token.
       security:
         - bearerAuth: []
@@ -87,7 +91,7 @@ paths:
               schema: { $ref: "#/components/schemas/OAuthError" }
   /.well-known/openid-configuration:
     get:
-      tags: [auth-api]
+      tags: ["OAuth & OIDC"]
       summary: OIDC discovery document.
       responses:
         "200":
@@ -98,7 +102,7 @@ paths:
                 type: object
   /v2/logout:
     get:
-      tags: [auth-api]
+      tags: ["OAuth & OIDC"]
       summary: End the user's session and optionally redirect them.
       parameters:
         - { name: returnTo,  in: query, required: false, schema: { type: string, format: uri } }
@@ -108,7 +112,7 @@ paths:
           description: Redirect to `returnTo`.
   /oauth/revoke:
     post:
-      tags: [auth-api]
+      tags: ["OAuth & OIDC"]
       summary: Revoke a refresh token.
       requestBody:
         required: true
@@ -126,7 +130,7 @@ paths:
           description: Revoked.
   /dbconnections/signup:
     post:
-      tags: [auth-api]
+      tags: [Database Connections]
       summary: Create a database-connection user.
       requestBody:
         required: true
@@ -151,7 +155,7 @@ paths:
                 type: object
   /dbconnections/change_password:
     post:
-      tags: [auth-api]
+      tags: [Database Connections]
       summary: Trigger a password-change email.
       requestBody:
         required: true
@@ -169,7 +173,7 @@ paths:
           description: Acknowledged.
   /passwordless/start:
     post:
-      tags: [auth-api]
+      tags: [Passwordless]
       summary: Start the passwordless flow.
       requestBody:
         required: true
@@ -189,7 +193,7 @@ paths:
           description: OTP / link sent (mock returns 200 without sending).
   /passwordless/verify:
     post:
-      tags: [auth-api]
+      tags: [Passwordless]
       summary: Verify a passwordless OTP and mint tokens.
       requestBody:
         required: true

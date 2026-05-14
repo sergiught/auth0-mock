@@ -3,22 +3,32 @@ info:
   title: auth0-mock admin0 control plane
   version: 1.0.0
 tags:
-  - name: admin0
+  - name: Claims
     description: |
-      Mock control plane. Endpoints under `/admin0/*` manipulate in-memory
-      state (claims, permissions, MFA flags, registered matches) so tests can
-      set up scenarios without going through bearer-protected Mgmt API routes.
-      None of these require authentication.
+      Global custom-claim overlay. Claims set here are merged into every token
+      the mock mints, so tests can assert on claims without a real rule/action.
+  - name: Permissions
+    description: |
+      Per-audience RBAC permission overlays. Lets tests pre-seed the
+      permissions a token carries for a given API identifier.
+  - name: MFA
+    description: |
+      The mock-wide MFA-required flag. When set, password-style grants return
+      an `mfa_required` error so step-up flows can be exercised.
+  - name: Matches
+    description: |
+      Registered `/match` entries across the Mgmt API surface, plus the global
+      state reset. None of these require authentication.
 paths:
   /admin0/reset:
     post:
-      tags: [admin0]
+      tags: [Matches]
       summary: Wipe every store admin0 governs (matches, claims, permissions, mfa-required).
       responses:
         "204": { description: Reset complete. }
   /admin0/matches:
     get:
-      tags: [admin0]
+      tags: [Matches]
       summary: List every registered `/match` entry across the Mgmt API surface.
       responses:
         "200":
@@ -45,7 +55,7 @@ paths:
                           description: Programmed response body (any JSON-serialisable value).
   /admin0/claims:
     get:
-      tags: [admin0]
+      tags: [Claims]
       summary: Read the global custom claim overlay applied to minted tokens.
       responses:
         "200":
@@ -56,7 +66,7 @@ paths:
                 type: object
                 additionalProperties: true
     put:
-      tags: [admin0]
+      tags: [Claims]
       summary: Replace the global custom claim overlay.
       requestBody:
         required: true
@@ -68,13 +78,13 @@ paths:
       responses:
         "204": { description: Claims updated. }
     delete:
-      tags: [admin0]
+      tags: [Claims]
       summary: Clear the global custom claim overlay.
       responses:
         "204": { description: Claims cleared. }
   /admin0/permissions:
     get:
-      tags: [admin0]
+      tags: [Permissions]
       summary: List every audience that has a permissions overlay configured.
       responses:
         "200":
@@ -87,7 +97,7 @@ paths:
                   type: array
                   items: { type: string }
     delete:
-      tags: [admin0]
+      tags: [Permissions]
       summary: Clear every per-audience permissions overlay.
       responses:
         "204": { description: All overlays cleared. }
@@ -103,7 +113,7 @@ paths:
           can't represent wildcard paths.
         schema: { type: string }
     get:
-      tags: [admin0]
+      tags: [Permissions]
       summary: Read the permissions overlay for one audience.
       responses:
         "200":
@@ -114,7 +124,7 @@ paths:
                 type: array
                 items: { type: string }
     put:
-      tags: [admin0]
+      tags: [Permissions]
       summary: Replace the permissions overlay for one audience.
       requestBody:
         required: true
@@ -126,13 +136,13 @@ paths:
       responses:
         "204": { description: Overlay updated. }
     delete:
-      tags: [admin0]
+      tags: [Permissions]
       summary: Clear the permissions overlay for one audience.
       responses:
         "204": { description: Overlay cleared. }
   /admin0/mfa-required:
     get:
-      tags: [admin0]
+      tags: [MFA]
       summary: Read the current MFA-required flag.
       responses:
         "200":
@@ -145,7 +155,7 @@ paths:
                 properties:
                   required: { type: boolean }
     put:
-      tags: [admin0]
+      tags: [MFA]
       summary: Set the MFA-required flag.
       requestBody:
         required: true

@@ -17,16 +17,16 @@ func TestAuthAPIFragmentDescribesEveryMountedRoute(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, doc.Validate(context.Background()))
 	want := map[string]string{
-		"POST /oauth/token":                     "auth-api",
-		"GET /authorize":                        "auth-api",
-		"GET /userinfo":                         "auth-api",
-		"GET /.well-known/openid-configuration": "auth-api",
-		"GET /v2/logout":                        "auth-api",
-		"POST /oauth/revoke":                    "auth-api",
-		"POST /dbconnections/signup":            "auth-api",
-		"POST /dbconnections/change_password":   "auth-api",
-		"POST /passwordless/start":              "auth-api",
-		"POST /passwordless/verify":             "auth-api",
+		"POST /oauth/token":                     "OAuth & OIDC",
+		"GET /authorize":                        "OAuth & OIDC",
+		"GET /userinfo":                         "OAuth & OIDC",
+		"GET /.well-known/openid-configuration": "OAuth & OIDC",
+		"GET /v2/logout":                        "OAuth & OIDC",
+		"POST /oauth/revoke":                    "OAuth & OIDC",
+		"POST /dbconnections/signup":            "Database Connections",
+		"POST /dbconnections/change_password":   "Database Connections",
+		"POST /passwordless/start":              "Passwordless",
+		"POST /passwordless/verify":             "Passwordless",
 	}
 	for key, tag := range want {
 		parts := strings.SplitN(key, " ", 2)

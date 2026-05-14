@@ -15,26 +15,28 @@ func TestAdmin0FragmentDescribesEveryMountedRoute(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromData(admin0.Fragment)
 	require.NoError(t, err)
 	require.NoError(t, doc.Validate(context.Background()))
-	want := [][2]string{
-		{"POST", "/admin0/reset"},
-		{"GET", "/admin0/matches"},
-		{"GET", "/admin0/claims"},
-		{"PUT", "/admin0/claims"},
-		{"DELETE", "/admin0/claims"},
-		{"GET", "/admin0/permissions"},
-		{"DELETE", "/admin0/permissions"},
-		{"GET", "/admin0/permissions/{audience}"},
-		{"PUT", "/admin0/permissions/{audience}"},
-		{"DELETE", "/admin0/permissions/{audience}"},
-		{"GET", "/admin0/mfa-required"},
-		{"PUT", "/admin0/mfa-required"},
+	// {method, path, expected tag} — admin0 is split into Claims / Permissions
+	// / MFA / Matches so the docs sidebar group→tag nesting is meaningful.
+	want := [][3]string{
+		{"POST", "/admin0/reset", "Matches"},
+		{"GET", "/admin0/matches", "Matches"},
+		{"GET", "/admin0/claims", "Claims"},
+		{"PUT", "/admin0/claims", "Claims"},
+		{"DELETE", "/admin0/claims", "Claims"},
+		{"GET", "/admin0/permissions", "Permissions"},
+		{"DELETE", "/admin0/permissions", "Permissions"},
+		{"GET", "/admin0/permissions/{audience}", "Permissions"},
+		{"PUT", "/admin0/permissions/{audience}", "Permissions"},
+		{"DELETE", "/admin0/permissions/{audience}", "Permissions"},
+		{"GET", "/admin0/mfa-required", "MFA"},
+		{"PUT", "/admin0/mfa-required", "MFA"},
 	}
 	for _, mp := range want {
-		method, path := mp[0], mp[1]
+		method, path, tag := mp[0], mp[1], mp[2]
 		item := doc.Paths.Value(path)
 		require.NotNilf(t, item, "missing path %s", path)
 		op := item.GetOperation(method)
 		require.NotNilf(t, op, "%s %s missing", method, path)
-		assert.Containsf(t, op.Tags, "admin0", "%s %s missing tag admin0", method, path)
+		assert.Containsf(t, op.Tags, tag, "%s %s missing tag %s", method, path, tag)
 	}
 }

@@ -113,10 +113,20 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 
 // applyTagGroups injects the `x-tagGroups` Scalar/Redoc vendor extension so
 // the rendered docs sidebar splits into four top-level sections instead of
-// the ~50 flat tags the upstream Mgmt API ships. The /match and /reset
-// siblings are intentionally NOT in a separate group: each inherits the tag
-// of the parent operation it pairs with (see synthesiseMockControlSiblings)
-// and therefore appears adjacent to it inside the Management API group.
+// the ~50 flat tags the upstream Mgmt API ships. Authentication API and
+// admin0 carry several sub-tags each (declared in their fragments) so the
+// group→tag nesting is meaningful rather than redundant. The /match and
+// /reset siblings are intentionally NOT in a separate group: each inherits
+// the tag of the parent operation it pairs with (see
+// synthesiseMockControlSiblings) and so appears adjacent to it inside the
+// Management API group.
+//
+// Note: with x-tagGroups, a tag that is in no group is dropped from the
+// sidebar entirely. Management API is computed as "every used tag not claimed
+// by a surface fragment", so a tag can never go ungrouped — at worst a new,
+// unlisted fragment tag is miscategorised into Management API (visible, just
+// in the wrong section). AuthAPITags/admin0Tags/serviceTags must stay in sync
+// with the fragment YAML; TestBundleAppliesTagGroupsForSidebar guards that.
 func applyTagGroups(base *openapi3.T) {
 	used := map[string]struct{}{}
 	if base.Paths != nil {
@@ -131,15 +141,17 @@ func applyTagGroups(base *openapi3.T) {
 			}
 		}
 	}
-	const (
-		tagAuthAPI = "auth-api"
-		tagAdmin0  = "admin0"
-		tagService = "service"
-	)
-	fragment := map[string]struct{}{
-		tagAuthAPI: {},
-		tagAdmin0:  {},
-		tagService: {},
+	// Tags contributed by each non-Mgmt surface fragment. Everything else is a
+	// real Auth0 Management API tag and falls into the Management API group.
+	authAPITags := []string{"OAuth & OIDC", "Database Connections", "Passwordless"}
+	admin0Tags := []string{"Claims", "Permissions", "MFA", "Matches"}
+	serviceTags := []string{"Service"}
+
+	fragment := map[string]struct{}{}
+	for _, list := range [][]string{authAPITags, admin0Tags, serviceTags} {
+		for _, t := range list {
+			fragment[t] = struct{}{}
+		}
 	}
 	var mgmtTags []string
 	for name := range used {
@@ -155,10 +167,10 @@ func applyTagGroups(base *openapi3.T) {
 		Tags []string `json:"tags"`
 	}
 	groups := []tagGroup{
-		{Name: "Authentication API", Tags: []string{tagAuthAPI}},
+		{Name: "Authentication API", Tags: authAPITags},
 		{Name: "Management API", Tags: mgmtTags},
-		{Name: "admin0", Tags: []string{tagAdmin0}},
-		{Name: "Service", Tags: []string{tagService}},
+		{Name: "admin0", Tags: admin0Tags},
+		{Name: "Service", Tags: serviceTags},
 	}
 	if base.Extensions == nil {
 		base.Extensions = map[string]any{}

@@ -3,12 +3,12 @@ info:
   title: auth0-mock service endpoints
   version: 1.0.0
 tags:
-  - name: service
-    description: Service plumbing — health probe, JWKS, OpenAPI export.
+  - name: Service
+    description: Service plumbing — health probe, JWKS, OpenAPI export, and the rendered docs page.
 paths:
   /healthz:
     get:
-      tags: [service]
+      tags: [Service]
       summary: Liveness probe.
       description: Returns 200 if the process is up. No authentication.
       responses:
@@ -25,7 +25,7 @@ paths:
                     example: ok
   /.well-known/jwks.json:
     get:
-      tags: [service]
+      tags: [Service]
       summary: JSON Web Key Set used to verify tokens minted by /oauth/token.
       responses:
         "200":
@@ -42,7 +42,7 @@ paths:
                       type: object
   /openapi.json:
     get:
-      tags: [service]
+      tags: [Service]
       summary: The merged OpenAPI 3.1 spec for this mock instance.
       description: |
         Returns the same bytes as `api/auth0-mock.openapi.json` in the repo.
@@ -56,7 +56,7 @@ paths:
                 type: object
   /openapi.yaml:
     get:
-      tags: [service]
+      tags: [Service]
       summary: The merged OpenAPI 3.1 spec, YAML-encoded.
       responses:
         "200":
@@ -67,7 +67,7 @@ paths:
                 type: object
   /docs:
     get:
-      tags: [service]
+      tags: [Service]
       summary: Interactive API reference rendered by Scalar.
       description: |
         Returns a single-page HTML reference that loads `/openapi.json` at

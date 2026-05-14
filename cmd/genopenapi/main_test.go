@@ -191,7 +191,14 @@ func TestBundleMergesFragmentTagsIntoBase(t *testing.T) {
 		}
 		names[t.Name] = t.Description
 	}
-	for _, expected := range []string{"auth-api", "admin0", "service"} {
+	// Every surface sub-tag must be merged in with a description from its
+	// fragment so Scalar renders a real section header.
+	surfaceTags := []string{
+		"OAuth & OIDC", "Database Connections", "Passwordless",
+		"Claims", "Permissions", "MFA", "Matches",
+		"Service",
+	}
+	for _, expected := range surfaceTags {
 		desc, ok := names[expected]
 		require.Truef(t, ok, "merged base.Tags must include fragment tag %q", expected)
 		assert.NotEmptyf(t, desc, "tag %q must carry a description from its fragment", expected)
@@ -226,10 +233,47 @@ func TestBundleAppliesTagGroupsForSidebar(t *testing.T) {
 	assert.NotContains(t, byName, "Mock Control",
 		"there must be no separate Mock Control bucket — siblings inherit the parent's group")
 
-	assert.Equal(t, []string{"auth-api"}, byName["Authentication API"])
+	// Surface groups carry their fragment sub-tags so the group→tag nesting is
+	// meaningful, not a redundant single-tag wrapper.
+	assert.ElementsMatch(t,
+		[]string{"OAuth & OIDC", "Database Connections", "Passwordless"},
+		byName["Authentication API"])
+	assert.ElementsMatch(t,
+		[]string{"Claims", "Permissions", "MFA", "Matches"},
+		byName["admin0"])
+	assert.Equal(t, []string{"Service"}, byName["Service"])
 	assert.NotEmpty(t, byName["Management API"],
 		"Management API group must contain the upstream Auth0 tags")
-	assert.NotContains(t, byName["Management API"], "auth-api")
-	assert.NotContains(t, byName["Management API"], "admin0")
-	assert.NotContains(t, byName["Management API"], "service")
+	for _, surfaceTag := range []string{
+		"OAuth & OIDC", "Database Connections", "Passwordless",
+		"Claims", "Permissions", "MFA", "Matches", "Service",
+	} {
+		assert.NotContainsf(t, byName["Management API"], surfaceTag,
+			"surface tag %q leaked into the Management API group", surfaceTag)
+	}
+
+	// Critical x-tagGroups invariant: every tag used by an operation must
+	// belong to exactly one group, else Scalar drops it from the sidebar.
+	used := map[string]struct{}{}
+	for _, item := range doc.Paths.Map() {
+		for _, op := range item.Operations() {
+			for _, tag := range op.Tags {
+				used[tag] = struct{}{}
+			}
+		}
+	}
+	grouped := map[string]int{}
+	for _, g := range groups {
+		for _, tag := range g.Tags {
+			grouped[tag]++
+		}
+	}
+	for tag := range used {
+		assert.Equalf(t, 1, grouped[tag],
+			"tag %q must be in exactly one x-tagGroup (found in %d)", tag, grouped[tag])
+	}
+	for tag := range grouped {
+		_, isUsed := used[tag]
+		assert.Truef(t, isUsed, "x-tagGroups references tag %q that no operation uses", tag)
+	}
 }
