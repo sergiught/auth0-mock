@@ -29,6 +29,16 @@ const tinySpec = `{
         "parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
         "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}}}}}
       }
+    },
+    "/widgets":{
+      "post":{
+        "operationId":"createWidget",
+        "requestBody":{
+          "required":true,
+          "content":{"application/json":{"schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}}
+        },
+        "responses":{"201":{"description":"created","content":{"application/json":{"schema":{"type":"object","properties":{"id":{"type":"string"}}}}}}}
+      }
     }
   }
 }`
@@ -86,8 +96,10 @@ func TestGeneric_ExactMatchWins(t *testing.T) {
 	s, v, store, ks, r := newDeps(t)
 	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
 
-	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/{id}", Kind: matches.KindTemplate, Status: 200, Body: json.RawMessage(`{"id":"any"}`)})
-	store.Put(matches.Match{Method: "GET", Path: "/api/v2/widgets/abc", Kind: matches.KindExact, Status: 200, Body: json.RawMessage(`{"id":"abc"}`)})
+	store.Put(matches.Expectation{Method: "GET", Path: "/api/v2/widgets/{id}", Kind: matches.KindTemplate,
+		Response: matches.ResponseDef{Status: 200, Body: json.RawMessage(`{"id":"any"}`)}})
+	store.Put(matches.Expectation{Method: "GET", Path: "/api/v2/widgets/abc", Kind: matches.KindExact,
+		Response: matches.ResponseDef{Status: 200, Body: json.RawMessage(`{"id":"abc"}`)}})
 
 	req := httptest.NewRequest("GET", "/api/v2/widgets/abc", nil)
 	req.Header.Set("Authorization", "Bearer "+mintBearer(t, ks))
@@ -97,4 +109,25 @@ func TestGeneric_ExactMatchWins(t *testing.T) {
 
 	assert.Equal(t, 200, w.Code)
 	assert.JSONEq(t, `{"id":"abc"}`, w.Body.String())
+}
+
+func TestGeneric_RequestBodyMatcherWins(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop(), Strict: true}))
+
+	store.Put(matches.Expectation{Method: "POST", Path: "/api/v2/widgets", Kind: matches.KindExact,
+		Response: matches.ResponseDef{Status: 201, Body: json.RawMessage(`{"id":"catchall"}`)}})
+	store.Put(matches.Expectation{Method: "POST", Path: "/api/v2/widgets", Kind: matches.KindExact,
+		Request:  &matches.RequestMatcher{Body: json.RawMessage(`{"name":"specific"}`)},
+		Response: matches.ResponseDef{Status: 201, Body: json.RawMessage(`{"id":"specific"}`)}})
+
+	req := httptest.NewRequest("POST", "/api/v2/widgets", strings.NewReader(`{"name":"specific"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+mintBearer(t, ks))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 201, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"id":"specific"}`, w.Body.String())
 }

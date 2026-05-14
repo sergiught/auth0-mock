@@ -70,7 +70,7 @@ func TestStore_Put_ReplacesEqualMatcher(t *testing.T) {
 		Request: bodyMatcher(`{"email":"a@x"}`), Response: resp(201, `{"v":1}`)})
 	s.Put(Expectation{Method: "POST", Path: "/api/v2/users", Kind: KindExact,
 		Request: bodyMatcher(`{ "email": "a@x" }`), Response: resp(201, `{"v":2}`)})
-	assert.Len(t, s.List(), 2) // one POST entry + one GET entry above.
+	assert.Len(t, s.List(), 2) // One POST entry + one GET entry above.
 }
 
 func TestStore_RequestMatcherBeatsCatchAll(t *testing.T) {
