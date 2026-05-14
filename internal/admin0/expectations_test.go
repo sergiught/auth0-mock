@@ -24,8 +24,21 @@ const tinySpec = `{
     "/widgets/{id}":{
       "get":{
         "operationId":"getWidget",
-        "parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
+        "parameters":[
+          {"name":"id","in":"path","required":true,"schema":{"type":"string"}},
+          {"name":"fields","in":"query","required":false,"schema":{"type":"string"}}
+        ],
         "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}}}}}
+      }
+    },
+    "/widgets":{
+      "post":{
+        "operationId":"createWidget",
+        "requestBody":{
+          "required":true,
+          "content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string"},"size":{"type":"integer"}}}}}
+        },
+        "responses":{"201":{"description":"created","content":{"application/json":{"schema":{"type":"object","properties":{"id":{"type":"string"}}}}}}}
       }
     }
   }
@@ -51,21 +64,22 @@ func do(t *testing.T, r chi.Router, method, path, body string) *httptest.Respons
 func TestPostExpectation_RegistersValid(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/abc","status":200,"body":{"id":"abc"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
 	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
 
-	m := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}")
+	m := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
-	assert.Equal(t, 200, m.Status)
+	assert.Equal(t, 200, m.Response.Status)
 	assert.Equal(t, matches.KindExact, m.Kind)
+	assert.Nil(t, m.Request)
 }
 
 func TestPostExpectation_TemplatePathIsTemplateKind(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/{id}","status":200,"body":{"id":"x"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/{id}","response":{"status":200,"body":{"id":"x"}}}`)
 	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
-	m := store.Find("GET", "/api/v2/widgets/anything", "/api/v2/widgets/{id}")
+	m := store.Find("GET", "/api/v2/widgets/anything", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
 	assert.Equal(t, matches.KindTemplate, m.Kind)
 }
@@ -73,11 +87,44 @@ func TestPostExpectation_TemplatePathIsTemplateKind(t *testing.T) {
 func TestPostExpectation_TemplatePathCanonicalised(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/{anything}","status":200,"body":{"id":"x"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/{anything}","response":{"status":200,"body":{"id":"x"}}}`)
 	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
-	m := store.Find("GET", "/api/v2/widgets/whatever", "/api/v2/widgets/{id}")
+	m := store.Find("GET", "/api/v2/widgets/whatever", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
 	assert.Equal(t, matches.KindTemplate, m.Kind)
+}
+
+func TestPostExpectation_RegistersRequestBodyMatcher(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"POST","path":"/api/v2/widgets","request":{"body":{"name":"w1"}},"response":{"status":201,"body":{"id":"w1"}}}`)
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+
+	m := store.Find("POST", "/api/v2/widgets", "/api/v2/widgets",
+		matches.MatchableRequest{Body: []byte(`{"name":"w1","size":3}`)})
+	require.NotNil(t, m)
+	require.NotNil(t, m.Request)
+
+	// A request the matcher rejects yields no expectation.
+	assert.Nil(t, store.Find("POST", "/api/v2/widgets", "/api/v2/widgets",
+		matches.MatchableRequest{Body: []byte(`{"name":"other"}`)}))
+}
+
+func TestPostExpectation_RegistersQueryMatcher(t *testing.T) {
+	r, _ := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/{id}","request":{"query":{"fields":"id"}},"response":{"status":200,"body":{"id":"x"}}}`)
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+}
+
+func TestPostExpectation_EmptyRequestMatcherIsCatchAll(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/abc","request":{},"response":{"status":200,"body":{"id":"abc"}}}`)
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	m := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}", matches.MatchableRequest{})
+	require.NotNil(t, m)
+	assert.Nil(t, m.Request, "an empty request object must normalize to a nil catch-all")
 }
 
 func TestPostExpectation_Rejects(t *testing.T) {
@@ -86,49 +133,75 @@ func TestPostExpectation_Rejects(t *testing.T) {
 		name, body, wantCode string
 		status               int
 	}{
-		{"missing status", `{"method":"GET","path":"/api/v2/widgets/abc"}`, "invalid_body", 400},
-		{"missing method/path", `{"status":200,"body":{"id":"x"}}`, "invalid_body", 400},
-		{"unknown operation", `{"method":"GET","path":"/api/v2/nope","status":200,"body":{"id":"x"}}`, "unknown_operation", 400},
-		{"schema violation", `{"method":"GET","path":"/api/v2/widgets/abc","status":200,"body":"not-an-object"}`, "invalid_match", 400},
-		{"undeclared status", `{"method":"GET","path":"/api/v2/widgets/abc","status":418,"body":{"id":"x"}}`, "invalid_match", 400},
+		{"missing response.status", `{"method":"GET","path":"/api/v2/widgets/abc","response":{}}`, "invalid_body", 400},
+		{"missing method/path", `{"response":{"status":200,"body":{"id":"x"}}}`, "invalid_body", 400},
+		{"unknown operation", `{"method":"GET","path":"/api/v2/nope","response":{"status":200,"body":{"id":"x"}}}`, "unknown_operation", 400},
+		{"response schema violation", `{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":"not-an-object"}}`, "invalid_match", 400},
+		{"undeclared status", `{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":418,"body":{"id":"x"}}}`, "invalid_match", 400},
+		{"request matcher unknown field", `{"method":"POST","path":"/api/v2/widgets","request":{"body":{"hello":"hola"}},"response":{"status":201,"body":{"id":"x"}}}`, "invalid_request_match", 400},
+		{"request matcher mistyped field", `{"method":"POST","path":"/api/v2/widgets","request":{"body":{"size":"big"}},"response":{"status":201,"body":{"id":"x"}}}`, "invalid_request_match", 400},
+		{"request matcher unknown query param", `{"method":"GET","path":"/api/v2/widgets/abc","request":{"query":{"nope":"x"}},"response":{"status":200,"body":{"id":"x"}}}`, "invalid_request_match", 400},
+		{"request body matcher on bodyless op", `{"method":"GET","path":"/api/v2/widgets/abc","request":{"body":{"id":"x"}},"response":{"status":200,"body":{"id":"x"}}}`, "invalid_request_match", 400},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			rec := do(t, r, http.MethodPost, "/admin0/expectations", c.body)
-			assert.Equal(t, c.status, rec.Code)
+			assert.Equal(t, c.status, rec.Code, rec.Body.String())
 			assert.Contains(t, rec.Body.String(), c.wantCode)
 		})
 	}
 }
 
+func TestPostExpectation_RequestMatcherAcceptsValidPartial(t *testing.T) {
+	r, _ := newExpectationsRouter(t)
+	// "name" is required by the schema but a matcher is partial: a body with
+	// only the optional "size" field must be accepted.
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"POST","path":"/api/v2/widgets","request":{"body":{"size":5}},"response":{"status":201,"body":{"id":"x"}}}`)
+	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+}
+
 func TestListExpectations(t *testing.T) {
 	r, _ := newExpectationsRouter(t)
 	do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/abc","status":200,"body":{"id":"abc"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
 	rec := do(t, r, http.MethodGet, "/admin0/expectations", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, int64(1), gjson.GetBytes(rec.Body.Bytes(), "expectations.#").Int())
 	assert.Equal(t, "GET", gjson.GetBytes(rec.Body.Bytes(), "expectations.0.method").String())
 	assert.Equal(t, "/api/v2/widgets/abc", gjson.GetBytes(rec.Body.Bytes(), "expectations.0.path").String())
+	assert.Equal(t, int64(200), gjson.GetBytes(rec.Body.Bytes(), "expectations.0.response.status").Int())
 }
 
 func TestDeleteExpectations_One(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/abc","status":200,"body":{"id":"abc"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
 	do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/xyz","status":200,"body":{"id":"xyz"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/xyz","response":{"status":200,"body":{"id":"xyz"}}}`)
 	rec := do(t, r, http.MethodDelete, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/abc"}`)
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Nil(t, store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}"))
-	assert.NotNil(t, store.Find("GET", "/api/v2/widgets/xyz", "/api/v2/widgets/{id}"))
+	assert.Nil(t, store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}", matches.MatchableRequest{}))
+	assert.NotNil(t, store.Find("GET", "/api/v2/widgets/xyz", "/api/v2/widgets/{id}", matches.MatchableRequest{}))
+}
+
+func TestDeleteExpectations_ClearsWholeOperationList(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"POST","path":"/api/v2/widgets","response":{"status":201,"body":{"id":"catchall"}}}`)
+	do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"POST","path":"/api/v2/widgets","request":{"body":{"name":"w1"}},"response":{"status":201,"body":{"id":"w1"}}}`)
+	rec := do(t, r, http.MethodDelete, "/admin0/expectations", `{"method":"POST","path":"/api/v2/widgets"}`)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Nil(t, store.Find("POST", "/api/v2/widgets", "/api/v2/widgets",
+		matches.MatchableRequest{Body: []byte(`{"name":"w1"}`)}))
 }
 
 func TestDeleteExpectations_All(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	do(t, r, http.MethodPost, "/admin0/expectations",
-		`{"method":"GET","path":"/api/v2/widgets/abc","status":200,"body":{"id":"abc"}}`)
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
 	rec := do(t, r, http.MethodDelete, "/admin0/expectations", "")
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Len(t, store.List(), 0)

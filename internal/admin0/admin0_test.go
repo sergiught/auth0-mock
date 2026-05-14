@@ -33,7 +33,7 @@ func newDeps() Deps {
 
 func TestReset_WipesAllMatches(t *testing.T) {
 	d := newDeps()
-	d.Matches.Put(matches.Match{Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate, Status: 200})
+	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate, Response: matches.ResponseDef{Status: 200}})
 	d.Claims.Set(map[string]any{"role": "admin"})
 	d.Permissions.Set("api", []string{"read:users"})
 	d.MFA.SetRequired(true)
