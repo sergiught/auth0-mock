@@ -127,3 +127,50 @@ body { font-family: var(--docs-font-sans); }
 .dark-mode .docs-header__toggle-icon {
   box-shadow: inset -4px -4px 0 0 var(--docs-bg-2);
 }
+
+/* --- Scalar theming ------------------------------------------------------
+   Drives Scalar through its documented --scalar-* custom properties (a stable
+   theming surface) rather than overriding its internal class names. The
+   --docs-* tokens already resolve per-theme, so the shared mappings live in
+   one selector; only the accent-tint strength differs between modes. */
+:root {
+  --scalar-font: var(--docs-font-sans);
+  --scalar-font-code: var(--docs-font-mono);
+  --scalar-radius: var(--docs-radius);
+  --scalar-radius-lg: 12px;
+}
+.dark-mode,
+.light-mode {
+  --scalar-color-1: var(--docs-text-1);
+  --scalar-color-2: var(--docs-text-2);
+  --scalar-color-3: var(--docs-text-2);
+  --scalar-color-accent: var(--docs-accent);
+  --scalar-background-1: var(--docs-bg-1);
+  --scalar-background-2: var(--docs-bg-2);
+  --scalar-background-3: var(--docs-bg-3);
+  --scalar-background-accent: color-mix(in srgb, var(--docs-accent) 16%, transparent);
+  --scalar-border-color: var(--docs-border);
+  --scalar-sidebar-background-1: var(--docs-bg-2);
+  --scalar-sidebar-color-1: var(--docs-text-1);
+  --scalar-sidebar-color-2: var(--docs-text-2);
+  --scalar-sidebar-border-color: var(--docs-border);
+  --scalar-sidebar-item-active-background: var(--scalar-background-accent);
+  --scalar-sidebar-color-active: var(--docs-accent);
+  --scalar-button-1: var(--docs-accent);
+  --scalar-button-1-hover: var(--docs-accent-hover);
+  --scalar-button-1-color: #ffffff;
+}
+/* Light mode wants a slightly softer accent tint than dark. */
+.light-mode {
+  --scalar-background-accent: color-mix(in srgb, var(--docs-accent) 12%, transparent);
+}
+
+/* --- bundle-failed fallback message -------------------------------------- */
+.docs-fallback {
+  font-family: var(--docs-font-sans);
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  color: var(--docs-text-1);
+}
+.docs-fallback a { color: var(--docs-accent); }
