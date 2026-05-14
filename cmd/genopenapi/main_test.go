@@ -126,7 +126,7 @@ func TestBundleMergesFragmentTagsIntoBase(t *testing.T) {
 	// fragment so Scalar renders a real section header.
 	surfaceTags := []string{
 		"OAuth & OIDC", "Database Connections", "Passwordless",
-		"Claims", "Permissions", "MFA", "Matches",
+		"Claims", "Permissions", "MFA", "Expectations",
 		"Service",
 	}
 	for _, expected := range surfaceTags {
@@ -170,14 +170,14 @@ func TestBundleAppliesTagGroupsForSidebar(t *testing.T) {
 		[]string{"OAuth & OIDC", "Database Connections", "Passwordless"},
 		byName["Authentication API"])
 	assert.ElementsMatch(t,
-		[]string{"Claims", "Permissions", "MFA", "Matches"},
+		[]string{"Claims", "Permissions", "MFA", "Expectations"},
 		byName["admin0"])
 	assert.Equal(t, []string{"Service"}, byName["Service"])
 	assert.NotEmpty(t, byName["Management API"],
 		"Management API group must contain the upstream Auth0 tags")
 	for _, surfaceTag := range []string{
 		"OAuth & OIDC", "Database Connections", "Passwordless",
-		"Claims", "Permissions", "MFA", "Matches", "Service",
+		"Claims", "Permissions", "MFA", "Expectations", "Service",
 	} {
 		assert.NotContainsf(t, byName["Management API"], surfaceTag,
 			"surface tag %q leaked into the Management API group", surfaceTag)

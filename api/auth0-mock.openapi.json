@@ -26372,6 +26372,44 @@
         },
         "type": "object"
       },
+      "Expectation": {
+        "description": "A canned response registered for one Management API operation.",
+        "properties": {
+          "body": {
+            "description": "Response body the mock should return. Validated against the target\noperation's response schema for `status` before it is stored.\n"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Optional headers to attach to the response.",
+            "type": "object"
+          },
+          "method": {
+            "description": "HTTP verb of the target operation.",
+            "example": "GET",
+            "type": "string"
+          },
+          "path": {
+            "description": "Target operation path — concrete (`/api/v2/users/auth0|1`) or an\nOpenAPI template (`/api/v2/users/{id}`).\n",
+            "example": "/api/v2/users/auth0|123",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code the mock should return.",
+            "example": 200,
+            "maximum": 599,
+            "minimum": 100,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "status"
+        ],
+        "type": "object"
+      },
       "ExpressConfiguration": {
         "additionalProperties": false,
         "properties": {
@@ -53871,7 +53909,43 @@
         ]
       }
     },
-    "/admin0/matches": {
+    "/admin0/expectations": {
+      "delete": {
+        "description": "With an empty body, clears every registered expectation. With a\n`{ \"method\": ..., \"path\": ... }` body, clears only that one.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "method": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "path"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Expectation(s) cleared."
+          },
+          "400": {
+            "description": "Body was present but could not be parsed or was missing method/path."
+          }
+        },
+        "summary": "Clear expectations — one (with a body) or all (with no body).",
+        "tags": [
+          "Expectations"
+        ]
+      },
       "get": {
         "responses": {
           "200": {
@@ -53879,54 +53953,51 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "matches": {
+                    "expectations": {
                       "items": {
-                        "properties": {
-                          "body": {
-                            "description": "Programmed response body (any JSON-serialisable value)."
-                          },
-                          "headers": {
-                            "additionalProperties": {
-                              "type": "string"
-                            },
-                            "type": "object"
-                          },
-                          "method": {
-                            "description": "HTTP verb of the matched operation.",
-                            "type": "string"
-                          },
-                          "path": {
-                            "description": "Path the match was registered against.",
-                            "type": "string"
-                          },
-                          "status": {
-                            "description": "HTTP status the mock will return.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "method",
-                          "path",
-                          "status"
-                        ],
-                        "type": "object"
+                        "$ref": "#/components/schemas/Expectation"
                       },
                       "type": "array"
                     }
                   },
                   "required": [
-                    "matches"
+                    "expectations"
                   ],
                   "type": "object"
                 }
               }
             },
-            "description": "Match entries."
+            "description": "Registered expectations."
           }
         },
-        "summary": "List every registered `/match` entry across the Mgmt API surface.",
+        "summary": "List every registered expectation.",
         "tags": [
-          "Matches"
+          "Expectations"
+        ]
+      },
+      "post": {
+        "description": "The target operation is identified by `method` + `path` in the body.\n`path` may be concrete (`/api/v2/users/auth0|1`) or an OpenAPI template\n(`/api/v2/users/{id}`); concrete registrations win over template ones at\nrequest time. The `body` is validated against the operation's response\nschema for the given `status` before it is stored.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Expectation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Expectation stored."
+          },
+          "400": {
+            "description": "Body could not be parsed, names an unknown operation, or violates the response schema."
+          }
+        },
+        "summary": "Register (upsert) a canned response for a Management API operation.",
+        "tags": [
+          "Expectations"
         ]
       }
     },
@@ -54102,7 +54173,7 @@
         },
         "summary": "Wipe every store admin0 governs (matches, claims, permissions, mfa-required).",
         "tags": [
-          "Matches"
+          "Expectations"
         ]
       }
     },
@@ -79459,8 +79530,8 @@
       "name": "MFA"
     },
     {
-      "description": "Registered `/match` entries across the Mgmt API surface, plus the global\nstate reset. None of these require authentication.\n",
-      "name": "Matches"
+      "description": "Registered canned responses (\"expectations\") for Management API\noperations, plus the global state reset. None of these require\nauthentication.\n",
+      "name": "Expectations"
     }
   ],
   "x-tagGroups": [
@@ -79530,7 +79601,7 @@
         "Claims",
         "Permissions",
         "MFA",
-        "Matches"
+        "Expectations"
       ]
     },
     {

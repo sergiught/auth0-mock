@@ -16,10 +16,12 @@ func TestAdmin0FragmentDescribesEveryMountedRoute(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, doc.Validate(context.Background()))
 	// {method, path, expected tag} — admin0 is split into Claims / Permissions
-	// / MFA / Matches so the docs sidebar group→tag nesting is meaningful.
+	// / MFA / Expectations so the docs sidebar group→tag nesting is meaningful.
 	want := [][3]string{
-		{"POST", "/admin0/reset", "Matches"},
-		{"GET", "/admin0/matches", "Matches"},
+		{"POST", "/admin0/reset", "Expectations"},
+		{"POST", "/admin0/expectations", "Expectations"},
+		{"GET", "/admin0/expectations", "Expectations"},
+		{"DELETE", "/admin0/expectations", "Expectations"},
 		{"GET", "/admin0/claims", "Claims"},
 		{"PUT", "/admin0/claims", "Claims"},
 		{"DELETE", "/admin0/claims", "Claims"},

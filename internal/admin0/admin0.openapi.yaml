@@ -15,44 +15,71 @@ tags:
     description: |
       The mock-wide MFA-required flag. When set, password-style grants return
       an `mfa_required` error so step-up flows can be exercised.
-  - name: Matches
+  - name: Expectations
     description: |
-      Registered `/match` entries across the Mgmt API surface, plus the global
-      state reset. None of these require authentication.
+      Registered canned responses ("expectations") for Management API
+      operations, plus the global state reset. None of these require
+      authentication.
 paths:
   /admin0/reset:
     post:
-      tags: [Matches]
+      tags: [Expectations]
       summary: Wipe every store admin0 governs (matches, claims, permissions, mfa-required).
       responses:
         "204": { description: Reset complete. }
-  /admin0/matches:
+  /admin0/expectations:
+    post:
+      tags: [Expectations]
+      summary: Register (upsert) a canned response for a Management API operation.
+      description: |
+        The target operation is identified by `method` + `path` in the body.
+        `path` may be concrete (`/api/v2/users/auth0|1`) or an OpenAPI template
+        (`/api/v2/users/{id}`); concrete registrations win over template ones at
+        request time. The `body` is validated against the operation's response
+        schema for the given `status` before it is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Expectation" }
+      responses:
+        "204": { description: Expectation stored. }
+        "400":
+          description: Body could not be parsed, names an unknown operation, or violates the response schema.
     get:
-      tags: [Matches]
-      summary: List every registered `/match` entry across the Mgmt API surface.
+      tags: [Expectations]
+      summary: List every registered expectation.
       responses:
         "200":
-          description: Match entries.
+          description: Registered expectations.
           content:
             application/json:
               schema:
                 type: object
-                required: [matches]
+                required: [expectations]
                 properties:
-                  matches:
+                  expectations:
                     type: array
-                    items:
-                      type: object
-                      required: [method, path, status]
-                      properties:
-                        method:  { type: string, description: "HTTP verb of the matched operation." }
-                        path:    { type: string, description: "Path the match was registered against." }
-                        status:  { type: integer, description: "HTTP status the mock will return." }
-                        headers:
-                          type: object
-                          additionalProperties: { type: string }
-                        body:
-                          description: Programmed response body (any JSON-serialisable value).
+                    items: { $ref: "#/components/schemas/Expectation" }
+    delete:
+      tags: [Expectations]
+      summary: Clear expectations — one (with a body) or all (with no body).
+      description: |
+        With an empty body, clears every registered expectation. With a
+        `{ "method": ..., "path": ... }` body, clears only that one.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method, path]
+              properties:
+                method: { type: string }
+                path:   { type: string }
+      responses:
+        "204": { description: Expectation(s) cleared. }
+        "400": { description: Body was present but could not be parsed or was missing method/path. }
   /admin0/claims:
     get:
       tags: [Claims]
@@ -168,3 +195,34 @@ paths:
                 required: { type: boolean }
       responses:
         "204": { description: Flag updated. }
+components:
+  schemas:
+    Expectation:
+      type: object
+      description: A canned response registered for one Management API operation.
+      required: [method, path, status]
+      properties:
+        method:
+          type: string
+          description: HTTP verb of the target operation.
+          example: GET
+        path:
+          type: string
+          description: |
+            Target operation path — concrete (`/api/v2/users/auth0|1`) or an
+            OpenAPI template (`/api/v2/users/{id}`).
+          example: /api/v2/users/auth0|123
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: HTTP status code the mock should return.
+          example: 200
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Optional headers to attach to the response.
+        body:
+          description: |
+            Response body the mock should return. Validated against the target
+            operation's response schema for `status` before it is stored.
