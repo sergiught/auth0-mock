@@ -70,6 +70,16 @@ func TestPostExpectation_TemplatePathIsTemplateKind(t *testing.T) {
 	assert.Equal(t, matches.KindTemplate, m.Kind)
 }
 
+func TestPostExpectation_TemplatePathCanonicalised(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/{anything}","status":200,"body":{"id":"x"}}`)
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	m := store.Find("GET", "/api/v2/widgets/whatever", "/api/v2/widgets/{id}")
+	require.NotNil(t, m)
+	assert.Equal(t, matches.KindTemplate, m.Kind)
+}
+
 func TestPostExpectation_Rejects(t *testing.T) {
 	r, _ := newExpectationsRouter(t)
 	cases := []struct {

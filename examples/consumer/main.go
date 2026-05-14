@@ -69,17 +69,17 @@ func verifyToken(base, tok string) error {
 }
 
 func registerAndCall(base, tok string) error {
-	body := `{"status":200,"body":{"user_id":"auth0|demo","email":"demo@x"}}`
-	matchReq, _ := http.NewRequest("GET", base+"/api/v2/users/auth0|demo/match", strings.NewReader(body))
-	matchReq.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(matchReq)
+	body := `{"method":"GET","path":"/api/v2/users/auth0|demo","status":200,"body":{"user_id":"auth0|demo","email":"demo@x"}}`
+	expReq, _ := http.NewRequest("POST", base+"/admin0/expectations", strings.NewReader(body))
+	expReq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(expReq)
 	if err != nil {
 		return err
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("/match: expected 204, got %d", resp.StatusCode)
+		return fmt.Errorf("/admin0/expectations: expected 204, got %d", resp.StatusCode)
 	}
 
 	req, _ := http.NewRequest("GET", base+"/api/v2/users/auth0|demo", nil)

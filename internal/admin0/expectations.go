@@ -59,9 +59,13 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 			"invalid_match")
 		return
 	}
+	storePath := p.Path
+	if matches.KindOf(p.Path) == matches.KindTemplate {
+		storePath = op.Template
+	}
 	h.Store.Put(matches.Match{
 		Method:  p.Method,
-		Path:    p.Path,
+		Path:    storePath,
 		Kind:    matches.KindOf(p.Path),
 		Status:  p.Status,
 		Headers: p.Headers,

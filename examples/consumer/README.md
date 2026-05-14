@@ -8,7 +8,7 @@ OIDC consumer's perspective:
    `MicahParks/keyfunc` + `golang-jwt/jwt`, the **same libraries** real
    Auth0-consuming services use,
 3. register a mocked Management API response for `GET /api/v2/users/auth0|demo`
-   via the `/match` sibling endpoint, then call it with the bearer token and
+   via `POST /admin0/expectations`, then call it with the bearer token and
    confirm a `200 OK`.
 
 ## Run

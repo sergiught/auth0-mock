@@ -153,7 +153,7 @@ One subject line ≤ 72 chars, blank line, body wrapping at ~80 chars explaining
 
 ### A new Auth0 Management API endpoint
 
-You probably don't need to do anything. The Mgmt API is **spec-driven**, every operation in the embedded `api/auth0-management-api.openapi.json` already has its three routes (`<verb> <path>`, `<verb> <path>/match`, `<verb> <path>/reset`) registered automatically by `mgmtapi.Mount`.
+You probably don't need to do anything. The Mgmt API is **spec-driven**: every operation in the embedded `api/auth0-management-api.openapi.json` gets one bearer-protected generic handler registered automatically by `mgmtapi.Mount`. Canned responses are registered out-of-band via `POST /admin0/expectations` (see the admin0 section above).
 
 ### Refreshing the Auth0 Management API spec
 
