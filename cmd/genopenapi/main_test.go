@@ -69,10 +69,16 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 			"sibling must inherit the parent's tag so it groups under the same section")
 		assert.NotContains(t, op.Tags, "mock-control",
 			"siblings must not be tagged mock-control — that creates a separate sidebar bucket")
+		// Each sibling must be individually addressable in the docs sidebar:
+		// a unique operationId and a path-specific summary.
+		assert.NotEmpty(t, op.OperationID, "sibling must have an operationId")
+		assert.Contains(t, op.Summary, basePath,
+			"sibling summary must embed the parent path so the sidebar entry is distinct")
 	}
 
 	// Sweep: every Mgmt API operation must have a POST /match sibling and a
-	// POST /reset sibling unless a real operation already occupies that slot.
+	// POST /reset sibling unless a real operation already occupies that slot,
+	// and every synthesised operationId + summary must be globally unique.
 	// Snapshot first because we'll be reading paths the synthesiser added.
 	mgmtPaths := []string{}
 	for p := range doc.Paths.Map() {
@@ -80,6 +86,8 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 			mgmtPaths = append(mgmtPaths, p)
 		}
 	}
+	seenIDs := map[string]string{}
+	seenSummaries := map[string]string{}
 	for _, p := range mgmtPaths {
 		// Skip paths that are themselves /match or /reset.
 		if strings.HasSuffix(p, "/match") || strings.HasSuffix(p, "/reset") {
@@ -88,6 +96,23 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 		for _, suffix := range []string{"/match", "/reset"} {
 			sib := doc.Paths.Value(p + suffix)
 			require.NotNilf(t, sib, "missing sibling %s%s", p, suffix)
+			op := sib.GetOperation("POST")
+			if op == nil {
+				// A real spec operation already occupies this path (e.g.
+				// /branding/phone/templates/{id}/reset) — covered by
+				// TestBundleSkipsSiblingsThatCollideWithRealOps.
+				continue
+			}
+
+			if prev, dup := seenIDs[op.OperationID]; dup {
+				t.Errorf("duplicate operationId %q on %s%s (also %s)", op.OperationID, p, suffix, prev)
+			}
+			seenIDs[op.OperationID] = p + suffix
+
+			if prev, dup := seenSummaries[op.Summary]; dup {
+				t.Errorf("duplicate summary %q on %s%s (also %s)", op.Summary, p, suffix, prev)
+			}
+			seenSummaries[op.Summary] = p + suffix
 		}
 	}
 }

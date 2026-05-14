@@ -384,7 +384,7 @@ func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 				continue
 			}
 			sibling := &openapi3.PathItem{}
-			sibling.SetOperation("POST", mockControlOperation(suffix, parentTags))
+			sibling.SetOperation("POST", mockControlOperation(suffix, path, parentTags))
 			base.Paths.Set(siblingPath, sibling)
 		}
 	}
@@ -421,11 +421,15 @@ func collectPathItemTags(item *openapi3.PathItem) []string {
 // mockControlOperation builds the synthesised OpenAPI operation for /match or
 // /reset siblings. Bodies reference the shared schemas in MockControlOpenAPIYAML.
 // ParentTags is the deduplicated tag set lifted from the parent endpoint so the
-// sibling renders adjacent to it in the docs.
-func mockControlOperation(suffix string, parentTags []string) *openapi3.Operation {
+// sibling renders adjacent to it in the docs; parentPath is the endpoint the
+// sibling is paired with — used to give each operation a unique operationId
+// and a path-specific summary so Scalar renders them as distinct sidebar
+// entries rather than 221 identically-labelled rows.
+func mockControlOperation(suffix, parentPath string, parentTags []string) *openapi3.Operation {
 	op := &openapi3.Operation{
 		Tags:        parentTags,
-		Summary:     summaryFor(suffix),
+		OperationID: operationIDFor(suffix, parentPath),
+		Summary:     summaryFor(suffix, parentPath),
 		Description: descriptionFor(suffix),
 		Responses:   openapi3.NewResponses(),
 	}
@@ -459,12 +463,26 @@ func mockControlOperation(suffix string, parentTags []string) *openapi3.Operatio
 	return op
 }
 
-func summaryFor(suffix string) string {
+// operationIDFor builds a unique, stable operationId for a synthesised sibling
+// from its kind ("match"/"reset") and the parent path, e.g.
+// "mock-control.match.api.v2.actions.actions.actionId". Path parameter braces
+// are stripped and slashes become dots so the id is a clean slug.
+func operationIDFor(suffix, parentPath string) string {
+	kind := strings.TrimPrefix(suffix, "/")
+	slug := strings.NewReplacer("/", ".", "{", "", "}", "").
+		Replace(strings.TrimPrefix(parentPath, "/"))
+	return "mock-control." + kind + "." + slug
+}
+
+// summaryFor returns the sidebar label for a synthesised sibling. It embeds the
+// parent path so every entry is distinct and visibly tied to the endpoint it
+// programmes, e.g. "match · /api/v2/actions/actions/{actionId}".
+func summaryFor(suffix, parentPath string) string {
 	switch suffix {
 	case "/match":
-		return "Programme the next canned response for the paired operation."
+		return "match · " + parentPath
 	case "/reset":
-		return "Clear programmed responses for the paired operation."
+		return "reset · " + parentPath
 	}
 	return ""
 }
