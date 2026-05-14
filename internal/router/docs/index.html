@@ -35,6 +35,31 @@
       crossorigin="anonymous"></script>
     <script>
       (async () => {
+        const THEME_KEY = 'auth0-mock-docs-theme';
+
+        function readTheme() {
+          try {
+            const saved = localStorage.getItem(THEME_KEY);
+            if (saved === 'dark' || saved === 'light') return saved;
+          } catch (e) { /* localStorage blocked (private mode) */ }
+          const prefersDark = !!(window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+          return prefersDark ? 'dark' : 'light';
+        }
+
+        function saveTheme(theme) {
+          try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignore */ }
+        }
+
+        function applyThemeClass(theme) {
+          const dark = theme === 'dark';
+          document.documentElement.classList.toggle('dark-mode', dark);
+          document.documentElement.classList.toggle('light-mode', !dark);
+        }
+
+        const theme = readTheme();
+        applyThemeClass(theme);
+
         let token = '';
         try {
           const resp = await fetch('/oauth/token', {
@@ -49,21 +74,23 @@
         } catch (e) {
           console.warn('docs: token preload failed', e);
         }
+
         if (typeof Scalar === 'undefined') {
           document.getElementById('app').innerHTML =
-            '<p style="font-family: sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">' +
+            '<p class="docs-fallback">' +
             'The API reference UI failed to load (the Scalar bundle could not be fetched). ' +
             'The raw OpenAPI document is still available at ' +
             '<a href="/openapi.json">/openapi.json</a> and ' +
             '<a href="/openapi.yaml">/openapi.yaml</a>.</p>';
           return;
         }
-        const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
         const config = {
           url: '/openapi.json',
           theme: 'fastify',
           layout: 'modern',
-          darkMode: prefersDark,
+          darkMode: theme === 'dark',
+          hideDarkModeToggle: true,
           withDefaultFonts: false,
           hideClientButton: true,
           hideModels: true,
@@ -108,7 +135,33 @@
             securitySchemes: { bearerAuth: { token: token } },
           };
         }
-        Scalar.createApiReference('#app', config);
+
+        const app = Scalar.createApiReference('#app', config);
+
+        function setTheme(next) {
+          saveTheme(next);
+          applyThemeClass(next);
+          // Drive Scalar's own re-theming. The html-class toggle above is
+          // required regardless (it drives the header bar). Per investigation
+          // of the @scalar/api-reference@1.55.3 bundle: createApiReference
+          // returns { app, getConfiguration, updateConfiguration, destroy }.
+          // updateConfiguration(newConfig) replaces the reactive configuration
+          // object, triggering Vue watchers — including the one that calls
+          // t.update("x-scalar-color-mode", darkMode ? "dark" : "light").
+          // We merge with the current config to avoid losing other settings.
+          if (app && typeof app.updateConfiguration === 'function' && typeof app.getConfiguration === 'function') {
+            app.updateConfiguration({ ...app.getConfiguration(), darkMode: next === 'dark' });
+          }
+        }
+
+        const toggle = document.getElementById('theme-toggle');
+        if (toggle) {
+          toggle.addEventListener('click', () => {
+            const current = document.documentElement.classList.contains('dark-mode')
+              ? 'dark' : 'light';
+            setTheme(current === 'dark' ? 'light' : 'dark');
+          });
+        }
       })();
     </script>
   </body>

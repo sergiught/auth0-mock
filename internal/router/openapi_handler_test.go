@@ -138,6 +138,24 @@ func TestDocsRendersCustomHeader(t *testing.T) {
 	assert.Contains(t, body, `id="theme-toggle"`)                  // toggle button
 }
 
+func TestDocsThemeToggleWiring(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	// Scalar's built-in toggle is hidden — the header bar owns the control.
+	assert.Contains(t, body, "hideDarkModeToggle: true")
+	// Preference is persisted across reloads via localStorage.
+	assert.Contains(t, body, "auth0-mock-docs-theme")
+	assert.Contains(t, body, "localStorage")
+	// The header toggle button has a click handler.
+	assert.Contains(t, body, "addEventListener('click'")
+	// The toggle drives Scalar's live re-theming, not just the header CSS.
+	assert.Contains(t, body, "updateConfiguration")
+}
+
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {
 	h := newOpenAPIRouter(t)
 	rec := httptest.NewRecorder()
