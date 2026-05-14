@@ -290,6 +290,16 @@ func TestBundleAppliesTagGroupsForSidebar(t *testing.T) {
 		assert.NotContainsf(t, byName["Management API"], surfaceTag,
 			"surface tag %q leaked into the Management API group", surfaceTag)
 	}
+	// Upstream Auth0 tags are title-cased ("client-grants" -> "Client Grants")
+	// so the sidebar reads consistently with the Title Case fragment tags.
+	for _, tag := range byName["Management API"] {
+		require.NotEmpty(t, tag)
+		assert.NotContainsf(t, tag, "-",
+			"Management API tag %q must be title-cased, not kebab-case", tag)
+		first := tag[0]
+		assert.Truef(t, first >= 'A' && first <= 'Z',
+			"Management API tag %q must start with an uppercase letter", tag)
+	}
 
 	// Critical x-tagGroups invariant: every tag used by an operation must
 	// belong to exactly one group, else Scalar drops it from the sidebar.

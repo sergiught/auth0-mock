@@ -12,6 +12,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
@@ -114,9 +115,13 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 		}
 	}
 
-	// Strip Auth0's authored prose from the upstream spec before layering on
-	// auth0-mock's own surfaces — see stripUpstreamProse.
+	// Clean up the upstream skeleton before layering on auth0-mock's own
+	// surfaces: strip Auth0's prose, then title-case its kebab-case tag names
+	// so the rendered sidebar reads consistently with our own Title Case
+	// fragment tags. Both run before the fragments merge, so they only touch
+	// Auth0's content.
 	stripUpstreamProse(base)
+	titleizeManagementTags(base)
 
 	fragments := [][]byte{
 		api.MockControlOpenAPIYAML,
@@ -574,6 +579,44 @@ func stripSchemaRef(ref *openapi3.SchemaRef) {
 	stripSchemaRef(s.AdditionalProperties.Schema)
 	stripSchemaRef(s.UnevaluatedProperties.Schema)
 	stripSchemaRef(s.UnevaluatedItems.Schema)
+}
+
+// titleizeManagementTags rewrites the upstream Auth0 tag names on every
+// operation from kebab-case ("client-grants") to Title Case ("Client Grants"),
+// so the rendered docs sidebar reads consistently with auth0-mock's own
+// fragment tags. Run before fragments merge, so it only touches Auth0's tags;
+// run before applyTagGroups, so x-tagGroups picks up the new names.
+func titleizeManagementTags(base *openapi3.T) {
+	if base.Paths == nil {
+		return
+	}
+	for _, item := range base.Paths.Map() {
+		for _, op := range item.Operations() {
+			if op == nil {
+				continue
+			}
+			for i, tag := range op.Tags {
+				op.Tags[i] = titleizeTag(tag)
+			}
+		}
+	}
+}
+
+// titleizeTag turns a kebab-case tag into space-separated Title Case:
+// "event-streams" -> "Event Streams". Acronyms (ACL, SCIM, …) are not
+// special-cased — "Network Acls" is still a clear improvement over the raw
+// "network-acls" and not worth a hand-maintained exceptions table.
+func titleizeTag(tag string) string {
+	parts := strings.Split(tag, "-")
+	for i, p := range parts {
+		if p == "" {
+			continue
+		}
+		r := []rune(p)
+		r[0] = unicode.ToUpper(r[0])
+		parts[i] = string(r)
+	}
+	return strings.Join(parts, " ")
 }
 
 // synthesiseMockControlSiblings adds {path}/match and {path}/reset operations
