@@ -77,6 +77,52 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	assert.Contains(t, body, "preferredSecurityScheme: 'bearerAuth'")
 }
 
+func TestDocsServesStylesheet(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/docs.css", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/css")
+	body := rec.Body.String()
+	assert.Contains(t, body, "@font-face")
+	assert.Contains(t, body, "Geist")
+}
+
+func TestDocsServesFonts(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	for _, name := range []string{"Geist-Variable.woff2", "GeistMono-Variable.woff2"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/fonts/"+name, nil))
+		require.Equalf(t, http.StatusOK, rec.Code, "font %s", name)
+		assert.Equalf(t, "font/woff2", rec.Header().Get("Content-Type"), "font %s", name)
+		assert.NotEmptyf(t, rec.Body.Bytes(), "font %s body", name)
+	}
+}
+
+func TestDocsFontRejectsUnknownFile(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/fonts/nope.woff2", nil))
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestDocsFontRejectsPathTraversal(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	// A percent-encoded traversal attempt must not escape docs/fonts/ and
+	// serve, e.g., the embedded index.html. path.Base in serveDocsFont is the
+	// guard (chi's routing also rejects a {file} segment containing a slash).
+	for _, target := range []string{
+		"/docs/fonts/%2e%2e%2findex.html",
+		"/docs/fonts/..%2findex.html",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		assert.NotEqualf(t, http.StatusOK, rec.Code, "traversal %q must not succeed", target)
+		assert.NotContainsf(t, rec.Body.String(), "<!doctype html>", "traversal %q leaked HTML", target)
+	}
+}
+
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {
 	h := newOpenAPIRouter(t)
 	rec := httptest.NewRecorder()

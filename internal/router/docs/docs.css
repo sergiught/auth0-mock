@@ -1,0 +1,22 @@
+/* docs.css — custom styling layer for the /docs API reference page.
+   Self-hosted Geist (SIL OFL). Sections are added by later tasks:
+   header bar (Task 3), Scalar theming (Task 5). */
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/docs/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/docs/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --docs-font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --docs-font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+}
