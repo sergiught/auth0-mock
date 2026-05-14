@@ -3,6 +3,7 @@ package spec
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -137,4 +138,75 @@ func selectResponse(rs *openapi3.Responses, status int) *openapi3.ResponseRef {
 		return r
 	}
 	return rs.Default()
+}
+
+// ValidateRequestMatcher checks a request-body matcher against the operation's
+// request body schema, with `required` constraints relaxed — a matcher is
+// intentionally partial, so absent required fields are fine, but unknown
+// fields (the request schema is typically additionalProperties:false) and
+// mistyped known fields are still rejected. An empty matcher body is a no-op;
+// an operation that declares no JSON request body rejects any non-empty body.
+func (v *Validator) ValidateRequestMatcher(op Operation, body json.RawMessage) error {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil
+	}
+	if op.Op.RequestBody == nil || op.Op.RequestBody.Value == nil {
+		return fmt.Errorf("operation %s declares no request body", op.Op.OperationID)
+	}
+	media := op.Op.RequestBody.Value.Content.Get("application/json")
+	if media == nil || media.Schema == nil || media.Schema.Value == nil {
+		return fmt.Errorf("operation %s has no application/json request schema", op.Op.OperationID)
+	}
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return fmt.Errorf("matcher body json: %w", err)
+	}
+	err := media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors())
+	return filterRequiredErrors(err)
+}
+
+// ValidateQueryMatcher checks that every key in a query matcher names a query
+// parameter declared by the operation.
+func (v *Validator) ValidateQueryMatcher(op Operation, query map[string]string) error {
+	if len(query) == 0 {
+		return nil
+	}
+	declared := make(map[string]bool)
+	for _, p := range op.Op.Parameters {
+		if p.Value != nil && p.Value.In == openapi3.ParameterInQuery {
+			declared[p.Value.Name] = true
+		}
+	}
+	for k := range query {
+		if !declared[k] {
+			return fmt.Errorf("unknown query parameter %q for operation %s", k, op.Op.OperationID)
+		}
+	}
+	return nil
+}
+
+// filterRequiredErrors drops "required"-field violations from a schema
+// validation error, returning nil if only required-field errors remain. This
+// is what relaxes `required` for partial request matchers.
+func filterRequiredErrors(err error) error {
+	if err == nil {
+		return nil
+	}
+	me, ok := err.(openapi3.MultiError)
+	if !ok {
+		return err
+	}
+	var kept openapi3.MultiError
+	for _, e := range me {
+		var se *openapi3.SchemaError
+		if errors.As(e, &se) && se.SchemaField == "required" {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
 }

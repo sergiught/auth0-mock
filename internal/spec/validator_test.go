@@ -33,11 +33,12 @@ const minSpec = `{
       "post": {
         "operationId": "createWidget",
         "parameters": [
-          {"name":"id","in":"path","required":true,"schema":{"type":"string"}}
+          {"name":"id","in":"path","required":true,"schema":{"type":"string"}},
+          {"name":"fields","in":"query","required":false,"schema":{"type":"string"}}
         ],
         "requestBody": {
           "required": true,
-          "content": {"application/json":{"schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}}
+          "content": {"application/json":{"schema":{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string"},"size":{"type":"integer"}}}}}
         },
         "responses": {"201":{"description":"created"}}
       }
@@ -139,3 +140,57 @@ func TestValidatorResolve(t *testing.T) {
 
 // silence unused-import linter for openapi3 in some Go versions.
 var _ = openapi3.NewLoader
+
+func TestValidator_ValidateRequestMatcher_RejectsUnknownField(t *testing.T) {
+	s, _, postOp := loadMinSpec(t)
+	v := NewValidator(s)
+
+	err := v.ValidateRequestMatcher(postOp, json.RawMessage(`{"hello":"hola"}`))
+	assert.Error(t, err)
+}
+
+func TestValidator_ValidateRequestMatcher_AcceptsValidPartial(t *testing.T) {
+	s, _, postOp := loadMinSpec(t)
+	v := NewValidator(s)
+
+	// "name" is required by the schema, but a matcher is partial by design:
+	// a body with only the optional "size" field must be accepted.
+	err := v.ValidateRequestMatcher(postOp, json.RawMessage(`{"size":5}`))
+	assert.NoError(t, err)
+}
+
+func TestValidator_ValidateRequestMatcher_RejectsMistypedKnownField(t *testing.T) {
+	s, _, postOp := loadMinSpec(t)
+	v := NewValidator(s)
+
+	err := v.ValidateRequestMatcher(postOp, json.RawMessage(`{"size":"big"}`))
+	assert.Error(t, err)
+}
+
+func TestValidator_ValidateRequestMatcher_EmptyBodyIsNoop(t *testing.T) {
+	s, _, postOp := loadMinSpec(t)
+	v := NewValidator(s)
+
+	assert.NoError(t, v.ValidateRequestMatcher(postOp, nil))
+	assert.NoError(t, v.ValidateRequestMatcher(postOp, json.RawMessage(`null`)))
+}
+
+func TestValidator_ValidateRequestMatcher_RejectsBodyForBodylessOperation(t *testing.T) {
+	s, getOp, _ := loadMinSpec(t)
+	v := NewValidator(s)
+
+	// getWidget declares no request body; a body matcher cannot apply.
+	err := v.ValidateRequestMatcher(getOp, json.RawMessage(`{"anything":1}`))
+	assert.Error(t, err)
+}
+
+func TestValidator_ValidateQueryMatcher(t *testing.T) {
+	s, _, postOp := loadMinSpec(t)
+	v := NewValidator(s)
+
+	assert.NoError(t, v.ValidateQueryMatcher(postOp, map[string]string{"fields": "name"}))
+	assert.NoError(t, v.ValidateQueryMatcher(postOp, nil))
+
+	err := v.ValidateQueryMatcher(postOp, map[string]string{"not_a_param": "x"})
+	assert.Error(t, err)
+}
