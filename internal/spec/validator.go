@@ -163,7 +163,10 @@ func (v *Validator) ValidateRequestMatcher(op Operation, body json.RawMessage) e
 		return fmt.Errorf("matcher body json: %w", err)
 	}
 	err := media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors())
-	return filterRequiredErrors(err)
+	if err := filterRequiredErrors(err); err != nil {
+		return fmt.Errorf("matcher body schema: %w", err)
+	}
+	return nil
 }
 
 // ValidateQueryMatcher checks that every key in a query matcher names a query

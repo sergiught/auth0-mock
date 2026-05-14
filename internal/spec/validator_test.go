@@ -179,7 +179,7 @@ func TestValidator_ValidateRequestMatcher_RejectsBodyForBodylessOperation(t *tes
 	s, getOp, _ := loadMinSpec(t)
 	v := NewValidator(s)
 
-	// getWidget declares no request body; a body matcher cannot apply.
+	// The getWidget operation declares no request body; a body matcher cannot apply.
 	err := v.ValidateRequestMatcher(getOp, json.RawMessage(`{"anything":1}`))
 	assert.Error(t, err)
 }
@@ -193,4 +193,16 @@ func TestValidator_ValidateQueryMatcher(t *testing.T) {
 
 	err := v.ValidateQueryMatcher(postOp, map[string]string{"not_a_param": "x"})
 	assert.Error(t, err)
+
+	// "id" is a path parameter, not a query parameter, so it must be rejected.
+	err = v.ValidateQueryMatcher(postOp, map[string]string{"id": "x"})
+	assert.Error(t, err)
+}
+
+func TestValidator_ValidateRequestMatcher_AcceptsFullValidBody(t *testing.T) {
+	s, _, postOp := loadMinSpec(t)
+	v := NewValidator(s)
+
+	err := v.ValidateRequestMatcher(postOp, json.RawMessage(`{"name":"foo","size":5}`))
+	assert.NoError(t, err)
 }
