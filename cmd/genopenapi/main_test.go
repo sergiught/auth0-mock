@@ -104,3 +104,26 @@ func TestBundleSkipsSiblingsThatCollideWithRealOps(t *testing.T) {
 	assert.Nil(t, postOp,
 		"synthesiser must not inject a POST at a path that already exists in the real spec")
 }
+
+func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {
+	doc, err := bundle("http://localhost:8080")
+	require.NoError(t, err)
+	require.NotNil(t, doc.Info)
+
+	// Title and description must be auth0-mock's, not Auth0's.
+	assert.Equal(t, "auth0-mock API", doc.Info.Title)
+	assert.Contains(t, doc.Info.Description, "auth0-mock")
+	assert.NotContains(t, doc.Info.Description, "Auth0 Management API v2.",
+		"info.description must not be the upstream Mgmt API blurb")
+
+	// Auth0 Support contact + Auth0 ToS must be gone.
+	require.NotNil(t, doc.Info.Contact)
+	assert.Equal(t, "auth0-mock", doc.Info.Contact.Name)
+	assert.NotEqual(t, "Auth0 Support", doc.Info.Contact.Name)
+	assert.Empty(t, doc.Info.TermsOfService,
+		"termsOfService must not be carried over from the upstream Auth0 spec")
+
+	// License must be set so Scalar can render the project licence.
+	require.NotNil(t, doc.Info.License)
+	assert.Equal(t, "MIT", doc.Info.License.Name)
+}

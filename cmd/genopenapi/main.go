@@ -104,8 +104,56 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 		URL:         server,
 		Description: "Local auth0-mock",
 	}}
+
+	rewriteInfo(base)
 	return base, nil
 }
+
+// rewriteInfo replaces the upstream Auth0 Management API's `info` block with
+// auth0-mock's own branding so the rendered docs lead with "what this mock
+// is" instead of pointing readers at Auth0 Support / Auth0 ToS.
+func rewriteInfo(base *openapi3.T) {
+	upstreamVersion := "2.0"
+	if base.Info != nil && base.Info.Version != "" {
+		upstreamVersion = base.Info.Version
+	}
+	base.Info = &openapi3.Info{
+		Title:       "auth0-mock API",
+		Description: docsDescription,
+		Version:     upstreamVersion,
+		Contact: &openapi3.Contact{
+			Name: "auth0-mock",
+			URL:  "https://github.com/sergiught/auth0-mock",
+		},
+		License: &openapi3.License{
+			Name: "MIT",
+			URL:  "https://github.com/sergiught/auth0-mock/blob/main/LICENSE",
+		},
+	}
+}
+
+const docsDescription = "" +
+	"**auth0-mock** is a drop-in mock of Auth0's Authentication and Management " +
+	"APIs. Run it locally and point your application's `AUTH0_DOMAIN` at it — " +
+	"your code calls auth0-mock the same way it calls Auth0, with real signed " +
+	"JWTs verifiable against the JWKS published at `/.well-known/jwks.json`.\n\n" +
+	"This document covers every HTTP surface the mock exposes:\n\n" +
+	"- **Authentication API** — `/oauth/token`, `/authorize`, `/userinfo`, " +
+	"`/v2/logout`, `/dbconnections/*`, `/passwordless/*`.\n" +
+	"- **Management API** — every endpoint under `/api/v2` from the upstream " +
+	"Auth0 spec, plus a `POST {path}/match` and `POST {path}/reset` sibling " +
+	"per operation so you can programme canned responses from this same page.\n" +
+	"- **admin0** — control plane under `/admin0/*` for direct manipulation " +
+	"of in-memory state (registered matches, claim overlay, per-audience " +
+	"permissions, MFA-required flag).\n" +
+	"- **service** — `/healthz`, `/.well-known/jwks.json`, `/openapi.json`, " +
+	"`/openapi.yaml`, `/docs`.\n\n" +
+	"The **Try it** panel on this page is preloaded with a freshly-minted " +
+	"`client_credentials` token, so Management API calls succeed without any " +
+	"manual setup. The token's audience defaults to `DEFAULT_AUDIENCE` " +
+	"(`https://localhost:8443/api/v2/`) — override per-request from the auth " +
+	"selector if your test needs a different one.\n\n" +
+	"Project source: <https://github.com/sergiught/auth0-mock>"
 
 // mergeFragment copies frag.paths and frag.components into base, returning an
 // error if any path+method or schema name is declared twice.
