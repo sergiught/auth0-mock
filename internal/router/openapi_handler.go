@@ -18,12 +18,37 @@ var openapiBytes struct {
 	err  error
 }
 
-// MountOpenAPI registers `GET /openapi.json` and `GET /openapi.yaml` on r,
-// serving the embedded merged spec. Both endpoints are unauthenticated.
+// MountOpenAPI registers `GET /openapi.json`, `GET /openapi.yaml`, and
+// `GET /docs` on r, serving the embedded merged spec and a Scalar-rendered
+// HTML reference. All three endpoints are unauthenticated.
 func MountOpenAPI(r chi.Router) error {
 	r.Method(http.MethodGet, "/openapi.json", http.HandlerFunc(serveOpenAPIJSON))
 	r.Method(http.MethodGet, "/openapi.yaml", http.HandlerFunc(serveOpenAPIYAML))
+	r.Method(http.MethodGet, "/docs", http.HandlerFunc(serveDocs))
 	return nil
+}
+
+// scalarDocsHTML is the single-page reference UI: Scalar loaded from jsdelivr
+// pulls /openapi.json at runtime and renders the docs from it. The spec's
+// servers[0].url already points at this same mock, so "Try it" works without
+// further config.
+const scalarDocsHTML = `<!doctype html>
+<html>
+  <head>
+    <title>auth0-mock API reference</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script id="api-reference" data-url="/openapi.json"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>
+`
+
+func serveDocs(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(scalarDocsHTML))
 }
 
 func serveOpenAPIJSON(w http.ResponseWriter, _ *http.Request) {

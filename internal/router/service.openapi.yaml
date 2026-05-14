@@ -65,3 +65,19 @@ paths:
             application/yaml:
               schema:
                 type: object
+  /docs:
+    get:
+      tags: [service]
+      summary: Interactive API reference rendered by Scalar.
+      description: |
+        Returns a single-page HTML reference that loads `/openapi.json` at
+        runtime and renders docs plus a "Try it out" panel. The spec's
+        `servers[0].url` already points at this mock, so requests issued from
+        the panel hit the same instance that served the page.
+      responses:
+        "200":
+          description: HTML reference page.
+          content:
+            text/html:
+              schema:
+                type: string

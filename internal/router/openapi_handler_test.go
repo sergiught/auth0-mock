@@ -34,6 +34,18 @@ func TestOpenAPIJSONServesEmbeddedSpec(t *testing.T) {
 	assert.Equal(t, api.MockOpenAPIJSON, body)
 }
 
+func TestDocsServesScalarHTML(t *testing.T) {
+	h := newOpenAPIRouter(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	body := rec.Body.String()
+	assert.Contains(t, body, `data-url="/openapi.json"`)
+	assert.Contains(t, body, "@scalar/api-reference")
+}
+
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {
 	h := newOpenAPIRouter(t)
 	rec := httptest.NewRecorder()

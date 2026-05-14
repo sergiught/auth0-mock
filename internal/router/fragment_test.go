@@ -21,6 +21,7 @@ func TestServiceFragmentDescribesEveryServiceEndpoint(t *testing.T) {
 		"/.well-known/jwks.json": {"GET"},
 		"/openapi.json":          {"GET"},
 		"/openapi.yaml":          {"GET"},
+		"/docs":                  {"GET"},
 	}
 	for path, methods := range want {
 		item := doc.Paths.Value(path)

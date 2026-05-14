@@ -82,6 +82,12 @@ That's it. No SDK changes, no monkey-patching, your code calls auth0-mock the sa
 
 ## Calling the API from Postman or Insomnia
 
+> **Prefer a browser?** Run the mock and open
+> [http://localhost:8080/docs](http://localhost:8080/docs) for an interactive
+> reference rendered by [Scalar](https://github.com/scalar/scalar) — every
+> endpoint clickable, "Try it" pointing at the same instance that served the
+> page.
+
 The mock ships a merged OpenAPI 3.1 document that covers every HTTP surface
 it exposes:
 
