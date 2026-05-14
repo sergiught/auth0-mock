@@ -54026,7 +54026,7 @@
             "description": "Body could not be parsed, names an unknown operation, or violates the response schema."
           }
         },
-        "summary": "Register (upsert) a canned response for a Management API operation.",
+        "summary": "Register (or replace) a canned response for a Management API operation.",
         "tags": [
           "Expectations"
         ]

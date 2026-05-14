@@ -67,11 +67,12 @@ curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/auth
 
 ## Different responses for different requests
 
-Multiple expectations can be registered for the same operation and conditioned on the incoming request body or query parameters. The mock matches the most specific expectation — the one whose `request` matcher covers the most fields. Ties are broken by newest-registered.
+Multiple expectations can be registered for the same operation and conditioned on the incoming request body or query parameters. The mock applies a 4-tier precedence: a request-matched expectation wins over a catch-all, and an exact-path expectation wins over a template-path one. Within the same tier, the newest-registered expectation wins.
 
 ```bash
 # Register two expectations on the same operation, matched by request body.
-# The most specific match wins; ties are broken by newest-registered.
+# Precedence: exact-path+matcher > exact-path+catch-all > template+matcher > template+catch-all.
+# Newest-registered wins within each tier.
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
   -d '{"method":"POST","path":"/api/v2/users",

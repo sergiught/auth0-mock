@@ -30,7 +30,7 @@ paths:
   /admin0/expectations:
     post:
       tags: [Expectations]
-      summary: Register (upsert) a canned response for a Management API operation.
+      summary: Register (or replace) a canned response for a Management API operation.
       description: |
         The target operation is identified by `method` + `path`. `path` may be
         concrete (`/api/v2/users/auth0|1`) or an OpenAPI template
