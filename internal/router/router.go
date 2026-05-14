@@ -50,6 +50,7 @@ func New(d Deps) (http.Handler, error) {
 		Claims:      d.Claims,
 		Permissions: d.Permissions,
 		MFA:         d.MFA,
+		Validator:   d.Validator,
 	})
 	mountJWKS(r, d.Keys)
 	if err := MountOpenAPI(r); err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 // Deps groups the in-memory stores admin0 controls.
@@ -24,12 +25,16 @@ type Deps struct {
 	Claims      *claims.Store
 	Permissions *permissions.Store
 	MFA         *mfa.Store
+	Validator   *spec.Validator
 }
 
 // Mount registers every /admin0/* route on r.
 func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
 	r.Method(http.MethodGet, "/admin0/matches", &ListMatchesHandler{Store: d.Matches})
+	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
+	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
+	r.Method(http.MethodDelete, "/admin0/expectations", &DeleteExpectationsHandler{Store: d.Matches})
 
 	r.Method(http.MethodGet, "/admin0/claims", &GetClaimsHandler{Store: d.Claims})
 	r.Method(http.MethodPut, "/admin0/claims", &PutClaimsHandler{Store: d.Claims})
