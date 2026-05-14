@@ -114,9 +114,9 @@ func bundleWithExtras(server string, extras [][]byte) (*openapi3.T, error) {
 // applyTagGroups injects the `x-tagGroups` Scalar/Redoc vendor extension so
 // the rendered docs sidebar splits into four top-level sections instead of
 // the ~50 flat tags the upstream Mgmt API ships. The /match and /reset
-// siblings are intentionally NOT in a separate group: they inherit their
-// parent's tag (see collectPathItemTags) and therefore appear adjacent to it
-// inside the Management API group.
+// siblings are intentionally NOT in a separate group: each inherits the tag
+// of the parent operation it pairs with (see synthesiseMockControlSiblings)
+// and therefore appears adjacent to it inside the Management API group.
 func applyTagGroups(base *openapi3.T) {
 	used := map[string]struct{}{}
 	if base.Paths != nil {
@@ -202,8 +202,10 @@ const docsDescription = "" +
 	"- **Authentication API** — `/oauth/token`, `/authorize`, `/userinfo`, " +
 	"`/v2/logout`, `/dbconnections/*`, `/passwordless/*`.\n" +
 	"- **Management API** — every endpoint under `/api/v2` from the upstream " +
-	"Auth0 spec, plus a `POST {path}/match` and `POST {path}/reset` sibling " +
-	"per operation so you can programme canned responses from this same page.\n" +
+	"Auth0 spec, plus a `{path}/match` and `{path}/reset` sibling per operation " +
+	"so you can programme canned responses from this same page. Each sibling " +
+	"uses the same HTTP method as the operation it pairs with — `GET {path}/match` " +
+	"programmes the GET, `POST {path}/match` programmes the POST.\n" +
 	"- **admin0** — control plane under `/admin0/*` for direct manipulation " +
 	"of in-memory state (registered matches, claim overlay, per-audience " +
 	"permissions, MFA-required flag).\n" +
@@ -359,9 +361,16 @@ func basePath(url string) string {
 	return url
 }
 
-// synthesiseMockControlSiblings adds POST {path}/match and POST {path}/reset
-// for every Management API path in base.Paths, skipping siblings whose
-// path+method would collide with a real operation already in the spec.
+// synthesiseMockControlSiblings adds {path}/match and {path}/reset operations
+// for every Management API operation in base.Paths.
+//
+// The siblings are method-aware: the running mock (see
+// internal/mgmtapi/mount.go) registers one sibling per parent operation, on
+// that operation's own method — so GET /api/v2/actions/actions and
+// POST /api/v2/actions/actions each get their own GET .../match and
+// POST .../match. A sibling method is skipped only when a real spec operation
+// already occupies that exact method+path (e.g. the real
+// PATCH /branding/phone/templates/{id}/reset).
 func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 	if base.Paths == nil {
 		return
@@ -375,61 +384,41 @@ func synthesiseMockControlSiblings(base *openapi3.T, mgmtPrefix string) {
 		if mgmtPrefix == "" || !strings.HasPrefix(path, mgmtPrefix+"/") {
 			continue
 		}
-		parentTags := collectPathItemTags(parentItem)
 		for _, suffix := range []string{"/match", "/reset"} {
 			siblingPath := path + suffix
-			if base.Paths.Value(siblingPath) != nil {
-				// Real spec operation already lives here (e.g.
-				// /branding/phone/templates/{id}/reset) — leave it alone.
-				continue
+			// Reuse the path item if a real spec operation already lives here
+			// (e.g. the real PATCH /branding/phone/templates/{id}/reset) so we
+			// only add the non-colliding methods; otherwise start fresh.
+			sibling := base.Paths.Value(siblingPath)
+			if sibling == nil {
+				sibling = &openapi3.PathItem{}
 			}
-			sibling := &openapi3.PathItem{}
-			sibling.SetOperation("POST", mockControlOperation(suffix, path, parentTags))
+			for method, parentOp := range parentItem.Operations() {
+				if sibling.GetOperation(method) != nil {
+					// Real spec operation occupies this method+path — the
+					// running mock skips the sibling here too.
+					continue
+				}
+				sibling.SetOperation(method,
+					mockControlOperation(suffix, method, path, parentOp.Tags))
+			}
 			base.Paths.Set(siblingPath, sibling)
 		}
 	}
 }
 
-// collectPathItemTags returns the union of tags across every operation on a
-// path item, sorted for stable output. Used so /match and /reset siblings
-// inherit their parent endpoint's tag and therefore appear grouped with it in
-// the rendered docs instead of in a separate mock-control bucket.
-func collectPathItemTags(item *openapi3.PathItem) []string {
-	if item == nil {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	for _, op := range item.Operations() {
-		if op == nil {
-			continue
-		}
-		for _, t := range op.Tags {
-			seen[t] = struct{}{}
-		}
-	}
-	if len(seen) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(seen))
-	for t := range seen {
-		out = append(out, t)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// mockControlOperation builds the synthesised OpenAPI operation for /match or
-// /reset siblings. Bodies reference the shared schemas in MockControlOpenAPIYAML.
-// ParentTags is the deduplicated tag set lifted from the parent endpoint so the
-// sibling renders adjacent to it in the docs; parentPath is the endpoint the
-// sibling is paired with — used to give each operation a unique operationId
-// and a path-specific summary so Scalar renders them as distinct sidebar
-// entries rather than 221 identically-labelled rows.
-func mockControlOperation(suffix, parentPath string, parentTags []string) *openapi3.Operation {
+// mockControlOperation builds the synthesised OpenAPI operation for a /match or
+// /reset sibling. Bodies reference the shared schemas in MockControlOpenAPIYAML.
+// ParentTags is lifted from the paired parent operation so the sibling renders
+// under the same tag; method and parentPath identify the exact parent
+// operation, and are woven into the operationId and summary so every sibling
+// is a distinct, navigable sidebar entry (e.g. GET vs POST .../match on the
+// same path get separate rows).
+func mockControlOperation(suffix, method, parentPath string, parentTags []string) *openapi3.Operation {
 	op := &openapi3.Operation{
 		Tags:        parentTags,
-		OperationID: operationIDFor(suffix, parentPath),
-		Summary:     summaryFor(suffix, parentPath),
+		OperationID: operationIDFor(suffix, method, parentPath),
+		Summary:     summaryFor(suffix, method, parentPath),
 		Description: descriptionFor(suffix),
 		Responses:   openapi3.NewResponses(),
 	}
@@ -464,25 +453,28 @@ func mockControlOperation(suffix, parentPath string, parentTags []string) *opena
 }
 
 // operationIDFor builds a unique, stable operationId for a synthesised sibling
-// from its kind ("match"/"reset") and the parent path, e.g.
-// "mock-control.match.api.v2.actions.actions.actionId". Path parameter braces
-// are stripped and slashes become dots so the id is a clean slug.
-func operationIDFor(suffix, parentPath string) string {
+// from its kind ("match"/"reset"), the parent operation's HTTP method, and the
+// parent path, e.g. "mock-control.match.get.api.v2.actions.actions". The method
+// is part of the id because a single path can host several parent operations
+// (GET + POST), each of which gets its own same-method sibling. Path parameter
+// braces are stripped and slashes become dots so the id is a clean slug.
+func operationIDFor(suffix, method, parentPath string) string {
 	kind := strings.TrimPrefix(suffix, "/")
 	slug := strings.NewReplacer("/", ".", "{", "", "}", "").
 		Replace(strings.TrimPrefix(parentPath, "/"))
-	return "mock-control." + kind + "." + slug
+	return "mock-control." + kind + "." + strings.ToLower(method) + "." + slug
 }
 
 // summaryFor returns the sidebar label for a synthesised sibling. It embeds the
-// parent path so every entry is distinct and visibly tied to the endpoint it
-// programmes, e.g. "match · /api/v2/actions/actions/{actionId}".
-func summaryFor(suffix, parentPath string) string {
+// parent operation's method and path so every entry is distinct and visibly
+// tied to the operation it programmes, e.g.
+// "match · POST /api/v2/actions/actions".
+func summaryFor(suffix, method, parentPath string) string {
 	switch suffix {
 	case "/match":
-		return "match · " + parentPath
+		return "match · " + method + " " + parentPath
 	case "/reset":
-		return "reset · " + parentPath
+		return "reset · " + method + " " + parentPath
 	}
 	return ""
 }

@@ -51,68 +51,75 @@ func TestBundleSynthesisesMatchAndResetSiblings(t *testing.T) {
 	doc, err := bundle("http://localhost:8080")
 	require.NoError(t, err)
 
-	// Spot-check: a known Mgmt API path has both siblings.
+	// Spot-check: a known multi-method Mgmt API path. Its /match and /reset
+	// siblings must carry one operation per parent method — the running mock
+	// registers siblings on the parent operation's own method, not always
+	// POST (see internal/mgmtapi/mount.go).
 	basePath := "/api/v2/users/{id}"
 	parent := doc.Paths.Value(basePath)
 	require.NotNil(t, parent,
 		"sanity: base path missing — the upstream spec changed?")
-	parentOp := parent.GetOperation("GET")
-	require.NotNil(t, parentOp, "parent /api/v2/users/{id} GET missing")
-	require.NotEmpty(t, parentOp.Tags,
-		"sanity: parent must declare at least one tag")
+	parentOps := parent.Operations()
+	require.GreaterOrEqual(t, len(parentOps), 2,
+		"sanity: expected a multi-method parent for this assertion")
+
 	for _, suffix := range []string{"/match", "/reset"} {
 		item := doc.Paths.Value(basePath + suffix)
-		require.NotNilf(t, item, "missing sibling %s%s", basePath, suffix)
-		op := item.GetOperation("POST")
-		require.NotNilf(t, op, "missing POST sibling at %s%s", basePath, suffix)
-		assert.Contains(t, op.Tags, parentOp.Tags[0],
-			"sibling must inherit the parent's tag so it groups under the same section")
-		assert.NotContains(t, op.Tags, "mock-control",
-			"siblings must not be tagged mock-control — that creates a separate sidebar bucket")
-		// Each sibling must be individually addressable in the docs sidebar:
-		// a unique operationId and a path-specific summary.
-		assert.NotEmpty(t, op.OperationID, "sibling must have an operationId")
-		assert.Contains(t, op.Summary, basePath,
-			"sibling summary must embed the parent path so the sidebar entry is distinct")
+		require.NotNilf(t, item, "missing sibling path %s%s", basePath, suffix)
+		for method, parentOp := range parentOps {
+			op := item.GetOperation(method)
+			require.NotNilf(t, op, "sibling %s%s missing %s operation", basePath, suffix, method)
+			if len(parentOp.Tags) > 0 {
+				assert.Containsf(t, op.Tags, parentOp.Tags[0],
+					"%s %s%s must inherit the parent's tag", method, basePath, suffix)
+			}
+			assert.NotContains(t, op.Tags, "mock-control",
+				"siblings must not be tagged mock-control — that creates a separate sidebar bucket")
+			assert.Containsf(t, op.OperationID, "mock-control.",
+				"%s %s%s must have a synthesised operationId", method, basePath, suffix)
+			assert.Containsf(t, op.Summary, method,
+				"sibling summary must name the parent method")
+			assert.Containsf(t, op.Summary, basePath,
+				"sibling summary must name the parent path")
+		}
 	}
 
-	// Sweep: every Mgmt API operation must have a POST /match sibling and a
-	// POST /reset sibling unless a real operation already occupies that slot,
-	// and every synthesised operationId + summary must be globally unique.
-	// Snapshot first because we'll be reading paths the synthesiser added.
-	mgmtPaths := []string{}
+	// Sweep: for every Mgmt API parent operation, the /match and /reset
+	// siblings must carry a same-method operation, and every synthesised
+	// operationId + summary must be globally unique.
+	parents := map[string]bool{}
 	for p := range doc.Paths.Map() {
-		if len(p) >= len("/api/v2/") && p[:len("/api/v2/")] == "/api/v2/" {
-			mgmtPaths = append(mgmtPaths, p)
+		if !strings.HasPrefix(p, "/api/v2/") ||
+			strings.HasSuffix(p, "/match") || strings.HasSuffix(p, "/reset") {
+			continue
 		}
+		parents[p] = true
 	}
 	seenIDs := map[string]string{}
 	seenSummaries := map[string]string{}
-	for _, p := range mgmtPaths {
-		// Skip paths that are themselves /match or /reset.
-		if strings.HasSuffix(p, "/match") || strings.HasSuffix(p, "/reset") {
-			continue
-		}
+	for p := range parents {
+		parentItem := doc.Paths.Value(p)
 		for _, suffix := range []string{"/match", "/reset"} {
 			sib := doc.Paths.Value(p + suffix)
-			require.NotNilf(t, sib, "missing sibling %s%s", p, suffix)
-			op := sib.GetOperation("POST")
-			if op == nil {
-				// A real spec operation already occupies this path (e.g.
-				// /branding/phone/templates/{id}/reset) — covered by
-				// TestBundleSkipsSiblingsThatCollideWithRealOps.
-				continue
+			require.NotNilf(t, sib, "missing sibling path %s%s", p, suffix)
+			for method := range parentItem.Operations() {
+				op := sib.GetOperation(method)
+				require.NotNilf(t, op, "sibling %s%s missing %s operation", p, suffix, method)
+				if !strings.HasPrefix(op.OperationID, "mock-control.") {
+					// A real spec op occupies this method+path (collision
+					// case) — covered by TestBundleSkipsSiblingsThatCollideWithRealOps.
+					continue
+				}
+				where := method + " " + p + suffix
+				if prev, dup := seenIDs[op.OperationID]; dup {
+					t.Errorf("duplicate operationId %q on %s (also %s)", op.OperationID, where, prev)
+				}
+				seenIDs[op.OperationID] = where
+				if prev, dup := seenSummaries[op.Summary]; dup {
+					t.Errorf("duplicate summary %q on %s (also %s)", op.Summary, where, prev)
+				}
+				seenSummaries[op.Summary] = where
 			}
-
-			if prev, dup := seenIDs[op.OperationID]; dup {
-				t.Errorf("duplicate operationId %q on %s%s (also %s)", op.OperationID, p, suffix, prev)
-			}
-			seenIDs[op.OperationID] = p + suffix
-
-			if prev, dup := seenSummaries[op.Summary]; dup {
-				t.Errorf("duplicate summary %q on %s%s (also %s)", op.Summary, p, suffix, prev)
-			}
-			seenSummaries[op.Summary] = p + suffix
 		}
 	}
 }
@@ -121,22 +128,28 @@ func TestBundleSkipsSiblingsThatCollideWithRealOps(t *testing.T) {
 	doc, err := bundle("http://localhost:8080")
 	require.NoError(t, err)
 
-	// The Auth0 spec has PATCH /branding/phone/templates/{id}/reset as a real
-	// endpoint. The synthesiser must not add a mock-control POST on top of it.
+	// The Auth0 spec has a real PATCH /branding/phone/templates/{id}/reset.
+	// Its parent /branding/phone/templates/{id} has GET, PATCH and DELETE — so
+	// the synthesiser must add GET and DELETE /reset siblings but must NOT
+	// overwrite the real PATCH operation that already occupies that slot.
 	colliding := "/api/v2/branding/phone/templates/{id}/reset"
 	item := doc.Paths.Value(colliding)
 	require.NotNil(t, item)
 
-	// The real PATCH must not be tagged mock-control.
+	// The PATCH op must still be the real one — not a synthesised sibling.
 	patchOp := item.GetOperation("PATCH")
 	require.NotNil(t, patchOp, "expected real PATCH op to survive")
-	assert.NotContains(t, patchOp.Tags, "mock-control",
-		"real spec op was clobbered by synthesised /reset sibling")
+	assert.NotContains(t, patchOp.OperationID, "mock-control",
+		"real PATCH op was clobbered by a synthesised /reset sibling")
+	assert.NotContains(t, patchOp.Tags, "mock-control")
 
-	// No synthetic POST must have been inserted on top of the real path item.
-	postOp := item.GetOperation("POST")
-	assert.Nil(t, postOp,
-		"synthesiser must not inject a POST at a path that already exists in the real spec")
+	// The non-colliding parent methods still get synthesised reset siblings.
+	for _, method := range []string{"GET", "DELETE"} {
+		op := item.GetOperation(method)
+		require.NotNilf(t, op, "expected a synthesised %s reset sibling", method)
+		assert.Containsf(t, op.OperationID, "mock-control.reset.",
+			"%s op on %s should be a synthesised reset sibling", method, colliding)
+	}
 }
 
 func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {
