@@ -412,12 +412,12 @@ func basePath(url string) string {
 // `description` is blanked and every `externalDocs` dropped — that prose, and
 // the ~100 auth0.com documentation links embedded in it, is Auth0's
 // copyrightable content; the API structure itself is not. `summary` is kept:
-// it's a short factual label the sidebar and the /match-sibling summaries
-// depend on. `example` values are kept: sample data, functionally useful for
+// it's a short factual label the rendered docs sidebar depends on. `example`
+// values are kept: sample data, functionally useful for
 // validation and "Try it".
 //
 // Called before the per-surface fragments are merged, so auth0-mock's own
-// authored descriptions (authapi, admin0, service, mock-control) are untouched.
+// authored descriptions (authapi, admin0, service) are untouched.
 //
 // Response.Description is blanked to "" rather than removed because OpenAPI
 // requires it on every Response object — an empty string keeps the document
