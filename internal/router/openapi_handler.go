@@ -32,6 +32,10 @@ func MountOpenAPI(r chi.Router) error {
 // pulls /openapi.json at runtime and renders the docs from it. The spec's
 // servers[0].url already points at this same mock, so "Try it" works without
 // further config.
+//
+// `agent: { disabled: true }` switches off Scalar's "Ask AI" panel. Otherwise
+// the first message uploads the OpenAPI document to Scalar's Agent backend,
+// which has no documented retention policy.
 const scalarDocsHTML = `<!doctype html>
 <html>
   <head>
@@ -40,7 +44,10 @@ const scalarDocsHTML = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body>
-    <script id="api-reference" data-url="/openapi.json"></script>
+    <script
+      id="api-reference"
+      data-url="/openapi.json"
+      data-configuration='{"agent":{"disabled":true}}'></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
   </body>
 </html>

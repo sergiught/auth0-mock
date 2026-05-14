@@ -44,6 +44,8 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, `data-url="/openapi.json"`)
 	assert.Contains(t, body, "@scalar/api-reference")
+	assert.Contains(t, body, `"agent":{"disabled":true}`,
+		"Scalar Agent (Ask AI) must stay disabled so the spec isn't uploaded")
 }
 
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {
