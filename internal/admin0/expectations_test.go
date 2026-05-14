@@ -43,14 +43,8 @@ func newExpectationsRouter(t *testing.T) (chi.Router, *matches.Store) {
 
 func do(t *testing.T, r chi.Router, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	var rdr *strings.Reader
-	if body != "" {
-		rdr = strings.NewReader(body)
-	} else {
-		rdr = strings.NewReader("")
-	}
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(method, path, rdr))
+	r.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
 	return rec
 }
 
@@ -128,4 +122,30 @@ func TestDeleteExpectations_All(t *testing.T) {
 	rec := do(t, r, http.MethodDelete, "/admin0/expectations", "")
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Len(t, store.List(), 0)
+}
+
+func TestDeleteExpectations_Rejects(t *testing.T) {
+	r, _ := newExpectationsRouter(t)
+	cases := []struct {
+		name, body, wantCode string
+		status               int
+	}{
+		{"malformed json", `not-json`, "invalid_body", 400},
+		{"missing path", `{"method":"GET"}`, "invalid_body", 400},
+		{"missing method", `{"path":"/api/v2/widgets/abc"}`, "invalid_body", 400},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := do(t, r, http.MethodDelete, "/admin0/expectations", c.body)
+			assert.Equal(t, c.status, rec.Code)
+			assert.Contains(t, rec.Body.String(), c.wantCode)
+		})
+	}
+}
+
+func TestDeleteExpectations_NonexistentIsNoop(t *testing.T) {
+	r, _ := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodDelete, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/never-registered"}`)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
 }

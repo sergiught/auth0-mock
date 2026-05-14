@@ -91,6 +91,15 @@ type deleteExpectationBody struct {
 
 // DeleteExpectationsHandler clears expectations. An empty body clears all; a
 // {method, path} body clears just that one.
+//
+// Two intentional behaviours worth noting:
+//   - An empty/whitespace-only body means "clear all". The read error from
+//     io.ReadAll is deliberately ignored: a failed or empty read falls through
+//     to ResetAll, which is a benign outcome for a teardown DELETE.
+//   - Clearing an expectation that was never registered is an idempotent no-op
+//     (returns 204). ResetEndpoint is documented as a no-op for unregistered
+//     keys, and DELETE intentionally does NOT validate {method, path} against
+//     the spec (unlike POST) because teardown should be forgiving.
 type DeleteExpectationsHandler struct {
 	Store *matches.Store
 }
