@@ -130,6 +130,10 @@ func rewriteInfo(base *openapi3.T) {
 			URL:  "https://github.com/sergiught/auth0-mock/blob/main/LICENSE",
 		},
 	}
+	base.ExternalDocs = &openapi3.ExternalDocs{
+		Description: "auth0-mock on GitHub",
+		URL:         "https://github.com/sergiught/auth0-mock",
+	}
 }
 
 const docsDescription = "" +

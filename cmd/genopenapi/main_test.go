@@ -126,4 +126,10 @@ func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {
 	// License must be set so Scalar can render the project licence.
 	require.NotNil(t, doc.Info.License)
 	assert.Equal(t, "MIT", doc.Info.License.Name)
+
+	// ExternalDocs must point at the project, not Auth0's Mgmt API docs.
+	require.NotNil(t, doc.ExternalDocs)
+	assert.NotContains(t, doc.ExternalDocs.URL, "auth0.com",
+		"externalDocs.url must not be Auth0's; it shipped from the upstream spec")
+	assert.Contains(t, doc.ExternalDocs.URL, "github.com/sergiught/auth0-mock")
 }
