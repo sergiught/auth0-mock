@@ -93,3 +93,16 @@ watch: dev-env $(BINARIES_DIR)/air ## Run the API locally with native hot reload
 dev-run: dev-env ## Run the API inside docker compose and tail its logs
 	@docker compose up -d --build
 	@docker compose logs -f auth0-mock
+
+.PHONY: demo
+demo: build ## Run the go-auth0 SDK example against a throwaway mock instance
+	@echo "==> Starting $(BINARY_NAME) for the demo"
+	@"$(BINARIES_DIR)/$(BINARY_NAME)" > /tmp/auth0-mock-demo.log 2>&1 & \
+	MOCK_PID=$$!; \
+	trap 'kill $$MOCK_PID 2>/dev/null' EXIT; \
+	for i in $$(seq 1 50); do \
+		curl -sk https://localhost:8443/healthz >/dev/null 2>&1 && break; \
+		sleep 0.2; \
+	done; \
+	echo "==> Running examples/consumer against the mock"; \
+	cd examples/consumer && go run .
