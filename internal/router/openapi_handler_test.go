@@ -110,8 +110,8 @@ func TestDocsFontRejectsUnknownFile(t *testing.T) {
 func TestDocsFontRejectsPathTraversal(t *testing.T) {
 	h := newOpenAPIRouter(t)
 	// A percent-encoded traversal attempt must not escape docs/fonts/ and
-	// serve, e.g., the embedded index.html. path.Base in serveDocsFont is the
-	// guard (chi's routing also rejects a {file} segment containing a slash).
+	// serve, e.g., the embedded index.html. The path.Base call in serveDocsFont
+	// is the guard (chi also rejects a {file} segment containing a slash).
 	for _, target := range []string{
 		"/docs/fonts/%2e%2e%2findex.html",
 		"/docs/fonts/..%2findex.html",
@@ -132,10 +132,10 @@ func TestDocsRendersCustomHeader(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, `<link rel="stylesheet" href="/docs/docs.css"`)
 	assert.Contains(t, body, `class="docs-header"`)
-	assert.Contains(t, body, `class="docs-header__wordmark">auth0-mock<`) // wordmark
-	assert.Contains(t, body, ">MOCK<")                             // badge
-	assert.Contains(t, body, "github.com/sergiught/auth0-mock")    // repo link
-	assert.Contains(t, body, `id="theme-toggle"`)                  // toggle button
+	assert.Contains(t, body, `class="docs-header__wordmark">auth0-mock<`) // Wordmark.
+	assert.Contains(t, body, ">MOCK<")                                    // Badge.
+	assert.Contains(t, body, "github.com/sergiught/auth0-mock")           // Repo link.
+	assert.Contains(t, body, `id="theme-toggle"`)                         // Toggle button.
 }
 
 func TestDocsThemeToggleWiring(t *testing.T) {

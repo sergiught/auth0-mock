@@ -46,8 +46,8 @@ func serveDocsCSS(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(docsCSS)
 }
 
-// serveDocsFont serves a vendored .woff2 from docs/fonts. path.Base strips any
-// directory components, so the {file} param can't escape the fonts directory.
+// serveDocsFont serves a vendored .woff2 from docs/fonts. The path.Base call
+// strips any directory components, so the {file} param can't escape the dir.
 func serveDocsFont(w http.ResponseWriter, r *http.Request) {
 	name := path.Base(chi.URLParam(r, "file"))
 	b, err := docsFS.ReadFile("docs/fonts/" + name)
