@@ -5,19 +5,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/docs/docs.css" />
-    <script>
-      // Set the theme class before first paint so there's no flash. The main
-      // boot script below re-applies this via applyThemeClass (idempotent).
-      (function () {
-        var t;
-        try { t = localStorage.getItem('auth0-mock-docs-theme'); } catch (e) { /* blocked */ }
-        if (t !== 'dark' && t !== 'light') {
-          t = (window.matchMedia &&
-            window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-        }
-        document.documentElement.classList.add(t + '-mode');
-      })();
-    </script>
     <!--
       The Scalar bundle below is pinned to an exact version and guarded with a
       Subresource Integrity hash — this page mints a real (if short-lived)
@@ -27,6 +14,20 @@
     -->
   </head>
   <body>
+    <script>
+      // Set the theme class on <body> before first paint so there's no flash.
+      // Scalar also drives the dark-mode/light-mode class on <body>, so that
+      // element is the single source of truth the whole page themes off of.
+      (function () {
+        var t;
+        try { t = localStorage.getItem('auth0-mock-docs-theme'); } catch (e) { /* blocked */ }
+        if (t !== 'dark' && t !== 'light') {
+          t = (window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.body.classList.add(t + '-mode');
+      })();
+    </script>
     <header class="docs-header">
       <div class="docs-header__brand">
         <span class="docs-header__wordmark">auth0-mock</span>
@@ -66,8 +67,11 @@
 
         function applyThemeClass(theme) {
           const dark = theme === 'dark';
-          document.documentElement.classList.toggle('dark-mode', dark);
-          document.documentElement.classList.toggle('light-mode', !dark);
+          // Scalar reads dark-mode/light-mode off <body> and themes its own
+          // content from it; our header CSS inherits the same tokens from
+          // <body>. Toggling <body> re-themes the whole page in one move.
+          document.body.classList.toggle('dark-mode', dark);
+          document.body.classList.toggle('light-mode', !dark);
         }
 
         const theme = readTheme();
@@ -149,28 +153,17 @@
           };
         }
 
-        const app = Scalar.createApiReference('#app', config);
+        Scalar.createApiReference('#app', config);
 
         function setTheme(next) {
           saveTheme(next);
           applyThemeClass(next);
-          // Drive Scalar's own re-theming. The html-class toggle above is
-          // required regardless (it drives the header bar). Per investigation
-          // of the @scalar/api-reference@1.55.3 bundle: createApiReference
-          // returns { app, getConfiguration, updateConfiguration, destroy }.
-          // updateConfiguration(newConfig) replaces the reactive configuration
-          // object, triggering Vue watchers — including the one that calls
-          // t.update("x-scalar-color-mode", darkMode ? "dark" : "light").
-          // We merge with the current config to avoid losing other settings.
-          if (app && typeof app.updateConfiguration === 'function' && typeof app.getConfiguration === 'function') {
-            app.updateConfiguration({ ...app.getConfiguration(), darkMode: next === 'dark' });
-          }
         }
 
         const toggle = document.getElementById('theme-toggle');
         if (toggle) {
           toggle.addEventListener('click', () => {
-            const current = document.documentElement.classList.contains('dark-mode')
+            const current = document.body.classList.contains('dark-mode')
               ? 'dark' : 'light';
             setTheme(current === 'dark' ? 'light' : 'dark');
           });

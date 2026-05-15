@@ -154,8 +154,9 @@ func TestDocsThemeToggleWiring(t *testing.T) {
 	assert.Contains(t, body, "localStorage")
 	// The header toggle button has a click handler.
 	assert.Contains(t, body, "addEventListener('click'")
-	// The toggle drives Scalar's live re-theming, not just the header CSS.
-	assert.Contains(t, body, "updateConfiguration")
+	// The toggle flips the class on <body> — the element Scalar themes off, so
+	// both the header and Scalar's content re-theme from one source of truth.
+	assert.Contains(t, body, "document.body.classList")
 }
 
 func TestOpenAPIYAMLRoundTripsToJSON(t *testing.T) {
