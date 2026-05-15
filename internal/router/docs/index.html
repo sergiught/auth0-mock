@@ -5,6 +5,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/docs/docs.css" />
+    <script>
+      // Set the theme class before first paint so there's no flash. The main
+      // boot script below re-applies this via applyThemeClass (idempotent).
+      (function () {
+        var t;
+        try { t = localStorage.getItem('auth0-mock-docs-theme'); } catch (e) { /* blocked */ }
+        if (t !== 'dark' && t !== 'light') {
+          t = (window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.documentElement.classList.add(t + '-mode');
+      })();
+    </script>
     <!--
       The Scalar bundle below is pinned to an exact version and guarded with a
       Subresource Integrity hash — this page mints a real (if short-lived)

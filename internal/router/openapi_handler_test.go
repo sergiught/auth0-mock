@@ -68,6 +68,8 @@ func TestDocsServesScalarHTML(t *testing.T) {
 	assert.Contains(t, body, "php: ['curl', 'laravel']")
 	assert.Contains(t, body, "agent: { disabled: true }",
 		"Scalar Agent (Ask AI) must stay disabled so the spec isn't uploaded")
+	assert.Contains(t, body, "mcp: { disabled: true }",
+		"Scalar's \"Generate MCP\" panel also uploads the spec — must stay disabled")
 	assert.Contains(t, body, "prefers-color-scheme: dark",
 		"darkMode must follow the OS via prefers-color-scheme, not be hardcoded")
 	assert.Contains(t, body, "POST",

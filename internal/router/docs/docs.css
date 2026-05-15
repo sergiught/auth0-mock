@@ -1,6 +1,6 @@
 /* docs.css — custom styling layer for the /docs API reference page.
-   Self-hosted Geist (SIL OFL). Sections are added by later tasks:
-   header bar (Task 3), Scalar theming (Task 5). */
+   Self-hosted Geist (SIL OFL). Sections: @font-face declarations, palette
+   tokens, header bar styles, Scalar --scalar-* theming, fallback message. */
 
 @font-face {
   font-family: 'Geist';
@@ -21,6 +21,11 @@
   --docs-font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
 }
 
+/* Layout constants — not theme-dependent. */
+:root {
+  --docs-header-height: 52px;
+}
+
 /* --- palette -------------------------------------------------------------
    Electric-violet accent, dark-first. Light values live under .light-mode so
    the same variables drive both themes. */
@@ -35,7 +40,6 @@
   --docs-text-2: #a0a0b0;
   --docs-border: #2a2a36;
   --docs-radius: 8px;
-  --docs-header-height: 52px;
 }
 .light-mode {
   --docs-accent: #6b3fff;
