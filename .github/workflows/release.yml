@@ -73,6 +73,20 @@ jobs:
       # docker/setup-buildx-action v3.7.1
       - uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 
+      # sigstore/cosign-installer v3.7.0 — keyless Docker image signing via the
+      # workflow's OIDC token. Goreleaser invokes `cosign sign` per the
+      # docker_signs block in .goreleaser.yaml.
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da
+        with:
+          cosign-release: 'v2.4.1'
+
+      # anchore/sbom-action/download-syft v0.17.7 — syft is required on PATH so
+      # the sboms block in .goreleaser.yaml can generate SPDX-JSON SBOMs for
+      # each release archive.
+      - uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0
+        with:
+          syft-version: 'v1.18.1'
+
       # docker/login-action v3.3.0
       - name: log in to Docker Hub
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567

@@ -22,7 +22,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/sergiught/auth0-mock"
 
 # ca-certificates so outbound HTTPS (e.g. JWKS over TLS) verifies real CAs.
-RUN apk add --no-cache ca-certificates tini
+# wget so docker-compose / orchestrator healthchecks can hit /healthz without
+# a separate probe binary (~250 KB extra).
+RUN apk add --no-cache ca-certificates tini wget
 
 COPY --from=build /out/auth0-mock /usr/local/bin/auth0-mock
 

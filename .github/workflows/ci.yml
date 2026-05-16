@@ -31,6 +31,12 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: -c .golangci.yaml ./...
+      - name: go mod verify
+        run: go mod verify
+      - name: check go.mod / go.sum drift
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
       - name: regenerate openapi spec
         run: make openapi
       - name: check openapi spec is up to date

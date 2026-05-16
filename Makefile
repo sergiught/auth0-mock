@@ -24,11 +24,11 @@ $(BINARIES_DIR)/commitlint:
 
 $(BINARIES_DIR)/govulncheck:
 	@echo "==> Installing govulncheck within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@latest
+	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@0782b76014f15f24e22a438f30f308df42899ba1 # v1.3.0
 
 $(BINARIES_DIR)/air:
 	@echo "==> Installing air within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@latest
+	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc # v1.65.1
 
 .PHONY: build
 build: ## Build the auth0-mock binary into bin/
@@ -119,6 +119,19 @@ watch: dev-env $(BINARIES_DIR)/air ## Run the API locally with native hot reload
 dev-run: dev-env ## Run the API inside docker compose and tail its logs
 	@docker compose up -d --build
 	@docker compose logs -f auth0-mock
+
+.PHONY: release-dry-run
+release-dry-run: ## Build a full release locally without publishing — exercises goreleaser, multi-arch Docker, SBOMs, and Cosign signing in --skip mode
+	@command -v goreleaser >/dev/null 2>&1 || { \
+		echo "goreleaser not installed. Install with:"; \
+		echo "  go install github.com/goreleaser/goreleaser/v2@latest"; \
+		exit 1; }
+	@command -v syft >/dev/null 2>&1 || { \
+		echo "syft not installed (needed for SBOM generation). Install with:"; \
+		echo "  brew install syft  # or see https://github.com/anchore/syft"; \
+		exit 1; }
+	@echo "==> Running goreleaser in dry-run mode"
+	@goreleaser release --snapshot --clean --skip=publish,sign
 
 .PHONY: demo
 demo: build ## Run the go-auth0 SDK example against a throwaway mock instance

@@ -67,7 +67,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
   -d 'grant_type=client_credentials&client_id=demo&client_secret=x&audience=http://localhost:8080/api/v2/' \
   | jq -r .access_token)
 
-# 2. Stub a Mgmt API response
+# 2. Stub a Management API response
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
   -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}}'
@@ -106,7 +106,7 @@ it exposes:
   `http://localhost:8080/openapi.json` (or `/openapi.yaml`).
 
 Both Postman and Insomnia will create a folder per tag (`auth-api`,
-`admin0`, `service`, plus the Mgmt API's existing tags) and
+`admin0`, `service`, plus the Management API's existing tags) and
 fill in request bodies from the schemas.
 
 ### Regenerating the spec
@@ -177,11 +177,13 @@ curl -X POST http://localhost:8080/admin0/expectations \
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/admin0/reset` | POST | Wipe everything: expectations, claims, permissions, MFA flag |
-| `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Mgmt API responses |
+| `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
+
+> ⚠️ **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
 
 ### 🩺 Operations
 
@@ -276,10 +278,10 @@ To install the mock's cert into your OS trust store (after option 2 so it's stab
 
 ```bash
 go test -race ./...                        # unit tests
-go test -tags=features ./cmd/api/...       # godog acceptance suite (63 scenarios)
+go test -tags=features ./cmd/api/...       # godog acceptance suite (133 scenarios across 23 files)
 ```
 
-The godog harness boots the service in-process on a random port and exercises every Auth API path, every admin endpoint, and the spec-driven Mgmt API surface. See [`features/`](features/) for the gherkin and [`features/scenario/`](features/scenario/) for the harness.
+The godog harness boots the service in-process on a random port and exercises every Auth API path, every admin endpoint, and the spec-driven Management API surface. See [`features/`](features/) for the gherkin and [`features/scenario/`](features/scenario/) for the harness.
 
 ## 🏗 Architecture
 
@@ -307,7 +309,7 @@ Every handler is a struct holding its dependencies as fields, implementing `http
 
 ## 📂 Example consumer
 
-[`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Mgmt API stub, and calls the stubbed endpoint.
+[`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Management API stub, and calls the stubbed endpoint.
 
 ```bash
 go run ./cmd/api &

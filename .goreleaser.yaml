@@ -50,6 +50,15 @@ checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
 
+# Software Bill of Materials per archive. syft must be on PATH (the release
+# workflow installs it via anchore/sbom-action). Output is SPDX-JSON so it
+# plays nicely with FOSSA / Snyk / Black Duck without a conversion step.
+sboms:
+  - id: archives
+    artifacts: archive
+    documents:
+      - '${artifact}.spdx.json'
+
 snapshot:
   version_template: '{{ incpatch .Version }}-next'
 
@@ -118,6 +127,21 @@ docker_manifests:
     image_templates:
       - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
       - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+
+# Cosign keyless signing for every multi-arch Docker manifest. Uses the
+# workflow's OIDC token (id-token: write) — no long-lived key to manage.
+# Verify with:
+#   cosign verify --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/.*' \
+#                 --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#                 ghcr.io/sergiught/auth0-mock:vX.Y.Z
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    args:
+      - 'sign'
+      - '--yes'
+      - '${artifact}@${digest}'
+    output: true
 
 release:
   github:

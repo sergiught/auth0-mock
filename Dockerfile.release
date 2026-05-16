@@ -16,7 +16,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/sergiught/auth0-mock"
 LABEL org.opencontainers.image.url="https://github.com/sergiught/auth0-mock"
 
-RUN apk add --no-cache ca-certificates tini
+# ca-certificates: outbound HTTPS verification.
+# wget: docker-compose / orchestrator healthchecks against /healthz.
+RUN apk add --no-cache ca-certificates tini wget
 
 COPY auth0-mock /usr/local/bin/auth0-mock
 

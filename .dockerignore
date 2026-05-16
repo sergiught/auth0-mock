@@ -1,0 +1,52 @@
+# Keep the Docker build context tiny. Anything not strictly needed for the
+# build is excluded.
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# IDE / editor
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build output (regenerated inside the image)
+/bin
+/dist
+/tmp
+/coverage
+
+# Local state
+.env
+.env.local
+.air.toml
+build-errors.log
+
+# Tests, examples, docs — none of these run inside the image
+features
+docs
+examples
+CHANGELOG.md
+CONTRIBUTING.md
+NOTICE
+README.md
+.github
+*.md
+*_test.go
+
+# Toolchain configs that don't affect the build
+.golangci.yaml
+.pre-commit-config.yaml
+commitlint.yaml
+.editorconfig
+.release-please-manifest.json
+release-please-config.json
+.goreleaser.yaml
+
+# Raw Auth0 spec (gitignored anyway, but belt-and-suspenders)
+api/auth0-management-api.raw.json
+
+# Claude Code / agent scratch
+.claude

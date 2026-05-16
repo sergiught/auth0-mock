@@ -34,7 +34,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │   /dbconnections/{signup,change_password}                                │
 │   /passwordless/{start,verify}                                           │
 │                                                                          │
-│   /api/v2/*                                 Mgmt API (spec-driven)       │
+│   /api/v2/*                                 Management API (spec-driven)       │
 │       <verb> <path>             ← bearer-enforced + spec-validated +    │
 │                                    consults stub store (404 by default)  │
 │                                    stubs registered via /admin0/expectations│
@@ -43,7 +43,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
                           ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Shared in-process state (no persistence)                                │
-│   ├── matches.Store        Mgmt API stub registrations                   │
+│   ├── matches.Store        Management API stub registrations                   │
 │   ├── claims.Store         per-process custom JWT claims                 │
 │   ├── permissions.Store    per-audience permission slice                 │
 │   ├── pkce.Store           authorize_code → code_challenge map           │
@@ -96,7 +96,7 @@ One handler per operation, all in `internal/mgmtapi/`:
 
 - **`GenericHandler`**: buffers the incoming request body, validates the request against the operation's OpenAPI schema, looks up the best-matching stub from `matches.Store` using 4-tier precedence (exact-path + request matcher, exact-path + catch-all, template-path + request matcher, template-path + catch-all — newest-wins within each tier), defensively re-validates the stored response against the spec, writes it. Returns `404 no_match` if nothing was registered.
 
-Canned responses are registered out-of-band via `POST /admin0/expectations` (handler in `internal/admin0/expectations.go`), which decodes a `{method, path, request?, response}` payload. `response.body` is validated against the operation's response schema for `response.status`. The optional `request` matcher is validated against the operation's request schema with `required` relaxed (a matcher is partial by design), so unknown and mistyped fields are rejected up front. The validated expectation is appended to an ordered list keyed by `(method, path)` in `matches.Store`. This separation keeps the Mgmt API surface bearer-protected while stub registration requires no token.
+Canned responses are registered out-of-band via `POST /admin0/expectations` (handler in `internal/admin0/expectations.go`), which decodes a `{method, path, request?, response}` payload. `response.body` is validated against the operation's response schema for `response.status`. The optional `request` matcher is validated against the operation's request schema with `required` relaxed (a matcher is partial by design), so unknown and mistyped fields are rejected up front. The validated expectation is appended to an ordered list keyed by `(method, path)` in `matches.Store`. This separation keeps the Management API surface bearer-protected while stub registration requires no token.
 
 ### Why use a chi wildcard for paths?
 
@@ -263,7 +263,7 @@ The auto-generated cert is ECDSA P-256, valid for 365 days, with SAN entries spl
 - **kin-openapi v0.x for OpenAPI**: only Go OpenAPI library that handles 3.1 well enough for Auth0's spec. We had to add `DisableSchemaPatternValidation` + `DisableSchemaDefaultsValidation` to its legacy router to cope with Auth0's regex lookahead patterns (Go's regexp doesn't support them).
 - **golang-jwt/jwt v5**: RS256 mint/verify with proper signing-method validation, native `WithIssuer` + `WithExpirationRequired`. We chose RS256 only on purpose: it's Auth0's default; HS256 is legacy; PS256 is Enterprise-tier; ES256/EdDSA aren't Auth0 features.
 - **Per-process in-memory stores, no persistence**: tests get isolation for free; `POST /admin0/reset` is a single round-trip cleanup; no schema migrations, no garbage in `/tmp`.
-- **Embedded OpenAPI skeleton via `//go:embed`**: a stripped skeleton of Auth0's spec (paths, methods, schemas — Auth0's prose removed) is the source of truth for the Mgmt API surface. Refresh it with `make refresh-spec`, which strips a manually-downloaded raw spec into the committed skeleton; see CONTRIBUTING.md.
+- **Embedded OpenAPI skeleton via `//go:embed`**: a stripped skeleton of Auth0's spec (paths, methods, schemas — Auth0's prose removed) is the source of truth for the Management API surface. Refresh it with `make refresh-spec`, which strips a manually-downloaded raw spec into the committed skeleton; see CONTRIBUTING.md.
 
 ## Project layout (recap)
 

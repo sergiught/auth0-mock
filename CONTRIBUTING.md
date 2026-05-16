@@ -13,7 +13,7 @@ auth0-mock/
 │   ├── logger/                     # zerolog setup
 │   ├── server/                     # HTTP/HTTPS server lifecycle + orchestrator
 │   ├── tlscert/                    # self-signed cert generator + loader
-│   ├── matches/                    # in-memory Mgmt API stub store
+│   ├── matches/                    # in-memory Management API stub store
 │   ├── claims/                     # in-memory custom-claim map
 │   ├── permissions/                # in-memory per-audience RBAC store
 │   ├── pkce/                       # PKCE code/challenge store
@@ -24,7 +24,7 @@ auth0-mock/
 │   ├── middleware/                 # logging, recovery, request_id
 │   ├── httperr/                    # JSON error writer (Mgmt + Auth shapes)
 │   ├── authapi/                    # hand-coded Auth API handlers
-│   ├── mgmtapi/                    # spec-driven Mgmt API handlers
+│   ├── mgmtapi/                    # spec-driven Management API handlers
 │   ├── admin0/                     # /admin0/* handlers
 │   └── router/                     # composes everything into http.Handler
 ├── features/                       # godog acceptance tests
@@ -58,7 +58,7 @@ make test                            # = go test -race -count=1 ./...
 go test -tags=features ./cmd/api/... # godog acceptance suite
 ```
 
-**Both must be green for a PR to merge.** The godog suite boots the service in-process on a random port and exercises every endpoint end-to-end (63 scenarios across 16 feature files at last count).
+**Both must be green for a PR to merge.** The godog suite boots the service in-process on a random port and exercises every endpoint end-to-end (133 scenarios across 23 feature files at last count).
 
 ### What needs which kind of test
 
@@ -68,7 +68,7 @@ go test -tags=features ./cmd/api/... # godog acceptance suite
 | New Auth API endpoint | Unit test in `internal/authapi/*_test.go` **and** a godog scenario |
 | New admin0 endpoint | Unit test in `internal/admin0/admin0_test.go` **and** a godog scenario |
 | New OAuth grant | Godog scenario in `features/OAuthGrants.feature` (or a new file) |
-| Mgmt API behaviour change | Godog scenario in `features/{Expectations,PatternFallback,Reset,BearerEnforcement}.feature` |
+| Management API behaviour change | Godog scenario in `features/{Expectations,PatternFallback,Reset,BearerEnforcement}.feature` |
 | Bug fix | A failing test first, then the fix |
 
 ### Adding a godog scenario
@@ -153,7 +153,7 @@ One subject line ≤ 72 chars, blank line, body wrapping at ~80 chars explaining
 
 ### A new Auth0 Management API endpoint
 
-You probably don't need to do anything. The Mgmt API is **spec-driven**: every operation in the embedded `api/auth0-management-api.openapi.json` gets one bearer-protected generic handler registered automatically by `mgmtapi.Mount`. Canned responses are registered out-of-band via `POST /admin0/expectations` (see the admin0 section above).
+You probably don't need to do anything. The Management API is **spec-driven**: every operation in the embedded `api/auth0-management-api.openapi.json` gets one bearer-protected generic handler registered automatically by `mgmtapi.Mount`. Canned responses are registered out-of-band via `POST /admin0/expectations` (see the admin0 section above).
 
 ### Refreshing the Auth0 Management API spec
 
@@ -184,7 +184,7 @@ If your work surfaces a recipe other users will want (e.g. "how do I test refres
 
 Some asks are out of scope:
 
-- **Stateful Mgmt API CRUD**: auth0-mock is a stub registrar, not a state machine. Tests register the response they want; the mock doesn't track "the user with id X was created and now exists". If you need stateful behaviour, layer it in your test fixtures.
+- **Stateful Management API CRUD**: auth0-mock is a stub registrar, not a state machine. Tests register the response they want; the mock doesn't track "the user with id X was created and now exists". If you need stateful behaviour, layer it in your test fixtures.
 - **Production-grade OIDC certification**: we're a mock. Spec compliance is best-effort; we deliberately skip things like full client-secret-jwt validation, full PKCE plain-method rejection toggles, etc.
 - **Other IdPs** (Okta, Cognito, etc.): the project is Auth0-shaped end-to-end. A separate project is the right answer.
 - **Persistence to disk for registered stubs**: explicit non-goal. Each restart is a clean slate; that's a feature.
