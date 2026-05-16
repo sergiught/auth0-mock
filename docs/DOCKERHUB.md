@@ -54,6 +54,19 @@ curl -H "Authorization: Bearer ${TOKEN}" \
 
 All tags are multi-arch manifests covering `linux/amd64` and `linux/arm64`.
 
+### Provenance
+
+Every image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). Verify with:
+
+```bash
+cosign verify \
+  --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  sergiught/auth0-mock:<tag>
+```
+
+SPDX-JSON SBOMs for each release archive live alongside the binaries on the [GitHub Releases page](https://github.com/sergiught/auth0-mock/releases).
+
 ## Configuration
 
 The container is configured via environment variables. The most common ones:

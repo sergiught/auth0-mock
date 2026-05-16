@@ -154,6 +154,8 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 | `http://auth0.com/oauth/grant-type/mfa-oob` | Push/SMS step-up; accepts `binding_code=123456` |
 | `http://auth0.com/oauth/grant-type/mfa-recovery-code` | Recovery flow; accepts `recovery_code=ABCDEFGHIJKLMNOP` |
 
+> ℹ️ **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
+
 ### 📦 Management API (spec-driven, ~400 endpoints)
 
 Every operation in the embedded Auth0 Management API skeleton is mounted. Default response is `404 no_match`. Tests register stubs:
@@ -285,6 +287,23 @@ go test -tags=features ./cmd/api/...       # godog acceptance suite (133 scenari
 ```
 
 The godog harness boots the service in-process on a random port and exercises every Auth API path, every admin endpoint, and the spec-driven Management API surface. See [`features/`](features/) for the gherkin and [`features/scenario/`](features/scenario/) for the harness.
+
+## 🛡️ Verifying releases
+
+Every tagged release ships with a Cosign signature on each Docker image and an SPDX-JSON SBOM per release archive. Both are produced by GitHub-hosted CI and uploaded as part of the same workflow that publishes the binaries.
+
+**Verify a Docker image** (keyless signing — no shared secret required):
+
+```bash
+cosign verify \
+  --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/sergiught/auth0-mock:vX.Y.Z
+```
+
+A successful verification proves the image was built by *this* repo's release workflow at *that* tag — not a CDN-substituted copy.
+
+**Find an SBOM:** every release on the [GitHub Releases page](https://github.com/sergiught/auth0-mock/releases) carries an `auth0-mock_<version>_<os>_<arch>.tar.gz.spdx.json` alongside each archive. Pass it to your SBOM scanner of choice (Snyk, FOSSA, Black Duck, `grype`, etc.).
 
 ## 🏗 Architecture
 
