@@ -36,7 +36,7 @@ func main() {
 // before exiting non-zero — using log.Fatal / os.Exit directly would skip
 // any pending defers (signal.NotifyContext's stop, in particular).
 func run() error {
-	cfg, err := config.LoadFromEnv()
+	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
@@ -87,12 +87,7 @@ func run() error {
 		log.Info().Str("addr", cfg.HTTPAddress).Msg("http listener")
 	}
 	if cfg.HTTPSAddress != "" {
-		tlsCfg, err := tlscert.Load(tlscert.Config{
-			CertFile:  cfg.TLSCertFile,
-			KeyFile:   cfg.TLSKeyFile,
-			CacheDir:  cfg.TLSCacheDir,
-			Hostnames: cfg.TLSHostnames,
-		})
+		tlsCfg, err := tlscert.Load(cfg.TLS)
 		if err != nil {
 			return fmt.Errorf("tls init: %w", err)
 		}

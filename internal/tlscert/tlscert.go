@@ -29,11 +29,15 @@ import (
 )
 
 // Config selects how the TLS config is built.
+//
+// The env tags let this struct be populated directly by the env-parsing
+// in config.Specification; consumers that don't care about env vars can
+// ignore them.
 type Config struct {
-	CertFile  string // If set together with KeyFile → load from disk.
-	KeyFile   string
-	CacheDir  string   // If set, persist the auto-generated cert here and reuse on restart.
-	Hostnames []string // SANs for the auto-generated cert.
+	CertFile  string   `env:"TLS_CERT_FILE"`                                      // If set together with KeyFile → load from disk.
+	KeyFile   string   `env:"TLS_KEY_FILE"`                                       //
+	CacheDir  string   `env:"TLS_CACHE_DIR"`                                      // If set, persist the auto-generated cert here and reuse on restart.
+	Hostnames []string `env:"TLS_HOSTNAMES" envDefault:"localhost,127.0.0.1,::1"` // SANs for the auto-generated cert.
 }
 
 // Load returns a *tls.Config ready for an http.Server.
