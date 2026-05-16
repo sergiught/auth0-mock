@@ -64,15 +64,15 @@ func New(d Deps) (http.Handler, error) {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recovery(d.Log))
 	r.Use(middleware.MaxBodyBytes(d.MaxRequestBodyBytes))
-	r.Use(middleware.Logging(d.Log))
+	// DebugDump and Logging are mutually exclusive: when DEBUG is on the
+	// per-request summary line is redundant noise (DebugDump's `←` line
+	// already carries method, path, status, body_bytes, and latency),
+	// when DEBUG is off the body block isn't needed and Logging's one
+	// liner is exactly the right amount of information.
 	if d.Debug {
-		// Outermost in the chain — runs after Logging but its INFO lines
-		// bracket the per-request summary in the output:
-		//   → request  …    (DebugDump pre-handler)
-		//   → handler runs
-		//   ← response …    (DebugDump post-handler)
-		//   http request …  (Logging summary)
 		r.Use(middleware.DebugDump(d.Log, os.Stdout))
+	} else {
+		r.Use(middleware.Logging(d.Log))
 	}
 
 	mountHealthz(r, d.Log)

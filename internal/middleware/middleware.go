@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"runtime/debug"
 	"sort"
@@ -44,21 +45,31 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
+// recoveryStackOut is the destination for the pretty-printed stack
+// trace block that Recovery emits when it catches a panic. Defaults
+// to os.Stderr; tests swap it for a buffer.
+var recoveryStackOut io.Writer = os.Stderr
+
 // Recovery converts panics in downstream handlers into 500 responses.
+// The panic value goes into the structured log line; the stack trace
+// prints separately as an indented block — same reasoning as DebugDump's
+// body printer (zerolog escapes a Bytes field into a single `\n`-soup
+// line, useless for reading a stack).
 func Recovery(log zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
-				if rec := recover(); rec != nil {
-					log.Error().
-						Str("request_id", RequestIDFromContext(r.Context())).
-						Interface("panic", rec).
-						Bytes("stack", debug.Stack()).
-						Msg("panic recovered")
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusInternalServerError)
-					_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","message":"unexpected panic"}`))
+				rec := recover()
+				if rec == nil {
+					return
 				}
+				log.Error().
+					Interface("panic", rec).
+					Msgf("panic recovered: %s %s", r.Method, r.URL.Path)
+				_, _ = fmt.Fprintln(recoveryStackOut, indentLines(string(debug.Stack()), bodyIndent))
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","message":"unexpected panic"}`))
 			}()
 			next.ServeHTTP(w, r)
 		})
@@ -156,18 +167,15 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 			_ = r.Body.Close()
 			r.Body = io.NopCloser(bytes.NewReader(reqBody))
 
-			rid := RequestIDFromContext(r.Context())
 			reqCT := r.Header.Get("Content-Type")
+			start := time.Now()
 
 			debugDumpMu.Lock()
 			log.Info().
-				Str("request_id", rid).
-				Str("method", r.Method).
-				Str("path", r.URL.Path).
-				Str("query", scrubSensitiveQuery(r.URL.RawQuery)).
-				Str("headers", flatHeaders(r.Header)).
 				Int("body_bytes", len(reqBody)).
-				Msg("→ request")
+				Str("headers", interestingHeaders(r.Header)).
+				Str("query", scrubSensitiveQuery(r.URL.RawQuery)).
+				Msgf("→ %s %s", r.Method, r.URL.Path)
 			writeBodyBlock(bodyOut, reqBody, len(reqBody), reqCT)
 			debugDumpMu.Unlock()
 
@@ -177,12 +185,13 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 
 			debugDumpMu.Lock()
 			log.Info().
-				Str("request_id", rid).
-				Int("status", rec.statusOrOK()).
-				Str("headers", flatHeaders(rec.Header())).
 				Int("body_bytes", rec.totalLen).
-				Msg("← response")
+				Str("headers", interestingHeaders(rec.Header())).
+				Dur("latency", time.Since(start)).
+				Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
 			writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
+			// Blank line so multi-request output stays scannable.
+			_, _ = fmt.Fprintln(bodyOut)
 			debugDumpMu.Unlock()
 		})
 	}
@@ -291,6 +300,44 @@ func (d *debugRecorder) statusOrOK() int {
 	return d.status
 }
 
+// noisyHeaders are HTTP headers that show up on nearly every request
+// without telling the reader anything useful for debugging an SDK
+// trace. They get dropped from the structured-log headers field so
+// the line stays scannable; they're still visible to a real packet
+// capture if you need them.
+var noisyHeaders = map[string]bool{
+	"accept":           true,
+	"accept-encoding":  true,
+	"accept-language":  true,
+	"cache-control":    true,
+	"connection":       true,
+	"content-length":   true,
+	"host":             true,
+	"origin":           true,
+	"referer":          true,
+	"user-agent":       true,
+	"x-request-id":     true, // We already log `rid=` from the context.
+	"x-forwarded-for":  true,
+	"x-forwarded-host": true,
+	"x-real-ip":        true,
+}
+
+// interestingHeaders is flatHeaders minus the noisy-but-ubiquitous
+// set. Keeps the structured log line short — Content-Type, any
+// Authorization (with redaction), and any custom X-* header still
+// surface. Use for the structured log; flatHeaders stays for any
+// "give me everything" view (none today).
+func interestingHeaders(h http.Header) string {
+	filtered := make(http.Header, len(h))
+	for k, v := range h {
+		if noisyHeaders[strings.ToLower(k)] {
+			continue
+		}
+		filtered[k] = v
+	}
+	return flatHeaders(filtered)
+}
+
 // flatHeaders renders an http.Header map as a sorted "k=v; k=v" string,
 // redacting bearer tokens and cookies. Sorting keeps the dump diffable
 // across runs.
@@ -376,7 +423,18 @@ func scrubSensitiveQuery(q string) string {
 	return string(formSensitiveRE.ReplaceAll([]byte(q), []byte(`${1}${2}=<redacted>`)))
 }
 
-// Logging emits one structured log line per request.
+// Logging emits one structured log line per request. The action
+// (method, path, status) lives in the message so the eye lands on it
+// first instead of after an alphabetical wall of fields. Use when
+// DEBUG is OFF; the DebugDump middleware emits its own pair of
+// request/response lines that already carry latency + bytes, so
+// router.New skips Logging when DebugDump is mounted.
+//
+// Note: the request ID is intentionally NOT dumped into the log line.
+// It's still generated by RequestID middleware and echoed back via
+// X-Request-Id (real-Auth0 behaviour), but for a local-dev mock the
+// per-line rid was more noise than signal. Re-add if/when concurrent-
+// request interleaving becomes a real source of confusion.
 func Logging(log zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -384,13 +442,9 @@ func Logging(log zerolog.Logger) func(http.Handler) http.Handler {
 			sr := &statusRecorder{ResponseWriter: w}
 			next.ServeHTTP(sr, r)
 			log.Info().
-				Str("request_id", RequestIDFromContext(r.Context())).
-				Str("method", r.Method).
-				Str("path", r.URL.Path).
-				Int("status", sr.status).
 				Int("bytes", sr.bytes).
 				Dur("latency", time.Since(start)).
-				Msg("http request")
+				Msgf("%s %s %d", r.Method, r.URL.Path, sr.status)
 		})
 	}
 }

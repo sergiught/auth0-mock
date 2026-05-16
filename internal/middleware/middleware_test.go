@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -88,20 +87,25 @@ func TestMaxBodyBytes_NoLimitIsNoop(t *testing.T) {
 }
 
 func TestLogging_WritesOneLinePerRequest(t *testing.T) {
+	// Action (method, path, status) goes in the message so a reader's
+	// eye lands on it first instead of after the alphabetical field
+	// wall. Bytes + latency stay as fields so they're greppable.
 	var sb strings.Builder
 	log := zerolog.New(&sb)
 
-	ctx := context.WithValue(context.Background(), requestIDKey{}, "rid-1")
 	h := Logging(log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(204)
 	}))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil).WithContext(ctx))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
 
 	out := sb.String()
 	require.NotEmpty(t, out)
-	assert.Contains(t, out, `"method":"GET"`)
-	assert.Contains(t, out, `"status":204`)
-	assert.Contains(t, out, `"request_id":"rid-1"`)
+	assert.Contains(t, out, `"message":"GET /x 204"`,
+		"action lives in the message — method, path, status, in that order")
+	assert.Contains(t, out, `"bytes":0`)
+	assert.Contains(t, out, `"latency":`)
+	assert.NotContains(t, out, `"request_id"`,
+		"rid is no longer dumped per-line; only echoed via X-Request-Id header")
 }
 
 func TestDebugDump_LogsRequestAndResponseMetadata(t *testing.T) {
@@ -129,15 +133,15 @@ func TestDebugDump_LogsRequestAndResponseMetadata(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
 	out := sb.String()
-	// Request metadata.
-	assert.Contains(t, out, `"message":"→ request"`)
-	assert.Contains(t, out, `"method":"POST"`)
-	assert.Contains(t, out, `"path":"/api/things"`)
+	// Action (method + path on request, +status on response) lives in
+	// the message so the eye lands on it first.
+	assert.Contains(t, out, `"message":"→ POST /api/things"`)
+	assert.Contains(t, out, `"message":"← POST /api/things 201"`)
+	// Per-direction body_bytes count + filtered headers + latency on
+	// the response side.
 	assert.Contains(t, out, `"query":"q=1"`)
 	assert.Contains(t, out, `"body_bytes":17`)
-	// Response metadata.
-	assert.Contains(t, out, `"message":"← response"`)
-	assert.Contains(t, out, `"status":201`)
+	assert.Contains(t, out, `"latency":`)
 	assert.Contains(t, out, `"body_bytes":11`)
 	// Authorization redaction: the prefix "Bearer e" leaks (intentional —
 	// signals scheme) but the rest is gone.
@@ -153,6 +157,80 @@ func TestDebugDump_LogsRequestAndResponseMetadata(t *testing.T) {
 	bodyOut := bodyBuf.String()
 	assert.Contains(t, bodyOut, "    {\n      \"hello\": \"world\"\n    }")
 	assert.Contains(t, bodyOut, "    {\n      \"ok\": true\n    }")
+	// And a trailing blank line so multi-request output stays scannable.
+	assert.True(t, strings.HasSuffix(bodyOut, "\n\n"),
+		"each request triplet must end with a blank-line separator")
+}
+
+func TestInterestingHeaders_FiltersNoise(t *testing.T) {
+	t.Parallel()
+	h := http.Header{}
+	// Noise headers that should be dropped.
+	h.Set("Accept", "*/*")
+	h.Set("User-Agent", "curl/8")
+	h.Set("Content-Length", "12")
+	h.Set("Host", "localhost")
+	h.Set("X-Request-Id", "abc-123")
+	// Headers that should survive.
+	h.Set("Content-Type", "application/json")
+	h.Set("Authorization", "Bearer eyJabc")
+	h.Set("X-Custom-Trace", "yes")
+
+	got := interestingHeaders(h)
+
+	assert.NotContains(t, got, "Accept=", "Accept must be filtered as noise")
+	assert.NotContains(t, got, "User-Agent=", "User-Agent must be filtered")
+	assert.NotContains(t, got, "Content-Length=", "Content-Length is redundant with body_bytes")
+	assert.NotContains(t, got, "Host=", "Host must be filtered")
+	assert.NotContains(t, got, "X-Request-Id=", "X-Request-Id is already echoed elsewhere")
+
+	assert.Contains(t, got, "Content-Type=application/json")
+	assert.Contains(t, got, "Authorization=Bearer e…<redacted>",
+		"Authorization survives WITH the existing redaction")
+	assert.Contains(t, got, "X-Custom-Trace=yes",
+		"custom X-* headers survive (operator's own correlation token)")
+}
+
+func TestRecovery_PanicStackPrintsAsIndentedBlock(t *testing.T) {
+	// The structured log line carries the panic value + locator; the
+	// stack trace prints as a multi-line indented block to a separate
+	// writer so a reader can actually see it (Bytes("stack", …) into
+	// zerolog escaped every newline into `\n` soup).
+	var logBuf strings.Builder
+	var stackBuf bytes.Buffer
+	prev := recoveryStackOut
+	recoveryStackOut = &stackBuf
+	t.Cleanup(func() { recoveryStackOut = prev })
+
+	log := zerolog.New(&logBuf)
+	h := Recovery(log)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("synthetic boom")
+	}))
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/explode", nil))
+
+	// Wire response stays 500 with the JSON body.
+	assert.Equal(t, 500, w.Code)
+	assert.Contains(t, w.Body.String(), `"statusCode":500`)
+
+	// Log line carries the panic value AND the location.
+	logOut := logBuf.String()
+	assert.Contains(t, logOut, `"panic":"synthetic boom"`)
+	assert.Contains(t, logOut, `panic recovered: POST /explode`)
+	assert.NotContains(t, logOut, `"stack"`,
+		"stack must NOT live in the structured log field — it's printed separately")
+
+	// Stack writer got a multi-line, indented block (every line prefixed
+	// with 4 spaces, no escape-soup).
+	stackOut := stackBuf.String()
+	assert.Contains(t, stackOut, "goroutine ")
+	assert.NotContains(t, stackOut, `\n`,
+		"stack must be raw multi-line, not JSON-escaped")
+	for line := range strings.SplitSeq(strings.TrimRight(stackOut, "\n"), "\n") {
+		assert.True(t, strings.HasPrefix(line, "    "),
+			"every stack line must be indented with 4 spaces; got %q", line)
+	}
 }
 
 // writeBodyBlock is the function that prints the multi-line body block;
