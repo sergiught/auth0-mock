@@ -84,7 +84,7 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 // allocation that /admin0/expectations and /oauth/token would otherwise
 // accept unbounded.
 //
-// limit ≤ 0 is treated as "no limit" — the middleware is a no-op so callers
+// Limit ≤ 0 is treated as "no limit" — the middleware is a no-op so callers
 // can configure their way out of the cap if they really need to.
 func MaxBodyBytes(limit int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

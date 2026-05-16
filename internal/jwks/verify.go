@@ -36,6 +36,8 @@ type VerifyOpts struct {
 // Verify parses and validates a JWT against this KeySet.
 // Checks: signature, exp, iss == ks.Issuer, iat present, ±60s clock skew,
 // and (when opts.RequireAudience is set) aud contains that value.
+//
+//nolint:gocyclo // Security-critical; explicit aud/iss/exp/iat/sig branches are easier to audit inline than as a helper chain.
 func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 	parsed, err := jwt.Parse(
 		tokenStr,

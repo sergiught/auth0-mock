@@ -396,9 +396,9 @@ func TestToken_MFAGrants_HappyAndUnhappy(t *testing.T) {
 
 			// Happy path: correct factor.
 			form := url.Values{
-				"grant_type": []string{tc.grantType},
-				"client_id":  []string{"abc"},
-				"mfa_token":  []string{tok},
+				"grant_type":   []string{tc.grantType},
+				"client_id":    []string{"abc"},
+				"mfa_token":    []string{tok},
 				tc.factorField: []string{tc.correct},
 			}
 			maps.Copy(form, tc.extraForm)

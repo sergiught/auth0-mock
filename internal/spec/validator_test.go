@@ -65,7 +65,8 @@ func loadMinSpec(t *testing.T) (*Spec, Operation, Operation) {
 
 func TestValidator_ValidateRequest_Pass(t *testing.T) {
 	s, getOp, _ := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/v2/widgets/abc", nil)
 	err = v.ValidateRequest(req, getOp)
@@ -74,7 +75,8 @@ func TestValidator_ValidateRequest_Pass(t *testing.T) {
 
 func TestValidator_ValidateRequest_Fail(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest("POST", "/api/v2/widgets/abc", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -84,7 +86,8 @@ func TestValidator_ValidateRequest_Fail(t *testing.T) {
 
 func TestValidator_ValidateRegistration_Pass(t *testing.T) {
 	s, getOp, _ := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	body, _ := json.Marshal(map[string]any{"id": "abc"})
 	err = v.ValidateRegistration(getOp, 200, body)
@@ -93,7 +96,8 @@ func TestValidator_ValidateRegistration_Pass(t *testing.T) {
 
 func TestValidator_ValidateRegistration_FailsOnMissingField(t *testing.T) {
 	s, getOp, _ := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	body, _ := json.Marshal(map[string]any{"unrelated": true})
 	err = v.ValidateRegistration(getOp, 200, body)
@@ -104,7 +108,8 @@ func TestValidator_ValidateRegistration_FailsOnMissingField(t *testing.T) {
 
 func TestValidator_ValidateRegistration_RejectsUndeclaredStatus(t *testing.T) {
 	s, getOp, _ := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	body, _ := json.Marshal(map[string]any{"id": "abc"})
 	err = v.ValidateRegistration(getOp, 999, body)
@@ -114,7 +119,8 @@ func TestValidator_ValidateRegistration_RejectsUndeclaredStatus(t *testing.T) {
 func TestValidatorResolve(t *testing.T) {
 	s, err := Load([]byte(minSpec))
 	require.NoError(t, err)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	// Concrete path resolves to the template operation.
 	op, err := v.Resolve("GET", "/api/v2/widgets/abc")
@@ -143,7 +149,8 @@ var _ = openapi3.NewLoader
 
 func TestValidator_ValidateRequestMatcher_RejectsUnknownField(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"hello":"hola"}`))
 	assert.Error(t, err)
@@ -151,7 +158,8 @@ func TestValidator_ValidateRequestMatcher_RejectsUnknownField(t *testing.T) {
 
 func TestValidator_ValidateRequestMatcher_AcceptsValidPartial(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	// "name" is required by the schema, but a matcher is partial by design:
 	// a body with only the optional "size" field must be accepted.
@@ -161,7 +169,8 @@ func TestValidator_ValidateRequestMatcher_AcceptsValidPartial(t *testing.T) {
 
 func TestValidator_ValidateRequestMatcher_RejectsMistypedKnownField(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"size":"big"}`))
 	assert.Error(t, err)
@@ -169,7 +178,8 @@ func TestValidator_ValidateRequestMatcher_RejectsMistypedKnownField(t *testing.T
 
 func TestValidator_ValidateRequestMatcher_EmptyBodyIsNoop(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	assert.NoError(t, v.ValidateRequestMatcher(postOp, nil))
 	assert.NoError(t, v.ValidateRequestMatcher(postOp, json.RawMessage(`null`)))
@@ -177,7 +187,8 @@ func TestValidator_ValidateRequestMatcher_EmptyBodyIsNoop(t *testing.T) {
 
 func TestValidator_ValidateRequestMatcher_RejectsBodyForBodylessOperation(t *testing.T) {
 	s, getOp, _ := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	// The getWidget operation declares no request body; a body matcher cannot apply.
 	err = v.ValidateRequestMatcher(getOp, json.RawMessage(`{"anything":1}`))
@@ -186,7 +197,8 @@ func TestValidator_ValidateRequestMatcher_RejectsBodyForBodylessOperation(t *tes
 
 func TestValidator_ValidateQueryMatcher(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	assert.NoError(t, v.ValidateQueryMatcher(postOp, map[string]string{"fields": "name"}))
 	assert.NoError(t, v.ValidateQueryMatcher(postOp, nil))
@@ -201,7 +213,8 @@ func TestValidator_ValidateQueryMatcher(t *testing.T) {
 
 func TestValidator_ValidateRequestMatcher_AcceptsFullValidBody(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s); require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
 
 	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"name":"foo","size":5}`))
 	assert.NoError(t, err)

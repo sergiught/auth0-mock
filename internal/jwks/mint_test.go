@@ -113,8 +113,8 @@ func TestVerify_RejectsMalformed(t *testing.T) {
 		"",
 		"not-a-jwt",
 		"only.two",
-		"a.b",            // two-segment, almost-token
-		"a.b.c.d",        // four-segment
+		"a.b",                     // two-segment, almost-token
+		"a.b.c.d",                 // four-segment
 		strings.Repeat("a", 4096), // long garbage
 	} {
 		t.Run(in, func(t *testing.T) {

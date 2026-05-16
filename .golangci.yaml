@@ -6,11 +6,16 @@ run:
 linters:
   default: none
   enable:
+    - bodyclose    # Catches HTTP response bodies that aren't Close()'d (leaks fds + keep-alive slots).
     - errcheck
+    - errorlint    # Flags %w / errors.Is/As misuse and bare error string comparisons.
     - gocritic
     - gocyclo
     - godot
     - gosec
+    - nilerr       # Catches `if err != nil { return nil }` — silent error drops.
+    - noctx        # Demands a context.Context on outbound HTTP requests.
+    - nolintlint   # Lints the //nolint directives themselves so unused suppressions get pruned.
     - revive
     - staticcheck
     - unconvert
@@ -39,8 +44,13 @@ linters:
       - path: (.+)\.go$
         text: unused-parameter
       # godog scenario harness is test-adjacent code with broad surface.
-      - linters: [errcheck, gocyclo, gosec, godot]
+      - linters: [errcheck, gocyclo, gosec, godot, noctx]
         path: features/scenario/(.+)\.go$
+      # Test files legitimately use http.Get / net.Listen without a
+      # plumbed context — they spin up servers and exercise them within
+      # the same goroutine.
+      - linters: [noctx]
+        path: (.+)_test.go
       # tlscert/jwks deliberately do user-configurable file I/O on
       # config-supplied paths. The whole point of the env vars is to
       # let users point at their cert/key/cache — gosec's "potential file

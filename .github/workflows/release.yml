@@ -59,6 +59,11 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           fetch-depth: 0   # full history so goreleaser can compute ldflag values
+          # Standard supply-chain hardening: don't leave the workflow token
+          # in .git/config where any subsequent action step (goreleaser,
+          # cosign, syft, …) could read it. Each step passes its required
+          # token explicitly via env.
+          persist-credentials: false
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:

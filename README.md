@@ -58,6 +58,19 @@ is at [`install.sh`](install.sh) — review before piping to bash if that bother
 make build && ./bin/auth0-mock
 ```
 
+### Via `go install`
+
+```bash
+go install github.com/sergiught/auth0-mock/cmd/api@latest
+$(go env GOPATH)/bin/api -version    # installs as `api`, not `auth0-mock`
+```
+
+`install.sh` and `make build` are still the recommended paths because they
+stamp the binary with `version` / `commit` / `date` (visible via
+`auth0-mock -version`) and install it as `auth0-mock`. `go install` is here
+for Go developers who'd rather rebuild from source every time and don't
+mind the cmd-package naming.
+
 ### Live-reload dev loop (`air`)
 
 Sub-second rebuild on every save under `cmd/` or `internal/`, no docker, no bind-mounts, no flakiness:

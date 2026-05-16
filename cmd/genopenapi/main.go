@@ -427,6 +427,8 @@ func basePath(url string) string {
 // ~1000 `x-description-N` prose fields (plus `x-operation-name`,
 // `x-release-lifecycle`, …), all of which is Auth0 content, and nothing in the
 // mock's routing or validation reads any extension.
+//
+//nolint:gocyclo // Walks every prose-bearing field in the OpenAPI tree; splitting per-section would obscure the deliberately-exhaustive list.
 func stripUpstreamProse(base *openapi3.T) {
 	base.ExternalDocs = nil
 	base.Extensions = nil

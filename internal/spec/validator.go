@@ -198,7 +198,8 @@ func filterRequiredErrors(err error) error {
 	if err == nil {
 		return nil
 	}
-	me, ok := err.(openapi3.MultiError)
+	var me openapi3.MultiError
+	ok := errors.As(err, &me)
 	if !ok {
 		return err
 	}

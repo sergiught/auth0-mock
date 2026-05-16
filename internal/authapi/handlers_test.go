@@ -49,7 +49,7 @@ func TestAuthorize_RejectsShortCodeChallenge(t *testing.T) {
 
 func TestAuthorize_RejectsLongCodeChallenge(t *testing.T) {
 	r, _ := newAuthRouter(t)
-	long := strings.Repeat("x", 129) // 1 over RFC 7636 §4.1's upper bound (128)
+	long := strings.Repeat("x", 129) // 1 over RFC 7636 §4.1's upper bound (128).
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET",
 		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=code"+
@@ -88,8 +88,8 @@ func TestUserinfo_NoBearer_401(t *testing.T) {
 }
 
 func TestLogout_RedirectsToAllowedAbsoluteURL(t *testing.T) {
-	// newAuthRouter wires LogoutAllowedURLs=["https://app/bye"], so this
-	// returnTo is on the allow-list and gets 302'd.
+	// The router fixture wires LogoutAllowedURLs=["https://app/bye"], so
+	// this returnTo is on the allow-list and gets 302'd.
 	r, _ := newAuthRouter(t)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo=https%3A%2F%2Fapp%2Fbye", nil))
