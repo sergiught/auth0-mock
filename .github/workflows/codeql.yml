@@ -1,0 +1,53 @@
+name: codeql
+
+# Static security analysis via GitHub Security Lab's curated Go query suite.
+# Runs on every push to main, every PR targeting main, and a weekly Monday
+# cron so any new query rules picked up between PRs still surface.
+#
+# Findings appear in the repo's Security tab → "Code scanning alerts".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1' # weekly Monday
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: analyze (go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      # github/codeql-action v3 — pinned to the v3 tag head SHA at the time
+      # of writing. Bump via Renovate / dependabot when a new query release
+      # ships.
+      - name: initialize codeql
+        uses: github/codeql-action/init@78ed0c7291d93e40c51b085850dc669a4c3ab73b
+        with:
+          languages: go
+          queries: security-and-quality
+
+      - name: autobuild
+        uses: github/codeql-action/autobuild@78ed0c7291d93e40c51b085850dc669a4c3ab73b
+
+      - name: analyze
+        uses: github/codeql-action/analyze@78ed0c7291d93e40c51b085850dc669a4c3ab73b
+        with:
+          category: '/language:go'
