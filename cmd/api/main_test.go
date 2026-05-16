@@ -13,6 +13,14 @@ import (
 )
 
 func TestFeatures(t *testing.T) {
+	// Honour GODOG_FORMAT when set so CI can emit a junit report alongside
+	// the human-readable "pretty" output without changing local behaviour.
+	// Format syntax: "pretty,junit:path.xml" (comma-separated; the junit
+	// emitter writes to the named file at suite-end).
+	format := "pretty"
+	if v := os.Getenv("GODOG_FORMAT"); v != "" {
+		format = v
+	}
 	suite := godog.TestSuite{
 		Name: "auth0-mock",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
@@ -20,7 +28,7 @@ func TestFeatures(t *testing.T) {
 			scenario.RegisterSteps(sc, c)
 		},
 		Options: &godog.Options{
-			Format:   "pretty",
+			Format:   format,
 			Paths:    []string{"../../features"},
 			Output:   colors.Colored(os.Stdout),
 			TestingT: t,

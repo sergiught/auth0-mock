@@ -50,3 +50,4 @@ build-errors.log
 # skeleton (api/auth0-management-api.openapi.json) is committed — see
 # `make refresh-spec` and CONTRIBUTING.md.
 /api/*.raw.json
+cmd/api/godog-report.xml

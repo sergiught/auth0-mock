@@ -23,6 +23,40 @@ paths:
                   status:
                     type: string
                     example: ok
+  /readyz:
+    get:
+      tags: [Service]
+      summary: Readiness probe.
+      description: |
+        Returns 200 once the service can actually serve traffic (today: JWKS
+        signing key materialised); 503 with a `reason` field otherwise. Use
+        instead of /healthz for orchestrator readiness gates so process
+        liveness and request-serving readiness stay distinguishable.
+      responses:
+        "200":
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not yet ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, reason]
+                properties:
+                  status:
+                    type: string
+                    example: not_ready
+                  reason:
+                    type: string
   /.well-known/jwks.json:
     get:
       tags: [Service]

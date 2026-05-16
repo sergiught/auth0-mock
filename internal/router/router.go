@@ -56,6 +56,7 @@ func New(d Deps) (http.Handler, error) {
 	r.Use(middleware.Logging(d.Log))
 
 	mountHealthz(r, d.Log)
+	mountReadyz(r, d.Keys, d.Log)
 	admin0.Mount(r, admin0.Deps{
 		Matches:     d.Store,
 		Claims:      d.Claims,
@@ -107,6 +108,27 @@ func mountHealthz(r chi.Router, log zerolog.Logger) {
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+			log.Debug().Err(err).Str("path", r.URL.Path).Msg("write failed (client likely gone)")
+		}
+	})
+}
+
+// mountReadyz exposes a Kubernetes-style readiness probe. Separate from
+// /healthz so orchestrators can distinguish "process exists" from "process
+// can actually serve traffic"; today the only thing readiness gates on is
+// that the JWKS signing key materialised, which is what every other code
+// path eventually needs. Returns 503 with a one-line reason on failure.
+func mountReadyz(r chi.Router, keys *jwks.KeySet, log zerolog.Logger) {
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if keys == nil || keys.KeyID() == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			if _, err := w.Write([]byte(`{"status":"not_ready","reason":"jwks key not initialised"}`)); err != nil {
+				log.Debug().Err(err).Str("path", r.URL.Path).Msg("write failed (client likely gone)")
+			}
+			return
+		}
+		if _, err := w.Write([]byte(`{"status":"ready"}`)); err != nil {
 			log.Debug().Err(err).Str("path", r.URL.Path).Msg("write failed (client likely gone)")
 		}
 	})

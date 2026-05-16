@@ -146,7 +146,7 @@ pre-commit: ## Install local pre-commit and commit-msg hooks
 		echo "'pre-commit' is not installed. Install with 'pip install pre-commit' or 'brew install pre-commit'."; \
 		exit 1; \
 	fi
-	@pre-commit install --hook-type pre-commit --hook-type commit-msg
+	@pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
 	@echo "==> pre-commit hooks installed"
 
 .PHONY: dev-env

@@ -30,10 +30,15 @@ repos:
 
       - id: govulncheck
         name: govulncheck
-        description: Scans the module graph for known Go vulnerabilities. Requires `make vuln`.
+        description: |
+          Scans the module graph for known Go vulnerabilities. Requires
+          `make vuln`. Runs at pre-push rather than pre-commit because
+          govulncheck takes ~5-15s on the module graph and contributors
+          will disable hooks that slow every save-and-commit cycle.
+          The same check runs in CI on every PR.
         language: system
         entry: make vuln
         files: '(go\.mod|go\.sum|\.go)$'
         pass_filenames: false
         stages:
-          - pre-commit
+          - pre-push

@@ -18,6 +18,7 @@ func TestServiceFragmentDescribesEveryServiceEndpoint(t *testing.T) {
 	require.NotNil(t, doc.Paths)
 	want := map[string][]string{
 		"/healthz":               {"GET"},
+		"/readyz":                {"GET"},
 		"/.well-known/jwks.json": {"GET"},
 		"/openapi.json":          {"GET"},
 		"/openapi.yaml":          {"GET"},
