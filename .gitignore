@@ -25,6 +25,11 @@ go.work
 
 # Build artifacts
 /dist/
+# Per-module third-party LICENSE texts populated by `make licenses` for
+# inclusion in release archives + Docker images (see .goreleaser.yaml +
+# Dockerfile.release). Lives at repo root rather than under dist/ so it
+# survives goreleaser's clean-dist step.
+/licenses/
 /bin/
 
 # IDE

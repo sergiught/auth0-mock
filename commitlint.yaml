@@ -4,8 +4,6 @@ rules:
   - header-min-length
   - header-max-length
   - type-enum
-  - body-leading-blank
-  - footer-leading-blank
 severity:
   default: error
 settings:

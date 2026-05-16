@@ -7,8 +7,11 @@ before:
   hooks:
     - go mod tidy
     - go mod download
-    # Generates dist/licenses/{<dep>/LICENSE, ..., THIRD_PARTY_LICENSES.md}.
-    # Required for MIT/Apache/BSD attribution travelling with the binary.
+    # Generates licenses/<dep>/LICENSE per bundled Go module. Required for
+    # MIT/Apache/BSD attribution travelling with the binary. Output sits at
+    # the repo root (not under dist/) so it's available when goreleaser
+    # cleans dist/ between the `before:` hook and `ensuring distribution
+    # directory` — otherwise the pipeline fails with "dist is not empty".
     - make licenses
 
 builds:
@@ -48,7 +51,7 @@ archives:
       - CHANGELOG.md
       - docs/COOKBOOK.md
       - docs/ARCHITECTURE.md
-      - src: dist/licenses
+      - src: licenses
         dst: licenses
         strip_parent: false
 
@@ -99,7 +102,7 @@ dockers:
     extra_files:
       - LICENSE
       - NOTICE
-      - dist/licenses
+      - licenses
 
   - id: linux-arm64
     use: buildx
@@ -122,7 +125,7 @@ dockers:
     extra_files:
       - LICENSE
       - NOTICE
-      - dist/licenses
+      - licenses
 
 docker_manifests:
   - name_template: 'docker.io/sergiught/auth0-mock:{{ .Version }}'

@@ -111,12 +111,11 @@ vuln: $(BINARIES_DIR)/govulncheck ## Scan the module graph for known Go vulnerab
 	@$(BINARIES_DIR)/govulncheck ./...
 
 .PHONY: licenses
-licenses: $(BINARIES_DIR)/go-licenses ## Save bundled-module license texts under dist/licenses/ for release archives
-	@echo "==> Collecting third-party license texts -> dist/licenses/"
-	@rm -rf dist/licenses
-	@$(BINARIES_DIR)/go-licenses save ./cmd/api --save_path=dist/licenses --force
-	@$(BINARIES_DIR)/go-licenses report ./cmd/api --template=hack/licenses.tmpl > dist/licenses/THIRD_PARTY_LICENSES.md
-	@echo "==> Wrote dist/licenses/THIRD_PARTY_LICENSES.md ($$(wc -l < dist/licenses/THIRD_PARTY_LICENSES.md) lines)"
+licenses: $(BINARIES_DIR)/go-licenses ## Save bundled-module license texts under licenses/ for release archives
+	@echo "==> Collecting third-party license texts -> licenses/"
+	@rm -rf licenses
+	@$(BINARIES_DIR)/go-licenses save ./cmd/api --save_path=licenses --force
+	@echo "==> Wrote $$(find licenses -name LICENSE -o -name LICENCE -o -name 'LICEN[SC]E.*' | wc -l) LICENSE files under licenses/"
 
 #-----------------------------------------------------------------------------------------------------------------------
 # OpenAPI spec (https://www.openapis.org — merge fragments + re-vendor skeleton)
