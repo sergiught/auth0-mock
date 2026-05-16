@@ -31,7 +31,7 @@ func (k *KeySet) JWKSJSON() []byte {
 		e = 65537
 	}
 	eBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(eBytes, uint32(e)) //nolint:gosec // bounded above.
+	binary.BigEndian.PutUint32(eBytes, uint32(e))
 	// Trim leading zero bytes.
 	for len(eBytes) > 1 && eBytes[0] == 0 {
 		eBytes = eBytes[1:]

@@ -71,7 +71,7 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 	}
 	w.WriteHeader(exp.Response.Status)
-	if _, err := w.Write(exp.Response.Body); err != nil {
+	if _, err := w.Write(exp.Response.Body); err != nil { //nolint:gosec // exp.Response.Body is operator-supplied stub content registered via /admin0/expectations; faithfully echoing it is the entire point of the mock
 		h.Log.Debug().
 			Err(err).
 			Str("op", h.Op.Op.OperationID).

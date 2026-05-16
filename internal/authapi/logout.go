@@ -39,9 +39,10 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *LogoutHandler) isAllowed(returnTo string) bool {
 	// Backslash defence: browsers normalise '\' → '/' before following
-	// Location, so "/\\evil.tld" gets resolved as "//evil.tld" — same
-	// open-redirect class as a bare //evil.tld. url.Parse keeps both
-	// in u.Path so the regular host check below can't catch them.
+	// Location, so "/\\evil.tld" resolves to "//evil.tld" — same open-
+	// redirect class as a bare //evil.tld would be — but url.Parse keeps
+	// the backslashes in u.Path so the host check below can't catch
+	// them; reject up-front instead.
 	if strings.ContainsAny(returnTo, "\\") {
 		return false
 	}

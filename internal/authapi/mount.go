@@ -18,16 +18,16 @@ import (
 
 // Deps is the parameter object for Mount.
 type Deps struct {
-	Router            chi.Router
-	Keys              *jwks.KeySet
-	Issuer            string
-	DefaultAudience   string
-	Log               zerolog.Logger
-	Claims            *claims.Store
-	Permissions       *permissions.Store
-	PKCE              *pkce.Store
-	MFA                 *mfa.Store
-	LogoutAllowedURLs   []string
+	Router                       chi.Router
+	Keys                         *jwks.KeySet
+	Issuer                       string
+	DefaultAudience              string
+	Log                          zerolog.Logger
+	Claims                       *claims.Store
+	Permissions                  *permissions.Store
+	PKCE                         *pkce.Store
+	MFA                          *mfa.Store
+	LogoutAllowedURLs            []string
 	AuthorizeAllowedRedirectURIs []string
 }
 

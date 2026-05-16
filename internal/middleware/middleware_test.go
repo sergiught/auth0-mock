@@ -52,7 +52,7 @@ func TestMaxBodyBytes_RejectsOversize(t *testing.T) {
 	called := false
 	h := MaxBodyBytes(8)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		called = true
-		_, _ = io.ReadAll(r.Body) // triggers the cap check
+		_, _ = io.ReadAll(r.Body) // Triggers the cap check.
 	}))
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/x", strings.NewReader("payload-is-longer-than-eight-bytes"))

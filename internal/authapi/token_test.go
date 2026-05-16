@@ -185,7 +185,7 @@ func TestToken_CustomClaims_OverrideReserved(t *testing.T) {
 		"gty":         "OVERRIDDEN",
 		"azp":         "OVERRIDDEN",
 		"permissions": []any{"custom:scope"},
-		"role":        "admin", // brand-new claim, also takes
+		"role":        "admin", // Brand-new claim, also takes.
 	})
 
 	permsStore := permissions.NewStore()
@@ -455,7 +455,7 @@ func TestToken_MFAOOB_MissingOOBCode_400(t *testing.T) {
 		"client_id":    []string{"abc"},
 		"mfa_token":    []string{tok},
 		"binding_code": []string{mfa.AcceptedBindingCode},
-		// deliberately no oob_code
+		// Deliberately no oob_code.
 	}
 	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -473,7 +473,7 @@ func TestToken_MFA_MissingMFAToken_400(t *testing.T) {
 		"grant_type": []string{"http://auth0.com/oauth/grant-type/mfa-otp"},
 		"client_id":  []string{"abc"},
 		"otp":        []string{mfa.AcceptedOTP},
-		// deliberately no mfa_token
+		// Deliberately no mfa_token.
 	}
 	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

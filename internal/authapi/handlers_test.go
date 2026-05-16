@@ -211,7 +211,7 @@ func TestAuthorize_NoAllowListIsPermissive(t *testing.T) {
 	// Default behaviour: when AllowedRedirectURIs is empty, /authorize
 	// accepts any redirect_uri (the test-friendly documented default).
 	// Closing the open redirect is opt-in via AUTHORIZE_ALLOWED_CALLBACKS.
-	r, _ := newAuthRouter(t) // no allow-list configured
+	r, _ := newAuthRouter(t) // No allow-list configured.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET",
 		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fanywhere%2Fcb&response_type=code", nil))

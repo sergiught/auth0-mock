@@ -75,7 +75,7 @@ func runStrip(rawPath, out string) error {
 	if err != nil {
 		return fmt.Errorf("marshal skeleton: %w", err)
 	}
-	if err := os.WriteFile(out, append(body, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(out, append(body, '\n'), 0o600); err != nil { //nolint:gosec // out is the -out CLI flag supplied by a developer running the vendoring step, not untrusted input
 		return fmt.Errorf("write %s: %w", out, err)
 	}
 	return nil

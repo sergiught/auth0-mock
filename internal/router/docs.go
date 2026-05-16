@@ -57,5 +57,5 @@ func serveDocsFont(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "font/woff2")
 	w.Header().Set("Cache-Control", "public, max-age=604800")
-	_, _ = w.Write(b)
+	_, _ = w.Write(b) //nolint:gosec // b is embedded woff2 bytes, served as font/woff2 — not HTML and not user-controlled
 }

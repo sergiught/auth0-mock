@@ -109,7 +109,9 @@ make vuln            # govulncheck against the module graph
 make pre-commit      # install the pre-commit hooks (one-time)
 ```
 
-`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework, install it once and the hooks will run `gofmt`, `golangci-lint`, `govulncheck` on every `git commit`, plus `commitlint` on the commit message. CI runs the same checks on every PR (see `.github/workflows/ci.yml`).
+`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework, install it once and the hooks will run `gofmt`, `golangci-lint` on every `git commit`, `govulncheck` on every `git push`, plus `commitlint` on the commit message. CI runs the same checks on every PR (see `.github/workflows/ci.yml`).
+
+> **Prerequisite:** `make pre-commit` needs the `pre-commit` CLI on `PATH` first. Install with `pipx install pre-commit` (recommended), `brew install pre-commit`, or `pip install --user pre-commit`. The target's first line checks for it and tells you which install command to run if missing.
 
 GitHub Actions also runs **CodeQL** (`.github/workflows/codeql.yml`) on every push, every PR, and a weekly Monday cron, using the `security-and-quality` query suite. Findings appear in the repo's **Security tab → Code scanning alerts**. If your PR introduces a CodeQL alert, fix it before merging or open a discussion if it's a false positive — the suite is broader than the default and occasionally lights up benign code.
 
