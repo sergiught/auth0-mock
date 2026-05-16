@@ -49,7 +49,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	log := logger.New(cfg.Environment, cfg.LogLevel)
+	log := logger.New(cfg.LogLevel)
 	log.Info().
 		Str("version", version.Version).
 		Str("commit", version.Commit).

@@ -256,7 +256,6 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 | Variable | Default | Notes |
 |---|---|---|
-| `ENVIRONMENT` | `development` | Gates the logger output mode. `development` → human-readable console writer; any other value → JSON-line output for log aggregators. |
 | `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does). To run HTTPS-only, set this to `off`. |
 | `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does). To run HTTP-only, set this to `off`. |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |

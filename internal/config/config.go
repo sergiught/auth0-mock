@@ -12,7 +12,6 @@ import (
 
 // Specification holds all runtime settings.
 type Specification struct {
-	Environment          string         `env:"ENVIRONMENT" envDefault:"development"`
 	HTTPAddress          string         `env:"HTTP_ADDR" envDefault:"127.0.0.1:8080"`
 	HTTPSAddress         string         `env:"HTTPS_ADDR" envDefault:"127.0.0.1:8443"`
 	TLS                  tlscert.Config // Nested: env tags live on tlscert.Config itself.
