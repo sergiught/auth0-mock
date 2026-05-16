@@ -55,12 +55,15 @@ fi
 if [ "$VERSION" = "latest" ]; then
   say "resolving latest release for $REPO"
   # /releases/latest redirects to /releases/tag/vX.Y.Z; we follow it and read
-  # the resolved URL instead of hitting the rate-limited REST API.
-  RESOLVED=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-    "https://github.com/${REPO}/releases/latest")
+  # the resolved URL instead of hitting the rate-limited REST API. Drop
+  # `-f` here so a 404 on a release-less repo yields our friendly `die`
+  # below instead of curl's terse exit-22 message under `set -e`.
+  RESOLVED=$(curl -sSLI -o /dev/null -w '%{url_effective}' \
+    "https://github.com/${REPO}/releases/latest") || \
+    die "could not reach https://github.com/${REPO}/releases/latest — check network / repo path"
   VERSION="${RESOLVED##*/tag/}"
   [ -n "$VERSION" ] && [ "$VERSION" != "$RESOLVED" ] || \
-    die "could not resolve latest release"
+    die "could not resolve latest release (does ${REPO} have any published releases yet?)"
 fi
 case "$VERSION" in
   v*) ;;
