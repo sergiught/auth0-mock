@@ -187,7 +187,7 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 			log.Info().
 				Int("body_bytes", rec.totalLen).
 				Str("headers", interestingHeaders(rec.Header())).
-				Dur("latency", time.Since(start)).
+				Stringer("latency", time.Since(start)).
 				Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
 			writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
 			// Blank line so multi-request output stays scannable.
@@ -470,7 +470,11 @@ func Logging(log zerolog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(sr, r)
 			log.Info().
 				Int("bytes", sr.bytes).
-				Dur("latency", time.Since(start)).
+				// Stringer renders the duration with its unit baked in
+				// ("2.134ms", "1.5s") instead of zerolog's default
+				// unit-less float — easier to read at a glance and
+				// auto-scales across the millisecond / second boundary.
+				Stringer("latency", time.Since(start)).
 				Msgf("%s %s %d", r.Method, r.URL.Path, sr.status)
 		})
 	}
