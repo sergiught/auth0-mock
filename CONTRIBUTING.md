@@ -58,7 +58,7 @@ make test                  # unit tests with the race detector
 make test-features         # godog acceptance suite (in-process, random port)
 ```
 
-**Both must be green for a PR to merge.** The godog suite boots the service in-process on a random port and exercises every endpoint end-to-end (133 scenarios across 23 feature files at last count).
+**Both must be green for a PR to merge.** The godog suite boots the service in-process on a random port and exercises every endpoint end-to-end with a broad library of acceptance scenarios under [`features/`](features/).
 
 ### Coverage
 

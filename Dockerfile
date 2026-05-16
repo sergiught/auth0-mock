@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# Production-grade single-stage build for auth0-mock.
-# Used for both local development (`docker compose up`) and image publishing.
+# Local-dev Dockerfile for auth0-mock — builds from source with the Go
+# toolchain so `docker compose up --build` is fast on every source edit.
+# For published images the release pipeline uses the slimmer
+# `Dockerfile.release`, which is fed a pre-built binary by goreleaser.
 
 FROM golang:1.26-alpine AS build
 WORKDIR /src

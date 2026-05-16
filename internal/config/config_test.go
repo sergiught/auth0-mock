@@ -35,6 +35,34 @@ func TestLoad_OverridesFromEnv(t *testing.T) {
 	assert.Equal(t, "/tmp/tls", spec.TLS.CacheDir)
 }
 
+func TestLoad_RejectsBothListenersOff(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HTTP_ADDR", "off")
+	t.Setenv("HTTPS_ADDR", "off")
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP_ADDR and HTTPS_ADDR are both disabled")
+}
+
+func TestValidate_RejectsBothListenersEmptyProgrammatically(t *testing.T) {
+	// Load() can't reach this case because caarlos0/env replaces an empty
+	// string with envDefault — but programmatically-constructed specs
+	// (tests, embeds) can, so Validate still guards the shape.
+	spec := &Specification{HTTPAddress: "", HTTPSAddress: ""}
+	err := spec.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "both disabled")
+}
+
+func TestValidate_OneListenerOffIsFine(t *testing.T) {
+	// HTTPS-only.
+	spec := &Specification{HTTPAddress: "off", HTTPSAddress: "127.0.0.1:8443"}
+	require.NoError(t, spec.Validate())
+	// HTTP-only.
+	spec = &Specification{HTTPAddress: "127.0.0.1:8080", HTTPSAddress: "off"}
+	require.NoError(t, spec.Validate())
+}
+
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{

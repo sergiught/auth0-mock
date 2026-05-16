@@ -53,11 +53,38 @@ type Specification struct {
 	BearerRequireAudience string `env:"BEARER_REQUIRE_AUDIENCE"`
 }
 
-// Load populates a Specification from process environment.
+// Load populates a Specification from process environment and validates it.
+// Errors out on impossible combinations like "both listeners disabled" so
+// callers don't have to repeat the sanity checks (and so the process
+// doesn't silently idle forever waiting for a signal that nothing's
+// listening for).
 func Load() (*Specification, error) {
 	var spec Specification
 	if err := env.Parse(&spec); err != nil {
 		return nil, fmt.Errorf("env parse: %w", err)
 	}
+	if err := spec.Validate(); err != nil {
+		return nil, err
+	}
 	return &spec, nil
+}
+
+// Validate checks the loaded Specification for mutually-exclusive or
+// nonsensical combinations. Run automatically by Load(); exported so
+// callers building a Specification programmatically (tests, embeds)
+// get the same sanity net.
+func (s *Specification) Validate() error {
+	// Both listeners off means the orchestrator launches with zero
+	// servers and idles forever. Surface the misconfiguration up-front
+	// instead of leaving the operator guessing why nothing's listening.
+	if listenerOff(s.HTTPAddress) && listenerOff(s.HTTPSAddress) {
+		return fmt.Errorf("HTTP_ADDR and HTTPS_ADDR are both disabled — at least one must be a bind address (use \"off\" on only one to run single-protocol)")
+	}
+	return nil
+}
+
+// listenerOff returns true when an HTTP_ADDR / HTTPS_ADDR value means
+// "do not bind." Matches the cmd/api/main.go check.
+func listenerOff(addr string) bool {
+	return addr == "" || addr == "off"
 }
