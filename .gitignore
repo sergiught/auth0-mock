@@ -44,9 +44,9 @@ build-errors.log
 
 # Local-only design + implementation-plan working docs.
 /docs/design/
+/docs/plans/
 
 # Raw, manually-downloaded Auth0 Management API spec. Only the stripped
 # skeleton (api/auth0-management-api.openapi.json) is committed — see
 # `make refresh-spec` and CONTRIBUTING.md.
 /api/*.raw.json
-/docs/plans/
