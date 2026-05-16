@@ -430,6 +430,39 @@ func basePath(url string) string {
 func stripUpstreamProse(base *openapi3.T) {
 	base.ExternalDocs = nil
 	base.Extensions = nil
+	// Drop Auth0's authored top-level metadata: description, contact info,
+	// terms-of-service URL. The `bundle()` step rewrites `Info` to
+	// auth0-mock's own identity before the merged spec is emitted, but the
+	// committed skeleton ships with this struct populated, so we strip it
+	// here too so the NOTICE claim ("all Auth0-authored prose removed")
+	// holds for both the skeleton AND the merged spec. Title is left as the
+	// upstream's literal name — it's identifying metadata, not prose
+	// describing endpoints.
+	if base.Info != nil {
+		base.Info.Description = ""
+		base.Info.TermsOfService = ""
+		base.Info.Contact = nil
+		base.Info.License = nil
+		base.Info.Extensions = nil
+	}
+	// Strip the prose on each upstream Server entry without dropping the
+	// list — bundle() reads Servers[0].URL to derive the /api/v2 path
+	// prefix, then overwrites Servers entirely with auth0-mock's own URL.
+	// We need the URL preserved here so that pipeline still works.
+	for _, srv := range base.Servers {
+		if srv == nil {
+			continue
+		}
+		srv.Description = ""
+		srv.Extensions = nil
+		for _, v := range srv.Variables {
+			if v == nil {
+				continue
+			}
+			v.Description = ""
+			v.Extensions = nil
+		}
+	}
 	if base.Paths != nil {
 		base.Paths.Extensions = nil
 		for _, item := range base.Paths.Map() {

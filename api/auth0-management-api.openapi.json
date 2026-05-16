@@ -53517,12 +53517,6 @@
     }
   },
   "info": {
-    "contact": {
-      "name": "Auth0 Support",
-      "url": "https://support.auth0.com"
-    },
-    "description": "Auth0 Management API v2.",
-    "termsOfService": "https://auth0.com/web-terms/",
     "title": "Auth0 Management API",
     "version": "2.0"
   },
@@ -78278,8 +78272,7 @@
       "url": "https://{tenantDomain}/api/v2",
       "variables": {
         "tenantDomain": {
-          "default": "{TENANT}.auth0.com",
-          "description": "Auth0 Tenant Domain"
+          "default": "{TENANT}.auth0.com"
         }
       }
     }
