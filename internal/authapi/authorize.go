@@ -1,6 +1,7 @@
 package authapi
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -51,10 +52,21 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	u.RawQuery = params.Encode()
 
-	// Stash the PKCE challenge so /oauth/token can verify the verifier later.
-	// Only meaningful for the "code" response type.
-	if h.PKCE != nil && issuedCode != "" {
-		if challenge := q.Get("code_challenge"); challenge != "" {
+	// Validate PKCE challenge length up-front. RFC 7636 §4.1 requires the
+	// code_verifier (and therefore the plain code_challenge, or the pre-hash
+	// for S256) to be 43..128 characters. Rejecting out-of-range values at
+	// /authorize gives the client a real error instead of a code that
+	// silently fails to exchange later. Validation runs even when the PKCE
+	// store isn't wired so client-side bugs surface either way.
+	if challenge := q.Get("code_challenge"); challenge != "" {
+		if n := len(challenge); n < 43 || n > 128 {
+			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("code_challenge must be 43..128 chars per RFC 7636 §4.1 (got %d)", n))
+			return
+		}
+		// Stash the validated challenge so /oauth/token can verify the
+		// verifier later. Only meaningful for the "code" response type.
+		if h.PKCE != nil && issuedCode != "" {
 			method := pkce.Method(q.Get("code_challenge_method"))
 			if method == "" {
 				method = pkce.MethodPlain // RFC 7636 default when method omitted.

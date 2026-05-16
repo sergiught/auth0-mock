@@ -4,7 +4,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 
 ## 📑 Table of contents
 
-- [Mint a token and call a stubbed Mgmt API endpoint](#mint-a-token-and-call-a-stubbed-mgmt-api-endpoint)
+- [Mint a token and call a stubbed Management API endpoint](#mint-a-token-and-call-a-stubbed-management-api-endpoint)
 - [Stub multiple users at once](#stub-multiple-users-at-once)
 - [Different responses for different requests](#different-responses-for-different-requests)
 - [Test a code path that reads a specific `permissions` claim](#test-a-code-path-that-reads-a-specific-permissions-claim)
@@ -21,7 +21,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 
 ---
 
-## Mint a token and call a stubbed Mgmt API endpoint
+## Mint a token and call a stubbed Management API endpoint
 
 The hello-world of auth0-mock.
 
@@ -257,7 +257,7 @@ curl -X POST http://localhost:8080/admin0/reset
 Or use the more targeted resets:
 
 ```bash
-# Clear one Mgmt API stub
+# Clear one Management API stub
 curl -X DELETE http://localhost:8080/admin0/expectations \
   -H 'Content-Type: application/json' \
   -d '{"method":"GET","path":"/api/v2/users/auth0|x"}'

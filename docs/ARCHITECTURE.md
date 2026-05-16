@@ -141,6 +141,8 @@ Every store is mutex-protected and snapshot-isolating on reads (so the caller ca
 
 There is **no persistence** anywhere. Each process restart is a clean slate. That's a deliberate design choice: tests get isolation for free; you don't need a teardown step beyond `POST /admin0/reset` (which is also called automatically between godog scenarios via the scenario harness).
 
+There are also **no per-store size caps**. The expectations store, MFA token store, PKCE store, and per-audience permissions map all grow without bound as you register more entries. The MFA and PKCE stores sweep their own expired entries on every write (TTL-bounded), but the expectations and permissions stores grow until the process restarts or `/admin0/reset` is called. This is fine for a test harness where each scenario starts clean; it's a footgun if you point the mock at long-lived synthetic load. Treat `/admin0/reset` as your teardown contract.
+
 ## Token claim composition
 
 When `/oauth/token` mints a token, the payload is built in this order, **last write wins**:

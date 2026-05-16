@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,29 @@ func TestAuthorize_MissingRedirectURI_400(t *testing.T) {
 	r, _ := newAuthRouter(t)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/authorize?client_id=abc", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAuthorize_RejectsShortCodeChallenge(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	// 42 chars — one short of RFC 7636 §4.1's lower bound (43).
+	short := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET",
+		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=code"+
+			"&code_challenge="+short+"&code_challenge_method=S256", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "code_challenge")
+	assert.Contains(t, w.Body.String(), "RFC 7636")
+}
+
+func TestAuthorize_RejectsLongCodeChallenge(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	long := strings.Repeat("x", 129) // 1 over RFC 7636 §4.1's upper bound (128)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET",
+		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=code"+
+			"&code_challenge="+long+"&code_challenge_method=S256", nil))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 

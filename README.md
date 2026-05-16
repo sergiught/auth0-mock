@@ -41,6 +41,13 @@ It is not for: production traffic, replacing your IdP, or anything that needs a 
 make build && ./bin/auth0-mock
 ```
 
+Or via `go install` (binary lands in `$GOBIN`, default `~/go/bin`):
+
+```bash
+go install github.com/sergiught/auth0-mock/cmd/api@latest
+~/go/bin/api               # the package is cmd/api, so the binary is "api"
+```
+
 ### Live-reload dev loop (`air`)
 
 Sub-second rebuild on every save under `cmd/` or `internal/`, no docker, no bind-mounts, no flakiness:
