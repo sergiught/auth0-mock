@@ -54,11 +54,23 @@ The Auth0 Management API skeleton is already committed at `api/auth0-management-
 ## 🧪 Testing
 
 ```bash
-make test                            # = go test -race -count=1 ./...
-go test -tags=features ./cmd/api/... # godog acceptance suite
+make test                  # unit tests with the race detector
+make test-features         # godog acceptance suite (in-process, random port)
 ```
 
 **Both must be green for a PR to merge.** The godog suite boots the service in-process on a random port and exercises every endpoint end-to-end (133 scenarios across 23 feature files at last count).
+
+### Coverage
+
+Coverage profiles land in `coverage/` (gitignored). Both suites use `-coverpkg=./...` so per-package numbers reflect end-to-end coverage from each path.
+
+```bash
+make test-cover            # unit suite → coverage/unit.out
+make test-features-cover   # godog suite → coverage/features.out
+make coverage              # both, plus per-suite percentage summary
+```
+
+CI uploads each profile to Codecov with separate `unit` and `features` flags; Codecov merges them server-side, so the public coverage figure reflects both paths combined.
 
 ### What needs which kind of test
 
@@ -82,7 +94,7 @@ go test -tags=features ./cmd/api/... # godog acceptance suite
    - `Then I receive a 200 response`
    - `And the response JSON path "x.y" equals "z"`
    - `And the access_token claim "permissions" array contains "read:users"`
-3. Run `go test -tags=features ./cmd/api/...` and iterate.
+3. Run `make test-features` and iterate.
 
 If you need a new step phrase, add it to `features/scenario/steps.go` and write a focused unit test for the helper if the logic is non-trivial.
 
@@ -177,7 +189,7 @@ If your work surfaces a recipe other users will want (e.g. "how do I test refres
 
 1. Open an issue first for anything non-trivial, saves rework if the maintainers think differently about the design.
 2. Branch from `main`. One coherent change per PR; smaller is better.
-3. Update `CHANGELOG.md` under `## [Unreleased]` with a one-line entry under the appropriate section (Added / Changed / Fixed / Removed).
+3. **Don't hand-edit `CHANGELOG.md`** — release-please owns it. Just write a conventional-commit subject and body that explains the *why*; the next Release PR derives entries from those automatically.
 4. If you add a new env var, endpoint, or grant: update **README** and **`docs/ARCHITECTURE.md`** alongside the code.
 5. CI must pass: `make lint`, `make test`, `make test-features`, `make vuln`, and `make lint-commits` on PR commits.
 6. Squash-merge is the default. Keep the commit subject conventional-commit shaped.
