@@ -238,6 +238,62 @@ func TestInterestingHeaders_FiltersNoise(t *testing.T) {
 	}
 }
 
+// TestDebugDump_PreservesMaxBytesError locks a real bug we shipped: an
+// earlier DebugDump pre-read the body and discarded any read error, so
+// MaxBodyBytes' *http.MaxBytesError was silently swallowed and the
+// handler saw a happy truncated body with err=nil. Now we replay the
+// error via errReader so the handler still surfaces the cap.
+func TestDebugDump_PreservesMaxBytesError(t *testing.T) {
+	var sb strings.Builder
+	var bodyBuf bytes.Buffer
+	log := zerolog.New(&sb)
+
+	// Capture what the inner handler saw on body read.
+	var handlerErr error
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, handlerErr = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(200)
+	})
+
+	// Compose MaxBodyBytes(8) THEN DebugDump — same order as router.
+	h := MaxBodyBytes(8)(DebugDump(log, &bodyBuf)(inner))
+	req := httptest.NewRequest("POST", "/x", strings.NewReader(strings.Repeat("X", 32)))
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	require.Error(t, handlerErr,
+		"DebugDump must replay MaxBytesError to the handler — the cap is not optional")
+	assert.Contains(t, handlerErr.Error(), "body too large")
+}
+
+// TestDebugDump_RedactsAcrossDisplayCap locks a real bug: when a
+// sensitive field value straddled the display cap, the regex couldn't
+// see the closing quote and the partial token leaked verbatim. The fix
+// captures the full body (up to debugCaptureCap), redacts on the FULL
+// buffer, and only truncates the rendered output.
+func TestDebugDump_RedactsAcrossDisplayCap(t *testing.T) {
+	var sb strings.Builder
+	var bodyBuf bytes.Buffer
+	log := zerolog.New(&sb)
+
+	// Build a response where access_token starts in-window but extends
+	// well past debugBodyCap (8 KiB).
+	const tokenChar = "Y"
+	hugeToken := strings.Repeat(tokenChar, 20*1024) // 20 KiB token.
+	body := `{"prefix":"x","access_token":"` + hugeToken + `","trailing":true}`
+
+	h := DebugDump(log, &bodyBuf)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
+
+	out := bodyBuf.String()
+	assert.NotContains(t, out, tokenChar+tokenChar+tokenChar+tokenChar+tokenChar+tokenChar,
+		"a token value past the display cap must not leak — must be redacted on the full buffer first")
+	assert.Contains(t, out, `"access_token": "<redacted>"`,
+		"the JSON field is redacted")
+}
+
 func TestRecovery_PanicStackPrintsAsIndentedBlock(t *testing.T) {
 	// The structured log line carries the panic value + locator; the
 	// stack trace prints as a multi-line indented block to a separate

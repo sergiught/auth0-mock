@@ -163,9 +163,21 @@ var debugDumpMu sync.Mutex
 func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqBody, _ := io.ReadAll(r.Body)
+			// Pre-read the request body so the dump can show it AND
+			// preserve any error (e.g. *http.MaxBytesError when the
+			// MaxBodyBytes middleware capped a too-large body) for the
+			// downstream handler. ErrReader replays the error on first
+			// Read so the handler still sees "body too large" and can
+			// surface it as a 400 — without this, DebugDump silently
+			// swallowed the MaxBytesError and the cap became a stealth
+			// quality-of-service hit.
+			reqBody, readErr := io.ReadAll(r.Body)
 			_ = r.Body.Close()
-			r.Body = io.NopCloser(bytes.NewReader(reqBody))
+			if readErr != nil {
+				r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(reqBody), &errReader{err: readErr}))
+			} else {
+				r.Body = io.NopCloser(bytes.NewReader(reqBody))
+			}
 
 			reqCT := r.Header.Get("Content-Type")
 			start := time.Now()
@@ -180,36 +192,67 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 			debugDumpMu.Unlock()
 
 			rec := &debugRecorder{ResponseWriter: w, body: &bytes.Buffer{}}
+			// Defer the response-side dump so a handler panic doesn't
+			// swallow it. Recovery middleware turns the panic into a
+			// 500 but ALSO re-panics is no — it absorbs the panic, so
+			// the deferred block here still runs to completion with
+			// status=500 written by Recovery. The blank-line separator
+			// fires either way.
+			defer func() {
+				respCT := rec.Header().Get("Content-Type")
+				debugDumpMu.Lock()
+				defer debugDumpMu.Unlock()
+				log.Info().
+					Int("body_bytes", rec.totalLen).
+					Str("headers", interestingHeaders(rec.Header())).
+					Stringer("latency", time.Since(start)).
+					Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
+				writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
+				// Blank line so multi-request output stays scannable.
+				_, _ = fmt.Fprintln(bodyOut)
+			}()
 			next.ServeHTTP(rec, r)
-			respCT := rec.Header().Get("Content-Type")
-
-			debugDumpMu.Lock()
-			log.Info().
-				Int("body_bytes", rec.totalLen).
-				Str("headers", interestingHeaders(rec.Header())).
-				Stringer("latency", time.Since(start)).
-				Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
-			writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
-			// Blank line so multi-request output stays scannable.
-			_, _ = fmt.Fprintln(bodyOut)
-			debugDumpMu.Unlock()
 		})
 	}
 }
 
+// errReader returns the same error on every Read. Used to replay an
+// upstream read error (typically *http.MaxBytesError) through the
+// body-capture-and-restore path so the downstream handler still sees
+// it on the first Read after DebugDump exhausted the body once.
+type errReader struct{ err error }
+
+func (e *errReader) Read([]byte) (int, error) { return 0, e.err }
+
 const bodyIndent = "    "
 
 // writeBodyBlock renders the body for human eyeballs: redact sensitive
-// fields, pretty-print JSON, split form-encoded into one pair per line,
-// indent every output line with bodyIndent, and add a truncation suffix
-// when the original write was bigger than the captured slice. Empty
-// bodies print nothing.
+// fields against the FULL captured buffer (so a token straddling the
+// display cap doesn't leak past the regex), pretty-print JSON,
+// split form-encoded into one pair per line, truncate the rendered
+// output at debugBodyCap, indent every line with bodyIndent, and
+// append a truncation suffix when either the capture or the display
+// dropped bytes. Empty bodies print nothing.
 func writeBodyBlock(out io.Writer, captured []byte, totalLen int, contentType string) {
 	if len(captured) == 0 {
 		return
 	}
+	// Redaction runs on the full captured slice — NOT post-truncation.
+	// Otherwise a sensitive-field value that started in-window and
+	// continued past debugBodyCap would have its tail bytes survive
+	// without the regex matching (no closing quote in the captured
+	// slice).
 	pretty := strings.TrimRight(prettyBody(redactSensitiveInBody(captured), contentType), "\n")
-	if totalLen > len(captured) {
+	// Truncate the rendered output for readability — this is the
+	// display cap, separate from the capture cap. The pretty form
+	// may be larger than the original (JSON indent adds whitespace),
+	// so cap on the rendered string length, not the input.
+	displayTruncated := false
+	if len(pretty) > debugBodyCap {
+		pretty = pretty[:debugBodyCap]
+		displayTruncated = true
+	}
+	if totalLen > len(captured) || displayTruncated {
 		pretty += "\n…(truncated, " + strconv.Itoa(totalLen) + " bytes total)"
 	}
 	// Best-effort write — if the body block can't be flushed (broken
@@ -261,17 +304,28 @@ func indentLines(s, indent string) string {
 	return strings.Join(lines, "\n")
 }
 
-// debugRecorder wraps http.ResponseWriter to capture status code, the
-// total number of body bytes written, and a bounded copy of the body
-// for DebugDump. TotalLen is tracked separately from body.Len() so
-// writeBodyBlock can report the original size in the truncation suffix
-// when the response was bigger than what we captured.
+// debugRecorder wraps http.ResponseWriter to capture status code and a
+// copy of the body for DebugDump. The capture cap (debugCaptureCap,
+// 1 MiB) is intentionally bigger than the display cap (debugBodyCap,
+// 8 KiB) so redaction has the full secret-bearing context to work on
+// — otherwise a sensitive field value that straddled the display cap
+// would have its second half slip past the regex (no closing quote
+// in the captured slice) and leak verbatim. TotalLen tracks the wire
+// byte count regardless so the truncation suffix can report the true
+// size.
 type debugRecorder struct {
 	http.ResponseWriter
 	status   int
 	body     *bytes.Buffer
 	totalLen int
 }
+
+// debugCaptureCap is the hard ceiling on per-response body capture for
+// DebugDump (1 MiB). Real Auth0 payloads fit in 64 KiB; the slack lets
+// the redaction regex see the full secret-bearing context for any
+// realistic response while bounding memory if a handler ever streams
+// gigabytes back.
+const debugCaptureCap = 1 << 20
 
 func (d *debugRecorder) WriteHeader(code int) {
 	d.status = code
@@ -283,7 +337,7 @@ func (d *debugRecorder) Write(b []byte) (int, error) {
 		d.status = http.StatusOK
 	}
 	d.totalLen += len(b)
-	if remaining := debugBodyCap - d.body.Len(); remaining > 0 {
+	if remaining := debugCaptureCap - d.body.Len(); remaining > 0 {
 		if len(b) > remaining {
 			d.body.Write(b[:remaining])
 		} else {
