@@ -97,6 +97,7 @@ func run() error {
 		LogoutAllowedURLs:            cfg.LogoutAllowedURLs,
 		AuthorizeAllowedRedirectURIs: cfg.AuthorizeAllowedCallbacks,
 		BearerRequireAudience:        cfg.BearerRequireAudience,
+		Debug:                        cfg.Debug,
 	})
 	if err != nil {
 		return fmt.Errorf("router init: %w", err)

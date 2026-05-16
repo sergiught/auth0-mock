@@ -50,6 +50,11 @@ type Deps struct {
 	// middleware reject tokens whose `aud` claim doesn't contain this
 	// value. Opt-in to preserve the documented test-friendly default.
 	BearerRequireAudience string
+	// Debug enables the request/response dump middleware. Off by default;
+	// when on, every request and response gets a full method/path/query/
+	// headers/body log line at INFO level. Authorization + Cookie headers
+	// are redacted, bodies truncated at 8 KiB.
+	Debug bool
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -59,6 +64,15 @@ func New(d Deps) (http.Handler, error) {
 	r.Use(middleware.Recovery(d.Log))
 	r.Use(middleware.MaxBodyBytes(d.MaxRequestBodyBytes))
 	r.Use(middleware.Logging(d.Log))
+	if d.Debug {
+		// Outermost in the chain — runs after Logging but its INFO lines
+		// bracket the per-request summary in the output:
+		//   → request  …    (DebugDump pre-handler)
+		//   → handler runs
+		//   ← response …    (DebugDump post-handler)
+		//   http request …  (Logging summary)
+		r.Use(middleware.DebugDump(d.Log))
+	}
 
 	mountHealthz(r, d.Log)
 	mountReadyz(r, d.Keys, d.Log)

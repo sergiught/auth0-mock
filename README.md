@@ -268,6 +268,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
 | `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
 | `LOG_LEVEL` | `info` | zerolog levels |
+| `DEBUG` | `false` | When `true`, every request and response is logged in full at INFO level: method, path, query, headers (Authorization / Cookie redacted), and body (truncated at 8 KiB). Off by default — turn on only while debugging an SDK trace; adds an allocation and a synchronous log write per request. |
 | `READ_HEADER_TIMEOUT` | `5s` | http.Server's `ReadHeaderTimeout` |
 | `WRITE_TIMEOUT` | `30s` | http.Server's `WriteTimeout`. Bounds slow-write attacks. |
 | `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |

@@ -2,9 +2,15 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
+	"regexp"
 	"runtime/debug"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -98,6 +104,200 @@ func MaxBodyBytes(limit int64) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// debugBodyCap is the per-direction body byte cap for DebugDump's log
+// output (NOT the request body cap — that's MaxBodyBytes). 8 KiB is
+// generous enough for typical OAuth / Mgmt-API payloads and small enough
+// that flooding the console is hard. Bodies larger than this are
+// truncated with a "…(truncated, N bytes total)" suffix.
+const debugBodyCap = 8 * 1024
+
+// DebugDump logs every request (method, path, query, headers, body) and
+// every response (status, headers, body) at INFO level. Off by default
+// — enable via the DEBUG env var. Authorization and Cookie headers are
+// redacted (first 8 chars + "…<redacted>") so dev logs don't accidentally
+// commit bearer tokens to terminal history. Bodies are truncated at
+// debugBodyCap (8 KiB) to keep the console scannable.
+//
+// NOT for production — buffering every request + response body and
+// serialising through the logger costs an allocation and a synchronous
+// write per request. Auth0-mock is local-dev / CI tooling, but even
+// here you only want this on while actively debugging an SDK trace.
+func DebugDump(log zerolog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reqBody, _ := io.ReadAll(r.Body)
+			_ = r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewReader(reqBody))
+
+			rid := RequestIDFromContext(r.Context())
+			log.Info().
+				Str("request_id", rid).
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Str("query", scrubSensitiveQuery(r.URL.RawQuery)).
+				Str("headers", flatHeaders(r.Header)).
+				Str("body", truncateForLog(redactSensitiveInBody(reqBody))).
+				Msg("→ request")
+
+			rec := &debugRecorder{ResponseWriter: w, body: &bytes.Buffer{}}
+			next.ServeHTTP(rec, r)
+
+			log.Info().
+				Str("request_id", rid).
+				Int("status", rec.statusOrOK()).
+				Str("headers", flatHeaders(rec.Header())).
+				Str("body", rec.loggedBody()).
+				Msg("← response")
+		})
+	}
+}
+
+// debugRecorder wraps http.ResponseWriter to capture status code, the
+// total number of body bytes written, and a bounded copy of the body
+// for DebugDump. We track totalLen separately so truncateForLog can
+// report the original size in the truncation suffix.
+type debugRecorder struct {
+	http.ResponseWriter
+	status   int
+	body     *bytes.Buffer
+	totalLen int
+}
+
+func (d *debugRecorder) WriteHeader(code int) {
+	d.status = code
+	d.ResponseWriter.WriteHeader(code)
+}
+
+func (d *debugRecorder) Write(b []byte) (int, error) {
+	if d.status == 0 {
+		d.status = http.StatusOK
+	}
+	d.totalLen += len(b)
+	if remaining := debugBodyCap - d.body.Len(); remaining > 0 {
+		if len(b) > remaining {
+			d.body.Write(b[:remaining])
+		} else {
+			d.body.Write(b)
+		}
+	}
+	return d.ResponseWriter.Write(b)
+}
+
+func (d *debugRecorder) statusOrOK() int {
+	if d.status == 0 {
+		return http.StatusOK
+	}
+	return d.status
+}
+
+// loggedBody renders the captured body with sensitive fields redacted and
+// a truncation suffix when the original write was bigger than the
+// captured slice. Redaction runs on the captured slice (not the
+// original) so an over-cap response that contains a token in the
+// captured prefix still gets its token scrubbed; tokens that landed
+// past the cap aren't logged at all.
+func (d *debugRecorder) loggedBody() string {
+	captured := redactSensitiveInBody(d.body.Bytes())
+	if d.totalLen <= d.body.Len() {
+		return string(captured)
+	}
+	return string(captured) + "…(truncated, " + strconv.Itoa(d.totalLen) + " bytes total)"
+}
+
+// flatHeaders renders an http.Header map as a sorted "k=v; k=v" string,
+// redacting bearer tokens and cookies. Sorting keeps the dump diffable
+// across runs.
+func flatHeaders(h http.Header) string {
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		v := strings.Join(h[k], ",")
+		if isSensitiveHeader(k) {
+			v = redact(v)
+		}
+		parts = append(parts, k+"="+v)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func isSensitiveHeader(k string) bool {
+	switch strings.ToLower(k) {
+	case "authorization", "cookie", "set-cookie", "proxy-authorization":
+		return true
+	}
+	return false
+}
+
+// redact keeps the first 8 chars of a header value (enough to tell
+// "Bearer" from "Basic") and replaces the rest with a marker. Short
+// values get fully replaced.
+func redact(v string) string {
+	if len(v) <= 8 {
+		return "<redacted>"
+	}
+	return v[:8] + "…<redacted>"
+}
+
+// truncateForLog caps a body at debugBodyCap with a clear suffix so the
+// reader knows it was truncated. Empty bodies render as "".
+func truncateForLog(b []byte) string {
+	if len(b) <= debugBodyCap {
+		return string(b)
+	}
+	return string(b[:debugBodyCap]) + "…(truncated, " + strconv.Itoa(len(b)) + " bytes total)"
+}
+
+// sensitiveBodyFields are the Auth0/OAuth field names whose values look
+// like secrets in transit. We scrub their values out of request and
+// response bodies before logging so a `DEBUG=true` SDK trace doesn't
+// commit a real (or mock-minted) bearer to the operator's terminal
+// history / scrollback. /oauth/token responses live or die by this:
+// without scrubbing, every minted JWT is one Ctrl-F away.
+var sensitiveBodyFields = []string{
+	"access_token", "id_token", "refresh_token", "mfa_token",
+	"client_secret", "password", "code_verifier", "client_assertion",
+}
+
+// jsonSensitiveRE matches "field":"value" inside JSON-encoded bodies.
+// The character class `[^"\\]*(?:\\.[^"\\]*)*` skips over `\"` inside
+// the value so the close-quote isn't mis-detected.
+var jsonSensitiveRE = regexp.MustCompile(
+	`"(` + strings.Join(sensitiveBodyFields, "|") + `)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`,
+)
+
+// formSensitiveRE matches field=value inside x-www-form-urlencoded
+// request bodies (and the same shape in URL query strings).
+var formSensitiveRE = regexp.MustCompile(
+	`(^|&)(` + strings.Join(sensitiveBodyFields, "|") + `)=([^&]+)`,
+)
+
+// redactSensitiveInBody replaces values of sensitiveBodyFields with
+// "<redacted>" in both JSON and form-encoded bodies. Pass-through for
+// any other content (binary, HTML, plain text).
+func redactSensitiveInBody(b []byte) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	out := jsonSensitiveRE.ReplaceAll(b, []byte(`"$1":"<redacted>"`))
+	out = formSensitiveRE.ReplaceAll(out, []byte(`${1}${2}=<redacted>`))
+	return out
+}
+
+// scrubSensitiveQuery applies form-style redaction to a URL query string
+// (the `?...` portion). Mirrors redactSensitiveInBody so a sensitive
+// field sneaking into the query (e.g. `?access_token=…`) gets the same
+// treatment.
+func scrubSensitiveQuery(q string) string {
+	if q == "" {
+		return ""
+	}
+	return string(formSensitiveRE.ReplaceAll([]byte(q), []byte(`${1}${2}=<redacted>`)))
 }
 
 // Logging emits one structured log line per request.
