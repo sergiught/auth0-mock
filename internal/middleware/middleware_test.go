@@ -164,31 +164,78 @@ func TestDebugDump_LogsRequestAndResponseMetadata(t *testing.T) {
 
 func TestInterestingHeaders_FiltersNoise(t *testing.T) {
 	t.Parallel()
-	h := http.Header{}
-	// Noise headers that should be dropped.
-	h.Set("Accept", "*/*")
-	h.Set("User-Agent", "curl/8")
-	h.Set("Content-Length", "12")
-	h.Set("Host", "localhost")
-	h.Set("X-Request-Id", "abc-123")
-	// Headers that should survive.
-	h.Set("Content-Type", "application/json")
-	h.Set("Authorization", "Bearer eyJabc")
-	h.Set("X-Custom-Trace", "yes")
 
-	got := interestingHeaders(h)
+	// Kept=true means the header survives the noise filter; kept=false
+	// means it gets dropped. Sections grouped by why they're noisy.
+	cases := []struct {
+		name   string
+		header string
+		value  string
+		kept   bool
+	}{
+		// Standard request noise (exact-match denylist).
+		{"Accept", "Accept", "*/*", false},
+		{"User-Agent", "User-Agent", "curl/8", false},
+		{"Content-Length redundant with body_bytes", "Content-Length", "12", false},
+		{"Host", "Host", "localhost", false},
+		{"Origin", "Origin", "https://localhost", false},
+		{"Referer", "Referer", "https://localhost/docs", false},
+		{"Accept-Encoding", "Accept-Encoding", "gzip", false},
+		{"Accept-Language", "Accept-Language", "en-US", false},
+		{"Cache-Control", "Cache-Control", "no-cache", false},
+		{"Connection", "Connection", "keep-alive", false},
+		{"Upgrade-Insecure-Requests", "Upgrade-Insecure-Requests", "1", false},
 
-	assert.NotContains(t, got, "Accept=", "Accept must be filtered as noise")
-	assert.NotContains(t, got, "User-Agent=", "User-Agent must be filtered")
-	assert.NotContains(t, got, "Content-Length=", "Content-Length is redundant with body_bytes")
-	assert.NotContains(t, got, "Host=", "Host must be filtered")
-	assert.NotContains(t, got, "X-Request-Id=", "X-Request-Id is already echoed elsewhere")
+		// Browser fingerprinting / privacy.
+		{"DNT", "Dnt", "1", false},
+		{"Sec-GPC", "Sec-Gpc", "1", false},
+		{"Priority", "Priority", "u=0", false},
+		{"Pragma", "Pragma", "no-cache", false},
 
-	assert.Contains(t, got, "Content-Type=application/json")
-	assert.Contains(t, got, "Authorization=Bearer e…<redacted>",
-		"Authorization survives WITH the existing redaction")
-	assert.Contains(t, got, "X-Custom-Trace=yes",
-		"custom X-* headers survive (operator's own correlation token)")
+		// Sec-Fetch-* family (prefix match).
+		{"Sec-Fetch-Dest", "Sec-Fetch-Dest", "empty", false},
+		{"Sec-Fetch-Mode", "Sec-Fetch-Mode", "cors", false},
+		{"Sec-Fetch-Site", "Sec-Fetch-Site", "same-origin", false},
+		{"Sec-Fetch-User", "Sec-Fetch-User", "?1", false},
+
+		// Sec-Ch-Ua* family (prefix match).
+		{"Sec-Ch-Ua", "Sec-Ch-Ua", `"Chromium";v="128"`, false},
+		{"Sec-Ch-Ua-Mobile", "Sec-Ch-Ua-Mobile", "?0", false},
+		{"Sec-Ch-Ua-Platform", "Sec-Ch-Ua-Platform", `"Linux"`, false},
+
+		// Forwarding metadata (production-only).
+		{"X-Request-Id already echoed", "X-Request-Id", "abc-123", false},
+		{"X-Forwarded-For", "X-Forwarded-For", "1.2.3.4", false},
+		{"X-Real-IP", "X-Real-Ip", "1.2.3.4", false},
+
+		// Response-side noise.
+		{"Date redundant with log timestamp", "Date", "Mon, 16 May 2026", false},
+		{"Server", "Server", "auth0-mock", false},
+
+		// Signal: must survive.
+		{"Content-Type kept", "Content-Type", "application/json", true},
+		{"Authorization kept (with redaction)", "Authorization", "Bearer xxxxxxxxxxxxx", true},
+		{"Cookie kept (with redaction)", "Cookie", "session=xxxxxxxxxxxxxxx", true},
+		{"Set-Cookie kept", "Set-Cookie", "auth=xxxxxxxxxxxxxxx", true},
+		{"Custom X-* kept", "X-Custom-Trace", "yes", true},
+		{"Location kept (redirects)", "Location", "https://app/cb", true},
+		{"WWW-Authenticate kept (OAuth challenge)", "Www-Authenticate", "Bearer error=invalid_token", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := http.Header{}
+			h.Set(c.header, c.value)
+			got := interestingHeaders(h)
+			if c.kept {
+				assert.Contains(t, got, c.header+"=",
+					"%s should have survived the filter", c.header)
+			} else {
+				assert.NotContains(t, got, c.header+"=",
+					"%s should have been filtered as noise", c.header)
+			}
+		})
+	}
 }
 
 func TestRecovery_PanicStackPrintsAsIndentedBlock(t *testing.T) {

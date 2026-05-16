@@ -300,37 +300,64 @@ func (d *debugRecorder) statusOrOK() int {
 	return d.status
 }
 
-// noisyHeaders are HTTP headers that show up on nearly every request
-// without telling the reader anything useful for debugging an SDK
-// trace. They get dropped from the structured-log headers field so
-// the line stays scannable; they're still visible to a real packet
-// capture if you need them.
+// noisyHeaders is the exact-match set of HTTP headers that show up on
+// nearly every request without telling the reader anything useful for
+// debugging an SDK trace. Sec-Fetch-* / Sec-Ch-Ua* are handled by
+// isNoisyHeader's prefix check instead because browsers keep adding
+// new variants.
 var noisyHeaders = map[string]bool{
-	"accept":           true,
-	"accept-encoding":  true,
-	"accept-language":  true,
-	"cache-control":    true,
-	"connection":       true,
-	"content-length":   true,
-	"host":             true,
-	"origin":           true,
-	"referer":          true,
-	"user-agent":       true,
-	"x-request-id":     true, // We already log `rid=` from the context.
-	"x-forwarded-for":  true,
-	"x-forwarded-host": true,
-	"x-real-ip":        true,
+	// Standard request noise.
+	"accept":                    true,
+	"accept-encoding":           true,
+	"accept-language":           true,
+	"cache-control":             true,
+	"connection":                true,
+	"content-length":            true,
+	"host":                      true,
+	"origin":                    true,
+	"referer":                   true,
+	"user-agent":                true,
+	"te":                        true,
+	"upgrade-insecure-requests": true,
+	"via":                       true,
+	// Browser fingerprinting / privacy headers.
+	"dnt":      true, // Do-Not-Track.
+	"sec-gpc":  true, // Global Privacy Control.
+	"priority": true, // RFC 9218 request priority.
+	"pragma":   true, // Legacy cache control.
+	// Forwarding metadata — interesting in production, never in a mock.
+	"x-request-id":      true, // We already echo via X-Request-Id header.
+	"x-forwarded-for":   true,
+	"x-forwarded-host":  true,
+	"x-forwarded-proto": true,
+	"x-real-ip":         true,
+	// Common response noise.
+	"date":         true, // The log line already has a timestamp.
+	"server":       true,
+	"x-powered-by": true,
+}
+
+// isNoisyHeader returns true when the header is one of the standard
+// noise cases (exact-match noisyHeaders set) or a member of the
+// Sec-Fetch-* / Sec-Ch-Ua* families that browsers keep extending.
+func isNoisyHeader(k string) bool {
+	lk := strings.ToLower(k)
+	if noisyHeaders[lk] {
+		return true
+	}
+	return strings.HasPrefix(lk, "sec-fetch-") || strings.HasPrefix(lk, "sec-ch-ua")
 }
 
 // interestingHeaders is flatHeaders minus the noisy-but-ubiquitous
 // set. Keeps the structured log line short — Content-Type, any
-// Authorization (with redaction), and any custom X-* header still
+// Authorization (with redaction), Cookie/Set-Cookie (redacted),
+// Location, WWW-Authenticate, and any custom X-* header still
 // surface. Use for the structured log; flatHeaders stays for any
 // "give me everything" view (none today).
 func interestingHeaders(h http.Header) string {
 	filtered := make(http.Header, len(h))
 	for k, v := range h {
-		if noisyHeaders[strings.ToLower(k)] {
+		if isNoisyHeader(k) {
 			continue
 		}
 		filtered[k] = v
