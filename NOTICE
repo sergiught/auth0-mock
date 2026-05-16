@@ -1,0 +1,23 @@
+auth0-mock
+Copyright (c) 2024-2026 Sergiu Ghitea
+Released under the MIT License (see LICENSE).
+
+Third-party notices
+-------------------
+
+This distribution includes a stripped skeleton of Auth0's published Management
+API OpenAPI specification at:
+
+  api/auth0-management-api.openapi.json
+
+Only the structural shape (paths, methods, parameters, and JSON-schema
+definitions) is included; all Auth0-authored prose (descriptions, externalDocs
+links, x-* extensions) has been removed by cmd/genopenapi/main.go before the
+file was committed. The raw upstream document is gitignored and never
+redistributed.
+
+  Source: https://auth0.com/docs/api/management/openapi.json
+
+"Auth0" and "Okta" are trademarks of Okta, Inc.; they are used in this project
+only nominatively, to describe what auth0-mock mocks. This project is not
+affiliated with, endorsed by, or sponsored by Auth0 or Okta, Inc.

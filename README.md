@@ -340,9 +340,16 @@ affiliated with, endorsed by, or sponsored by Auth0 or Okta, Inc.** "Auth0" and
 "Okta" are trademarks of Okta, Inc.; they are used here only nominatively, to
 describe what this project mocks.
 
-The mock embeds Auth0's published Management API OpenAPI specification so it can
-route and validate every endpoint. That spec — and the operation/schema
-descriptions served at `/openapi.json`, `/openapi.yaml`, and `/docs` — is
-Auth0's content, reproduced here for interoperability. Auth0 does not attach an
-explicit redistribution license to the published spec; if that matters for your
-use, confirm the terms with Auth0/Okta directly.
+To route and validate every Management API endpoint, this repo embeds a
+**stripped skeleton** of Auth0's published Management API OpenAPI specification
+(sourced from <https://auth0.com/docs/api/management/openapi.json>): paths,
+methods, parameters, and JSON-schema shapes only. Every Auth0-authored
+`description`, `externalDocs` link, and `x-*` extension is removed before commit
+by [`stripUpstreamProse`](cmd/genopenapi/main.go) — see the
+[refresh procedure](CONTRIBUTING.md#refreshing-the-auth0-management-api-spec).
+The raw download is gitignored and never committed; only the skeleton is.
+
+Auth0 does not attach an explicit redistribution license to the published spec.
+The deliberate stripping above is what lets us redistribute the structural shape
+for interoperability without redistributing Auth0's prose. If the distinction
+matters for your compliance review, confirm the terms with Auth0/Okta directly.
