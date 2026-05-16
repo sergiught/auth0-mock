@@ -305,9 +305,24 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
-	// Verify PKCE if the /authorize step stashed a challenge for this code.
+	// PKCE verification. The matrix:
+	//   - entry stored + verifier supplied  → must match (existing-correct path)
+	//   - entry stored + no verifier        → entry.Verify("") returns
+	//     "missing code_verifier" → 400
+	//   - no entry     + verifier supplied  → client thinks PKCE is in play
+	//     but the server has no challenge stored (expired, swept, or the
+	//     /authorize step was never paired with a challenge). Failing closed
+	//     here closes a real bypass: a stolen `code` from a non-PKCE flow
+	//     would otherwise be redeemable.
+	//   - no entry     + no verifier        → legitimate non-PKCE flow → pass.
 	if h.PKCE != nil && req.Code != "" {
-		if entry, ok := h.PKCE.Consume(req.Code); ok {
+		entry, hasEntry := h.PKCE.Consume(req.Code)
+		if hasEntry || req.CodeVerifier != "" {
+			if !hasEntry {
+				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
+					"PKCE verification failed: no stored challenge for this authorization_code (expired or never issued)")
+				return
+			}
 			if err := entry.Verify(req.CodeVerifier); err != nil {
 				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
 					"PKCE verification failed: "+err.Error())

@@ -28,7 +28,12 @@ func newAuthRouter(t *testing.T) (chi.Router, *jwks.KeySet) {
 	})
 	require.NoError(t, err)
 	r := chi.NewRouter()
-	Mount(Deps{Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/", Log: zerolog.Nop()})
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:               zerolog.Nop(),
+		LogoutAllowedURLs: []string{"https://app/bye"},
+	})
 	return r, ks
 }
 

@@ -94,6 +94,7 @@ func run() error {
 		DefaultAudience:      cfg.DefaultAudience,
 		SpecValidationStrict: cfg.SpecValidationStrict,
 		MaxRequestBodyBytes:  cfg.MaxRequestBodyBytes,
+		LogoutAllowedURLs:    cfg.LogoutAllowedURLs,
 	})
 	if err != nil {
 		return fmt.Errorf("router init: %w", err)

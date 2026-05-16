@@ -257,6 +257,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap. Anything larger is read up to this point and the handler surfaces a 400. Set to `0` to disable. |
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
+| `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Relative URLs are always allowed (they can't escape the mock's origin); unlisted absolute URLs get a 400. Mirrors Auth0's tenant "Allowed Logout URLs" setting and closes an open-redirect vector. |
 
 ## 🔒 HTTPS / TLS
 

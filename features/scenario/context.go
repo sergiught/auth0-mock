@@ -90,6 +90,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		DefaultAudience:      "http://" + addr + "/api/v2/",
 		SpecValidationStrict: true,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
+		LogoutAllowedURLs:    []string{"https://app/bye"},
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)

@@ -87,12 +87,42 @@ func TestUserinfo_NoBearer_401(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func TestLogout_RedirectsToReturnTo(t *testing.T) {
+func TestLogout_RedirectsToAllowedAbsoluteURL(t *testing.T) {
+	// newAuthRouter wires LogoutAllowedURLs=["https://app/bye"], so this
+	// returnTo is on the allow-list and gets 302'd.
 	r, _ := newAuthRouter(t)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo=https%3A%2F%2Fapp%2Fbye", nil))
 	assert.Equal(t, http.StatusFound, w.Code)
 	assert.Equal(t, "https://app/bye", w.Header().Get("Location"))
+}
+
+func TestLogout_RejectsAbsoluteURLNotOnAllowList(t *testing.T) {
+	// Open-redirect guard: an absolute URL not in LogoutAllowedURLs must
+	// 400 instead of 302'ing the victim to attacker-controlled content.
+	r, _ := newAuthRouter(t)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo=https%3A%2F%2Fevil.tld", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Empty(t, w.Header().Get("Location"))
+	assert.Contains(t, w.Body.String(), "LOGOUT_ALLOWED_URLS")
+}
+
+func TestLogout_AllowsRelativeReturnTo(t *testing.T) {
+	// Relative URLs can't escape the mock's origin so they need no allow-list.
+	r, _ := newAuthRouter(t)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo=%2Fpost-logout", nil))
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "/post-logout", w.Header().Get("Location"))
+}
+
+func TestLogout_DefaultsToSlashWhenReturnToMissing(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout", nil))
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "/", w.Header().Get("Location"))
 }
 
 func TestRevoke_AlwaysReturns200(t *testing.T) {

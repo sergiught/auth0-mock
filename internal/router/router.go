@@ -38,6 +38,9 @@ type Deps struct {
 	// MaxRequestBodyBytes caps every incoming request body. Zero or negative
 	// disables the cap.
 	MaxRequestBodyBytes int64
+	// LogoutAllowedURLs is the allow-list of absolute returnTo URLs that
+	// /v2/logout will redirect to. Relative URLs are always allowed.
+	LogoutAllowedURLs []string
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -62,15 +65,16 @@ func New(d Deps) (http.Handler, error) {
 	}
 
 	authapi.Mount(authapi.Deps{
-		Router:          r,
-		Keys:            d.Keys,
-		Issuer:          d.Issuer,
-		DefaultAudience: d.DefaultAudience,
-		Log:             d.Log,
-		Claims:          d.Claims,
-		Permissions:     d.Permissions,
-		PKCE:            d.PKCE,
-		MFA:             d.MFA,
+		Router:            r,
+		Keys:              d.Keys,
+		Issuer:            d.Issuer,
+		DefaultAudience:   d.DefaultAudience,
+		Log:               d.Log,
+		Claims:            d.Claims,
+		Permissions:       d.Permissions,
+		PKCE:              d.PKCE,
+		MFA:               d.MFA,
+		LogoutAllowedURLs: d.LogoutAllowedURLs,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{

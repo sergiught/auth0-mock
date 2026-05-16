@@ -18,15 +18,16 @@ import (
 
 // Deps is the parameter object for Mount.
 type Deps struct {
-	Router          chi.Router
-	Keys            *jwks.KeySet
-	Issuer          string
-	DefaultAudience string
-	Log             zerolog.Logger
-	Claims          *claims.Store
-	Permissions     *permissions.Store
-	PKCE            *pkce.Store
-	MFA             *mfa.Store
+	Router            chi.Router
+	Keys              *jwks.KeySet
+	Issuer            string
+	DefaultAudience   string
+	Log               zerolog.Logger
+	Claims            *claims.Store
+	Permissions       *permissions.Store
+	PKCE              *pkce.Store
+	MFA               *mfa.Store
+	LogoutAllowedURLs []string
 }
 
 // Mount registers all Auth API endpoints on d.Router.
@@ -44,7 +45,7 @@ func Mount(d Deps) {
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{PKCE: d.PKCE})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", &DiscoveryHandler{Issuer: d.Issuer})
-	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{})
+	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{AllowedReturnURLs: d.LogoutAllowedURLs})
 	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/signup", &DBConnectionsSignupHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/change_password", &DBConnectionsChangePasswordHandler{})

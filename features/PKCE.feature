@@ -36,3 +36,18 @@ Feature: PKCE validation on authorization_code grant
       """
     Then I receive a 200 response
     And the response JSON path "access_token" exists
+
+  Scenario: Verifier supplied for an unknown code is rejected (PKCE-bypass guard)
+    # If the client sends code_verifier, PKCE is in play — the server having
+    # no stashed challenge means the code is stolen, expired, or never came
+    # from a PKCE /authorize. Either way, fail closed instead of minting.
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=authorization_code
+      client_id=demo
+      code=stolen-or-expired-code-with-no-stashed-challenge
+      code_verifier=the-attacker-supplied-verifier-43-chars-long
+      redirect_uri=https://app/cb
+      """
+    Then I receive a 400 response
+    And the response JSON path "error" equals "invalid_grant"

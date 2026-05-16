@@ -28,6 +28,12 @@ type Specification struct {
 	IdleTimeout          time.Duration  `env:"IDLE_TIMEOUT" envDefault:"120s"`
 	MaxRequestBodyBytes  int64          `env:"MAX_REQUEST_BODY_BYTES" envDefault:"1048576"` // 1 MiB
 	ShutdownTimeout      time.Duration  `env:"SHUTDOWN_TIMEOUT" envDefault:"5s"`
+
+	// LogoutAllowedURLs is the comma-separated allow-list of absolute
+	// returnTo URLs that /v2/logout will redirect to. Relative URLs are
+	// always allowed (they can't escape the mock's origin). Mirrors
+	// Auth0's "Allowed Logout URLs" tenant setting.
+	LogoutAllowedURLs []string `env:"LOGOUT_ALLOWED_URLS" envSeparator:","`
 }
 
 // Load populates a Specification from process environment.
