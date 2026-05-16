@@ -41,6 +41,11 @@ type Deps struct {
 	// LogoutAllowedURLs is the allow-list of absolute returnTo URLs that
 	// /v2/logout will redirect to. Relative URLs are always allowed.
 	LogoutAllowedURLs []string
+	// AuthorizeAllowedRedirectURIs is the allow-list of absolute
+	// redirect_uri values that /authorize will 302 to. Same threat model
+	// as LogoutAllowedURLs but on the higher-value endpoint (it carries
+	// `code` / `access_token` in the URL). Empty = no enforcement.
+	AuthorizeAllowedRedirectURIs []string
 	// BearerRequireAudience, when non-empty, makes the Mgmt-API bearer
 	// middleware reject tokens whose `aud` claim doesn't contain this
 	// value. Opt-in to preserve the documented test-friendly default.
@@ -70,16 +75,17 @@ func New(d Deps) (http.Handler, error) {
 	}
 
 	authapi.Mount(authapi.Deps{
-		Router:            r,
-		Keys:              d.Keys,
-		Issuer:            d.Issuer,
-		DefaultAudience:   d.DefaultAudience,
-		Log:               d.Log,
-		Claims:            d.Claims,
-		Permissions:       d.Permissions,
-		PKCE:              d.PKCE,
-		MFA:               d.MFA,
-		LogoutAllowedURLs: d.LogoutAllowedURLs,
+		Router:                       r,
+		Keys:                         d.Keys,
+		Issuer:                       d.Issuer,
+		DefaultAudience:              d.DefaultAudience,
+		Log:                          d.Log,
+		Claims:                       d.Claims,
+		Permissions:                  d.Permissions,
+		PKCE:                         d.PKCE,
+		MFA:                          d.MFA,
+		LogoutAllowedURLs:            d.LogoutAllowedURLs,
+		AuthorizeAllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{

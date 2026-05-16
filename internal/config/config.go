@@ -35,6 +35,16 @@ type Specification struct {
 	// Auth0's "Allowed Logout URLs" tenant setting.
 	LogoutAllowedURLs []string `env:"LOGOUT_ALLOWED_URLS" envSeparator:","`
 
+	// AuthorizeAllowedCallbacks is the comma-separated allow-list of
+	// absolute redirect_uri values that /authorize will 302 to. Same
+	// threat model as LogoutAllowedURLs but on the higher-value endpoint:
+	// /authorize carries `code` / `access_token` in the URL, so an
+	// unvalidated redirect_uri leaks them to attacker-controlled hosts.
+	// Mirrors Auth0's per-application "Allowed Callback URLs" setting.
+	// Empty = no enforcement (the test-friendly default — clients can
+	// register any callback).
+	AuthorizeAllowedCallbacks []string `env:"AUTHORIZE_ALLOWED_CALLBACKS" envSeparator:","`
+
 	// BearerRequireAudience opts the Mgmt-API bearer middleware into Auth0-
 	// like strict audience binding. When non-empty, tokens whose `aud`
 	// claim doesn't contain this value get a 401. Empty (default) keeps

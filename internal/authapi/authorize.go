@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -17,6 +19,15 @@ type AuthorizeHandler struct {
 	// receives so the matching /oauth/token exchange can verify the
 	// code_verifier.
 	PKCE *pkce.Store
+	// AllowedRedirectURIs is the allow-list of absolute redirect_uri values
+	// that /authorize will 302 to. Mirrors Auth0's per-application
+	// "Allowed Callback URLs" tenant setting. Same threat model as
+	// LogoutHandler.AllowedReturnURLs but on the higher-value endpoint:
+	// /authorize carries `code` / `access_token` in the URL, so an
+	// unvalidated redirect_uri leaks them to attacker-controlled hosts.
+	// Relative URIs are always permitted. Empty list = no enforcement
+	// (test-friendly default).
+	AllowedRedirectURIs []string
 }
 
 func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +46,11 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u, err := url.Parse(redirect)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "invalid redirect_uri")
+		return
+	}
+	if !h.isRedirectAllowed(redirect, u) {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request",
+			"redirect_uri is not in the configured allow-list (AUTHORIZE_ALLOWED_CALLBACKS); add it there to permit this redirect")
 		return
 	}
 	params := u.Query()
@@ -82,4 +98,27 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", u.String())
 	w.WriteHeader(http.StatusFound)
+}
+
+// isRedirectAllowed mirrors LogoutHandler.isAllowed: relative URIs are
+// always safe (can't escape origin), absolute URIs must appear verbatim
+// in AllowedRedirectURIs. Empty allow-list means no enforcement (the
+// documented test-friendly default — clients can register any callback).
+//
+// The backslash and scheme guards are identical to logout's: browsers
+// normalise `\` → `/` (so "/\\evil.tld" becomes "//evil.tld"), and
+// non-http schemes (javascript:, data:, mailto:, custom-app) have an
+// empty host but a non-empty scheme so a Host-only check would let
+// them past.
+func (h *AuthorizeHandler) isRedirectAllowed(raw string, u *url.URL) bool {
+	if len(h.AllowedRedirectURIs) == 0 {
+		return true
+	}
+	if strings.ContainsAny(raw, "\\") {
+		return false
+	}
+	if u.Scheme == "" && u.Host == "" {
+		return true
+	}
+	return slices.Contains(h.AllowedRedirectURIs, raw)
 }

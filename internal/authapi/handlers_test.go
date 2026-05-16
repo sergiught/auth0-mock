@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -123,6 +126,97 @@ func TestLogout_DefaultsToSlashWhenReturnToMissing(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout", nil))
 	assert.Equal(t, http.StatusFound, w.Code)
 	assert.Equal(t, "/", w.Header().Get("Location"))
+}
+
+func TestLogout_RejectsDangerousSchemes(t *testing.T) {
+	// `Host == ""` was treated as safe-because-relative before, but
+	// these URLs all parse with empty host and a dangerous scheme:
+	//   javascript:alert(1)  data:text/html,xx  mailto:a@b
+	// Any of them would be reflected into Location and followed by
+	// SDKs that don't pre-filter the scheme list.
+	r, _ := newAuthRouter(t)
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"data:text/html,xss",
+		"mailto:a@b",
+		"file:///etc/passwd",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo="+url.QueryEscape(raw), nil))
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Empty(t, w.Header().Get("Location"))
+		})
+	}
+}
+
+func TestLogout_RejectsBackslashBypass(t *testing.T) {
+	// Browsers normalise `\` → `/` in Location, so "/\evil.tld"
+	// resolves as "//evil.tld" (protocol-relative cross-origin).
+	// The isAllowed check rejects any returnTo containing backslash
+	// regardless of scheme so neither parser-quirk slips through.
+	r, _ := newAuthRouter(t)
+	for _, raw := range []string{`/\evil.tld`, `/\\evil.tld`, `\\evil.tld`} {
+		t.Run(raw, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo="+url.QueryEscape(raw), nil))
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Empty(t, w.Header().Get("Location"))
+		})
+	}
+}
+
+func TestAuthorize_RejectsRedirectURINotOnAllowList(t *testing.T) {
+	// When AllowedRedirectURIs is set, /authorize must reject any
+	// absolute redirect_uri not on the list. Without this guard,
+	// /authorize is an open-redirect that leaks the `code` /
+	// `access_token` it appends to the URL to attacker-controlled hosts.
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:                          zerolog.Nop(),
+		AuthorizeAllowedRedirectURIs: []string{"https://app/cb"},
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET",
+		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fevil.tld&response_type=token", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Empty(t, w.Header().Get("Location"))
+	assert.Contains(t, w.Body.String(), "AUTHORIZE_ALLOWED_CALLBACKS")
+}
+
+func TestAuthorize_AllowsRedirectURIOnAllowList(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:                          zerolog.Nop(),
+		AuthorizeAllowedRedirectURIs: []string{"https://app/cb"},
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET",
+		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=code", nil))
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "https://app/cb")
+}
+
+func TestAuthorize_NoAllowListIsPermissive(t *testing.T) {
+	// Default behaviour: when AllowedRedirectURIs is empty, /authorize
+	// accepts any redirect_uri (the test-friendly documented default).
+	// Closing the open redirect is opt-in via AUTHORIZE_ALLOWED_CALLBACKS.
+	r, _ := newAuthRouter(t) // no allow-list configured
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET",
+		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fanywhere%2Fcb&response_type=code", nil))
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "https://anywhere/cb")
 }
 
 func TestRevoke_AlwaysReturns200(t *testing.T) {

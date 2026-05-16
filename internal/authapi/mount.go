@@ -26,8 +26,9 @@ type Deps struct {
 	Claims            *claims.Store
 	Permissions       *permissions.Store
 	PKCE              *pkce.Store
-	MFA               *mfa.Store
-	LogoutAllowedURLs []string
+	MFA                 *mfa.Store
+	LogoutAllowedURLs   []string
+	AuthorizeAllowedRedirectURIs []string
 }
 
 // Mount registers all Auth API endpoints on d.Router.
@@ -42,7 +43,10 @@ func Mount(d Deps) {
 		PKCE:            d.PKCE,
 		MFA:             d.MFA,
 	})
-	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{PKCE: d.PKCE})
+	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
+		PKCE:                d.PKCE,
+		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
+	})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", &DiscoveryHandler{Issuer: d.Issuer})
 	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{AllowedReturnURLs: d.LogoutAllowedURLs})

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 )
@@ -37,13 +38,23 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *LogoutHandler) isAllowed(returnTo string) bool {
+	// Backslash defence: browsers normalise '\' → '/' before following
+	// Location, so "/\\evil.tld" gets resolved as "//evil.tld" — same
+	// open-redirect class as a bare //evil.tld. url.Parse keeps both
+	// in u.Path so the regular host check below can't catch them.
+	if strings.ContainsAny(returnTo, "\\") {
+		return false
+	}
 	u, err := url.Parse(returnTo)
 	if err != nil {
 		return false
 	}
-	// Relative URLs (no host component) can't redirect cross-origin and so
-	// are always safe.
-	if u.Host == "" {
+	// Truly relative URLs (no scheme AND no host) can't escape this
+	// origin. Requiring "no scheme" closes the URL-scheme bypass class:
+	// `javascript:`, `data:`, `mailto:` and custom-app schemes all
+	// parse with an empty host but a non-empty scheme and would
+	// otherwise sneak past the allow-list.
+	if u.Scheme == "" && u.Host == "" {
 		return true
 	}
 	return slices.Contains(h.AllowedReturnURLs, returnTo)
