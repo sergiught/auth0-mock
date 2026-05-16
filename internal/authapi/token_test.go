@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
 func newAuthRouter(t *testing.T) (chi.Router, *jwks.KeySet) {
@@ -158,4 +160,58 @@ func TestToken_AuthorizationCode_IncludesIDToken(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.NotEmpty(t, body.AccessToken)
 	assert.NotEmpty(t, body.IDToken)
+}
+
+// TestToken_CustomClaims_OverrideReserved nails down the documented design:
+// /admin0/claims entries win over the reserved claims the grant handler sets
+// (gty, azp), and over the permissions claim injected from
+// /admin0/permissions. Adopters who lean on this for tests would notice
+// instantly if it regressed — there's no other test that catches it.
+func TestToken_CustomClaims_OverrideReserved(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+
+	claimsStore := claims.NewStore()
+	claimsStore.Set(map[string]any{
+		"gty":         "OVERRIDDEN",
+		"azp":         "OVERRIDDEN",
+		"permissions": []any{"custom:scope"},
+		"role":        "admin", // brand-new claim, also takes
+	})
+
+	permsStore := permissions.NewStore()
+	permsStore.Set("https://api/", []string{"would-be-overridden"})
+
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:         zerolog.Nop(),
+		Claims:      claimsStore,
+		Permissions: permsStore,
+	})
+
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_id", "real-client")
+	form.Set("client_secret", "x")
+	form.Set("audience", "https://api/")
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	c, err := ks.Verify(body.AccessToken)
+	require.NoError(t, err)
+
+	assert.Equal(t, "OVERRIDDEN", c.Extra["gty"], "custom gty must beat the handler-set client-credentials")
+	assert.Equal(t, "OVERRIDDEN", c.Extra["azp"], "custom azp must beat the handler-set client_id")
+	assert.Equal(t, []any{"custom:scope"}, c.Extra["permissions"],
+		"custom permissions must beat the /admin0/permissions injection")
+	assert.Equal(t, "admin", c.Extra["role"], "brand-new claims pass through")
 }
