@@ -8,7 +8,7 @@ permissions:
   contents: write          # release-please needs this to create tags/releases; goreleaser uploads artifacts
   pull-requests: write     # release-please opens/updates the Release PR
   packages: write          # push images to ghcr.io
-  id-token: write          # reserved for future cosign / OIDC signing
+  id-token: write          # cosign keyless signing via OIDC (no shared secret)
 
 env:
   GO_VERSION: '1.26'

@@ -17,7 +17,12 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 )
 
-func TestAuthorize_RedirectsToCallback(t *testing.T) {
+// TestAuthorize_PermissiveDefaultRedirectsToCallback exercises the
+// documented test-friendly default: with no AuthorizeAllowedRedirectURIs
+// configured (newAuthRouter wires none), any redirect_uri is accepted.
+// The opted-in allow-list path is covered by
+// TestAuthorize_RejectsRedirectURINotOnAllowList + _AllowsRedirectURIOnAllowList.
+func TestAuthorize_PermissiveDefaultRedirectsToCallback(t *testing.T) {
 	r, _ := newAuthRouter(t)
 	req := httptest.NewRequest("GET", "/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&response_type=code", nil)
 	w := httptest.NewRecorder()

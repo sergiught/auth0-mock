@@ -46,7 +46,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "invalid redirect_uri")
 		return
 	}
-	if !h.isRedirectAllowed(redirect, u) {
+	if !h.isRedirectAllowed(redirect) {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request",
 			"redirect_uri is not in the configured allow-list (AUTHORIZE_ALLOWED_CALLBACKS); add it there to permit this redirect")
 		return
@@ -104,7 +104,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // register any callback); populated = full Auth0-style allow-list
 // with the scheme + backslash + multiple-slash + leading-whitespace
 // bypass guards.
-func (h *AuthorizeHandler) isRedirectAllowed(raw string, _ *url.URL) bool {
+func (h *AuthorizeHandler) isRedirectAllowed(raw string) bool {
 	if len(h.AllowedRedirectURIs) == 0 {
 		return true
 	}

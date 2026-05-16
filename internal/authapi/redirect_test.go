@@ -33,10 +33,17 @@ func TestIsSafeRedirect_BypassClass(t *testing.T) {
 		"////evil.tld",
 
 		// Leading whitespace — net/url keeps it in Path; browsers trim it.
+		// The strip-set covers the full WHATWG URL §C0-control + space
+		// set (NUL, HT, LF, VT, FF, CR, space) — \v and \f aren't in
+		// the four obvious ones but they pass net/url without error
+		// and would otherwise leave us a //host gap.
 		" //evil.tld",
 		"\t//evil.tld",
 		"\n//evil.tld",
+		"\v//evil.tld",
+		"\f//evil.tld",
 		"\r//evil.tld",
+		"\x00//evil.tld",
 
 		// Absolute, non-allow-listed.
 		"https://evil.tld/cb",

@@ -29,9 +29,12 @@ func isSafeRedirect(raw string, allowList []string) bool {
 	if strings.ContainsAny(raw, "\\") {
 		return false
 	}
-	// Reject leading whitespace — browsers trim it before following, so
-	// " //evil.tld" effectively becomes "//evil.tld" (protocol-relative).
-	if trimmed := strings.TrimLeft(raw, " \t\n\r"); trimmed != raw {
+	// Reject leading whitespace — browsers trim WHATWG URL §C0 controls +
+	// space before following Location, so " //evil.tld" effectively
+	// becomes "//evil.tld" (protocol-relative). We trim the same set
+	// (NUL, \t, \n, \v, \f, \r, space) — slightly wider than the four
+	// obvious ones because `\v` and `\f` pass net/url without error.
+	if trimmed := strings.TrimLeft(raw, "\x00 \t\n\v\f\r"); trimmed != raw {
 		return false
 	}
 	// Reject protocol-relative ("//foo") and authority-confusing
