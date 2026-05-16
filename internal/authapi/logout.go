@@ -2,9 +2,6 @@ package authapi
 
 import (
 	"net/http"
-	"net/url"
-	"slices"
-	"strings"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 )
@@ -39,33 +36,12 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // isAllowed returns true when no allow-list is configured (permissive
 // default for the CI/local-testing use case) or when the returnTo passes
-// every check on the opted-in path: backslash-free, no dangerous scheme,
-// and either truly relative or an exact match against AllowedReturnURLs.
+// every check on the opted-in path.
 func (h *LogoutHandler) isAllowed(returnTo string) bool {
 	// Empty list = permissive default. Adopters opt into the allow-list
 	// by setting LOGOUT_ALLOWED_URLS.
 	if len(h.AllowedReturnURLs) == 0 {
 		return true
 	}
-	// Backslash defence: browsers normalise '\' → '/' before following
-	// Location, so "/\\evil.tld" resolves to "//evil.tld" — same open-
-	// redirect class as a bare //evil.tld would be — but url.Parse keeps
-	// the backslashes in u.Path so the host check below can't catch
-	// them; reject up-front instead.
-	if strings.ContainsAny(returnTo, "\\") {
-		return false
-	}
-	u, err := url.Parse(returnTo)
-	if err != nil {
-		return false
-	}
-	// Truly relative URLs (no scheme AND no host) can't escape this
-	// origin. Requiring "no scheme" closes the URL-scheme bypass class:
-	// `javascript:`, `data:`, `mailto:` and custom-app schemes all
-	// parse with an empty host but a non-empty scheme and would
-	// otherwise sneak past the allow-list.
-	if u.Scheme == "" && u.Host == "" {
-		return true
-	}
-	return slices.Contains(h.AllowedReturnURLs, returnTo)
+	return isSafeRedirect(returnTo, h.AllowedReturnURLs)
 }

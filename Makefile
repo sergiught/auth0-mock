@@ -142,7 +142,10 @@ refresh-spec: ## Re-vendor the Auth0 Management API skeleton from a manually-dow
 .PHONY: pre-commit
 pre-commit: ## Install local pre-commit and commit-msg hooks
 	@if ! command -v pre-commit >/dev/null 2>&1; then \
-		echo "'pre-commit' is not installed. Install with 'pip install pre-commit' or 'brew install pre-commit'."; \
+		echo "'pre-commit' is not installed. Install with one of:"; \
+		echo "  pipx install pre-commit       # recommended on PEP-668 distros (Arch, Debian 12+)"; \
+		echo "  brew install pre-commit       # macOS"; \
+		echo "  pip install --user pre-commit # any other Python environment"; \
 		exit 1; \
 	fi
 	@pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push

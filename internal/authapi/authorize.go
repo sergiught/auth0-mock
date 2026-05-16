@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -100,25 +98,15 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusFound)
 }
 
-// isRedirectAllowed mirrors LogoutHandler.isAllowed: relative URIs are
-// always safe (can't escape origin), absolute URIs must appear verbatim
-// in AllowedRedirectURIs. Empty allow-list means no enforcement (the
-// documented test-friendly default — clients can register any callback).
-//
-// The backslash and scheme guards are identical to logout's: browsers
-// normalise `\` → `/` (so "/\\evil.tld" becomes "//evil.tld"), and
-// non-http schemes (javascript:, data:, mailto:, custom-app) have an
-// empty host but a non-empty scheme so a Host-only check would let
-// them past.
-func (h *AuthorizeHandler) isRedirectAllowed(raw string, u *url.URL) bool {
+// isRedirectAllowed shares the opt-in allow-list logic with
+// LogoutHandler.isAllowed via isSafeRedirect: empty allow-list = no
+// enforcement (the documented test-friendly default — clients can
+// register any callback); populated = full Auth0-style allow-list
+// with the scheme + backslash + multiple-slash + leading-whitespace
+// bypass guards.
+func (h *AuthorizeHandler) isRedirectAllowed(raw string, _ *url.URL) bool {
 	if len(h.AllowedRedirectURIs) == 0 {
 		return true
 	}
-	if strings.ContainsAny(raw, "\\") {
-		return false
-	}
-	if u.Scheme == "" && u.Host == "" {
-		return true
-	}
-	return slices.Contains(h.AllowedRedirectURIs, raw)
+	return isSafeRedirect(raw, h.AllowedRedirectURIs)
 }
