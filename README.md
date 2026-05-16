@@ -35,17 +35,27 @@ It is not for: production traffic, replacing your IdP, or anything that needs a 
 
 ## 🚀 Quick start
 
-### Local binary
+### From a release (recommended)
+
+```bash
+# latest stable
+curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash
+
+# pinned version
+curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.1.0
+
+# install to a user-writable dir (no sudo)
+BIN_DIR="$HOME/.local/bin" bash <(curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh)
+```
+
+The script downloads the goreleaser-built archive, verifies its sha256 against
+the release's `checksums.txt`, and installs the binary as `auth0-mock`. Source
+is at [`install.sh`](install.sh) — review before piping to bash if that bothers you.
+
+### From source
 
 ```bash
 make build && ./bin/auth0-mock
-```
-
-Or via `go install` (binary lands in `$GOBIN`, default `~/go/bin`):
-
-```bash
-go install github.com/sergiught/auth0-mock/cmd/api@latest
-~/go/bin/api               # the package is cmd/api, so the binary is "api"
 ```
 
 ### Live-reload dev loop (`air`)
