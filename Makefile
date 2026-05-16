@@ -182,6 +182,21 @@ release-dry-run: ## Build a full release locally without publishing — exercise
 #-----------------------------------------------------------------------------------------------------------------------
 .PHONY: demo
 demo: build ## Run the go-auth0 SDK example against a throwaway mock instance
+	@# Port-busy precheck: without it, if anything (a stale auth0-mock,
+	@# a docker compose run, an unrelated service on :8443) already
+	@# holds the port, the demo silently connects to that *other* server
+	@# and surfaces a baffling TLS cert mismatch instead of the actual
+	@# "port in use" error.
+	@if command -v ss >/dev/null 2>&1; then \
+		busy=$$(ss -tlnH 'sport = :8443' 2>/dev/null | head -1); \
+	elif command -v lsof >/dev/null 2>&1; then \
+		busy=$$(lsof -i :8443 -sTCP:LISTEN -t 2>/dev/null | head -1); \
+	else busy=; fi; \
+	if [ -n "$$busy" ]; then \
+		echo "==> ERROR: localhost:8443 is already in use. Stop the other listener and re-run \`make demo\`."; \
+		echo "    (occupant: $$busy)"; \
+		exit 1; \
+	fi
 	@echo "==> Starting $(BINARY_NAME) for the demo (with persisted TLS cert)"
 	@TLS_DIR=/tmp/auth0-mock-demo-tls; \
 	mkdir -p $$TLS_DIR; \
