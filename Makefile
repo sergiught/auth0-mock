@@ -31,7 +31,7 @@ help: ## Show this help message and exit
 #-----------------------------------------------------------------------------------------------------------------------
 $(BINARIES_DIR)/golangci-lint:
 	@echo "==> Installing golangci-lint within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@ff63786c30d6c2926f99d677ab2ecf089e9390ad # v2.5.0
+	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@c0d3ddc9cf3faa61a4e378e879ece580256d76e5 # v2.12.2
 
 $(BINARIES_DIR)/commitlint:
 	@echo "==> Installing commitlint within ${BINARIES_DIR}"
