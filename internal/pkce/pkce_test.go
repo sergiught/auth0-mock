@@ -42,53 +42,78 @@ func TestStore_Expiry(t *testing.T) {
 	assert.False(t, ok, "expired entries should be rejected")
 }
 
-func TestEntry_Verify_S256_Match(t *testing.T) {
+// TestEntry_Verify is the full matrix for Entry.Verify across both
+// challenge methods (S256 + plain) and every documented failure mode.
+// Cases marked wantErrSubstr expect that substring inside the returned
+// error; empty wantErrSubstr means success.
+func TestEntry_Verify(t *testing.T) {
 	t.Parallel()
-	verifier := "the-quick-brown-fox-jumps-over-the-lazy-dog-43-chars"
-	sum := sha256.Sum256([]byte(verifier))
-	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
-	e := Entry{Challenge: challenge, Method: MethodS256}
 
-	assert.NoError(t, e.Verify(verifier))
-}
+	s256OK := "the-quick-brown-fox-jumps-over-the-lazy-dog-43-chars"
+	sum := sha256.Sum256([]byte(s256OK))
+	s256Challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 
-func TestEntry_Verify_S256_Mismatch(t *testing.T) {
-	t.Parallel()
-	e := Entry{Challenge: "wrong", Method: MethodS256}
-	err := e.Verify("any-verifier")
-	if assert.Error(t, err) {
-		assert.Contains(t, err.Error(), "S256 mismatch")
+	cases := []struct {
+		name          string
+		challenge     string
+		method        Method
+		verifier      string
+		wantErrSubstr string // Empty = expect nil error.
+	}{
+		{
+			name:      "S256 match",
+			challenge: s256Challenge,
+			method:    MethodS256,
+			verifier:  s256OK,
+		},
+		{
+			name:          "S256 mismatch",
+			challenge:     "wrong",
+			method:        MethodS256,
+			verifier:      "any-verifier",
+			wantErrSubstr: "S256 mismatch",
+		},
+		{
+			name:      "plain match",
+			challenge: "literal",
+			method:    MethodPlain,
+			verifier:  "literal",
+		},
+		{
+			name:          "plain mismatch",
+			challenge:     "literal",
+			method:        MethodPlain,
+			verifier:      "other",
+			wantErrSubstr: "plain mismatch",
+		},
+		{
+			name:          "missing verifier",
+			challenge:     "ch",
+			method:        MethodS256,
+			verifier:      "",
+			wantErrSubstr: "missing code_verifier",
+		},
+		{
+			name:          "unsupported method",
+			challenge:     "ch",
+			method:        "weird",
+			verifier:      "anything",
+			wantErrSubstr: "unsupported", // From "unsupported code_challenge_method".
+		},
 	}
-}
-
-func TestEntry_Verify_Plain_Match(t *testing.T) {
-	t.Parallel()
-	e := Entry{Challenge: "literal", Method: MethodPlain}
-	assert.NoError(t, e.Verify("literal"))
-}
-
-func TestEntry_Verify_Plain_Mismatch(t *testing.T) {
-	t.Parallel()
-	e := Entry{Challenge: "literal", Method: MethodPlain}
-	err := e.Verify("other")
-	if assert.Error(t, err) {
-		assert.Contains(t, err.Error(), "plain mismatch")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			e := Entry{Challenge: c.challenge, Method: c.method}
+			err := e.Verify(c.verifier)
+			if c.wantErrSubstr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantErrSubstr)
+		})
 	}
-}
-
-func TestEntry_Verify_MissingVerifier(t *testing.T) {
-	t.Parallel()
-	e := Entry{Challenge: "ch", Method: MethodS256}
-	err := e.Verify("")
-	if assert.Error(t, err) {
-		assert.Contains(t, err.Error(), "missing code_verifier")
-	}
-}
-
-func TestEntry_Verify_UnsupportedMethod(t *testing.T) {
-	t.Parallel()
-	e := Entry{Challenge: "ch", Method: "weird"}
-	assert.Error(t, e.Verify("anything"))
 }
 
 func TestStore_Reset(t *testing.T) {

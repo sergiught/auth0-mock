@@ -147,75 +147,111 @@ func TestValidatorResolve(t *testing.T) {
 // silence unused-import linter for openapi3 in some Go versions.
 var _ = openapi3.NewLoader
 
-func TestValidator_ValidateRequestMatcher_RejectsUnknownField(t *testing.T) {
-	s, _, postOp := loadMinSpec(t)
+// TestValidator_ValidateRequestMatcher covers the matcher-side body
+// validation: matchers are PARTIAL bodies (only the subset the operator
+// wants to match on), so the validator rejects unknown fields + bad
+// types but accepts a body missing schema-`required` fields.
+func TestValidator_ValidateRequestMatcher(t *testing.T) {
+	s, getOp, postOp := loadMinSpec(t)
 	v, err := NewValidator(s)
 	require.NoError(t, err)
 
-	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"hello":"hola"}`))
-	assert.Error(t, err)
+	cases := []struct {
+		name    string
+		op      Operation
+		body    json.RawMessage
+		wantErr bool
+	}{
+		{
+			name:    "rejects unknown field",
+			op:      postOp,
+			body:    json.RawMessage(`{"hello":"hola"}`),
+			wantErr: true,
+		},
+		{
+			// "name" is required by the schema, but a matcher is
+			// partial by design — a body with only the optional
+			// "size" field must be accepted.
+			name: "accepts valid partial (missing required)",
+			op:   postOp,
+			body: json.RawMessage(`{"size":5}`),
+		},
+		{
+			name:    "rejects mistyped known field",
+			op:      postOp,
+			body:    json.RawMessage(`{"size":"big"}`),
+			wantErr: true,
+		},
+		{
+			name: "empty body is a no-op (nil)",
+			op:   postOp,
+			body: nil,
+		},
+		{
+			name: "empty body is a no-op (null)",
+			op:   postOp,
+			body: json.RawMessage(`null`),
+		},
+		{
+			// GetWidget declares no request body; a body matcher
+			// can't apply.
+			name:    "rejects body for body-less operation",
+			op:      getOp,
+			body:    json.RawMessage(`{"anything":1}`),
+			wantErr: true,
+		},
+		{
+			name: "accepts full valid body",
+			op:   postOp,
+			body: json.RawMessage(`{"name":"foo","size":5}`),
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			err := v.ValidateRequestMatcher(c.op, c.body)
+			if c.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
-func TestValidator_ValidateRequestMatcher_AcceptsValidPartial(t *testing.T) {
-	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s)
-	require.NoError(t, err)
-
-	// "name" is required by the schema, but a matcher is partial by design:
-	// a body with only the optional "size" field must be accepted.
-	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"size":5}`))
-	assert.NoError(t, err)
-}
-
-func TestValidator_ValidateRequestMatcher_RejectsMistypedKnownField(t *testing.T) {
-	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s)
-	require.NoError(t, err)
-
-	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"size":"big"}`))
-	assert.Error(t, err)
-}
-
-func TestValidator_ValidateRequestMatcher_EmptyBodyIsNoop(t *testing.T) {
-	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s)
-	require.NoError(t, err)
-
-	assert.NoError(t, v.ValidateRequestMatcher(postOp, nil))
-	assert.NoError(t, v.ValidateRequestMatcher(postOp, json.RawMessage(`null`)))
-}
-
-func TestValidator_ValidateRequestMatcher_RejectsBodyForBodylessOperation(t *testing.T) {
-	s, getOp, _ := loadMinSpec(t)
-	v, err := NewValidator(s)
-	require.NoError(t, err)
-
-	// The getWidget operation declares no request body; a body matcher cannot apply.
-	err = v.ValidateRequestMatcher(getOp, json.RawMessage(`{"anything":1}`))
-	assert.Error(t, err)
-}
-
+// TestValidator_ValidateQueryMatcher covers the parameter-side rules:
+// only declared query parameters are accepted; path parameters are
+// rejected because they don't apply to query matchers.
 func TestValidator_ValidateQueryMatcher(t *testing.T) {
 	s, _, postOp := loadMinSpec(t)
 	v, err := NewValidator(s)
 	require.NoError(t, err)
 
-	assert.NoError(t, v.ValidateQueryMatcher(postOp, map[string]string{"fields": "name"}))
-	assert.NoError(t, v.ValidateQueryMatcher(postOp, nil))
-
-	err = v.ValidateQueryMatcher(postOp, map[string]string{"not_a_param": "x"})
-	assert.Error(t, err)
-
-	// "id" is a path parameter, not a query parameter, so it must be rejected.
-	err = v.ValidateQueryMatcher(postOp, map[string]string{"id": "x"})
-	assert.Error(t, err)
-}
-
-func TestValidator_ValidateRequestMatcher_AcceptsFullValidBody(t *testing.T) {
-	s, _, postOp := loadMinSpec(t)
-	v, err := NewValidator(s)
-	require.NoError(t, err)
-
-	err = v.ValidateRequestMatcher(postOp, json.RawMessage(`{"name":"foo","size":5}`))
-	assert.NoError(t, err)
+	cases := []struct {
+		name    string
+		query   map[string]string
+		wantErr bool
+	}{
+		{name: "declared query param", query: map[string]string{"fields": "name"}},
+		{name: "nil map", query: nil},
+		{name: "undeclared param rejected", query: map[string]string{"not_a_param": "x"}, wantErr: true},
+		{
+			// "id" is a path parameter, not a query parameter, so
+			// it must be rejected.
+			name:    "path param rejected as query",
+			query:   map[string]string{"id": "x"},
+			wantErr: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			err := v.ValidateQueryMatcher(postOp, c.query)
+			if c.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
