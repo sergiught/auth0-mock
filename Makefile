@@ -3,6 +3,7 @@
 #-----------------------------------------------------------------------------------------------------------------------
 BINARIES_DIR = $(CURDIR)/bin
 BINARY_NAME = auth0-mock
+COVERAGE_DIR = $(CURDIR)/coverage
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Rules (https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html#Rule-Introduction)
@@ -34,6 +35,11 @@ build: ## Build the auth0-mock binary into bin/
 	@echo "==> Building $(BINARY_NAME) within $(BINARIES_DIR)"
 	@go build -v -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
 
+.PHONY: build-with-cover
+build-with-cover: ## Build a coverage-instrumented binary that emits covdata to GOCOVERDIR at runtime
+	@echo "==> Building $(BINARY_NAME) (coverage-instrumented) within $(BINARIES_DIR)"
+	@go build -cover -coverpkg=./... -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
+
 .PHONY: test
 test: ## Run unit tests with the race detector
 	@go test -race -count=1 ./...
@@ -41,6 +47,26 @@ test: ## Run unit tests with the race detector
 .PHONY: test-features
 test-features: ## Run the godog acceptance suite
 	@go test -tags=features -count=1 ./cmd/api/...
+
+.PHONY: test-cover
+test-cover: ## Run unit tests with coverage -> coverage/unit.out
+	@mkdir -p $(COVERAGE_DIR)
+	@echo "==> Running unit tests with coverage"
+	@go test -race -count=1 -coverpkg=./... -coverprofile=$(COVERAGE_DIR)/unit.out ./...
+	@go tool cover -func=$(COVERAGE_DIR)/unit.out | tail -1
+
+.PHONY: test-features-cover
+test-features-cover: ## Run the godog suite with coverage -> coverage/features.out
+	@mkdir -p $(COVERAGE_DIR)
+	@echo "==> Running godog acceptance suite with coverage"
+	@go test -tags=features -count=1 -coverpkg=./... -coverprofile=$(COVERAGE_DIR)/features.out ./cmd/api/...
+	@go tool cover -func=$(COVERAGE_DIR)/features.out | tail -1
+
+.PHONY: coverage
+coverage: test-cover test-features-cover ## Run all tests with coverage and print per-suite totals
+	@echo "==> Coverage files written under $(COVERAGE_DIR)/"
+	@printf "  unit:     %s\n" "$$(go tool cover -func=$(COVERAGE_DIR)/unit.out | tail -1 | awk '{print $$3}')"
+	@printf "  features: %s\n" "$$(go tool cover -func=$(COVERAGE_DIR)/features.out | tail -1 | awk '{print $$3}')"
 
 .PHONY: lint
 lint: $(BINARIES_DIR)/golangci-lint ## Run golangci-lint over the project (with --fix)

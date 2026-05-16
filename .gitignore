@@ -33,6 +33,7 @@ go.work
 
 # Coverage
 coverage.out
+/coverage/
 
 # air (live-reload) scratch
 /tmp/
