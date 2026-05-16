@@ -56,13 +56,13 @@ All tags are multi-arch manifests covering `linux/amd64` and `linux/arm64`.
 
 ### Provenance
 
-Every image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). Verify with:
+Every `ghcr.io/sergiught/auth0-mock:<tag>` image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). The Docker Hub mirror (`sergiught/auth0-mock:<tag>`) is a publish-only convenience: pull the equivalent GHCR digest to verify provenance. Replace `<tag>` below with the version you want, e.g. `v0.1.0`:
 
 ```bash
 cosign verify \
   --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  sergiught/auth0-mock:<tag>
+  ghcr.io/sergiught/auth0-mock:<tag>
 ```
 
 SPDX-JSON SBOMs for each release archive live alongside the binaries on the [GitHub Releases page](https://github.com/sergiught/auth0-mock/releases).

@@ -8,7 +8,11 @@ severity:
   default: error
 settings:
   header-min-length:
-    argument: 10
+    # Low floor — the type-enum rule already enforces real structure
+    # (`type(scope): subject`), so this only catches blank or near-blank
+    # subjects. Higher floors blocked legitimate short messages like
+    # `fix: race` (9) or `feat: aud` (9).
+    argument: 7
   header-max-length:
     argument: 120
   type-enum:

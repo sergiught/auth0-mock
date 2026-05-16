@@ -326,7 +326,7 @@ The godog harness boots the service in-process on a random port and exercises ev
 
 Every tagged release ships with a Cosign signature on each Docker image and an SPDX-JSON SBOM per release archive. Both are produced by GitHub-hosted CI and uploaded as part of the same workflow that publishes the binaries.
 
-**Verify a Docker image** (keyless signing — no shared secret required):
+**Verify a Docker image** (keyless signing — no shared secret required). Replace `vX.Y.Z` with the tag you want to verify, e.g. `v0.1.0`:
 
 ```bash
 cosign verify \
@@ -334,6 +334,8 @@ cosign verify \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/sergiught/auth0-mock:vX.Y.Z
 ```
+
+> Only the `ghcr.io/...` tag is cosign-signed by the release workflow. The `docker.io/sergiught/...` mirror is a publish-only convenience; verify the equivalent GHCR digest if you need attestation.
 
 A successful verification proves the image was built by *this* repo's release workflow at *that* tag — not a CDN-substituted copy.
 

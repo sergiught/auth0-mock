@@ -186,15 +186,23 @@ demo: build ## Run the go-auth0 SDK example against a throwaway mock instance
 	@# a docker compose run, an unrelated service on :8443) already
 	@# holds the port, the demo silently connects to that *other* server
 	@# and surfaces a baffling TLS cert mismatch instead of the actual
-	@# "port in use" error.
-	@if command -v ss >/dev/null 2>&1; then \
-		busy=$$(ss -tlnH 'sport = :8443' 2>/dev/null | head -1); \
-	elif command -v lsof >/dev/null 2>&1; then \
-		busy=$$(lsof -i :8443 -sTCP:LISTEN -t 2>/dev/null | head -1); \
-	else busy=; fi; \
-	if [ -n "$$busy" ]; then \
-		echo "==> ERROR: localhost:8443 is already in use. Stop the other listener and re-run \`make demo\`."; \
-		echo "    (occupant: $$busy)"; \
+	@# "port in use" error. Use ss for detection (visible to non-root
+	@# even when the listener is in a container) and lsof for naming
+	@# (gives command[pid] when it can see the process).
+	@busy=""; busy_who=""; \
+	if command -v ss >/dev/null 2>&1; then \
+		ss -tlnH 'sport = :8443' 2>/dev/null | grep -q . && busy="yes"; \
+	fi; \
+	if command -v lsof >/dev/null 2>&1; then \
+		busy_who=$$(lsof -nP -i :8443 -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $$1"["$$2"]"; exit}'); \
+		[ -n "$$busy_who" ] && busy="yes"; \
+	fi; \
+	if [ "$$busy" = "yes" ]; then \
+		if [ -n "$$busy_who" ]; then \
+			echo "==> ERROR: localhost:8443 is already in use by $$busy_who. Stop it and re-run \`make demo\`."; \
+		else \
+			echo "==> ERROR: localhost:8443 is already in use. Run \`sudo lsof -i :8443\` to identify the listener, stop it, and re-run \`make demo\`."; \
+		fi; \
 		exit 1; \
 	fi
 	@echo "==> Starting $(BINARY_NAME) for the demo (with persisted TLS cert)"
