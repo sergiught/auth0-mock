@@ -2,9 +2,9 @@
 
 # 🔐 auth0-mock
 
-**A drop-in mock of Auth0's HTTP API, both the Authentication API and the Management API, that you can point any Auth0-using service at, with no code changes.**
+A drop-in mock of Auth0's HTTP API (Authentication + Management) that you can point any Auth0-using service at, with no code changes.
 
-Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injection · MFA flow · PKCE · OIDC discovery · HTTP & HTTPS
+Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission injection. MFA, PKCE, OIDC discovery. HTTP and HTTPS.
 
 [Quick start](#-quick-start) · [What's mocked](#-whats-mocked) · [Recipes](docs/COOKBOOK.md) · [Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
 
@@ -14,12 +14,12 @@ Real RS256 JWTs · 400+ Mgmt API endpoints · Runtime claim & permission injecti
 
 ## ✨ What is this?
 
-A self-contained Go service that **looks and behaves like Auth0** to a calling client:
+A self-contained Go service that looks and behaves like Auth0 to a calling client:
 
-- 🎫 **Mints real RS256 JWTs** signed with an in-process key, publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally, no `InsecureSkipVerify`, no fake-token kludges.
-- 📦 **Mocks the Management API spec-completely** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations — paths, methods and schemas; Auth0's prose removed) and routing every endpoint to a single generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`; the OpenAPI schema validates the stubbed body. An optional `request` matcher lets you register multiple responses per operation, resolved by a 4-tier precedence — exact-path beats template-path, and within a path level a request-matched expectation beats a catch-all; newest wins within a tier.
-- 🛠 **Shapes runtime state via HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
-- 🐳 **Ships as a single static binary** (~13 MB) or a tiny Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
+- 🎫 **Mints real RS256 JWTs** signed with an in-process key, and publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally — no `InsecureSkipVerify`, no fake-token kludges.
+- 📦 **Covers the whole Management API** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations: paths, methods, and schemas; Auth0's prose removed) and routing every endpoint through one generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`, and the OpenAPI schema validates the stubbed body at registration time. An optional `request` matcher lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier).
+- 🛠 **Shapes runtime state over HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
+- 🐳 **Ships as a single static binary** (~13 MB) or a small Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
 ## 🎯 Who is this for?
 
@@ -31,7 +31,7 @@ Anyone whose service talks to Auth0 in tests or local dev:
 - **Resilience tests** for code paths that hit `/api/v2/users`, `/api/v2/clients`, `/api/v2/roles`, etc.
 - **Service-to-service** flows using `client_credentials`, with realistic scopes and `permissions` claim shapes.
 
-It's NOT for: production traffic, replacing your IdP, or anything that needs a real RBAC engine.
+It is not for: production traffic, replacing your IdP, or anything that needs a real RBAC engine.
 
 ## 🚀 Quick start
 
@@ -78,15 +78,15 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 # => {"user_id":"auth0|123","email":"alice@example.com"}
 ```
 
-That's it. No SDK changes, no monkey-patching, your code calls auth0-mock the same way it calls Auth0.
+Your code calls auth0-mock the same way it calls Auth0. No SDK shims, no monkey-patching.
 
 ## Calling the API from Postman or Insomnia
 
 > **Prefer a browser?** Run the mock and open
 > [http://localhost:8080/docs](http://localhost:8080/docs) for an interactive
-> reference rendered by [Scalar](https://github.com/scalar/scalar) — every
-> endpoint clickable, "Try it" pointing at the same instance that served the
-> page.
+> reference rendered by [Scalar](https://github.com/scalar/scalar). Every
+> endpoint is clickable, and "Try it" points at the same instance that served
+> the page.
 
 The mock ships a merged OpenAPI 3.1 document that covers every HTTP surface
 it exposes:
@@ -119,8 +119,8 @@ The merged JSON is committed and checked for drift in CI. Re-run
 - `internal/router/service.openapi.yaml`
 
 `api/auth0-management-api.openapi.json` is a generated skeleton, not a
-hand-edited file. To pull in a newer Auth0 Management API spec, use
-`make refresh-spec` — see [CONTRIBUTING.md](CONTRIBUTING.md).
+hand-edited file. To pull in a newer Auth0 Management API spec, run
+`make refresh-spec` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## 📋 What's mocked
 
@@ -170,7 +170,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
   -d '{"method":"GET","path":"/api/v2/users/{id}","response":{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}}'
 ```
 
-> Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation, resolved by a 4-tier precedence — exact-path beats template-path, and within a path level a request-matched expectation beats a catch-all; newest wins within a tier. `response.body` is validated against the operation's response schema at registration time — invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
+> Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier). `response.body` is validated against the operation's response schema at registration time. Invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
 
 ### 🛠 Admin surface (no auth, JSON-driven)
 
@@ -236,9 +236,9 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 ## 🔒 HTTPS / TLS
 
-The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). Identical TLS behaviour on macOS and Linux, but it's self-signed, so clients reject it unless told otherwise. Three options:
+The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). TLS behaviour is the same on macOS and Linux, but the cert is self-signed, so clients reject it unless told otherwise. Three options:
 
-> **⚠️ macOS gotcha**: Go on **macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR`** (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
+> **⚠️ macOS gotcha:** Go on macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR` (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
 
 ### 1. `mkcert` (recommended for local dev)
 
@@ -345,7 +345,7 @@ To route and validate every Management API endpoint, this repo embeds a
 (sourced from <https://auth0.com/docs/api/management/openapi.json>): paths,
 methods, parameters, and JSON-schema shapes only. Every Auth0-authored
 `description`, `externalDocs` link, and `x-*` extension is removed before commit
-by [`stripUpstreamProse`](cmd/genopenapi/main.go) — see the
+by [`stripUpstreamProse`](cmd/genopenapi/main.go); see the
 [refresh procedure](CONTRIBUTING.md#refreshing-the-auth0-management-api-spec).
 The raw download is gitignored and never committed; only the skeleton is.
 

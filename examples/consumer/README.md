@@ -92,8 +92,8 @@ Done. go-auth0 SDK works against auth0-mock unchanged.
 - **Auth API is real.** The mock generates a fresh RS256 keypair on boot
   and signs every token with it. A downstream service can pick a token up
   and validate it against the mock's published JWKS using stock OSS
-  libraries — and it works for the same reason it works against real
-  Auth0: the signature math checks out.
+  libraries. It works for the same reason it works against real Auth0:
+  the signature math checks out.
 - **Management API is stubbed.** When the SDK calls
   `POST /api/v2/clients`, the mock looks up the `(method, path)` pair in
   its expectations store and returns whatever you registered. No real
@@ -145,7 +145,7 @@ example at the same file with `-cert=<dir>/tls.crt`. `make demo` does
 this for you.
 
 For real deployments (CI, shared dev clusters), prefer trusting the
-cert via the OS trust store — see the
+cert via the OS trust store; see the
 [TLS section of the repo README](../../README.md#-https--tls).
 
 ## Flags

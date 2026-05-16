@@ -136,7 +136,7 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.role, .org_id'
 # => "o-42"
 ```
 
-**Custom claims overwrite reserved claims** (`gty`, `azp`, `permissions`, etc.) on purpose, tests can override anything they need.
+**Custom claims overwrite reserved claims** (`gty`, `azp`, `permissions`, etc.) on purpose, so tests can override anything they need.
 
 ## Test a PKCE flow end-to-end
 
@@ -310,7 +310,7 @@ For ephemeral CI tests that just need to skip verification, set `InsecureSkipVer
 
 Until we ship a stable public Go API (planned), the simplest pattern is to start the binary as a subprocess in a `TestMain`. For a worked end-to-end example, see [`examples/consumer/main.go`](../examples/consumer/main.go).
 
-For the in-process pattern used by our own godog suite, see [`features/scenario/context.go`](../features/scenario/context.go), it's the canonical reference for boot/teardown.
+For the in-process pattern used by our own godog suite, see [`features/scenario/context.go`](../features/scenario/context.go); that's the canonical reference for boot/teardown.
 
 ## Trusting the self-signed cert
 

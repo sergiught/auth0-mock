@@ -116,7 +116,7 @@ The mock publishes one merged OpenAPI 3.1 document describing every HTTP surface
 The pipeline (`bundle` in `cmd/genopenapi/main.go`):
 
 1. Load the skeleton, prefix its paths with `/api/v2`.
-2. `stripUpstreamProse` again — idempotent safety net, in case a non-stripped spec was ever committed.
+2. `stripUpstreamProse` again: an idempotent safety net in case a non-stripped spec was ever committed.
 3. Merge each fragment's paths, schemas, security schemes, and tags (`mergeFragment`), erroring on any path+method or name collision.
 4. Rewrite `info` and `externalDocs` to auth0-mock's own identity (`rewriteInfo`).
 5. Add the `x-tagGroups` extension (`applyTagGroups`) so the rendered sidebar collapses into four sections — Authentication API, Management API, admin0, Service — instead of ~50 flat tags.
@@ -201,7 +201,7 @@ When `mfa.Store.IsRequired()` is true, `password` and `password-realm` don't min
 
    The handler `Consume`s the mfa_token (which expires/removes it), validates the factor against the canned constant, and mints normally using the stored `Context`. The minted token carries `gty=mfa-otp` (or `mfa-oob` / `mfa-recovery-code`) so downstream services can tell step-up tokens apart.
 
-This mirrors Auth0's actual MFA flow shape end-to-end. The canned factors are the only "mocky" part, real Auth0 stores a per-user secret and checks TOTP.
+This mirrors Auth0's actual MFA flow shape end-to-end. The canned factors are the only "mocky" part; real Auth0 stores a per-user secret and checks TOTP.
 
 ## PKCE flow
 

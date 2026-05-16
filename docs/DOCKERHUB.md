@@ -1,8 +1,8 @@
 # auth0-mock
 
 A drop-in mock of [Auth0](https://auth0.com)'s Authentication and Management
-APIs for tests, local development, and CI. Same HTTP shapes, same response
-formats — point your SDK at the mock instead of `*.auth0.com` and your code
+APIs for tests, local development, and CI. Same HTTP shapes and response
+formats: point your SDK at the mock instead of `*.auth0.com` and your code
 keeps running unchanged.
 
 ## What's in the box
@@ -56,8 +56,7 @@ All tags are multi-arch manifests covering `linux/amd64` and `linux/arm64`.
 
 ## Configuration
 
-The container is fully configurable via environment variables. The most
-common ones:
+The container is configured via environment variables. The most common ones:
 
 | Variable        | Default                                | Purpose                              |
 |-----------------|----------------------------------------|--------------------------------------|
