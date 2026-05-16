@@ -73,6 +73,55 @@ func TestMount_RegistersOriginalRoute(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code, "sibling routes must not be registered")
 }
 
+// TestMount_UnknownMgmtPathReturnsJSONEnvelope locks the consistency
+// guarantee: every /api/v2/* response uses the Auth0 error envelope,
+// including 404 / 405 fallbacks. Before this fix, chi's default
+// text/plain "404 page not found" leaked through for unknown
+// /api/v2 paths, breaking SDK error-handling logic.
+func TestMount_UnknownMgmtPathReturnsJSONEnvelope(t *testing.T) {
+	s, v, store, ks, r := newDeps(t)
+	require.NoError(t, Mount(MountOpts{Router: r, Spec: s, Validator: v, Store: store, Keys: ks, Log: zerolog.Nop()}))
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:   "unknown Mgmt path → 404 JSON envelope",
+			method: "GET", path: "/api/v2/totally-unknown",
+			wantStatus: http.StatusNotFound,
+			wantCode:   `"errorCode":"unknown_operation"`,
+		},
+		{
+			name:   "unknown method on known path → 405 JSON envelope",
+			method: "PATCH", path: "/api/v2/widgets/abc",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantCode:   `"errorCode":"method_not_allowed"`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(c.method, c.path, nil))
+			assert.Equal(t, c.wantStatus, w.Code)
+			assert.Equal(t, "application/json", w.Header().Get("Content-Type"),
+				"Mgmt-API errors must be JSON, never text/plain")
+			assert.Contains(t, w.Body.String(), c.wantCode)
+		})
+	}
+
+	// Non-Mgmt paths still get chi's default — those belong to other
+	// mounts (admin0, auth API) that 404 themselves.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/random/nothing", nil))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.NotContains(t, w.Body.String(), "errorCode",
+		"non-Mgmt 404s stay as chi's default; Mgmt envelope is scoped to /api/v2/")
+}
+
 func mintBearer(t *testing.T, ks *jwks.KeySet) string {
 	t.Helper()
 	tok, err := ks.Mint(jwks.MintOpts{Subject: "test", Audience: []string{"a"}, TTL: time.Hour})

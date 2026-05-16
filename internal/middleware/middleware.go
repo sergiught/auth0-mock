@@ -163,6 +163,24 @@ var debugDumpMu sync.Mutex
 func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip the whole middleware when info-level logs are
+			// filtered out — otherwise writeBodyBlock would still
+			// flush the indented body block to bodyOut and leave a
+			// "naked JSON" orphan with no log-line context. Cheap
+			// fast-path; the whole point of the dump is INFO-level
+			// observability.
+			if !log.Info().Enabled() {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Skip static-asset paths entirely so a single browser
+			// load of /docs doesn't flood the tail with HTML+CSS+font
+			// bodies and drown the actual SDK trace.
+			if isNoisyDumpPath(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Pre-read the request body so the dump can show it AND
 			// preserve any error (e.g. *http.MaxBytesError when the
 			// MaxBodyBytes middleware capped a too-large body) for the
@@ -193,11 +211,9 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 
 			rec := &debugRecorder{ResponseWriter: w, body: &bytes.Buffer{}}
 			// Defer the response-side dump so a handler panic doesn't
-			// swallow it. Recovery middleware turns the panic into a
-			// 500 but ALSO re-panics is no — it absorbs the panic, so
-			// the deferred block here still runs to completion with
-			// status=500 written by Recovery. The blank-line separator
-			// fires either way.
+			// swallow it. Recovery middleware absorbs the panic and
+			// writes status=500; the defer here still runs and the
+			// blank-line separator fires either way.
 			defer func() {
 				respCT := rec.Header().Get("Content-Type")
 				debugDumpMu.Lock()
@@ -207,13 +223,52 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 					Str("headers", interestingHeaders(rec.Header())).
 					Stringer("latency", time.Since(start)).
 					Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
-				writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
+				// Suppress static-asset body blocks (HTML, CSS, images,
+				// fonts) — they're huge and never the SDK trace you
+				// were looking for. Headers + status line stay so you
+				// still see the request happened.
+				if !isNoisyDumpContentType(respCT) {
+					writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
+				}
 				// Blank line so multi-request output stays scannable.
 				_, _ = fmt.Fprintln(bodyOut)
 			}()
 			next.ServeHTTP(rec, r)
 		})
 	}
+}
+
+// isNoisyDumpPath returns true for endpoints whose request/response is
+// pure plumbing noise in a DEBUG dump — health probes that a poller
+// hits every second, and the static-asset trees behind /docs and the
+// OpenAPI exports. Skipping these whole-cloth means a forgotten
+// /healthz poller can't drown the trace you actually wanted.
+func isNoisyDumpPath(path string) bool {
+	switch path {
+	case "/healthz", "/readyz", "/openapi.json", "/openapi.yaml":
+		return true
+	}
+	return strings.HasPrefix(path, "/docs")
+}
+
+// isNoisyDumpContentType returns true for response content types that
+// are big, binary-ish, or otherwise not useful to dump in a DEBUG
+// trace (HTML, CSS, JS bundles, images, fonts). JSON / form / plain
+// text stay through.
+func isNoisyDumpContentType(ct string) bool {
+	ct = strings.ToLower(ct)
+	switch {
+	case strings.HasPrefix(ct, "text/html"),
+		strings.HasPrefix(ct, "text/css"),
+		strings.HasPrefix(ct, "application/javascript"),
+		strings.HasPrefix(ct, "application/octet-stream"),
+		strings.HasPrefix(ct, "image/"),
+		strings.HasPrefix(ct, "font/"),
+		strings.HasPrefix(ct, "audio/"),
+		strings.HasPrefix(ct, "video/"):
+		return true
+	}
+	return false
 }
 
 // errReader returns the same error on every Read. Used to replay an

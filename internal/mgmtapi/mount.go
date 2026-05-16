@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/internal/bearer"
+	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -52,6 +53,33 @@ func Mount(opts MountOpts) error {
 				Err(err).Msg("skipping incompatible route (spec/chi conflict)")
 		}
 	}
+
+	// Chi's default NotFound is text/plain "404 page not found", which
+	// breaks the consistency of the Auth0 error envelope every other
+	// /api/v2/* response uses. Install a JSON-shaped fallback scoped to
+	// /api/v2/*, leave other unknown paths to chi's default (those
+	// belong to admin0 / auth API mounts that 404 themselves).
+	prevNotFound := http.NotFoundHandler()
+	opts.Router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v2/") {
+			prevNotFound.ServeHTTP(w, r)
+			return
+		}
+		httperr.WriteMgmt(w, http.StatusNotFound, "Not Found",
+			"no Management API operation for "+r.Method+" "+r.URL.Path,
+			"unknown_operation")
+	})
+	// Same treatment for 405 — chi defaults to text/plain there too.
+	opts.Router.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v2/") {
+			http.Error(w, "405 method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		httperr.WriteMgmt(w, http.StatusMethodNotAllowed, "Method Not Allowed",
+			r.Method+" not supported for "+r.URL.Path,
+			"method_not_allowed")
+	})
+
 	return nil
 }
 
