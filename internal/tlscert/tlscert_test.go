@@ -38,7 +38,7 @@ func TestLoad_FromFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.Len(t, cfg.Certificates, 1)
-	assert.Equal(t, tls.VersionTLS12, int(cfg.MinVersion))
+	assert.Equal(t, tls.VersionTLS13, int(cfg.MinVersion))
 }
 
 func TestLoad_CacheDir_FirstBootPersistsAndSecondReuses(t *testing.T) {

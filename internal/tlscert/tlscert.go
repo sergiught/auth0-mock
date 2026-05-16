@@ -77,7 +77,10 @@ func Load(cfg Config) (*tls.Config, error) {
 }
 
 func tlsConfig(cert tls.Certificate) *tls.Config {
-	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	// MinVersion is TLS 1.3 per RFC 9325 (2024) — TLS 1.2 is still widely
+	// used but RFC guidance for new code is 1.3+. Every Go 1.20+ TLS client
+	// the mock targets supports 1.3.
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13}
 }
 
 // loadFromCache returns (cert, true, nil) on success, (zero, false, nil) when
