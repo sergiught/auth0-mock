@@ -72,6 +72,10 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore()
 	mfaStore := mfa.NewStore()
+	validator, err := spec.NewValidator(openapiSpec)
+	if err != nil {
+		t.Fatalf("spec validator: %v", err)
+	}
 	handler, err := router.New(router.Deps{
 		Log:                  zerolog.Nop(),
 		Store:                store,
@@ -81,15 +85,16 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		MFA:                  mfaStore,
 		Keys:                 ks,
 		Spec:                 openapiSpec,
-		Validator:            spec.NewValidator(openapiSpec),
+		Validator:            validator,
 		Issuer:               "http://" + addr + "/",
 		DefaultAudience:      "http://" + addr + "/api/v2/",
 		SpecValidationStrict: true,
+		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)
 	}
-	srv := server.NewHTTP(addr, handler, time.Second)
+	srv := server.NewHTTP(addr, handler, server.Timeouts{ReadHeader: time.Second, Write: 5 * time.Second, Idle: 30 * time.Second})
 	orc := server.NewOrchestrator(srv)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -35,6 +35,9 @@ type Deps struct {
 	Issuer               string
 	DefaultAudience      string
 	SpecValidationStrict bool
+	// MaxRequestBodyBytes caps every incoming request body. Zero or negative
+	// disables the cap.
+	MaxRequestBodyBytes int64
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -42,9 +45,10 @@ func New(d Deps) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recovery(d.Log))
+	r.Use(middleware.MaxBodyBytes(d.MaxRequestBodyBytes))
 	r.Use(middleware.Logging(d.Log))
 
-	mountHealthz(r)
+	mountHealthz(r, d.Log)
 	admin0.Mount(r, admin0.Deps{
 		Matches:     d.Store,
 		Claims:      d.Claims,
@@ -52,7 +56,7 @@ func New(d Deps) (http.Handler, error) {
 		MFA:         d.MFA,
 		Validator:   d.Validator,
 	})
-	mountJWKS(r, d.Keys)
+	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {
 		return nil, fmt.Errorf("mount openapi: %w", err)
 	}
@@ -79,18 +83,22 @@ func New(d Deps) (http.Handler, error) {
 	return r, nil
 }
 
-func mountJWKS(r chi.Router, keys *jwks.KeySet) {
-	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+func mountJWKS(r chi.Router, keys *jwks.KeySet, log zerolog.Logger) {
+	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(keys.JWKSJSON())
+		if _, err := w.Write(keys.JWKSJSON()); err != nil {
+			log.Debug().Err(err).Str("path", r.URL.Path).Msg("write failed (client likely gone)")
+		}
 	})
 }
 
 // mountHealthz exposes a Kubernetes-style liveness probe. Cheap, no auth, no
 // dependencies — returns 200 if the process is up at all.
-func mountHealthz(r chi.Router) {
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+func mountHealthz(r chi.Router, log zerolog.Logger) {
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+			log.Debug().Err(err).Str("path", r.URL.Path).Msg("write failed (client likely gone)")
+		}
 	})
 }

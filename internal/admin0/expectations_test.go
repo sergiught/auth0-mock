@@ -50,8 +50,10 @@ func newExpectationsRouter(t *testing.T) (chi.Router, *matches.Store) {
 	s, err := spec.Load([]byte(tinySpec))
 	require.NoError(t, err)
 	store := matches.NewStore()
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
 	r := chi.NewRouter()
-	admin0.Mount(r, admin0.Deps{Matches: store, Validator: spec.NewValidator(s)})
+	admin0.Mount(r, admin0.Deps{Matches: store, Validator: v})
 	return r, store
 }
 

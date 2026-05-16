@@ -24,6 +24,9 @@ type Specification struct {
 	LogLevel             string         `env:"LOG_LEVEL" envDefault:"info"`
 	SpecValidationStrict bool           `env:"SPEC_VALIDATION_STRICT" envDefault:"true"`
 	ReadHeaderTimeout    time.Duration  `env:"READ_HEADER_TIMEOUT" envDefault:"5s"`
+	WriteTimeout         time.Duration  `env:"WRITE_TIMEOUT" envDefault:"30s"`
+	IdleTimeout          time.Duration  `env:"IDLE_TIMEOUT" envDefault:"120s"`
+	MaxRequestBodyBytes  int64          `env:"MAX_REQUEST_BODY_BYTES" envDefault:"1048576"` // 1 MiB
 	ShutdownTimeout      time.Duration  `env:"SHUTDOWN_TIMEOUT" envDefault:"5s"`
 }
 

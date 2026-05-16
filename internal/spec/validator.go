@@ -27,16 +27,18 @@ type Validator struct {
 // Perl-syntax lookahead patterns (e.g. `(?=`) that Go's regexp engine does
 // not support. Route matching is unaffected; only pattern constraints are
 // skipped during router construction.
-func NewValidator(s *Spec) *Validator {
+//
+// Returns an error if the embedded spec cannot be turned into a router; the
+// caller (cmd/api boot) should surface that to the user instead of crashing.
+func NewValidator(s *Spec) (*Validator, error) {
 	r, err := legacyrouter.NewRouter(s.Doc,
 		openapi3.DisableSchemaPatternValidation(),
 		openapi3.DisableSchemaDefaultsValidation(),
 	)
 	if err != nil {
-		// Fail loudly at startup. Boot will catch this.
-		panic(fmt.Errorf("build openapi router: %w", err))
+		return nil, fmt.Errorf("build openapi router: %w", err)
 	}
-	return &Validator{spec: s, router: r}
+	return &Validator{spec: s, router: r}, nil
 }
 
 // ValidateRequest checks an incoming request against the operation it routed

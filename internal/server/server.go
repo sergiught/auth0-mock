@@ -17,6 +17,15 @@ type Server interface {
 	IsExpectedStopErr(err error) bool
 }
 
+// Timeouts is the parameter object for the four http.Server timeouts the mock
+// exposes. Zero means "use the http stdlib default" (which for WriteTimeout
+// and IdleTimeout is effectively unbounded — set them explicitly).
+type Timeouts struct {
+	ReadHeader time.Duration
+	Write      time.Duration
+	Idle       time.Duration
+}
+
 // stdServer wraps an *http.Server with optional TLS.
 type stdServer struct {
 	srv *http.Server
@@ -24,21 +33,25 @@ type stdServer struct {
 }
 
 // NewHTTP returns a plain HTTP Server bound to addr.
-func NewHTTP(addr string, handler http.Handler, readHeaderTimeout time.Duration) Server {
+func NewHTTP(addr string, handler http.Handler, t Timeouts) Server {
 	return &stdServer{srv: &http.Server{
 		Addr:              addr,
 		Handler:           handler,
-		ReadHeaderTimeout: readHeaderTimeout,
+		ReadHeaderTimeout: t.ReadHeader,
+		WriteTimeout:      t.Write,
+		IdleTimeout:       t.Idle,
 	}}
 }
 
 // NewHTTPS returns an HTTPS Server bound to addr using tlsCfg.
-func NewHTTPS(addr string, handler http.Handler, tlsCfg *tls.Config, readHeaderTimeout time.Duration) Server {
+func NewHTTPS(addr string, handler http.Handler, tlsCfg *tls.Config, t Timeouts) Server {
 	return &stdServer{
 		srv: &http.Server{
 			Addr:              addr,
 			Handler:           handler,
-			ReadHeaderTimeout: readHeaderTimeout,
+			ReadHeaderTimeout: t.ReadHeader,
+			WriteTimeout:      t.Write,
+			IdleTimeout:       t.Idle,
 			TLSConfig:         tlsCfg,
 		},
 		tls: true,

@@ -47,7 +47,7 @@ func newDeps(t *testing.T) (*spec.Spec, *spec.Validator, *matches.Store, *jwks.K
 	t.Helper()
 	s, err := spec.Load([]byte(tinySpec))
 	require.NoError(t, err)
-	v := spec.NewValidator(s)
+	v, err := spec.NewValidator(s); require.NoError(t, err)
 	store := matches.NewStore()
 	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
 	require.NoError(t, err)

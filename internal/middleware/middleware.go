@@ -77,6 +77,27 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// MaxBodyBytes caps every incoming request body to limit bytes. Reads past
+// the limit return an error from the handler and surface to the client as
+// 413 Request Entity Too Large via http.MaxBytesError, so handlers that
+// already error-handle their decode path don't need extra logic.
+//
+// limit ≤ 0 is treated as "no limit" — the middleware is a no-op so callers
+// can configure their way out of the cap if they really need to.
+func MaxBodyBytes(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if limit <= 0 {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Logging emits one structured log line per request.
 func Logging(log zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

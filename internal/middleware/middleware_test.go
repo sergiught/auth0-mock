@@ -47,6 +47,45 @@ func TestRequestID_PassesIncomingHeader(t *testing.T) {
 	assert.Equal(t, "abc-123", seen)
 }
 
+func TestMaxBodyBytes_RejectsOversize(t *testing.T) {
+	t.Parallel()
+	called := false
+	h := MaxBodyBytes(8)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		called = true
+		_, _ = io.ReadAll(r.Body) // triggers the cap check
+	}))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/x", strings.NewReader("payload-is-longer-than-eight-bytes"))
+	h.ServeHTTP(w, req)
+	assert.True(t, called, "handler must run; MaxBytesReader signals via the read error, not by short-circuiting")
+}
+
+func TestMaxBodyBytes_AllowsUnderCap(t *testing.T) {
+	t.Parallel()
+	h := MaxBodyBytes(64)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		_, _ = w.Write(body)
+	}))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/x", strings.NewReader("small"))
+	h.ServeHTTP(w, req)
+	assert.Equal(t, "small", w.Body.String())
+}
+
+func TestMaxBodyBytes_NoLimitIsNoop(t *testing.T) {
+	t.Parallel()
+	h := MaxBodyBytes(0)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		_, _ = w.Write(body)
+	}))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/x", strings.NewReader(strings.Repeat("x", 4096)))
+	h.ServeHTTP(w, req)
+	assert.Equal(t, 4096, w.Body.Len())
+}
+
 func TestLogging_WritesOneLinePerRequest(t *testing.T) {
 	var sb strings.Builder
 	log := zerolog.New(&sb)

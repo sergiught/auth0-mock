@@ -56,7 +56,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("openapi load: %w", err)
 	}
-	validator := spec.NewValidator(openapiSpec)
+	validator, err := spec.NewValidator(openapiSpec)
+	if err != nil {
+		return fmt.Errorf("spec validator: %w", err)
+	}
 
 	store := matches.NewStore()
 	claimsStore := claims.NewStore()
@@ -76,14 +79,20 @@ func run() error {
 		Issuer:               cfg.IssuerURL,
 		DefaultAudience:      cfg.DefaultAudience,
 		SpecValidationStrict: cfg.SpecValidationStrict,
+		MaxRequestBodyBytes:  cfg.MaxRequestBodyBytes,
 	})
 	if err != nil {
 		return fmt.Errorf("router init: %w", err)
 	}
 
+	timeouts := server.Timeouts{
+		ReadHeader: cfg.ReadHeaderTimeout,
+		Write:      cfg.WriteTimeout,
+		Idle:       cfg.IdleTimeout,
+	}
 	servers := []server.Server{}
 	if cfg.HTTPAddress != "" {
-		servers = append(servers, server.NewHTTP(cfg.HTTPAddress, handler, cfg.ReadHeaderTimeout))
+		servers = append(servers, server.NewHTTP(cfg.HTTPAddress, handler, timeouts))
 		log.Info().Str("addr", cfg.HTTPAddress).Msg("http listener")
 	}
 	if cfg.HTTPSAddress != "" {
@@ -91,7 +100,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("tls init: %w", err)
 		}
-		servers = append(servers, server.NewHTTPS(cfg.HTTPSAddress, handler, tlsCfg, cfg.ReadHeaderTimeout))
+		servers = append(servers, server.NewHTTPS(cfg.HTTPSAddress, handler, tlsCfg, timeouts))
 		log.Info().Str("addr", cfg.HTTPSAddress).Msg("https listener")
 	}
 

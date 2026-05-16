@@ -22,7 +22,7 @@ func TestOrchestrator_StartAndShutdown(t *testing.T) {
 		w.WriteHeader(204)
 	})
 
-	srv := NewHTTP(addr, handler, time.Second)
+	srv := NewHTTP(addr, handler, Timeouts{ReadHeader: time.Second, Write: 5 * time.Second, Idle: 30 * time.Second})
 	orc := NewOrchestrator(srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
