@@ -370,6 +370,12 @@ Every handler is a struct holding its dependencies as fields, implementing `http
 [`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Management API stub, and calls the stubbed endpoint.
 
 ```bash
+make demo                # builds the mock, runs the example end-to-end over HTTPS, cleans up
+```
+
+Under the hood, `make demo` boots the binary with a persisted self-signed cert, waits for `/healthz`, runs `examples/consumer` against it, and tears the mock down on exit. To run by hand instead:
+
+```bash
 go run ./cmd/api &
 go run ./examples/consumer
 ```
