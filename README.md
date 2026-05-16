@@ -37,7 +37,8 @@ It is not for: production traffic, replacing your IdP, or anything that needs a 
 
 ### From a release (recommended)
 
-> ⏳ **Available once `v0.1.0` ships.** Until the first tagged release exists, the script exits with `could not resolve latest release (does sergiught/auth0-mock have any published releases yet?)` — use the **From source** or **Via `go install`** paths below in the meantime.
+> [!IMPORTANT]
+> **Available once `v0.1.0` ships.** Until the first tagged release exists, the script exits with `could not resolve latest release (does sergiught/auth0-mock have any published releases yet?)` — use the **From source** or **Via `go install`** paths below in the meantime.
 
 ```bash
 # latest stable
@@ -114,6 +115,7 @@ Your code calls auth0-mock the same way it calls Auth0. No SDK shims, no monkey-
 
 ## Calling the API from Postman or Insomnia
 
+> [!TIP]
 > **Prefer a browser?** Run the mock and open
 > [http://localhost:8080/docs](http://localhost:8080/docs) for an interactive
 > reference rendered by [Scalar](https://github.com/scalar/scalar). Every
@@ -186,7 +188,8 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 | `http://auth0.com/oauth/grant-type/mfa-oob` | Push/SMS step-up; accepts `binding_code=123456` |
 | `http://auth0.com/oauth/grant-type/mfa-recovery-code` | Recovery flow; accepts `recovery_code=ABCDEFGHIJKLMNOP` |
 
-> ℹ️ **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
+> [!IMPORTANT]
+> **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
 
 ### 📦 Management API (spec-driven, ~400 endpoints)
 
@@ -204,6 +207,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
   -d '{"method":"GET","path":"/api/v2/users/{id}","response":{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}}'
 ```
 
+> [!NOTE]
 > Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier). `response.body` is validated against the operation's response schema at registration time. Invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
 
 ### 🛠 Admin surface (no auth, JSON-driven)
@@ -217,7 +221,8 @@ curl -X POST http://localhost:8080/admin0/expectations \
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
 
-> ⚠️ **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
+> [!WARNING]
+> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
 
 ### 🩺 Operations
 
@@ -282,7 +287,8 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). TLS behaviour is the same on macOS and Linux, but the cert is self-signed, so clients reject it unless told otherwise. Three options:
 
-> **⚠️ macOS gotcha:** Go on macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR` (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
+> [!WARNING]
+> **macOS gotcha:** Go on macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR` (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
 
 ### 1. `mkcert` (recommended for local dev)
 
@@ -338,6 +344,7 @@ cosign verify \
   ghcr.io/sergiught/auth0-mock:vX.Y.Z
 ```
 
+> [!NOTE]
 > Only the `ghcr.io/...` tag is cosign-signed by the release workflow. The `docker.io/sergiught/...` mirror is a publish-only convenience; verify the equivalent GHCR digest if you need attestation.
 
 A successful verification proves the image was built by *this* repo's release workflow at *that* tag — not a CDN-substituted copy.
