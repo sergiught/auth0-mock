@@ -3,32 +3,41 @@ package version
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
+// TestDefaults pins the no-ldflags contract: a bare `go test` (which
+// tests run under) must observe the package-level defaults, because the
+// release pipeline and `make build` are the only paths that inject real
+// version metadata.
 func TestDefaults(t *testing.T) {
 	t.Parallel()
 
-	// A bare `go test` (no -ldflags) must leave the defaults in place; the
-	// release/Makefile injection paths overwrite them but tests run without
-	// either, so guard the contract here.
-	for _, c := range []struct{ name, got, want string }{
+	cases := []struct {
+		name, got, want string
+	}{
 		{"Version", Version, "dev"},
 		{"Commit", Commit, "none"},
 		{"Date", Date, "unknown"},
-	} {
-		if c.got != c.want {
-			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
-		}
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.want, c.got, "ldflags injection must not be in effect under `go test`")
+		})
 	}
 }
 
+// TestString checks that the human-readable descriptor mentions every
+// piece of metadata the package exposes, so a future field can't silently
+// drop out of the output.
 func TestString(t *testing.T) {
 	t.Parallel()
 
 	s := String()
 	for _, want := range []string{"auth0-mock", Version, Commit, Date} {
-		if !strings.Contains(s, want) {
-			t.Errorf("String() = %q, missing %q", s, want)
-		}
+		assert.Truef(t, strings.Contains(s, want),
+			"String() = %q must mention %q", s, want)
 	}
 }

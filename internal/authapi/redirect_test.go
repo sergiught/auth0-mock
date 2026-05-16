@@ -1,6 +1,10 @@
 package authapi
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 // TestIsSafeRedirect_BypassClass is the adversarial table of returnTo /
 // redirect_uri values the shared opt-in allow-list helper must reject.
@@ -54,9 +58,8 @@ func TestIsSafeRedirect_BypassClass(t *testing.T) {
 	}
 	for _, raw := range rejected {
 		t.Run("reject:"+raw, func(t *testing.T) {
-			if isSafeRedirect(raw, allow) {
-				t.Errorf("isSafeRedirect(%q) returned true, want false", raw)
-			}
+			assert.Falsef(t, isSafeRedirect(raw, allow),
+				"isSafeRedirect(%q) returned true, want false", raw)
 		})
 	}
 
@@ -91,9 +94,8 @@ func TestIsSafeRedirect_BypassClass(t *testing.T) {
 	}
 	for _, raw := range allowed {
 		t.Run("allow:"+raw, func(t *testing.T) {
-			if !isSafeRedirect(raw, allow) {
-				t.Errorf("isSafeRedirect(%q) returned false, want true", raw)
-			}
+			assert.Truef(t, isSafeRedirect(raw, allow),
+				"isSafeRedirect(%q) returned false, want true", raw)
 		})
 	}
 }

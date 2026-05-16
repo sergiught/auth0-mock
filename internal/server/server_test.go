@@ -44,6 +44,6 @@ func TestOrchestrator_StartAndShutdown(t *testing.T) {
 	case err := <-errCh:
 		assert.NoError(t, err)
 	case <-time.After(3 * time.Second):
-		t.Fatal("orchestrator did not stop within deadline")
+		require.Fail(t, "orchestrator did not stop within deadline")
 	}
 }
