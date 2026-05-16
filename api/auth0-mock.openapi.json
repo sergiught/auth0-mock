@@ -79335,7 +79335,7 @@
     },
     "/readyz": {
       "get": {
-        "description": "Returns 200 once the service can actually serve traffic (today: JWKS\nsigning key materialised); 503 with a `reason` field otherwise. Use\ninstead of /healthz for orchestrator readiness gates so process\nliveness and request-serving readiness stay distinguishable.\n",
+        "description": "Returns 200 once the JWKS signing key is materialised; 503 with a\n`reason` field otherwise. Since the mock's only init dependency\n(RSA keygen) is synchronous and completes before the listener\naccepts, this is functionally equivalent to /healthz today —\nexposed for orchestrator-convention parity (liveness vs readiness\nprobe separation) and to leave room if future init grows.\n",
         "responses": {
           "200": {
             "content": {

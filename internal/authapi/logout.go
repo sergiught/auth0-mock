@@ -10,15 +10,15 @@ import (
 )
 
 // LogoutHandler 302-redirects to the returnTo query parameter (or "/" when
-// missing). Absolute (scheme+host) returnTo values must appear verbatim in
-// AllowedReturnURLs; relative URLs are always permitted because they can't
-// jump origins.
+// missing). When AllowedReturnURLs is empty (the default) every returnTo is
+// permitted — this is a CI/local-testing mock, so the permissive default
+// matches the same opt-in pattern as AuthorizeHandler and means SDK tests
+// calling `/v2/logout?returnTo=https://app/…` work out of the box. When
+// AllowedReturnURLs is set (via LOGOUT_ALLOWED_URLS) the handler enforces
+// the allow-list like real Auth0 does, with the URL-scheme / backslash
+// bypass guards described in isAllowed.
 //
-// This mirrors Auth0's "Allowed Logout URLs" tenant setting. Skipping
-// validation would make /v2/logout an open redirect — an unauthenticated
-// attacker could send victims a `…/v2/logout?returnTo=https://evil.tld`
-// link that lands them on attacker-controlled content under the mock's
-// origin.
+// Never expose the mock to untrusted networks — see the README disclaimer.
 type LogoutHandler struct {
 	AllowedReturnURLs []string
 }
@@ -37,7 +37,16 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusFound)
 }
 
+// isAllowed returns true when no allow-list is configured (permissive
+// default for the CI/local-testing use case) or when the returnTo passes
+// every check on the opted-in path: backslash-free, no dangerous scheme,
+// and either truly relative or an exact match against AllowedReturnURLs.
 func (h *LogoutHandler) isAllowed(returnTo string) bool {
+	// Empty list = permissive default. Adopters opt into the allow-list
+	// by setting LOGOUT_ALLOWED_URLS.
+	if len(h.AllowedReturnURLs) == 0 {
+		return true
+	}
 	// Backslash defence: browsers normalise '\' → '/' before following
 	// Location, so "/\\evil.tld" resolves to "//evil.tld" — same open-
 	// redirect class as a bare //evil.tld would be — but url.Parse keeps

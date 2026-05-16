@@ -119,11 +119,13 @@ func mountHealthz(r chi.Router, log zerolog.Logger) {
 	})
 }
 
-// mountReadyz exposes a Kubernetes-style readiness probe. Separate from
-// /healthz so orchestrators can distinguish "process exists" from "process
-// can actually serve traffic"; today the only thing readiness gates on is
-// that the JWKS signing key materialised, which is what every other code
-// path eventually needs. Returns 503 with a one-line reason on failure.
+// mountReadyz exposes a Kubernetes-style readiness probe. The mock's only
+// init dependency (RSA keygen in jwks.NewKeySet) is synchronous and runs
+// before cmd/api/main.go returns, so today this 503 branch is effectively
+// unreachable and /readyz answers identically to /healthz. The endpoint is
+// kept for orchestrator-convention parity (liveness vs readiness probe
+// separation) and as a future-proof seam if init ever gains async work.
+// Returns 503 with a one-line reason on failure.
 func mountReadyz(r chi.Router, keys *jwks.KeySet, log zerolog.Logger) {
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

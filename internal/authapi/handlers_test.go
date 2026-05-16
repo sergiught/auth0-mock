@@ -128,6 +128,27 @@ func TestLogout_DefaultsToSlashWhenReturnToMissing(t *testing.T) {
 	assert.Equal(t, "/", w.Header().Get("Location"))
 }
 
+func TestLogout_NoAllowListIsPermissive(t *testing.T) {
+	// Default behaviour: with no LogoutAllowedURLs configured, /v2/logout
+	// accepts any returnTo (the test-friendly documented default —
+	// matches /authorize and lets SDK tests calling
+	// `/v2/logout?returnTo=https://app/…` work out of the box).
+	// Closing the open redirect is opt-in via LOGOUT_ALLOWED_URLS.
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(),
+		// No LogoutAllowedURLs configured.
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/v2/logout?returnTo=https%3A%2F%2Fanywhere%2Fbye", nil))
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "https://anywhere/bye")
+}
+
 func TestLogout_RejectsDangerousSchemes(t *testing.T) {
 	// `Host == ""` was treated as safe-because-relative before, but
 	// these URLs all parse with empty host and a dangerous scheme:

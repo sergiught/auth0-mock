@@ -28,10 +28,12 @@ paths:
       tags: [Service]
       summary: Readiness probe.
       description: |
-        Returns 200 once the service can actually serve traffic (today: JWKS
-        signing key materialised); 503 with a `reason` field otherwise. Use
-        instead of /healthz for orchestrator readiness gates so process
-        liveness and request-serving readiness stay distinguishable.
+        Returns 200 once the JWKS signing key is materialised; 503 with a
+        `reason` field otherwise. Since the mock's only init dependency
+        (RSA keygen) is synchronous and completes before the listener
+        accepts, this is functionally equivalent to /healthz today —
+        exposed for orchestrator-convention parity (liveness vs readiness
+        probe separation) and to leave room if future init grows.
       responses:
         "200":
           description: Service is ready.
