@@ -240,8 +240,8 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 | Variable | Default | Notes |
 |---|---|---|
-| `HTTP_ADDR` | `127.0.0.1:8080` | Empty disables the HTTP listener. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does). |
-| `HTTPS_ADDR` | `127.0.0.1:8443` | Empty disables the HTTPS listener. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does). |
+| `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does). To run HTTPS-only, set this to `off`. |
+| `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does). To run HTTP-only, set this to `off`. |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |
 | `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |

@@ -49,7 +49,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	log := logger.New(cfg.Environment)
+	log := logger.New(cfg.Environment, cfg.LogLevel)
 	log.Info().
 		Str("version", version.Version).
 		Str("commit", version.Commit).
@@ -105,12 +105,17 @@ func run() error {
 		Write:      cfg.WriteTimeout,
 		Idle:       cfg.IdleTimeout,
 	}
+	// "off" is the documented disable sentinel for either listener. The
+	// empty string can't be used as a disable signal because caarlos0/env
+	// treats an unset-or-empty env var as "use envDefault", which still
+	// yields a bind address — so the user-facing knob has to be a real
+	// non-empty value.
 	servers := []server.Server{}
-	if cfg.HTTPAddress != "" {
+	if cfg.HTTPAddress != "" && cfg.HTTPAddress != "off" {
 		servers = append(servers, server.NewHTTP(cfg.HTTPAddress, handler, timeouts))
 		log.Info().Str("addr", cfg.HTTPAddress).Msg("http listener")
 	}
-	if cfg.HTTPSAddress != "" {
+	if cfg.HTTPSAddress != "" && cfg.HTTPSAddress != "off" {
 		tlsCfg, err := tlscert.Load(cfg.TLS)
 		if err != nil {
 			return fmt.Errorf("tls init: %w", err)

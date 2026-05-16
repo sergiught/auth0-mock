@@ -10,7 +10,7 @@ settings:
   header-min-length:
     argument: 10
   header-max-length:
-    argument: 100
+    argument: 120
   type-enum:
     argument:
       - feat
