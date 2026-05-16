@@ -440,6 +440,9 @@ func stripUpstreamProse(base *openapi3.T) {
 		return
 	}
 	base.Components.Extensions = nil
+	for _, ref := range base.Components.SecuritySchemes {
+		stripSecuritySchemeRef(ref)
+	}
 	for _, ref := range base.Components.Schemas {
 		stripSchemaRef(ref)
 	}
@@ -447,18 +450,28 @@ func stripUpstreamProse(base *openapi3.T) {
 		stripParameterRef(ref)
 	}
 	for _, ref := range base.Components.Headers {
-		if ref != nil && ref.Value != nil {
-			ref.Value.Description = ""
-			ref.Value.Extensions = nil
-			stripSchemaRef(ref.Value.Schema)
+		if ref == nil {
+			continue
 		}
+		ref.Extensions = nil
+		if ref.Value == nil {
+			continue
+		}
+		ref.Value.Description = ""
+		ref.Value.Extensions = nil
+		stripSchemaRef(ref.Value.Schema)
 	}
 	for _, ref := range base.Components.RequestBodies {
-		if ref != nil && ref.Value != nil {
-			ref.Value.Description = ""
-			ref.Value.Extensions = nil
-			stripContent(ref.Value.Content)
+		if ref == nil {
+			continue
 		}
+		ref.Extensions = nil
+		if ref.Value == nil {
+			continue
+		}
+		ref.Value.Description = ""
+		ref.Value.Extensions = nil
+		stripContent(ref.Value.Content)
 	}
 	for _, ref := range base.Components.Responses {
 		stripResponseRef(ref)
@@ -497,8 +510,38 @@ func stripPathItem(item *openapi3.PathItem) {
 	}
 }
 
+func stripSecuritySchemeRef(ref *openapi3.SecuritySchemeRef) {
+	if ref == nil {
+		return
+	}
+	ref.Extensions = nil
+	if ref.Value == nil {
+		return
+	}
+	ref.Value.Description = ""
+	ref.Value.Extensions = nil
+	if ref.Value.Flows == nil {
+		return
+	}
+	ref.Value.Flows.Extensions = nil
+	for _, flow := range []*openapi3.OAuthFlow{
+		ref.Value.Flows.Implicit,
+		ref.Value.Flows.Password,
+		ref.Value.Flows.ClientCredentials,
+		ref.Value.Flows.AuthorizationCode,
+	} {
+		if flow != nil {
+			flow.Extensions = nil
+		}
+	}
+}
+
 func stripParameterRef(ref *openapi3.ParameterRef) {
-	if ref == nil || ref.Value == nil {
+	if ref == nil {
+		return
+	}
+	ref.Extensions = nil
+	if ref.Value == nil {
 		return
 	}
 	ref.Value.Description = ""
@@ -508,7 +551,11 @@ func stripParameterRef(ref *openapi3.ParameterRef) {
 }
 
 func stripResponseRef(ref *openapi3.ResponseRef) {
-	if ref == nil || ref.Value == nil {
+	if ref == nil {
+		return
+	}
+	ref.Extensions = nil
+	if ref.Value == nil {
 		return
 	}
 	// Description is required on a Response — blank it, don't drop it.
@@ -517,11 +564,16 @@ func stripResponseRef(ref *openapi3.ResponseRef) {
 	ref.Value.Extensions = nil
 	stripContent(ref.Value.Content)
 	for _, h := range ref.Value.Headers {
-		if h != nil && h.Value != nil {
-			h.Value.Description = ""
-			h.Value.Extensions = nil
-			stripSchemaRef(h.Value.Schema)
+		if h == nil {
+			continue
 		}
+		h.Extensions = nil
+		if h.Value == nil {
+			continue
+		}
+		h.Value.Description = ""
+		h.Value.Extensions = nil
+		stripSchemaRef(h.Value.Schema)
 	}
 }
 
@@ -534,18 +586,26 @@ func stripContent(content openapi3.Content) {
 	}
 }
 
-// stripSchemaRef blanks prose on an inline schema and recurses. A $ref node is
-// skipped: its target is a named component schema walked at its own definition
-// site, so following the ref would double-process and could loop on recursive
-// schemas.
+// stripSchemaRef blanks prose on an inline schema and recurses. A $ref node
+// still has its *wrapper* extensions cleared (Auth0 sometimes hangs
+// `x-release-lifecycle` next to a `$ref`), but the referent is left alone:
+// it is a named component schema walked at its own definition site, so
+// following the ref would double-process and could loop on recursive schemas.
 func stripSchemaRef(ref *openapi3.SchemaRef) {
-	if ref == nil || ref.Ref != "" || ref.Value == nil {
+	if ref == nil {
+		return
+	}
+	ref.Extensions = nil
+	if ref.Ref != "" || ref.Value == nil {
 		return
 	}
 	s := ref.Value
 	s.Description = ""
 	s.ExternalDocs = nil
 	s.Extensions = nil
+	if s.Discriminator != nil {
+		s.Discriminator.Extensions = nil
+	}
 	for _, p := range s.Properties {
 		stripSchemaRef(p)
 	}

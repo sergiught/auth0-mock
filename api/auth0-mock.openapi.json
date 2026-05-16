@@ -71,8 +71,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -107,8 +106,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -283,8 +281,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -364,8 +361,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "type": "array"
           }
@@ -733,8 +729,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -2267,8 +2262,7 @@
             "type": "string"
           },
           "identity": {
-            "$ref": "#/components/schemas/ChangePasswordTicketIdentity",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ChangePasswordTicketIdentity"
           },
           "includeEmailInRedirect": {
             "type": "boolean"
@@ -2588,8 +2582,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration"
           },
           "name": {
             "default": "My application",
@@ -2625,8 +2618,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -2667,19 +2659,16 @@
             "type": "string"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           },
           "web_origins": {
             "items": {
@@ -3608,8 +3597,7 @@
             "type": "string"
           },
           "default_for": {
-            "$ref": "#/components/schemas/ClientGrantDefaultForEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientGrantDefaultForEnum"
           },
           "id": {
             "type": "string"
@@ -4043,8 +4031,7 @@
             "type": "boolean"
           },
           "delegation": {
-            "$ref": "#/components/schemas/ClientSessionTransferDelegationConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientSessionTransferDelegationConfiguration"
           },
           "enforce_cascade_revocation": {
             "default": true,
@@ -4390,8 +4377,7 @@
             "type": "boolean"
           },
           "default_method": {
-            "$ref": "#/components/schemas/DefaultMethodEmailIdentifierEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/DefaultMethodEmailIdentifierEnum"
           }
         },
         "type": "object"
@@ -4478,8 +4464,7 @@
         "additionalProperties": false,
         "properties": {
           "email_otp": {
-            "$ref": "#/components/schemas/ConnectionEmailOtpAuthenticationMethod",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ConnectionEmailOtpAuthenticationMethod"
           },
           "passkey": {
             "$ref": "#/components/schemas/ConnectionPasskeyAuthenticationMethod"
@@ -4488,8 +4473,7 @@
             "$ref": "#/components/schemas/ConnectionPasswordAuthenticationMethod"
           },
           "phone_otp": {
-            "$ref": "#/components/schemas/ConnectionPhoneOtpAuthenticationMethod",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ConnectionPhoneOtpAuthenticationMethod"
           }
         },
         "type": [
@@ -5343,12 +5327,10 @@
         "additionalProperties": false,
         "properties": {
           "authentication": {
-            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose"
           },
           "connected_accounts": {
-            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose"
           },
           "display_name": {
             "type": "string"
@@ -8769,15 +8751,13 @@
         "additionalProperties": false,
         "properties": {
           "api_behavior": {
-            "$ref": "#/components/schemas/ConnectionApiBehaviorEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ConnectionApiBehaviorEnum"
           },
           "enabled": {
             "type": "boolean"
           },
           "signup_behavior": {
-            "$ref": "#/components/schemas/ConnectionSignupBehaviorEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ConnectionSignupBehaviorEnum"
           }
         },
         "type": "object"
@@ -9264,8 +9244,7 @@
             "$ref": "#/components/schemas/ConnectionPasswordNoPersonalInfoOptions"
           },
           "password_options": {
-            "$ref": "#/components/schemas/ConnectionPasswordOptions",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ConnectionPasswordOptions"
           },
           "precedence": {
             "items": {
@@ -11814,8 +11793,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -11897,8 +11875,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -12093,8 +12070,7 @@
             "type": "string"
           },
           "default_for": {
-            "$ref": "#/components/schemas/ClientGrantDefaultForEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientGrantDefaultForEnum"
           },
           "organization_usage": {
             "$ref": "#/components/schemas/ClientGrantOrganizationUsageEnum"
@@ -12141,8 +12117,7 @@
             "type": "string"
           },
           "default_for": {
-            "$ref": "#/components/schemas/ClientGrantDefaultForEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientGrantDefaultForEnum"
           },
           "id": {
             "type": "string"
@@ -12288,8 +12263,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationPostConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationPostConfiguration"
           },
           "name": {
             "pattern": "^[^\u003c\u003e]+$",
@@ -12299,8 +12273,7 @@
             "$ref": "#/components/schemas/NativeSocialLogin"
           },
           "oidc_backchannel_logout": {
-            "$ref": "#/components/schemas/ClientOIDCBackchannelLogoutSettings",
-            "x-release-lifecycle": "deprecated"
+            "$ref": "#/components/schemas/ClientOIDCBackchannelLogoutSettings"
           },
           "oidc_conformant": {
             "default": false,
@@ -12331,8 +12304,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -12366,19 +12338,16 @@
             "type": "boolean"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/CreateTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/CreateTokenQuota"
           },
           "web_origins": {
             "items": {
@@ -12534,8 +12503,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration"
           },
           "name": {
             "default": "My application",
@@ -12571,8 +12539,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -12613,19 +12580,16 @@
             "type": "string"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           },
           "web_origins": {
             "items": {
@@ -12720,12 +12684,10 @@
         "additionalProperties": false,
         "properties": {
           "authentication": {
-            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose"
           },
           "connected_accounts": {
-            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose"
           },
           "display_name": {
             "maxLength": 128,
@@ -13985,12 +13947,10 @@
         "additionalProperties": false,
         "properties": {
           "authentication": {
-            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose"
           },
           "connected_accounts": {
-            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose"
           },
           "display_name": {
             "type": "string"
@@ -14144,8 +14104,7 @@
             "type": "boolean"
           },
           "synchronize_groups": {
-            "$ref": "#/components/schemas/SynchronizeGroupsEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/SynchronizeGroupsEnum"
           }
         },
         "type": [
@@ -14190,8 +14149,7 @@
             "type": "boolean"
           },
           "synchronize_groups": {
-            "$ref": "#/components/schemas/SynchronizeGroupsEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/SynchronizeGroupsEnum"
           },
           "updated_at": {
             "format": "date-time",
@@ -17158,8 +17116,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/CreateTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/CreateTokenQuota"
           }
         },
         "required": [
@@ -17201,8 +17158,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           }
         },
         "type": "object"
@@ -17381,8 +17337,7 @@
             ]
           },
           "authorization_policy": {
-            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy"
           },
           "consent_policy": {
             "$ref": "#/components/schemas/ResourceServerConsentPolicyEnum"
@@ -17456,8 +17411,7 @@
             ]
           },
           "authorization_policy": {
-            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy"
           },
           "client_id": {
             "format": "client-id",
@@ -17818,8 +17772,7 @@
             "type": "array"
           },
           "enabled_features": {
-            "$ref": "#/components/schemas/SelfServiceProfileSsoTicketEnabledFeatures",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/SelfServiceProfileSsoTicketEnabledFeatures"
           },
           "enabled_organizations": {
             "items": {
@@ -17828,8 +17781,7 @@
             "type": "array"
           },
           "provisioning_config": {
-            "$ref": "#/components/schemas/SelfServiceProfileSsoTicketProvisioningConfig",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/SelfServiceProfileSsoTicketProvisioningConfig"
           },
           "ttl_sec": {
             "maximum": 432000,
@@ -18937,8 +18889,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -19033,8 +18984,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -19127,8 +19077,7 @@
             "type": "boolean"
           },
           "synchronize_groups": {
-            "$ref": "#/components/schemas/SynchronizeGroupsEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/SynchronizeGroupsEnum"
           },
           "updated_at": {
             "format": "date-time",
@@ -26101,8 +26050,7 @@
             "user.deleted": "#/components/schemas/EventStreamCloudEventUserDeleted",
             "user.updated": "#/components/schemas/EventStreamCloudEventUserUpdated"
           },
-          "propertyName": "type",
-          "x-discriminator-context": "protocol"
+          "propertyName": "type"
         },
         "oneOf": [
           {
@@ -35106,8 +35054,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -35189,8 +35136,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -35604,8 +35550,7 @@
             "type": "string"
           },
           "default_for": {
-            "$ref": "#/components/schemas/ClientGrantDefaultForEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientGrantDefaultForEnum"
           },
           "id": {
             "type": "string"
@@ -35770,8 +35715,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration"
           },
           "name": {
             "default": "My application",
@@ -35807,8 +35751,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -35849,19 +35792,16 @@
             "type": "string"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           },
           "web_origins": {
             "items": {
@@ -35936,12 +35876,10 @@
         "additionalProperties": false,
         "properties": {
           "authentication": {
-            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose"
           },
           "connected_accounts": {
-            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose"
           },
           "display_name": {
             "type": "string"
@@ -36199,8 +36137,7 @@
             "type": "boolean"
           },
           "synchronize_groups": {
-            "$ref": "#/components/schemas/SynchronizeGroupsEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/SynchronizeGroupsEnum"
           },
           "updated_at": {
             "format": "date-time",
@@ -37352,8 +37289,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           }
         },
         "type": "object"
@@ -37542,8 +37478,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           }
         },
         "type": "object"
@@ -37668,8 +37603,7 @@
             ]
           },
           "authorization_policy": {
-            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy"
           },
           "client_id": {
             "format": "client-id",
@@ -38111,15 +38045,13 @@
             "type": "string"
           },
           "default_token_quota": {
-            "$ref": "#/components/schemas/DefaultTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/DefaultTokenQuota"
           },
           "device_flow": {
             "$ref": "#/components/schemas/TenantSettingsDeviceFlow"
           },
           "dynamic_client_registration_security_mode": {
-            "$ref": "#/components/schemas/TenantSettingsDynamicClientRegistrationSecurityMode",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/TenantSettingsDynamicClientRegistrationSecurityMode"
           },
           "enable_ai_guide": {
             "type": "boolean"
@@ -38180,8 +38112,7 @@
             "type": "boolean"
           },
           "resource_parameter_profile": {
-            "$ref": "#/components/schemas/TenantSettingsResourceParameterProfile",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/TenantSettingsResourceParameterProfile"
           },
           "sandbox_version": {
             "default": "22",
@@ -39019,8 +38950,7 @@
             "$ref": "#/components/schemas/IntegrationSemVer"
           },
           "trigger": {
-            "$ref": "#/components/schemas/ActionTrigger",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ActionTrigger"
           }
         },
         "type": "object"
@@ -39164,8 +39094,7 @@
         "properties": {
           "triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "type": "array"
           }
@@ -42341,8 +42270,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           }
         },
         "type": "object"
@@ -43730,8 +43658,7 @@
             ]
           },
           "authorization_policy": {
-            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy"
           },
           "client_id": {
             "format": "client-id",
@@ -44331,8 +44258,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration"
           },
           "name": {
             "default": "My application",
@@ -44368,8 +44294,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -44410,19 +44335,16 @@
             "type": "string"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           },
           "web_origins": {
             "items": {
@@ -45040,8 +44962,7 @@
         "additionalProperties": false,
         "properties": {
           "google_workspace": {
-            "$ref": "#/components/schemas/SelfServiceProfileSsoTicketGoogleWorkspaceConfig",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/SelfServiceProfileSsoTicketGoogleWorkspaceConfig"
           },
           "scopes": {
             "items": {
@@ -47196,8 +47117,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -47275,8 +47195,7 @@
           },
           "supported_triggers": {
             "items": {
-              "$ref": "#/components/schemas/ActionTrigger",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ActionTrigger"
             },
             "minItems": 1,
             "type": "array"
@@ -47998,8 +47917,7 @@
             "type": "string"
           },
           "default_for": {
-            "$ref": "#/components/schemas/ClientGrantDefaultForEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientGrantDefaultForEnum"
           },
           "id": {
             "type": "string"
@@ -48149,8 +48067,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationPatchConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationPatchConfiguration"
           },
           "name": {
             "pattern": "^[^\u003c\u003e]+$",
@@ -48160,8 +48077,7 @@
             "$ref": "#/components/schemas/NativeSocialLogin"
           },
           "oidc_backchannel_logout": {
-            "$ref": "#/components/schemas/ClientOIDCBackchannelLogoutSettings",
-            "x-release-lifecycle": "deprecated"
+            "$ref": "#/components/schemas/ClientOIDCBackchannelLogoutSettings"
           },
           "oidc_conformant": {
             "default": false,
@@ -48195,8 +48111,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -48228,19 +48143,16 @@
             "type": "boolean"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodOrNullEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfigurationOrNull",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfigurationOrNull"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/UpdateTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/UpdateTokenQuota"
           },
           "web_origins": {
             "items": {
@@ -48393,8 +48305,7 @@
             "$ref": "#/components/schemas/ClientMobile"
           },
           "my_organization_configuration": {
-            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ClientMyOrganizationResponseConfiguration"
           },
           "name": {
             "default": "My application",
@@ -48430,8 +48341,7 @@
             ]
           },
           "redirection_policy": {
-            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientRedirectionPolicyEnum"
           },
           "refresh_token": {
             "$ref": "#/components/schemas/ClientRefreshTokenConfiguration"
@@ -48472,19 +48382,16 @@
             "type": "string"
           },
           "third_party_security_mode": {
-            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientThirdPartySecurityModeEnum"
           },
           "token_endpoint_auth_method": {
             "$ref": "#/components/schemas/ClientTokenEndpointAuthMethodEnum"
           },
           "token_exchange": {
-            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ClientTokenExchangeConfiguration"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           },
           "web_origins": {
             "items": {
@@ -48598,8 +48505,7 @@
             "$ref": "#/components/schemas/ConnectionPasswordNoPersonalInfoOptions"
           },
           "password_options": {
-            "$ref": "#/components/schemas/ConnectionPasswordOptions",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ConnectionPasswordOptions"
           },
           "precedence": {
             "items": {
@@ -48688,12 +48594,10 @@
         "minProperties": 1,
         "properties": {
           "authentication": {
-            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose"
           },
           "connected_accounts": {
-            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose"
           },
           "display_name": {
             "maxLength": 128,
@@ -49614,12 +49518,10 @@
         "additionalProperties": false,
         "properties": {
           "authentication": {
-            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionAuthenticationPurpose"
           },
           "connected_accounts": {
-            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/ConnectionConnectedAccountsPurpose"
           },
           "display_name": {
             "type": "string"
@@ -49845,8 +49747,7 @@
             "type": "boolean"
           },
           "synchronize_groups": {
-            "$ref": "#/components/schemas/SynchronizeGroupsEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/SynchronizeGroupsEnum"
           }
         },
         "type": [
@@ -49891,8 +49792,7 @@
             "type": "boolean"
           },
           "synchronize_groups": {
-            "$ref": "#/components/schemas/SynchronizeGroupsEnum",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/SynchronizeGroupsEnum"
           },
           "updated_at": {
             "format": "date-time",
@@ -50969,8 +50869,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/UpdateTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/UpdateTokenQuota"
           }
         },
         "type": "object"
@@ -51003,8 +50902,7 @@
             "type": "string"
           },
           "token_quota": {
-            "$ref": "#/components/schemas/TokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/TokenQuota"
           }
         },
         "type": "object"
@@ -51133,8 +51031,7 @@
             ]
           },
           "authorization_policy": {
-            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy"
           },
           "consent_policy": {
             "$ref": "#/components/schemas/ResourceServerConsentPolicyEnum"
@@ -51200,8 +51097,7 @@
             ]
           },
           "authorization_policy": {
-            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/ResourceServerAuthorizationPolicy"
           },
           "client_id": {
             "format": "client-id",
@@ -51752,15 +51648,13 @@
             "type": "string"
           },
           "default_token_quota": {
-            "$ref": "#/components/schemas/DefaultTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/DefaultTokenQuota"
           },
           "device_flow": {
             "$ref": "#/components/schemas/TenantSettingsDeviceFlow"
           },
           "dynamic_client_registration_security_mode": {
-            "$ref": "#/components/schemas/TenantSettingsDynamicClientRegistrationSecurityMode",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/TenantSettingsDynamicClientRegistrationSecurityMode"
           },
           "enable_ai_guide": {
             "type": "boolean"
@@ -51826,8 +51720,7 @@
             ]
           },
           "resource_parameter_profile": {
-            "$ref": "#/components/schemas/TenantSettingsResourceParameterProfile",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/TenantSettingsResourceParameterProfile"
           },
           "sandbox_version": {
             "default": "22",
@@ -51918,15 +51811,13 @@
             "type": "string"
           },
           "default_token_quota": {
-            "$ref": "#/components/schemas/DefaultTokenQuota",
-            "x-release-lifecycle": "EA"
+            "$ref": "#/components/schemas/DefaultTokenQuota"
           },
           "device_flow": {
             "$ref": "#/components/schemas/TenantSettingsDeviceFlow"
           },
           "dynamic_client_registration_security_mode": {
-            "$ref": "#/components/schemas/TenantSettingsDynamicClientRegistrationSecurityMode",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/TenantSettingsDynamicClientRegistrationSecurityMode"
           },
           "enable_ai_guide": {
             "type": "boolean"
@@ -51987,8 +51878,7 @@
             "type": "boolean"
           },
           "resource_parameter_profile": {
-            "$ref": "#/components/schemas/TenantSettingsResourceParameterProfile",
-            "x-release-lifecycle": "GA"
+            "$ref": "#/components/schemas/TenantSettingsResourceParameterProfile"
           },
           "sandbox_version": {
             "default": "22",
@@ -53806,10 +53696,7 @@
               "update:users_app_metadata": "Update Users App Metadata",
               "update:vdcs_templates": "Update Vdcs Templates"
             },
-            "tokenUrl": "/oauth/token/",
-            "x-form-parameters": {
-              "audience": "/api/v2/"
-            }
+            "tokenUrl": "/oauth/token/"
           }
         },
         "type": "oauth2"
@@ -57656,8 +57543,7 @@
             "in": "query",
             "name": "default_for",
             "schema": {
-              "$ref": "#/components/schemas/ClientGrantDefaultForEnum",
-              "x-release-lifecycle": "GA"
+              "$ref": "#/components/schemas/ClientGrantDefaultForEnum"
             }
           }
         ],
@@ -63261,14 +63147,12 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateFlowRequestContent",
-                "x-release-lifecycle": "GA"
+                "$ref": "#/components/schemas/CreateFlowRequestContent"
               }
             },
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/CreateFlowRequestContent",
-                "x-release-lifecycle": "GA"
+                "$ref": "#/components/schemas/CreateFlowRequestContent"
               }
             }
           }
@@ -63278,8 +63162,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateFlowResponseContent",
-                  "x-release-lifecycle": "GA"
+                  "$ref": "#/components/schemas/CreateFlowResponseContent"
                 }
               }
             },
@@ -63912,8 +63795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GetFlowResponseContent",
-                  "x-release-lifecycle": "GA"
+                  "$ref": "#/components/schemas/GetFlowResponseContent"
                 }
               }
             },
@@ -63967,14 +63849,12 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateFlowRequestContent",
-                "x-release-lifecycle": "GA"
+                "$ref": "#/components/schemas/UpdateFlowRequestContent"
               }
             },
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateFlowRequestContent",
-                "x-release-lifecycle": "GA"
+                "$ref": "#/components/schemas/UpdateFlowRequestContent"
               }
             }
           }
@@ -63984,8 +63864,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UpdateFlowResponseContent",
-                  "x-release-lifecycle": "GA"
+                  "$ref": "#/components/schemas/UpdateFlowResponseContent"
                 }
               }
             },
