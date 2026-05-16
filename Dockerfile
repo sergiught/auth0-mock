@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.24
 #
 # Local-dev Dockerfile for auth0-mock — builds from source with the Go
 # toolchain so `docker compose up --build` is fast on every source edit.
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/auth0-mock ./cmd/
 
 # --- runtime image -----------------------------------------------------------
 
-FROM alpine:3.20
+FROM alpine:3.23
 LABEL org.opencontainers.image.title="auth0-mock"
 LABEL org.opencontainers.image.description="Drop-in mock of Auth0's Authentication and Management APIs."
 LABEL org.opencontainers.image.licenses="MIT"

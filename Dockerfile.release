@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.24
 #
 # Release Dockerfile used by goreleaser.
 #
@@ -8,7 +8,7 @@
 # For local development and `docker compose up`, see the top-level Dockerfile,
 # which builds from source.
 
-FROM alpine:3.20
+FROM alpine:3.23
 
 LABEL org.opencontainers.image.title="auth0-mock"
 LABEL org.opencontainers.image.description="Drop-in mock of Auth0's Authentication and Management APIs."
