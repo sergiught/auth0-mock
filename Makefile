@@ -6,7 +6,7 @@ BINARY_NAME = auth0-mock
 COVERAGE_DIR = $(CURDIR)/coverage
 
 #-----------------------------------------------------------------------------------------------------------------------
-# Rules (https://www.gnu.org/software/make/manual/html_node/Rule-Introduction.html#Rule-Introduction)
+# Help (default goal — `make` with no args prints the target catalogue)
 #-----------------------------------------------------------------------------------------------------------------------
 .DEFAULT_GOAL := help
 
@@ -14,6 +14,9 @@ COVERAGE_DIR = $(CURDIR)/coverage
 help: ## Show this help message and exit
 	@awk 'BEGIN {FS = ":.*?## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Tooling (SHA-pinned helpers installed into ./bin on first use)
+#-----------------------------------------------------------------------------------------------------------------------
 $(BINARIES_DIR)/golangci-lint:
 	@echo "==> Installing golangci-lint within ${BINARIES_DIR}"
 	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@ff63786c30d6c2926f99d677ab2ecf089e9390ad # v2.5.0
@@ -30,6 +33,9 @@ $(BINARIES_DIR)/air:
 	@echo "==> Installing air within ${BINARIES_DIR}"
 	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc # v1.65.1
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Build (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: build
 build: ## Build the auth0-mock binary into bin/
 	@echo "==> Building $(BINARY_NAME) within $(BINARIES_DIR)"
@@ -40,6 +46,9 @@ build-with-cover: ## Build a coverage-instrumented binary that emits covdata to 
 	@echo "==> Building $(BINARY_NAME) (coverage-instrumented) within $(BINARIES_DIR)"
 	@go build -cover -coverpkg=./... -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Test (https://pkg.go.dev/testing — unit + godog acceptance + coverage)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: test
 test: ## Run unit tests with the race detector
 	@go test -race -count=1 ./...
@@ -68,6 +77,9 @@ coverage: test-cover test-features-cover ## Run all tests with coverage and prin
 	@printf "  unit:     %s\n" "$$(go tool cover -func=$(COVERAGE_DIR)/unit.out | tail -1 | awk '{print $$3}')"
 	@printf "  features: %s\n" "$$(go tool cover -func=$(COVERAGE_DIR)/features.out | tail -1 | awk '{print $$3}')"
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Lint & security (golangci-lint, commitlint, govulncheck)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: lint
 lint: $(BINARIES_DIR)/golangci-lint ## Run golangci-lint over the project (with --fix)
 	@echo "==> Running golangci-lint"
@@ -82,6 +94,9 @@ vuln: $(BINARIES_DIR)/govulncheck ## Scan the module graph for known Go vulnerab
 	@echo "==> Scanning module graph for known Go vulnerabilities"
 	@$(BINARIES_DIR)/govulncheck ./...
 
+#-----------------------------------------------------------------------------------------------------------------------
+# OpenAPI spec (https://www.openapis.org — merge fragments + re-vendor skeleton)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: openapi
 openapi: ## Regenerate the merged OpenAPI spec at api/auth0-mock.openapi.json
 	@echo "==> Generating merged OpenAPI spec"
@@ -98,6 +113,9 @@ refresh-spec: ## Re-vendor the Auth0 Management API skeleton from a manually-dow
 	@go run ./cmd/genopenapi -strip-raw api/auth0-management-api.raw.json -out api/auth0-management-api.openapi.json
 	@$(MAKE) openapi
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Local development (env scaffolding + hot reload + docker compose)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: pre-commit
 pre-commit: ## Install local pre-commit and commit-msg hooks
 	@if ! command -v pre-commit >/dev/null 2>&1; then \
@@ -120,6 +138,9 @@ dev-run: dev-env ## Run the API inside docker compose and tail its logs
 	@docker compose up -d --build
 	@docker compose logs -f auth0-mock
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Release (https://goreleaser.com — local dry-run of the full release pipeline)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: release-dry-run
 release-dry-run: ## Build a full release locally without publishing — exercises goreleaser, multi-arch Docker, SBOMs, and Cosign signing in --skip mode
 	@command -v goreleaser >/dev/null 2>&1 || { \
@@ -133,6 +154,9 @@ release-dry-run: ## Build a full release locally without publishing — exercise
 	@echo "==> Running goreleaser in dry-run mode"
 	@goreleaser release --snapshot --clean --skip=publish,sign
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Demo (drives the go-auth0 SDK example against a throwaway mock instance)
+#-----------------------------------------------------------------------------------------------------------------------
 .PHONY: demo
 demo: build ## Run the go-auth0 SDK example against a throwaway mock instance
 	@echo "==> Starting $(BINARY_NAME) for the demo (with persisted TLS cert)"
