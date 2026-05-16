@@ -32,11 +32,13 @@ func TestIsSafeRedirect_BypassClass(t *testing.T) {
 		"///evil.tld",
 		"////evil.tld",
 
-		// Leading whitespace — net/url keeps it in Path; browsers trim it.
-		// The strip-set covers the full WHATWG URL §C0-control + space
-		// set (NUL, HT, LF, VT, FF, CR, space) — \v and \f aren't in
-		// the four obvious ones but they pass net/url without error
-		// and would otherwise leave us a //host gap.
+		// Leading WHATWG URL §C0 controls + space — browsers trim this
+		// set before following Location, so " //evil.tld" becomes
+		// "//evil.tld" (protocol-relative cross-origin). Today net/url
+		// rejects every C0 control as "invalid control character" and
+		// only U+0020 actually slips its parse, but isSafeRedirect
+		// trims (and rejects) the full set anyway: defense-in-depth
+		// plus future-proofing if net/url ever loosens.
 		" //evil.tld",
 		"\t//evil.tld",
 		"\n//evil.tld",
@@ -66,6 +68,26 @@ func TestIsSafeRedirect_BypassClass(t *testing.T) {
 		"/post-logout#section",
 		"",               // Empty (callers default to "/" anyway).
 		"https://app/cb", // Exact allow-list match.
+
+		// Percent-encoded slashes / backslashes — browsers do NOT
+		// re-decode `%2F` / `%5C` before re-parsing Location, so these
+		// stay as literal path bytes on the mock origin, not //evil.tld.
+		// Locking the analysis in here so a future "tighten the strip"
+		// PR can't silently break it.
+		"/%2F%2Fevil.tld",
+		"/%5C%5Cevil.tld",
+		"/%09//evil.tld",
+		"/%20//evil.tld",
+
+		// Unicode whitespace NOT in WHATWG URL §C0 + space. NBSP,
+		// LSEP, PSEP, ZWSP, RLO are not stripped by browsers before
+		// navigating Location, so they stay in the path. Pass them
+		// in URL-encoded form (raw bytes would fail net/url's
+		// "invalid control character" check on the multibyte
+		// sequence).
+		"/%C2%A0//evil.tld", // U+00A0 NBSP.
+		"/%E2%80%A8/evil",   // U+2028 LSEP.
+		"/%E2%80%8B/evil",   // U+200B ZWSP.
 	}
 	for _, raw := range allowed {
 		t.Run("allow:"+raw, func(t *testing.T) {

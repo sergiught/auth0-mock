@@ -29,11 +29,15 @@ func isSafeRedirect(raw string, allowList []string) bool {
 	if strings.ContainsAny(raw, "\\") {
 		return false
 	}
-	// Reject leading whitespace — browsers trim WHATWG URL §C0 controls +
-	// space before following Location, so " //evil.tld" effectively
-	// becomes "//evil.tld" (protocol-relative). We trim the same set
-	// (NUL, \t, \n, \v, \f, \r, space) — slightly wider than the four
-	// obvious ones because `\v` and `\f` pass net/url without error.
+	// Reject leading WHATWG URL §C0 controls + space. Of these, net/url
+	// today rejects every C0 control ("invalid control character in URL")
+	// — only U+0020 actually slips its parse — but we trim the full set
+	// for two reasons: (1) defense-in-depth, since browsers also strip
+	// the same set before following Location and we want the same denial
+	// answer; (2) future-proofing if net/url ever loosens or a custom
+	// parser is swapped in. " //evil.tld" otherwise becomes "//evil.tld"
+	// (protocol-relative cross-origin) the moment net/url stops
+	// rejecting whitespace.
 	if trimmed := strings.TrimLeft(raw, "\x00 \t\n\v\f\r"); trimmed != raw {
 		return false
 	}

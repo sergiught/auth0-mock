@@ -37,6 +37,8 @@ It is not for: production traffic, replacing your IdP, or anything that needs a 
 
 ### From a release (recommended)
 
+> ⏳ **Available once `v0.1.0` ships.** Until the first tagged release exists, the script exits with `could not resolve latest release (does sergiught/auth0-mock have any published releases yet?)` — use the **From source** or **Via `go install`** paths below in the meantime.
+
 ```bash
 # latest stable
 curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash
