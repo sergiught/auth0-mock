@@ -121,6 +121,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed through so .goreleaser.yaml's dockers[].skip_push template
+          # can detect whether Docker Hub creds are available and skip the
+          # docker.io push when they aren't (envOrDefault check). GHCR push
+          # is unaffected and always proceeds.
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       # peter-evans/dockerhub-description v4.0.2
       # Skipped on prerelease tags (e.g. v0.2.0-rc.1) so the Docker Hub page

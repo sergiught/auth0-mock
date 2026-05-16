@@ -79,15 +79,22 @@ changelog:
   disable: true
 
 # ── Docker (multi-arch via per-platform images + manifests) ─────────────────
+#
+# Split into per-registry entries so each can be skip_push'd independently.
+# Docker Hub pushes are gated on DOCKERHUB_USERNAME (passed through from
+# release.yml's env) so first-release / fork runs without Docker Hub creds
+# publish to GHCR alone instead of failing the whole pipeline on a 10×
+# retry against an unauthenticated docker.io. GHCR uses GITHUB_TOKEN and
+# is always authenticated.
 
 dockers:
-  - id: linux-amd64
+  # ── GHCR — always pushed ─────────────────────────────────────────────────
+  - id: ghcr-linux-amd64
     use: buildx
     goos: linux
     goarch: amd64
     dockerfile: Dockerfile.release
     image_templates:
-      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
       - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
     build_flag_templates:
       - '--platform=linux/amd64'
@@ -104,13 +111,12 @@ dockers:
       - NOTICE
       - licenses
 
-  - id: linux-arm64
+  - id: ghcr-linux-arm64
     use: buildx
     goos: linux
     goarch: arm64
     dockerfile: Dockerfile.release
     image_templates:
-      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
       - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
     build_flag_templates:
       - '--platform=linux/arm64'
@@ -127,26 +133,89 @@ dockers:
       - NOTICE
       - licenses
 
-docker_manifests:
-  - name_template: 'docker.io/sergiught/auth0-mock:{{ .Version }}'
+  # ── Docker Hub — skip_push templated on DOCKERHUB_USERNAME presence ──────
+  - id: dockerhub-linux-amd64
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.release
+    skip_push: '{{ if eq (envOrDefault "DOCKERHUB_USERNAME" "") "" }}true{{ else }}false{{ end }}'
     image_templates:
       - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
-      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
-  - name_template: 'docker.io/sergiught/auth0-mock:latest'
-    image_templates:
-      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
-      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
-  - name_template: 'ghcr.io/sergiught/auth0-mock:{{ .Version }}'
-    image_templates:
-      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
-      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
-  - name_template: 'ghcr.io/sergiught/auth0-mock:latest'
-    image_templates:
-      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
-      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+    build_flag_templates:
+      - '--platform=linux/amd64'
+      - '--label=org.opencontainers.image.title={{ .ProjectName }}'
+      - '--label=org.opencontainers.image.description=Drop-in mock of Auth0''s Authentication and Management APIs.'
+      - '--label=org.opencontainers.image.url=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.source=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.version={{ .Version }}'
+      - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
+      - '--label=org.opencontainers.image.created={{ .Date }}'
+      - '--label=org.opencontainers.image.licenses=MIT'
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - licenses
 
-# Cosign keyless signing for every multi-arch Docker manifest. Uses the
-# workflow's OIDC token (id-token: write) — no long-lived key to manage.
+  - id: dockerhub-linux-arm64
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.release
+    skip_push: '{{ if eq (envOrDefault "DOCKERHUB_USERNAME" "") "" }}true{{ else }}false{{ end }}'
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+    build_flag_templates:
+      - '--platform=linux/arm64'
+      - '--label=org.opencontainers.image.title={{ .ProjectName }}'
+      - '--label=org.opencontainers.image.description=Drop-in mock of Auth0''s Authentication and Management APIs.'
+      - '--label=org.opencontainers.image.url=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.source=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.version={{ .Version }}'
+      - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
+      - '--label=org.opencontainers.image.created={{ .Date }}'
+      - '--label=org.opencontainers.image.licenses=MIT'
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - licenses
+
+docker_manifests:
+  # GHCR — always pushed; cosign-signed via the docker_signs block below.
+  - id: ghcr-version
+    name_template: 'ghcr.io/sergiught/auth0-mock:{{ .Version }}'
+    image_templates:
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+  - id: ghcr-latest
+    name_template: 'ghcr.io/sergiught/auth0-mock:latest'
+    image_templates:
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+  # Docker Hub — skip_push templated on DOCKERHUB_USERNAME presence.
+  # Not currently cosign-signed (the canonical signed surface is GHCR);
+  # adopters who need attestation can pull the digest-equivalent image
+  # from ghcr.io and verify there.
+  - id: dockerhub-version
+    name_template: 'docker.io/sergiught/auth0-mock:{{ .Version }}'
+    skip_push: '{{ if eq (envOrDefault "DOCKERHUB_USERNAME" "") "" }}true{{ else }}false{{ end }}'
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+  - id: dockerhub-latest
+    name_template: 'docker.io/sergiught/auth0-mock:latest'
+    skip_push: '{{ if eq (envOrDefault "DOCKERHUB_USERNAME" "") "" }}true{{ else }}false{{ end }}'
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+
+# Cosign keyless signing for the GHCR manifests only. Uses the workflow's
+# OIDC token (id-token: write) — no long-lived key to manage. Docker Hub
+# manifests aren't signed by this workflow because they're skip_push'd
+# when DOCKERHUB_USERNAME isn't set, which would break cosign sign on
+# the non-pushed digest. GHCR is the canonical signed surface; adopters
+# pulling the docker.io mirror can verify the equivalent GHCR digest.
+#
 # Verify with (matches the regex shipped in README.md + docs/DOCKERHUB.md):
 #   cosign verify \
 #     --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
@@ -155,6 +224,7 @@ docker_manifests:
 docker_signs:
   - cmd: cosign
     artifacts: manifests
+    ids: [ghcr-version, ghcr-latest]
     args:
       - 'sign'
       - '--yes'
