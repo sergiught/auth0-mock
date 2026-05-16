@@ -10,6 +10,7 @@ import (
 )
 
 func TestWriteMgmt(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	WriteMgmt(w, 404, "Not Found", "no match", "no_match")
 
@@ -25,6 +26,7 @@ func TestWriteMgmt(t *testing.T) {
 }
 
 func TestWriteAuth(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	WriteAuth(w, 400, "invalid_request", "missing grant_type")
 

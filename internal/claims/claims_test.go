@@ -8,6 +8,7 @@ import (
 )
 
 func TestStore_SetGetClear(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	assert.Empty(t, s.Get())
 
@@ -25,6 +26,7 @@ func TestStore_SetGetClear(t *testing.T) {
 }
 
 func TestStore_MergeInto_Overwrites(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Set(map[string]any{"role": "admin", "gty": "override"})
 
@@ -37,6 +39,7 @@ func TestStore_MergeInto_Overwrites(t *testing.T) {
 }
 
 func TestStore_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	var wg sync.WaitGroup
 	for i := range 50 {

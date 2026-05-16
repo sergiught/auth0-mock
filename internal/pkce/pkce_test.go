@@ -11,6 +11,7 @@ import (
 )
 
 func TestStore_PutConsume(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put("code-1", Entry{Challenge: "ch", Method: MethodS256, ClientID: "abc"})
 
@@ -24,12 +25,14 @@ func TestStore_PutConsume(t *testing.T) {
 }
 
 func TestStore_ConsumeUnknown(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	_, ok := s.Consume("nope")
 	assert.False(t, ok)
 }
 
 func TestStore_Expiry(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.ttl = 50 * time.Millisecond
 	s.Put("code-1", Entry{Challenge: "ch", Method: MethodS256})
@@ -40,6 +43,7 @@ func TestStore_Expiry(t *testing.T) {
 }
 
 func TestEntry_Verify_S256_Match(t *testing.T) {
+	t.Parallel()
 	verifier := "the-quick-brown-fox-jumps-over-the-lazy-dog-43-chars"
 	sum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -49,6 +53,7 @@ func TestEntry_Verify_S256_Match(t *testing.T) {
 }
 
 func TestEntry_Verify_S256_Mismatch(t *testing.T) {
+	t.Parallel()
 	e := Entry{Challenge: "wrong", Method: MethodS256}
 	err := e.Verify("any-verifier")
 	if assert.Error(t, err) {
@@ -57,11 +62,13 @@ func TestEntry_Verify_S256_Mismatch(t *testing.T) {
 }
 
 func TestEntry_Verify_Plain_Match(t *testing.T) {
+	t.Parallel()
 	e := Entry{Challenge: "literal", Method: MethodPlain}
 	assert.NoError(t, e.Verify("literal"))
 }
 
 func TestEntry_Verify_Plain_Mismatch(t *testing.T) {
+	t.Parallel()
 	e := Entry{Challenge: "literal", Method: MethodPlain}
 	err := e.Verify("other")
 	if assert.Error(t, err) {
@@ -70,6 +77,7 @@ func TestEntry_Verify_Plain_Mismatch(t *testing.T) {
 }
 
 func TestEntry_Verify_MissingVerifier(t *testing.T) {
+	t.Parallel()
 	e := Entry{Challenge: "ch", Method: MethodS256}
 	err := e.Verify("")
 	if assert.Error(t, err) {
@@ -78,11 +86,13 @@ func TestEntry_Verify_MissingVerifier(t *testing.T) {
 }
 
 func TestEntry_Verify_UnsupportedMethod(t *testing.T) {
+	t.Parallel()
 	e := Entry{Challenge: "ch", Method: "weird"}
 	assert.Error(t, e.Verify("anything"))
 }
 
 func TestStore_Reset(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put("a", Entry{Challenge: "ch", Method: MethodS256})
 	s.Put("b", Entry{Challenge: "ch", Method: MethodS256})

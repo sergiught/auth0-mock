@@ -8,6 +8,7 @@ import (
 )
 
 func TestStore_SetGet(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	assert.Nil(t, s.Get("api"))
 
@@ -16,6 +17,7 @@ func TestStore_SetGet(t *testing.T) {
 }
 
 func TestStore_GetReturnsSnapshot(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Set("api", []string{"read:users"})
 
@@ -25,6 +27,7 @@ func TestStore_GetReturnsSnapshot(t *testing.T) {
 }
 
 func TestStore_All(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Set("api1", []string{"a", "b"})
 	s.Set("api2", []string{"c"})
@@ -36,6 +39,7 @@ func TestStore_All(t *testing.T) {
 }
 
 func TestStore_Delete(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Set("api1", []string{"a"})
 	s.Set("api2", []string{"b"})
@@ -46,6 +50,7 @@ func TestStore_Delete(t *testing.T) {
 }
 
 func TestStore_Clear(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Set("api1", []string{"a"})
 	s.Set("api2", []string{"b"})
@@ -55,6 +60,7 @@ func TestStore_Clear(t *testing.T) {
 }
 
 func TestStore_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	var wg sync.WaitGroup
 	for i := range 50 {

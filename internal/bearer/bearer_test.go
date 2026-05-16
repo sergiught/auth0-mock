@@ -20,6 +20,7 @@ func newKS(t *testing.T) *jwks.KeySet {
 }
 
 func TestMiddleware_Missing401(t *testing.T) {
+	t.Parallel()
 	ks := newKS(t)
 	called := false
 	h := Middleware(ks)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
@@ -31,6 +32,7 @@ func TestMiddleware_Missing401(t *testing.T) {
 }
 
 func TestMiddleware_Invalid401(t *testing.T) {
+	t.Parallel()
 	ks := newKS(t)
 	h := Middleware(ks)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
@@ -42,6 +44,7 @@ func TestMiddleware_Invalid401(t *testing.T) {
 }
 
 func TestMiddleware_ValidPasses(t *testing.T) {
+	t.Parallel()
 	ks := newKS(t)
 	tok, err := ks.Mint(jwks.MintOpts{Subject: "abc@clients", Audience: []string{"a"}, TTL: time.Hour})
 	require.NoError(t, err)

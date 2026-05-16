@@ -9,6 +9,7 @@ import (
 )
 
 func TestSubsetMatch(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		want, got  string
@@ -37,6 +38,7 @@ func TestSubsetMatch(t *testing.T) {
 }
 
 func TestRequestMatcher_Matches(t *testing.T) {
+	t.Parallel()
 	var catchAll *RequestMatcher
 	assert.True(t, catchAll.Matches(MatchableRequest{Body: []byte(`{"anything":true}`)}))
 
@@ -52,6 +54,7 @@ func TestRequestMatcher_Matches(t *testing.T) {
 }
 
 func TestRequestMatcher_IsEmpty(t *testing.T) {
+	t.Parallel()
 	var nilM *RequestMatcher
 	assert.True(t, nilM.IsEmpty())
 	assert.True(t, (&RequestMatcher{}).IsEmpty())
@@ -62,6 +65,7 @@ func TestRequestMatcher_IsEmpty(t *testing.T) {
 }
 
 func TestRequestMatcherEqual(t *testing.T) {
+	t.Parallel()
 	assert.True(t, requestMatcherEqual(nil, nil))
 	assert.False(t, requestMatcherEqual(nil, &RequestMatcher{}))
 	assert.True(t, requestMatcherEqual(

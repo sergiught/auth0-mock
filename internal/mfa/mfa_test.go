@@ -10,6 +10,7 @@ import (
 )
 
 func TestStore_RequiredFlag(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	assert.False(t, s.IsRequired())
 
@@ -21,6 +22,7 @@ func TestStore_RequiredFlag(t *testing.T) {
 }
 
 func TestStore_IssueConsume(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	tok := s.Issue(Context{ClientID: "abc", Audience: "api", Subject: "alice"})
 	require.NotEmpty(t, tok)
@@ -35,12 +37,14 @@ func TestStore_IssueConsume(t *testing.T) {
 }
 
 func TestStore_ConsumeUnknown(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	_, ok := s.Consume("nope")
 	assert.False(t, ok)
 }
 
 func TestStore_Expiry(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.ttl = 50 * time.Millisecond
 	tok := s.Issue(Context{Subject: "alice"})
@@ -51,6 +55,7 @@ func TestStore_Expiry(t *testing.T) {
 }
 
 func TestStore_Reset_ClearsTokensAndFlag(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.SetRequired(true)
 	tok := s.Issue(Context{Subject: "alice"})
@@ -62,6 +67,7 @@ func TestStore_Reset_ClearsTokensAndFlag(t *testing.T) {
 }
 
 func TestStore_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	var wg sync.WaitGroup
 	for range 50 {

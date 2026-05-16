@@ -3,6 +3,7 @@ package matches
 import "testing"
 
 func TestKindOf(t *testing.T) {
+	t.Parallel()
 	cases := map[string]Kind{
 		"/api/v2/users/{id}":      KindTemplate,
 		"/api/v2/users/auth0|123": KindExact,

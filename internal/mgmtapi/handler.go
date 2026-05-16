@@ -71,5 +71,10 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 	}
 	w.WriteHeader(exp.Response.Status)
-	_, _ = w.Write(exp.Response.Body)
+	if _, err := w.Write(exp.Response.Body); err != nil {
+		h.Log.Debug().
+			Err(err).
+			Str("op", h.Op.Op.OperationID).
+			Msg("write failed (client likely gone)")
+	}
 }

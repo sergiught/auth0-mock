@@ -22,6 +22,11 @@ type AuthError struct {
 }
 
 // WriteMgmt writes a Management-API-shaped JSON error.
+//
+// Encode errors here only fire when the client has already disconnected
+// (broken pipe, write deadline) — the status line and headers have already
+// been written by that point and there is nothing useful to do about it, so
+// the result is intentionally discarded.
 func WriteMgmt(w http.ResponseWriter, status int, errStr, message, errorCode string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -33,7 +38,8 @@ func WriteMgmt(w http.ResponseWriter, status int, errStr, message, errorCode str
 	})
 }
 
-// WriteAuth writes an Authentication-API-shaped JSON error.
+// WriteAuth writes an Authentication-API-shaped JSON error. Same disconnect
+// semantics as WriteMgmt — see its doc for why the encode error is dropped.
 func WriteAuth(w http.ResponseWriter, status int, errCode, description string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

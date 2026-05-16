@@ -85,7 +85,7 @@ func (s *Store) Consume(code string) (Entry, bool) {
 
 // Verify reports whether the supplied verifier matches the entry's challenge
 // per the entry's Method. Returns a descriptive error on mismatch.
-func (e Entry) Verify(verifier string) error {
+func (e *Entry) Verify(verifier string) error {
 	if verifier == "" {
 		return fmt.Errorf("missing code_verifier")
 	}

@@ -18,6 +18,7 @@ func bodyMatcher(body string) *RequestMatcher {
 }
 
 func TestStore_PutAndFind_Exact(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{"x":1}`)})
 
@@ -29,6 +30,7 @@ func TestStore_PutAndFind_Exact(t *testing.T) {
 }
 
 func TestStore_PutAndFind_TemplateFallback(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Response: resp(200, `{"any":true}`)})
 
@@ -39,6 +41,7 @@ func TestStore_PutAndFind_TemplateFallback(t *testing.T) {
 }
 
 func TestStore_ExactWinsOverTemplate(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Response: resp(200, `{"who":"any"}`)})
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{"who":"123"}`)})
@@ -50,11 +53,13 @@ func TestStore_ExactWinsOverTemplate(t *testing.T) {
 }
 
 func TestStore_FindMiss(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	assert.Nil(t, s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}", MatchableRequest{}))
 }
 
 func TestStore_Put_ReplacesEqualMatcher(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	// Catch-all replaced by catch-all.
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{"v":1}`)})
@@ -74,6 +79,7 @@ func TestStore_Put_ReplacesEqualMatcher(t *testing.T) {
 }
 
 func TestStore_RequestMatcherBeatsCatchAll(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "POST", Path: "/api/v2/users", Kind: KindExact, Response: resp(201, `{"who":"catchall"}`)})
 	s.Put(Expectation{Method: "POST", Path: "/api/v2/users", Kind: KindExact,
@@ -92,6 +98,7 @@ func TestStore_RequestMatcherBeatsCatchAll(t *testing.T) {
 }
 
 func TestStore_NewestWinsAmongEqualSpecificity(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "POST", Path: "/api/v2/users", Kind: KindExact,
 		Request: bodyMatcher(`{"email":"a@x"}`), Response: resp(201, `{"gen":1}`)})
@@ -107,6 +114,7 @@ func TestStore_NewestWinsAmongEqualSpecificity(t *testing.T) {
 }
 
 func TestStore_ExactCatchAllBeatsTemplateMatcher(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate,
 		Request: &RequestMatcher{Query: map[string]string{"fields": "email"}}, Response: resp(200, `{"tier":"tmpl-matcher"}`)})
@@ -120,6 +128,7 @@ func TestStore_ExactCatchAllBeatsTemplateMatcher(t *testing.T) {
 }
 
 func TestStore_QuerySubsetMatch(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users", Kind: KindExact,
 		Request: &RequestMatcher{Query: map[string]string{"q": "email:a@x"}}, Response: resp(200, `[]`)})
@@ -136,6 +145,7 @@ func TestStore_QuerySubsetMatch(t *testing.T) {
 }
 
 func TestStore_List(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Response: resp(200, `{}`)})
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{}`)})
@@ -146,6 +156,7 @@ func TestStore_List(t *testing.T) {
 }
 
 func TestStore_ResetEndpoint_ClearsWholeList(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{}`)})
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact,
@@ -159,6 +170,7 @@ func TestStore_ResetEndpoint_ClearsWholeList(t *testing.T) {
 }
 
 func TestStore_ResetAll(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate, Response: resp(200, `{}`)})
 	s.Put(Expectation{Method: "POST", Path: "/api/v2/clients", Kind: KindExact, Response: resp(201, `{}`)})
@@ -169,6 +181,7 @@ func TestStore_ResetAll(t *testing.T) {
 }
 
 func TestStore_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	s := NewStore()
 	var wg sync.WaitGroup
 	for i := range 100 {
