@@ -234,6 +234,9 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
 | `LOG_LEVEL` | `info` | zerolog levels |
 | `READ_HEADER_TIMEOUT` | `5s` | http.Server's `ReadHeaderTimeout` |
+| `WRITE_TIMEOUT` | `30s` | http.Server's `WriteTimeout`. Bounds slow-write attacks. |
+| `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap. Anything larger is read up to this point and the handler surfaces a 400. Set to `0` to disable. |
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
 
 ## 🔒 HTTPS / TLS

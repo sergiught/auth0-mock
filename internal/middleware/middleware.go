@@ -78,9 +78,11 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 }
 
 // MaxBodyBytes caps every incoming request body to limit bytes. Reads past
-// the limit return an error from the handler and surface to the client as
-// 413 Request Entity Too Large via http.MaxBytesError, so handlers that
-// already error-handle their decode path don't need extra logic.
+// the limit return *http.MaxBytesError from the wrapped reader; downstream
+// handlers surface that to the client through their normal decode-error
+// path (a 400 in this codebase). The cap exists to bound the per-request
+// allocation that /admin0/expectations and /oauth/token would otherwise
+// accept unbounded.
 //
 // limit ≤ 0 is treated as "no limit" — the middleware is a no-op so callers
 // can configure their way out of the cap if they really need to.

@@ -16,7 +16,7 @@ All notable changes to this project will be documented here. Format follows [Kee
 - **`TLS_CACHE_DIR` env**: persist auto-generated TLS cert across restarts. Trust-store imports now survive container restarts.
 - **README, ARCHITECTURE, COOKBOOK, COMPARISON, CONTRIBUTING, CHANGELOG** docs.
 - **examples/consumer**: stand-alone Go consumer demonstrating end-to-end drop-in compatibility.
-- **OpenAPI export**: a merged OpenAPI 3.1 document covering every HTTP surface — Auth API, Management API (canned Mgmt API responses are registered centrally via POST/GET/DELETE `/admin0/expectations`), `admin0`, and service endpoints — served at `GET /openapi.json` and `GET /openapi.yaml`, with a Scalar-rendered reference at `GET /docs` (preloaded bearer for "Try it", OS-themed, navigable `x-tagGroups` sidebar). The `cmd/genopenapi` bundler stitches it from the Auth0 skeleton + per-surface fragments; `make openapi` regenerates `api/auth0-mock.openapi.json` and CI drift-checks it.
+- **OpenAPI export**: a merged OpenAPI 3.1 document covering every HTTP surface — Auth API, Management API (canned Management API responses are registered centrally via POST/GET/DELETE `/admin0/expectations`), `admin0`, and service endpoints — served at `GET /openapi.json` and `GET /openapi.yaml`, with a Scalar-rendered reference at `GET /docs` (preloaded bearer for "Try it", OS-themed, navigable `x-tagGroups` sidebar). The `cmd/genopenapi` bundler stitches it from the Auth0 skeleton + per-surface fragments; `make openapi` regenerates `api/auth0-mock.openapi.json` and CI drift-checks it.
 - **Non-affiliation disclaimer** in the README: auth0-mock is an independent tool, not affiliated with or endorsed by Auth0 / Okta.
 
 ### Changed
@@ -46,7 +46,7 @@ Foundations landed in a series of milestones before the first tagged release:
 
 - **M0 Foundation:** project scaffolding, `internal/{config,logger,httperr,middleware,matches,admin0,server,router}`, Dockerfile, docker-compose, `.env.example`.
 - **M1 TLS + JWKS + bearer:** `internal/{tlscert,jwks,bearer}`; HTTPS listener; `/.well-known/jwks.json`.
-- **M2 Spec-driven Mgmt API:** embedded Auth0 OpenAPI 3.1 spec, `internal/spec`, `internal/mgmtapi` with one generic handler covering ~400 operations; OpenAPI-validated registered stubs.
+- **M2 Spec-driven Management API:** embedded Auth0 OpenAPI 3.1 spec, `internal/spec`, `internal/mgmtapi` with one generic handler covering ~400 operations; OpenAPI-validated registered stubs.
 - **M3 Auth API core:** `internal/authapi` with `/oauth/token` (`client_credentials`, `password`, `refresh_token`, `authorization_code`), `/authorize`, `/userinfo`, `/v2/logout`, `/oauth/revoke`, `/.well-known/openid-configuration`.
 - **M4 Auth API extensions:** `/dbconnections/{signup,change_password}`, `/passwordless/{start,verify}`.
 - **M5 Acceptance tests + docs:** godog harness, initial 33 scenarios; examples/consumer; production Dockerfile.
