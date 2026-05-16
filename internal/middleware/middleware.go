@@ -201,11 +201,20 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 			start := time.Now()
 
 			debugDumpMu.Lock()
-			log.Info().
-				Int("body_bytes", len(reqBody)).
-				Str("headers", interestingHeaders(r.Header)).
-				Str("query", scrubSensitiveQuery(r.URL.RawQuery)).
-				Msgf("→ %s %s", r.Method, r.URL.Path)
+			// Empty headers= / query= fields render as `key=` with no
+			// value, which is visual noise and breaks key=value tooling
+			// (jq's PromQL-ish filters in particular). Omit them when
+			// there's nothing to say.
+			reqHeaders := interestingHeaders(r.Header)
+			reqQuery := scrubSensitiveQuery(r.URL.RawQuery)
+			reqEvent := log.Info().Int("body_bytes", len(reqBody))
+			if reqHeaders != "" {
+				reqEvent = reqEvent.Str("headers", reqHeaders)
+			}
+			if reqQuery != "" {
+				reqEvent = reqEvent.Str("query", reqQuery)
+			}
+			reqEvent.Msgf("→ %s %s", r.Method, r.URL.Path)
 			writeBodyBlock(bodyOut, reqBody, len(reqBody), reqCT)
 			debugDumpMu.Unlock()
 
@@ -218,11 +227,18 @@ func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Ha
 				respCT := rec.Header().Get("Content-Type")
 				debugDumpMu.Lock()
 				defer debugDumpMu.Unlock()
-				log.Info().
+				// Round latency to microsecond to drop the sub-µs jitter
+				// — `123.456µs` becomes `123µs`, and durations under
+				// 1µs collapse to `0s` (no µ character). Above 1ms, the
+				// stdlib formatter switches to ms / s and the µ is gone.
+				respHeaders := interestingHeaders(rec.Header())
+				respEvent := log.Info().
 					Int("body_bytes", rec.totalLen).
-					Str("headers", interestingHeaders(rec.Header())).
-					Stringer("latency", time.Since(start)).
-					Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
+					Stringer("latency", time.Since(start).Round(time.Microsecond))
+				if respHeaders != "" {
+					respEvent = respEvent.Str("headers", respHeaders)
+				}
+				respEvent.Msgf("← %s %s %d", r.Method, r.URL.Path, rec.statusOrOK())
 				// Suppress static-asset body blocks (HTML, CSS, images,
 				// fonts) — they're huge and never the SDK trace you
 				// were looking for. Headers + status line stay so you
@@ -583,7 +599,9 @@ func Logging(log zerolog.Logger) func(http.Handler) http.Handler {
 				// ("2.134ms", "1.5s") instead of zerolog's default
 				// unit-less float — easier to read at a glance and
 				// auto-scales across the millisecond / second boundary.
-				Stringer("latency", time.Since(start)).
+				// Round to microsecond to drop the sub-µs precision
+				// noise (`123.456µs` → `123µs`).
+				Stringer("latency", time.Since(start).Round(time.Microsecond)).
 				Msgf("%s %s %d", r.Method, r.URL.Path, sr.status)
 		})
 	}

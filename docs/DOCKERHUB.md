@@ -84,7 +84,7 @@ The container is configured via environment variables. The most common ones:
 | `IDLE_TIMEOUT`  | `120s`                                 | `http.Server.IdleTimeout` — keep-alive cap      |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB)             | Per-request body cap; oversize requests get a 400 |
 
-The full list lives in the [repository README](https://github.com/sergiught/auth0-mock#configuration).
+The full list lives in the [repository README](https://github.com/sergiught/auth0-mock#-configuration).
 
 ## Disclaimer
 

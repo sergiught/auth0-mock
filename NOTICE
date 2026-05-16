@@ -49,7 +49,9 @@ statically linked and include the third-party Go modules listed in `go.mod`,
 under their respective licenses (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0,
 ISC, MPL-2.0). Each release archive ships:
 
-  - `licenses/<import-path>/LICENSE`       full license text per module
+  - `licenses/<import-path>/LICEN[SC]E*`   full license text per module
+                                           (covers LICENSE, LICENCE,
+                                           LICENSE.md, NOTICE, COPYING)
   - `<release-archive>.spdx.json`          SPDX-JSON Software Bill of Materials
 
 To regenerate the per-module LICENSE bundle locally, run `make licenses`

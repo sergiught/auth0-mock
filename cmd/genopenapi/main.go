@@ -20,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/admin0"
 	"github.com/sergiught/auth0-mock/internal/authapi"
 	"github.com/sergiught/auth0-mock/internal/router"
+	"github.com/sergiught/auth0-mock/internal/version"
 )
 
 func main() {
@@ -216,16 +217,23 @@ func applyTagGroups(base *openapi3.T) {
 
 // rewriteInfo replaces the upstream Auth0 Management API's `info` block with
 // auth0-mock's own branding so the rendered docs lead with "what this mock
-// is" instead of pointing readers at Auth0 Support / Auth0 ToS.
+// is" instead of pointing readers at Auth0 Support / Auth0 ToS. The reported
+// `version` is the mock's own — not the upstream Auth0 spec's revision —
+// so SDK consumers and the rendered /docs page report what they're actually
+// talking to. Falls back to the upstream version (or "2.0") if the build
+// didn't inject one via -ldflags.
 func rewriteInfo(base *openapi3.T) {
-	upstreamVersion := "2.0"
-	if base.Info != nil && base.Info.Version != "" {
-		upstreamVersion = base.Info.Version
+	v := version.Version
+	if v == "" || v == "dev" {
+		v = "2.0"
+		if base.Info != nil && base.Info.Version != "" {
+			v = base.Info.Version
+		}
 	}
 	base.Info = &openapi3.Info{
 		Title:       "auth0-mock API",
 		Description: docsDescription,
-		Version:     upstreamVersion,
+		Version:     v,
 		Contact: &openapi3.Contact{
 			Name: "auth0-mock",
 			URL:  "https://github.com/sergiught/auth0-mock",
