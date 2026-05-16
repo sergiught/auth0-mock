@@ -1,0 +1,58 @@
+name: 🚀 Feature request
+description: Suggest a new capability, endpoint, or quality-of-life improvement for auth0-mock.
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest an improvement!
+
+        Before filing, please skim the [README](https://github.com/sergiught/auth0-mock/blob/main/README.md)
+        and the [COOKBOOK](https://github.com/sergiught/auth0-mock/blob/main/docs/COOKBOOK.md) — the
+        feature you want may already be supported via expectations, custom claims, or a config flag.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched the [issues](https://github.com/sergiught/auth0-mock/issues) and have not found a duplicate or existing discussion.
+          required: true
+        - label: This request is in scope for auth0-mock (a *testing* drop-in for Auth0's HTTP API), not a request for Auth0 itself to change behaviour.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem you're trying to solve
+      description: What's the workflow that's painful today? What test or scenario are you trying to set up that the mock can't do yet?
+      placeholder: |
+        I'm writing tests for a service that needs to ...
+        Today the mock makes me do ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would the ideal API look like — a new admin endpoint, a new env var, a new expectation matcher, a new feature flag? Sketch the shape, even loosely.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and current workarounds
+      description: How are you working around this today? What other shapes did you consider before settling on the proposal above?
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, screenshots, related Auth0 docs, real-world usage from another mock — anything that helps reviewers understand the request.
+    validations:
+      required: false

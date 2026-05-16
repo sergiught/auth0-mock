@@ -1,0 +1,97 @@
+name: 🐛 Report a bug
+description: The mock is returning unexpected responses, an endpoint is broken, or something is otherwise behaving differently than the README or COOKBOOK promises.
+labels: ["bug"]
+
+body:
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have read the [README](https://github.com/sergiught/auth0-mock/blob/main/README.md) and have not found a suitable solution or answer.
+          required: true
+        - label: I have read the [COOKBOOK](https://github.com/sergiught/auth0-mock/blob/main/docs/COOKBOOK.md) and have not found a suitable recipe.
+          required: true
+        - label: I have searched the [issues](https://github.com/sergiught/auth0-mock/issues) and have not found a duplicate.
+          required: true
+        - label: I am on the latest commit on `main` (or the latest tagged release if one exists) and the issue still reproduces.
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen instead? Be as specific as you can — a curl/`go run` snippet that reproduces the problem against a fresh mock is the gold standard.
+      placeholder: |
+        When I register an expectation for "GET /api/v2/users/{id}" with a 200 body and then call the endpoint, the mock returns ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal commands that exercise the bug. Prefer `curl` over SDK calls so the report is independent of any client library.
+      render: shell
+      placeholder: |
+        # 1. Start the mock
+        ./bin/auth0-mock
+
+        # 2. Register the expectation
+        curl -X POST http://localhost:8080/admin0/expectations -H 'Content-Type: application/json' -d '{...}'
+
+        # 3. Trigger the bug
+        curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v2/...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: auth0-mock version
+      description: Tag (e.g. `v0.1.0`) or commit SHA. `./bin/auth0-mock --version` if that's wired up; otherwise `git rev-parse --short HEAD`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: How are you running auth0-mock?
+      options:
+        - As a binary (`make build` / `go run ./cmd/api`)
+        - In Docker (`docker compose up`)
+        - In Docker (custom image)
+        - Embedded in a Go test harness
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: listener
+    attributes:
+      label: Which listener is the bug on?
+      options:
+        - HTTP only
+        - HTTPS only
+        - Both
+        - Not applicable / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Non-default environment variables
+      description: Anything you've overridden — `HTTP_ADDR`, `HTTPS_ADDR`, `TLS_*`, `ISSUER_URL`, `DEFAULT_AUDIENCE`, `SPEC_VALIDATION_STRICT`, etc. Paste your `.env` or the relevant `export` lines.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Mock server logs around the failure. `LOG_LEVEL=debug` produces extra detail. Redact tokens before pasting.
+      render: shell
+    validations:
+      required: false
