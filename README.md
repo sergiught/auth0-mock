@@ -12,6 +12,27 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 
 ---
 
+## 📑 Table of contents
+
+- [✨ What is this?](#-what-is-this)
+- [🎯 Who is this for?](#-who-is-this-for)
+- [🚀 Quick start](#-quick-start)
+- [Calling the API from Postman or Insomnia](#calling-the-api-from-postman-or-insomnia)
+- [📋 What's mocked](#-whats-mocked)
+- [💡 Common recipes](#-common-recipes)
+- [🛠 Configuration](#-configuration)
+- [🔒 HTTPS / TLS](#-https--tls)
+- [🧪 Testing the mock](#-testing-the-mock)
+- [🛡️ Verifying releases](#️-verifying-releases)
+- [🏗 Architecture](#-architecture)
+- [📂 Example consumer](#-example-consumer)
+- [🤝 Contributing](#-contributing)
+- [📖 Documentation map](#-documentation-map)
+- [⚖️ License](#️-license)
+- [⚠️ Disclaimer](#️-disclaimer)
+
+---
+
 ## ✨ What is this?
 
 A self-contained Go service that looks and behaves like Auth0 to a calling client:
@@ -20,6 +41,8 @@ A self-contained Go service that looks and behaves like Auth0 to a calling clien
 - 📦 **Covers the whole Management API** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations: paths, methods, and schemas; Auth0's prose removed) and routing every endpoint through one generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`, and the OpenAPI schema validates the stubbed body at registration time. An optional `request` matcher lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier).
 - 🛠 **Shapes runtime state over HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a small Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🎯 Who is this for?
 
@@ -32,6 +55,8 @@ Anyone whose service talks to Auth0 in tests or local dev:
 - **Service-to-service** flows using `client_credentials`, with realistic scopes and `permissions` claim shapes.
 
 It is not for: production traffic, replacing your IdP, or anything that needs a real RBAC engine.
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🚀 Quick start
 
@@ -113,6 +138,8 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 
 Your code calls auth0-mock the same way it calls Auth0. No SDK shims, no monkey-patching.
 
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
 ## Calling the API from Postman or Insomnia
 
 > [!TIP]
@@ -155,6 +182,8 @@ The merged JSON is committed and checked for drift in CI. Re-run
 `api/auth0-management-api.openapi.json` is a generated skeleton, not a
 hand-edited file. To pull in a newer Auth0 Management API spec, run
 `make refresh-spec` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 📋 What's mocked
 
@@ -231,6 +260,8 @@ curl -X POST http://localhost:8080/admin0/expectations \
 | `/healthz` | Kubernetes-style liveness probe — `200 {"status":"ok"}` if the process is up. No auth. |
 | `/readyz`  | Kubernetes-style readiness probe — `200 {"status":"ready"}` once the JWKS signing key is materialised. The mock's only init dependency (RSA keygen) is synchronous and runs before the listener accepts, so today this is functionally equivalent to `/healthz`; the endpoint is exposed for orchestrator-convention parity (liveness vs readiness probe separation) and to leave room if future init grows. No auth. |
 
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
 ## 💡 Common recipes
 
 → See [`docs/COOKBOOK.md`](docs/COOKBOOK.md) for full recipes. Highlights:
@@ -254,6 +285,8 @@ curl -X PUT http://localhost:8080/admin0/mfa-required \
 # Reset everything between tests
 curl -X POST http://localhost:8080/admin0/reset
 ```
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🛠 Configuration
 
@@ -282,6 +315,8 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
 | `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |
 | `BEARER_REQUIRE_AUDIENCE` | _empty_ | When set, the Mgmt-API bearer middleware rejects tokens whose `aud` claim doesn't contain this value (mirrors Auth0's tenant-API-audience binding). Empty keeps the "echoed, not enforced" default so tests can swap audiences freely. |
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🔒 HTTPS / TLS
 
@@ -322,6 +357,8 @@ curl -k https://localhost:8443/.well-known/openid-configuration
 
 To install the mock's cert into your OS trust store (after option 2 so it's stable across boots), see [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert).
 
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
 ## 🧪 Testing the mock
 
 ```bash
@@ -330,6 +367,8 @@ go test -tags=features ./cmd/api/...       # godog acceptance suite (every endpo
 ```
 
 The godog harness boots the service in-process on a random port and exercises every Auth API path, every admin endpoint, and the spec-driven Management API surface. See [`features/`](features/) for the gherkin and [`features/scenario/`](features/scenario/) for the harness.
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🛡️ Verifying releases
 
@@ -350,6 +389,8 @@ cosign verify \
 A successful verification proves the image was built by *this* repo's release workflow at *that* tag — not a CDN-substituted copy.
 
 **Find an SBOM:** every release on the [GitHub Releases page](https://github.com/sergiught/auth0-mock/releases) carries an `auth0-mock_<version>_<os>_<arch>.tar.gz.spdx.json` alongside each archive. Pass it to your SBOM scanner of choice (Snyk, FOSSA, Black Duck, `grype`, etc.).
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🏗 Architecture
 
@@ -375,6 +416,8 @@ chi router
 
 Every handler is a struct holding its dependencies as fields, implementing `http.Handler` via `ServeHTTP`. JSON responses go through `go-chi/render`.
 
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
 ## 📂 Example consumer
 
 [`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Management API stub, and calls the stubbed endpoint.
@@ -390,9 +433,13 @@ go run ./cmd/api &
 go run ./examples/consumer
 ```
 
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
 ## 🤝 Contributing
 
 PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code style, testing requirements, and how to add a new endpoint.
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 📖 Documentation map
 
@@ -405,9 +452,13 @@ PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code styl
 | [`CHANGELOG.md`](CHANGELOG.md) | Everyone | What changed between versions |
 | [`examples/consumer/README.md`](examples/consumer/README.md) | Test authors | Worked end-to-end example |
 
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
 ## ⚖️ License
 
 [MIT](LICENSE).
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## ⚠️ Disclaimer
 
@@ -429,3 +480,5 @@ Auth0 does not attach an explicit redistribution license to the published spec.
 The deliberate stripping above is what lets us redistribute the structural shape
 for interoperability without redistributing Auth0's prose. If the distinction
 matters for your compliance review, confirm the terms with Auth0/Okta directly.
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
