@@ -1,0 +1,131 @@
+# https://goreleaser.com/customization/
+version: 2
+
+project_name: auth0-mock
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: auth0-mock
+    main: ./cmd/api
+    binary: auth0-mock
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - CHANGELOG.md
+      - docs/COOKBOOK.md
+      - docs/ARCHITECTURE.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+# release-please owns the CHANGELOG and writes the GitHub release body when it
+# creates the tag (see .github/workflows/release.yml). Goreleaser only appends
+# build artifacts to the existing release; it should not generate its own
+# changelog or replace the body.
+changelog:
+  disable: true
+
+# ── Docker (multi-arch via per-platform images + manifests) ─────────────────
+
+dockers:
+  - id: linux-amd64
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.release
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+    build_flag_templates:
+      - '--platform=linux/amd64'
+      - '--label=org.opencontainers.image.title={{ .ProjectName }}'
+      - '--label=org.opencontainers.image.description=Drop-in mock of Auth0''s Authentication and Management APIs.'
+      - '--label=org.opencontainers.image.url=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.source=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.version={{ .Version }}'
+      - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
+      - '--label=org.opencontainers.image.created={{ .Date }}'
+      - '--label=org.opencontainers.image.licenses=MIT'
+
+  - id: linux-arm64
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.release
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+    build_flag_templates:
+      - '--platform=linux/arm64'
+      - '--label=org.opencontainers.image.title={{ .ProjectName }}'
+      - '--label=org.opencontainers.image.description=Drop-in mock of Auth0''s Authentication and Management APIs.'
+      - '--label=org.opencontainers.image.url=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.source=https://github.com/sergiught/auth0-mock'
+      - '--label=org.opencontainers.image.version={{ .Version }}'
+      - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
+      - '--label=org.opencontainers.image.created={{ .Date }}'
+      - '--label=org.opencontainers.image.licenses=MIT'
+
+docker_manifests:
+  - name_template: 'docker.io/sergiught/auth0-mock:{{ .Version }}'
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+  - name_template: 'docker.io/sergiught/auth0-mock:latest'
+    image_templates:
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'docker.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+  - name_template: 'ghcr.io/sergiught/auth0-mock:{{ .Version }}'
+    image_templates:
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+  - name_template: 'ghcr.io/sergiught/auth0-mock:latest'
+    image_templates:
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-amd64'
+      - 'ghcr.io/sergiught/auth0-mock:{{ .Version }}-arm64'
+
+release:
+  github:
+    owner: sergiught
+    name: auth0-mock
+  # Append-only: release-please has already created the release with a body
+  # generated from the conventional-commit CHANGELOG. We just attach binaries
+  # and checksums here without touching the title or body.
+  mode: append
+  draft: false
+  prerelease: auto

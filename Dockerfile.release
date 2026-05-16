@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.7
+#
+# Release Dockerfile used by goreleaser.
+#
+# Goreleaser cross-compiles the auth0-mock binary on the host (one image per
+# target arch) and passes it into this build context as `auth0-mock`. This
+# file just wraps it in a minimal alpine runtime — no Go toolchain, no source.
+# For local development and `docker compose up`, see the top-level Dockerfile,
+# which builds from source.
+
+FROM alpine:3.20
+
+LABEL org.opencontainers.image.title="auth0-mock"
+LABEL org.opencontainers.image.description="Drop-in mock of Auth0's Authentication and Management APIs."
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/sergiught/auth0-mock"
+LABEL org.opencontainers.image.url="https://github.com/sergiught/auth0-mock"
+
+RUN apk add --no-cache ca-certificates tini
+
+COPY auth0-mock /usr/local/bin/auth0-mock
+
+EXPOSE 8080 8443
+
+# Inside the container, bind on all interfaces so `docker run -p 8080:8080`
+# can reach the listener. The binary defaults to 127.0.0.1 for local-dev
+# safety; this override re-enables the container use case without leaking
+# that bind choice back to bare-metal runs.
+ENV HTTP_ADDR=0.0.0.0:8080 \
+    HTTPS_ADDR=0.0.0.0:8443
+
+# Both ports are unprivileged, so run as the conventional nobody UID/GID.
+USER 65534:65534
+
+# tini is PID 1 so SIGTERM lands cleanly and our graceful-shutdown path runs.
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/auth0-mock"]
