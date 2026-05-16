@@ -18,7 +18,7 @@ func TestNewKeySet_GeneratesNewKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ks)
 	assert.NotEmpty(t, ks.KeyID())
-	assert.NotNil(t, ks.PrivateKey())
+	assert.NotNil(t, ks.priv)
 	assert.NotNil(t, ks.PublicKey())
 }
 
@@ -34,5 +34,5 @@ func TestNewKeySet_LoadsExistingKey(t *testing.T) {
 
 	ks, err := NewKeySet(Config{Issuer: "https://test/", KeyFile: path})
 	require.NoError(t, err)
-	assert.Equal(t, priv.N, ks.PrivateKey().N)
+	assert.Equal(t, priv.N, ks.priv.N)
 }

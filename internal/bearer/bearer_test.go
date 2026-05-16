@@ -23,7 +23,7 @@ func TestMiddleware_Missing401(t *testing.T) {
 	t.Parallel()
 	ks := newKS(t)
 	called := false
-	h := Middleware(ks)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	h := Middleware(ks, "")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/x", nil))
@@ -34,7 +34,7 @@ func TestMiddleware_Missing401(t *testing.T) {
 func TestMiddleware_Invalid401(t *testing.T) {
 	t.Parallel()
 	ks := newKS(t)
-	h := Middleware(ks)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := Middleware(ks, "")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
@@ -50,7 +50,7 @@ func TestMiddleware_ValidPasses(t *testing.T) {
 	require.NoError(t, err)
 
 	called := false
-	h := Middleware(ks)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := Middleware(ks, "")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		called = true
 		c := ClaimsFromContext(r.Context())
 		require.NotNil(t, c)
@@ -64,4 +64,38 @@ func TestMiddleware_ValidPasses(t *testing.T) {
 
 	assert.True(t, called)
 	assert.NotEqual(t, 401, w.Code)
+}
+
+func TestMiddleware_RequireAudience_Matches(t *testing.T) {
+	t.Parallel()
+	ks := newKS(t)
+	tok, err := ks.Mint(jwks.MintOpts{
+		Subject: "abc@clients", Audience: []string{"https://api/expected"}, TTL: time.Hour,
+	})
+	require.NoError(t, err)
+
+	h := Middleware(ks, "https://api/expected")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	h.ServeHTTP(w, req)
+	assert.NotEqual(t, 401, w.Code)
+}
+
+func TestMiddleware_RequireAudience_Mismatch401(t *testing.T) {
+	t.Parallel()
+	ks := newKS(t)
+	tok, err := ks.Mint(jwks.MintOpts{
+		Subject: "abc@clients", Audience: []string{"https://api/other"}, TTL: time.Hour,
+	})
+	require.NoError(t, err)
+
+	called := false
+	h := Middleware(ks, "https://api/expected")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	h.ServeHTTP(w, req)
+	assert.Equal(t, 401, w.Code)
+	assert.False(t, called)
 }

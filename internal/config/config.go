@@ -34,6 +34,13 @@ type Specification struct {
 	// always allowed (they can't escape the mock's origin). Mirrors
 	// Auth0's "Allowed Logout URLs" tenant setting.
 	LogoutAllowedURLs []string `env:"LOGOUT_ALLOWED_URLS" envSeparator:","`
+
+	// BearerRequireAudience opts the Mgmt-API bearer middleware into Auth0-
+	// like strict audience binding. When non-empty, tokens whose `aud`
+	// claim doesn't contain this value get a 401. Empty (default) keeps
+	// the "echoed, not enforced" behaviour the README documents so test
+	// suites can swap audiences freely.
+	BearerRequireAudience string `env:"BEARER_REQUIRE_AUDIENCE"`
 }
 
 // Load populates a Specification from process environment.

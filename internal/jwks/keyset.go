@@ -42,9 +42,6 @@ func NewKeySet(cfg Config) (*KeySet, error) {
 	}, nil
 }
 
-// PrivateKey exposes the active RSA private key.
-func (k *KeySet) PrivateKey() *rsa.PrivateKey { return k.priv }
-
 // PublicKey exposes the active RSA public key.
 func (k *KeySet) PublicKey() *rsa.PublicKey { return &k.priv.PublicKey }
 

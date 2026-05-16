@@ -32,7 +32,7 @@ func TestMint_RoundTripsThroughVerify(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, tok)
 
-	claims, err := ks.Verify(tok)
+	claims, err := ks.Verify(tok, VerifyOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, "abc@clients", claims.Subject)
 	assert.Equal(t, "https://mock/", claims.Issuer)
@@ -46,7 +46,7 @@ func TestVerify_RejectsExpired(t *testing.T) {
 	tok, err := ks.Mint(MintOpts{Subject: "x", Audience: []string{"a"}, TTL: -time.Minute})
 	require.NoError(t, err)
 
-	_, err = ks.Verify(tok)
+	_, err = ks.Verify(tok, VerifyOpts{})
 	assert.Error(t, err)
 }
 
@@ -58,7 +58,7 @@ func TestVerify_RejectsWrongIssuer(t *testing.T) {
 	tok, err := ks2.Mint(MintOpts{Subject: "x", Audience: []string{"a"}, TTL: time.Hour})
 	require.NoError(t, err)
 
-	_, err = ks1.Verify(tok)
+	_, err = ks1.Verify(tok, VerifyOpts{})
 	assert.Error(t, err)
 }
 
@@ -79,7 +79,7 @@ func TestVerify_RejectsAlgConfusion_HS256(t *testing.T) {
 	signed, err := tok.SignedString([]byte("would-be-public-key-bytes"))
 	require.NoError(t, err)
 
-	_, err = ks.Verify(signed)
+	_, err = ks.Verify(signed, VerifyOpts{})
 	require.Error(t, err)
 }
 
@@ -99,7 +99,7 @@ func TestVerify_RejectsNoneAlg(t *testing.T) {
 	signed, err := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
 	require.NoError(t, err)
 
-	_, err = ks.Verify(signed)
+	_, err = ks.Verify(signed, VerifyOpts{})
 	require.Error(t, err)
 }
 
@@ -118,7 +118,7 @@ func TestVerify_RejectsMalformed(t *testing.T) {
 		strings.Repeat("a", 4096), // long garbage
 	} {
 		t.Run(in, func(t *testing.T) {
-			_, err := ks.Verify(in)
+			_, err := ks.Verify(in, VerifyOpts{})
 			assert.Error(t, err)
 		})
 	}

@@ -22,7 +22,10 @@ func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", "missing bearer token")
 		return
 	}
-	claims, err := h.Keys.Verify(strings.TrimPrefix(hdr, "Bearer "))
+	// /userinfo accepts any audience (it's about who the user is, not
+	// what API they're authorised to call), so no RequireAudience here.
+	// Matches real Auth0's /userinfo behaviour.
+	claims, err := h.Keys.Verify(strings.TrimPrefix(hdr, "Bearer "), jwks.VerifyOpts{})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", err.Error())
 		return

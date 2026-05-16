@@ -3,9 +3,17 @@ package jwks
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// verifyLeeway is the time-skew leeway applied to exp / nbf / iat checks.
+// One minute matches what the major OIDC providers (Auth0, Okta, Google)
+// allow and gives clock-skewed CI runners breathing room without
+// meaningfully widening the replay window.
+const verifyLeeway = 60 * time.Second
 
 // Claims is the parsed token payload exposed to callers.
 type Claims struct {
@@ -16,9 +24,19 @@ type Claims struct {
 	Extra    map[string]any
 }
 
+// VerifyOpts narrows what Verify will accept. RequireAudience, when
+// non-empty, demands that the token's `aud` claim contains that exact
+// value (matching Auth0's tenant-API-audience binding). Empty means
+// no audience check — keeps the deliberate "echoed, not enforced"
+// behavior the README describes for the /userinfo flow and tests.
+type VerifyOpts struct {
+	RequireAudience string
+}
+
 // Verify parses and validates a JWT against this KeySet.
-// Checks: signature, exp, and iss == ks.Issuer. Audience is NOT enforced.
-func (k *KeySet) Verify(tokenStr string) (*Claims, error) {
+// Checks: signature, exp, iss == ks.Issuer, iat present, ±60s clock skew,
+// and (when opts.RequireAudience is set) aud contains that value.
+func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 	parsed, err := jwt.Parse(
 		tokenStr,
 		func(t *jwt.Token) (any, error) {
@@ -30,6 +48,8 @@ func (k *KeySet) Verify(tokenStr string) (*Claims, error) {
 		jwt.WithValidMethods([]string{"RS256"}),
 		jwt.WithIssuer(k.cfg.Issuer),
 		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+		jwt.WithLeeway(verifyLeeway),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
@@ -58,6 +78,9 @@ func (k *KeySet) Verify(tokenStr string) (*Claims, error) {
 				out.Audience = append(out.Audience, s)
 			}
 		}
+	}
+	if opts.RequireAudience != "" && !slices.Contains(out.Audience, opts.RequireAudience) {
+		return nil, fmt.Errorf("audience %q not in token aud %v", opts.RequireAudience, out.Audience)
 	}
 	if v, ok := mc["scope"].(string); ok {
 		out.Scope = v

@@ -25,13 +25,17 @@ type MountOpts struct {
 	Keys      *jwks.KeySet
 	Log       zerolog.Logger
 	Strict    bool // SPEC_VALIDATION_STRICT.
+	// RequireAudience, when non-empty, makes the bearer middleware reject
+	// tokens whose `aud` claim doesn't contain this value. Empty = no
+	// audience enforcement (the documented default).
+	RequireAudience string
 }
 
 // Mount walks the spec and registers one bearer-protected generic handler per
 // Management API operation. Canned responses are registered out-of-band via
 // the /admin0/expectations control plane, not per-operation siblings.
 func Mount(opts MountOpts) error {
-	bearerMW := bearer.Middleware(opts.Keys)
+	bearerMW := bearer.Middleware(opts.Keys, opts.RequireAudience)
 
 	for op := range opts.Spec.Operations() {
 		var generic http.Handler = &GenericHandler{

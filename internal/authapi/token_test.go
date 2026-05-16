@@ -62,7 +62,7 @@ func TestToken_ClientCredentials_Form(t *testing.T) {
 	assert.Equal(t, "read:users", body.Scope)
 	assert.Empty(t, body.IDToken, "client_credentials must NOT issue id_token")
 
-	claims, err := ks.Verify(body.AccessToken)
+	claims, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, "abc@clients", claims.Subject)
 	assert.Contains(t, claims.Audience, "https://api/")
@@ -124,7 +124,7 @@ func TestToken_Password_IncludesIDToken(t *testing.T) {
 	assert.NotEmpty(t, body.IDToken)
 	assert.NotEmpty(t, body.RefreshToken)
 
-	idClaims, err := ks.Verify(body.IDToken)
+	idClaims, err := ks.Verify(body.IDToken, jwks.VerifyOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, "alice@example.com", idClaims.Extra["email"])
 }
@@ -213,7 +213,7 @@ func TestToken_CustomClaims_OverrideReserved(t *testing.T) {
 
 	var body tokenResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	c, err := ks.Verify(body.AccessToken)
+	c, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
 	require.NoError(t, err)
 
 	assert.Equal(t, "OVERRIDDEN", c.Extra["gty"], "custom gty must beat the handler-set client-credentials")
@@ -284,7 +284,7 @@ func TestToken_PasswordRealm_MintsTokenWithConnectionClaim(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var body tokenResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	c, err := ks.Verify(body.AccessToken)
+	c, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, "password-realm", c.Extra["gty"])
 	assert.Equal(t, "Username-Password-Authentication", c.Extra["connection"])
@@ -410,7 +410,7 @@ func TestToken_MFAGrants_HappyAndUnhappy(t *testing.T) {
 
 			var body tokenResponse
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-			c, err := ks.Verify(body.AccessToken)
+			c, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.gtyClaim, c.Extra["gty"], "minted token must carry the step-up grant type")
 

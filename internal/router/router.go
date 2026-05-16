@@ -41,6 +41,10 @@ type Deps struct {
 	// LogoutAllowedURLs is the allow-list of absolute returnTo URLs that
 	// /v2/logout will redirect to. Relative URLs are always allowed.
 	LogoutAllowedURLs []string
+	// BearerRequireAudience, when non-empty, makes the Mgmt-API bearer
+	// middleware reject tokens whose `aud` claim doesn't contain this
+	// value. Opt-in to preserve the documented test-friendly default.
+	BearerRequireAudience string
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -80,6 +84,7 @@ func New(d Deps) (http.Handler, error) {
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{
 		Router: r, Spec: d.Spec, Validator: d.Validator,
 		Store: d.Store, Keys: d.Keys, Log: d.Log, Strict: d.SpecValidationStrict,
+		RequireAudience: d.BearerRequireAudience,
 	}); err != nil {
 		return nil, fmt.Errorf("mount mgmtapi: %w", err)
 	}

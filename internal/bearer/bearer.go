@@ -22,7 +22,11 @@ func ClaimsFromContext(ctx context.Context) *jwks.Claims {
 }
 
 // Middleware enforces a verifiable bearer token on every wrapped handler.
-func Middleware(ks *jwks.KeySet) func(http.Handler) http.Handler {
+// When requireAudience is non-empty the token's `aud` claim must contain that
+// value (matches Auth0's tenant-API-audience binding). Empty preserves the
+// "echoed, not enforced" behaviour the README documents for tests that swap
+// audiences freely.
+func Middleware(ks *jwks.KeySet, requireAudience string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
@@ -31,7 +35,9 @@ func Middleware(ks *jwks.KeySet) func(http.Handler) http.Handler {
 					"missing bearer token", "missing_bearer")
 				return
 			}
-			claims, err := ks.Verify(strings.TrimPrefix(h, "Bearer "))
+			claims, err := ks.Verify(strings.TrimPrefix(h, "Bearer "), jwks.VerifyOpts{
+				RequireAudience: requireAudience,
+			})
 			if err != nil {
 				httperr.WriteMgmt(w, http.StatusUnauthorized, "Unauthorized",
 					"invalid bearer token", "invalid_bearer")
