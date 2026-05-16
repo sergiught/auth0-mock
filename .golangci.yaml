@@ -28,6 +28,16 @@ linters:
       scope: all
       capital: true
       period: true
+    nolintlint:
+      # Each //nolint must name a specific linter and carry an explanation
+      # comment — both are non-negotiable hygiene. allow-unused stays true
+      # because golangci-lint's per-linter caching can occasionally hide a
+      # finding while the suppression is still valid, and we'd rather keep
+      # the documented suppression than re-introduce the warning on a cold
+      # cache (which is what bit us with the gosec/G115 directive).
+      require-specific: true
+      require-explanation: true
+      allow-unused: true
     staticcheck:
       checks:
         - all
