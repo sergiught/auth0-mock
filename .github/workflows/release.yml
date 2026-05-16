@@ -54,6 +54,13 @@ jobs:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
+    # Hoist DOCKERHUB_USERNAME to job-level env so step `if:` checks can read
+    # it as `env.DOCKERHUB_USERNAME`. The `secrets` context isn't allowed in
+    # step-level `if:` expressions — using it makes the whole workflow fail
+    # to register (silently, runs end at 0s).
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -99,11 +106,11 @@ jobs:
       # Goreleaser's docker.io image_templates simply fail to push if
       # the login was skipped — acceptable for a GHCR-only release.
       - name: log in to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
 
       - name: log in to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
@@ -131,11 +138,11 @@ jobs:
       # Skipped on prerelease tags (e.g. v0.2.0-rc.1) so the Docker Hub page
       # only mirrors the latest stable description.
       - name: sync Docker Hub repository description
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && !contains(needs.release-please.outputs.tag_name, '-') }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' && !contains(needs.release-please.outputs.tag_name, '-') }}
         uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae
         with:
-          username:          ${{ secrets.DOCKERHUB_USERNAME }}
-          password:          ${{ secrets.DOCKERHUB_TOKEN }}
+          username:          ${{ env.DOCKERHUB_USERNAME }}
+          password:          ${{ env.DOCKERHUB_TOKEN }}
           repository:        sergiught/auth0-mock
           short-description: ${{ github.event.repository.description }}
           readme-filepath:   ./docs/DOCKERHUB.md
