@@ -157,7 +157,11 @@ dev-env: ## Materialise .env from .env.example (no-op if .env already exists)
 
 .PHONY: watch
 watch: dev-env $(BINARIES_DIR)/air ## Run the API locally with native hot reload via air
-	@$(BINARIES_DIR)/air
+	@# Source .env before launching air — neither air nor the binary
+	@# auto-loads it, and dev flow keys (DEBUG=true, SIGNING_KEY_FILE
+	@# to survive hot reload) live there. `set -a` exports every
+	@# subsequently-assigned var; `set +a` switches it off again.
+	@set -a; [ -f .env ] && . ./.env; set +a; $(BINARIES_DIR)/air
 
 .PHONY: dev-run
 dev-run: dev-env ## Run the API inside docker compose and tail its logs
