@@ -45,6 +45,10 @@ $(BINARIES_DIR)/air:
 	@echo "==> Installing air within ${BINARIES_DIR}"
 	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc # v1.65.1
 
+$(BINARIES_DIR)/go-licenses:
+	@echo "==> Installing go-licenses within ${BINARIES_DIR}"
+	@GOBIN=$(BINARIES_DIR) go install github.com/google/go-licenses@5348b744d0983d85713295ea08a20cca1654a45e # v1.6.0
+
 #-----------------------------------------------------------------------------------------------------------------------
 # Build (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies)
 #-----------------------------------------------------------------------------------------------------------------------
@@ -105,6 +109,14 @@ lint-commits: $(BINARIES_DIR)/commitlint ## Lint the current commit message agai
 vuln: $(BINARIES_DIR)/govulncheck ## Scan the module graph for known Go vulnerabilities
 	@echo "==> Scanning module graph for known Go vulnerabilities"
 	@$(BINARIES_DIR)/govulncheck ./...
+
+.PHONY: licenses
+licenses: $(BINARIES_DIR)/go-licenses ## Save bundled-module license texts under dist/licenses/ for release archives
+	@echo "==> Collecting third-party license texts -> dist/licenses/"
+	@rm -rf dist/licenses
+	@$(BINARIES_DIR)/go-licenses save ./cmd/api --save_path=dist/licenses --force
+	@$(BINARIES_DIR)/go-licenses report ./cmd/api --template=hack/licenses.tmpl > dist/licenses/THIRD_PARTY_LICENSES.md
+	@echo "==> Wrote dist/licenses/THIRD_PARTY_LICENSES.md ($$(wc -l < dist/licenses/THIRD_PARTY_LICENSES.md) lines)"
 
 #-----------------------------------------------------------------------------------------------------------------------
 # OpenAPI spec (https://www.openapis.org — merge fragments + re-vendor skeleton)

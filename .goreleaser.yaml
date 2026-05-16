@@ -7,6 +7,9 @@ before:
   hooks:
     - go mod tidy
     - go mod download
+    # Generates dist/licenses/{<dep>/LICENSE, ..., THIRD_PARTY_LICENSES.md}.
+    # Required for MIT/Apache/BSD attribution travelling with the binary.
+    - make licenses
 
 builds:
   - id: auth0-mock
@@ -45,6 +48,9 @@ archives:
       - CHANGELOG.md
       - docs/COOKBOOK.md
       - docs/ARCHITECTURE.md
+      - src: dist/licenses
+        dst: licenses
+        strip_parent: false
 
 checksum:
   name_template: 'checksums.txt'
@@ -90,6 +96,10 @@ dockers:
       - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
       - '--label=org.opencontainers.image.created={{ .Date }}'
       - '--label=org.opencontainers.image.licenses=MIT'
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - dist/licenses
 
   - id: linux-arm64
     use: buildx
@@ -109,6 +119,10 @@ dockers:
       - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
       - '--label=org.opencontainers.image.created={{ .Date }}'
       - '--label=org.opencontainers.image.licenses=MIT'
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - dist/licenses
 
 docker_manifests:
   - name_template: 'docker.io/sergiught/auth0-mock:{{ .Version }}'

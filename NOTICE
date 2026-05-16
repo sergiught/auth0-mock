@@ -21,3 +21,37 @@ redistributed.
 "Auth0" and "Okta" are trademarks of Okta, Inc.; they are used in this project
 only nominatively, to describe what auth0-mock mocks. This project is not
 affiliated with, endorsed by, or sponsored by Auth0 or Okta, Inc.
+
+
+Bundled fonts
+-------------
+
+The Scalar-rendered /docs page is served with the Geist and Geist Mono
+variable fonts, vendored into the binary via go:embed at:
+
+  internal/router/docs/fonts/Geist-Variable.woff2
+  internal/router/docs/fonts/GeistMono-Variable.woff2
+
+Both are released under the SIL Open Font License 1.1:
+
+  Geist:      Copyright (c) 2023 Vercel, in collaboration with basement.studio.
+  Geist Mono: Copyright (c) 2023 Vercel, in collaboration with basement.studio.
+
+  Source:  https://github.com/vercel/geist-font
+  License: https://github.com/vercel/geist-font/blob/main/LICENSE.TXT
+
+
+Bundled Go module dependencies
+------------------------------
+
+Release binaries (the goreleaser-produced archives + the Docker images) are
+statically linked and include the third-party Go modules listed in `go.mod`,
+under their respective licenses (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0,
+ISC, MPL-2.0). A machine-readable inventory ships alongside each release
+archive as an SPDX-JSON Software Bill of Materials:
+
+  <release-archive>.spdx.json
+
+and a per-archive `THIRD_PARTY_LICENSES.md` aggregates each module's
+copyright + license text. See `make sboms` / `make licenses` for how to
+regenerate locally.
