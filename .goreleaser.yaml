@@ -130,10 +130,11 @@ docker_manifests:
 
 # Cosign keyless signing for every multi-arch Docker manifest. Uses the
 # workflow's OIDC token (id-token: write) — no long-lived key to manage.
-# Verify with:
-#   cosign verify --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/.*' \
-#                 --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#                 ghcr.io/sergiught/auth0-mock:vX.Y.Z
+# Verify with (matches the regex shipped in README.md + docs/DOCKERHUB.md):
+#   cosign verify \
+#     --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     ghcr.io/sergiught/auth0-mock:vX.Y.Z
 docker_signs:
   - cmd: cosign
     artifacts: manifests

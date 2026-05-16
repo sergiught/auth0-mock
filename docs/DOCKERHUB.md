@@ -80,6 +80,9 @@ The container is configured via environment variables. The most common ones:
 | `ISSUER_URL`    | `https://localhost:8443/`              | `iss` claim and OIDC discovery base  |
 | `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/`    | Default `aud` if request omits one   |
 | `LOG_LEVEL`     | `info`                                 | `debug` / `info` / `warn` / `error`  |
+| `WRITE_TIMEOUT` | `30s`                                  | `http.Server.WriteTimeout` — slow-write defence |
+| `IDLE_TIMEOUT`  | `120s`                                 | `http.Server.IdleTimeout` — keep-alive cap      |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB)             | Per-request body cap; oversize requests get a 400 |
 
 The full list lives in the [repository README](https://github.com/sergiught/auth0-mock#configuration).
 

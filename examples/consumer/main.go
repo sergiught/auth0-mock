@@ -368,7 +368,7 @@ func registerExpectation(base string, hc *http.Client, exp expectation) error {
 // the example still works against any local mock without setup. Never
 // use this mode against anything you actually care about.
 func newHTTPClient(certFile string) (*http.Client, error) {
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
 
 	if certFile == "" {
 		tlsCfg.InsecureSkipVerify = true //nolint:gosec // explicit opt-out, see godoc above

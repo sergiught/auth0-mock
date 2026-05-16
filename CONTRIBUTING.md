@@ -99,6 +99,8 @@ make pre-commit      # install the pre-commit hooks (one-time)
 
 `make pre-commit` runs the [pre-commit](https://pre-commit.com) framework, install it once and the hooks will run `gofmt`, `golangci-lint`, `govulncheck` on every `git commit`, plus `commitlint` on the commit message. CI runs the same checks on every PR (see `.github/workflows/ci.yml`).
 
+GitHub Actions also runs **CodeQL** (`.github/workflows/codeql.yml`) on every push, every PR, and a weekly Monday cron, using the `security-and-quality` query suite. Findings appear in the repo's **Security tab → Code scanning alerts**. If your PR introduces a CodeQL alert, fix it before merging or open a discussion if it's a false positive — the suite is broader than the default and occasionally lights up benign code.
+
 ## ✍️ Code style
 
 Standard Go formatting plus a few specific conventions:

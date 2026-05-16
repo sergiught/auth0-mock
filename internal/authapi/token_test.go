@@ -287,6 +287,33 @@ func TestToken_PasswordRealm_MintsTokenWithConnectionClaim(t *testing.T) {
 	assert.Equal(t, "native-app", c.Extra["azp"])
 }
 
+// TestToken_PasswordRealm_MFA_RequiredReturnsMFAToken nails down that the
+// realm-aware password grant goes through the same MFA-required gate as
+// the plain password grant. The native SDKs (auth0-android, auth0-swift,
+// auth0-react-native) use password-realm, so a regression here would
+// silently bypass MFA on every native client.
+func TestToken_PasswordRealm_MFA_RequiredReturnsMFAToken(t *testing.T) {
+	r, _, mfaStore := newAuthRouterWithMFA(t)
+	mfaStore.SetRequired(true)
+
+	form := url.Values{}
+	form.Set("grant_type", "http://auth0.com/oauth/grant-type/password-realm")
+	form.Set("client_id", "native-app")
+	form.Set("username", "alice@example.com")
+	form.Set("password", "ignored")
+	form.Set("realm", "Username-Password-Authentication")
+	form.Set("audience", "https://api/")
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "mfa_required", body["error"])
+	assert.NotEmpty(t, body["mfa_token"])
+}
+
 // TestToken_MFA_RequiredReturnsMFAToken covers the first half of the MFA
 // dance: with enforcement on, a password grant must NOT mint a token but
 // must return 403 + an mfa_token the client can exchange in step 2.
