@@ -2,6 +2,7 @@ package mgmtapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -131,3 +132,24 @@ func TestGeneric_RequestBodyMatcherWins(t *testing.T) {
 	assert.Equal(t, 201, w.Code, w.Body.String())
 	assert.JSONEq(t, `{"id":"specific"}`, w.Body.String())
 }
+
+func TestIsRouteConflict(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"unrelated", errors.New("validation failed"), false},
+		{"conflict keyword", errors.New("chi: route conflict on /api/v2/users"), true},
+		{"existing pattern", errors.New("chi detected an existing pattern matching this route"), true},
+		{"duplicate keyword", errors.New("duplicate handler for POST /api/v2/x"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, isRouteConflict(tc.err))
+		})
+	}
+}
+
