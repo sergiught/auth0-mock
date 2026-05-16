@@ -25,7 +25,25 @@ func TestPasswordless_StartEmail_200(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp["_id"])
-	assert.Equal(t, "email", resp["email"])
+	assert.Equal(t, "alice@example.com", resp["email"], "email field must echo the request's email address (matches Auth0's wire shape)")
+	assert.NotContains(t, resp, "connection", "connection name must not leak into the response per Auth0's shape")
+}
+
+func TestPasswordless_StartSMS_200(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	body := `{"client_id":"abc","connection":"sms","phone_number":"+15551234567","send":"code"}`
+	req := httptest.NewRequest("POST", "/passwordless/start", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.NotEmpty(t, resp["_id"])
+	assert.Equal(t, "+15551234567", resp["phone_number"])
+	assert.NotContains(t, resp, "email")
 }
 
 func TestPasswordless_VerifyAfterStart_MintsToken(t *testing.T) {

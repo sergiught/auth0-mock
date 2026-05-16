@@ -26,10 +26,14 @@ type passwordlessStartRequest struct {
 	AuthParams  map[string]any `json:"authParams,omitempty"`
 }
 
+// passwordlessStartResponse mirrors Auth0's POST /passwordless/start
+// response: the email / phone_number fields echo back the address the
+// flow was started for, NOT the connection name. See:
+// https://auth0.com/docs/api/authentication#get-code-or-link
 type passwordlessStartResponse struct {
-	ID         string `json:"_id"`
-	Connection string `json:"email,omitempty"` // Auth0's response uses key "email" for the connection name on email flows.
-	Phone      string `json:"phone_number,omitempty"`
+	ID    string `json:"_id"`
+	Email string `json:"email,omitempty"`
+	Phone string `json:"phone_number,omitempty"`
 }
 
 // PasswordlessStartHandler initiates a passwordless authentication flow.
@@ -47,9 +51,9 @@ func (h *PasswordlessStartHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	render.JSON(w, r, passwordlessStartResponse{
-		ID:         uuid.NewString(),
-		Connection: req.Connection,
-		Phone:      req.PhoneNumber,
+		ID:    uuid.NewString(),
+		Email: req.Email,
+		Phone: req.PhoneNumber,
 	})
 }
 
