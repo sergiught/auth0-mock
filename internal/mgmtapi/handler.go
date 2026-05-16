@@ -37,7 +37,16 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// 1. Validate request against spec.
 	if err := h.Validator.ValidateRequest(r, h.Op); err != nil {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", err.Error(), "invalid_request")
+		// Kin-openapi's err.Error() is multi-line with embedded
+		// Schema/Value blocks — useful for the operator at debug
+		// level, terrible for the wire response. ConciseValidationError
+		// trims to "<field>: <reason>".
+		h.Log.Debug().
+			Str("op", h.Op.Op.OperationID).
+			Err(err).
+			Msg("request failed spec validation")
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			conciseValidationError(err), "invalid_request")
 		return
 	}
 	// 2. Find a registered expectation for this request.
