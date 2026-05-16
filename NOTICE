@@ -47,11 +47,12 @@ Bundled Go module dependencies
 Release binaries (the goreleaser-produced archives + the Docker images) are
 statically linked and include the third-party Go modules listed in `go.mod`,
 under their respective licenses (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0,
-ISC, MPL-2.0). A machine-readable inventory ships alongside each release
-archive as an SPDX-JSON Software Bill of Materials:
+ISC, MPL-2.0). Each release archive ships:
 
-  <release-archive>.spdx.json
+  - `licenses/<module>/LICENSE`            full license text per module
+  - `<release-archive>.spdx.json`          SPDX-JSON Software Bill of Materials
 
-and a per-archive `THIRD_PARTY_LICENSES.md` aggregates each module's
-copyright + license text. See `make sboms` / `make licenses` for how to
-regenerate locally.
+To regenerate the per-module LICENSE bundle locally, run `make licenses`
+(this is the bundle the release pipeline ships in `licenses/`). The SBOM
+is produced by syft during the release pipeline; install syft locally and
+run `syft .` to reproduce it ad-hoc.

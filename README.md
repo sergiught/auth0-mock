@@ -86,7 +86,7 @@ docker compose up -d --build
 docker compose logs -f auth0-mock
 ```
 
-`docker compose` runs the same production-grade image used for releases. After source changes, restart with `--build`.
+`docker compose` builds from the local dev `Dockerfile` (Go toolchain + source) for fast `--build` iteration. The release pipeline uses a separate slim `Dockerfile.release` (binary-only, fed by goreleaser) — `ghcr.io/sergiught/auth0-mock:vX.Y.Z` and `docker.io/sergiught/auth0-mock:vX.Y.Z` are what hits Docker Hub.
 
 ### Smoke test
 
@@ -221,7 +221,8 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 | Endpoint | Notes |
 |---|---|
-| `/healthz` | Kubernetes-style liveness probe, `200 {"status":"ok"}`, no auth |
+| `/healthz` | Kubernetes-style liveness probe — `200 {"status":"ok"}` if the process is up. No auth. |
+| `/readyz`  | Kubernetes-style readiness probe — `200 {"status":"ready"}` once the JWKS signing key is materialised; `503 {"status":"not_ready","reason":"…"}` otherwise. Use for orchestrator readiness gates so process liveness and request-serving readiness stay distinguishable. No auth. |
 
 ## 💡 Common recipes
 

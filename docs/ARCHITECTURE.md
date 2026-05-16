@@ -21,6 +21,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │     3. Logging      (zerolog: method, path, status, latency, request_id)│
 │                                                                          │
 │   /healthz                                  liveness                     │
+│   /readyz                                   readiness (JWKS material)    │
 │                                                                          │
 │   /admin0/{reset, expectations, claims,      control plane (no bearer)    │
 │            permissions[/{audience}],        - wipes / inspects / shapes  │

@@ -34,8 +34,14 @@ type VerifyOpts struct {
 }
 
 // Verify parses and validates a JWT against this KeySet.
-// Checks: signature, exp, iss == ks.Issuer, iat present, ±60s clock skew,
-// and (when opts.RequireAudience is set) aud contains that value.
+// Checks: signature, exp (required), iss == ks.Issuer, iat value (if
+// present, with ±60s clock skew), nbf (if present, with skew), and
+// (when opts.RequireAudience is set) aud contains that value.
+//
+// Note: jwt/v5's `WithIssuedAt()` validates the iat *value* against the
+// clock — it does not make iat presence-required. The mock's own Mint
+// always sets iat, so in practice this is the same thing, but adopters
+// who plug in externally-minted tokens should know.
 //
 //nolint:gocyclo // Security-critical; explicit aud/iss/exp/iat/sig branches are easier to audit inline than as a helper chain.
 func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
