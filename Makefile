@@ -5,6 +5,18 @@ BINARIES_DIR = $(CURDIR)/bin
 BINARY_NAME = auth0-mock
 COVERAGE_DIR = $(CURDIR)/coverage
 
+# Build metadata baked into the binary via -ldflags="-X ..." so that
+# `auth0-mock -version` reports something useful from local builds too
+# (goreleaser overrides these with its own template values in CI).
+VERSION_PKG := github.com/sergiught/auth0-mock/internal/version
+VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_DATE  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS     := -s -w \
+               -X $(VERSION_PKG).Version=$(VERSION) \
+               -X $(VERSION_PKG).Commit=$(COMMIT) \
+               -X $(VERSION_PKG).Date=$(BUILD_DATE)
+
 #-----------------------------------------------------------------------------------------------------------------------
 # Help (default goal — `make` with no args prints the target catalogue)
 #-----------------------------------------------------------------------------------------------------------------------
@@ -38,13 +50,13 @@ $(BINARIES_DIR)/air:
 #-----------------------------------------------------------------------------------------------------------------------
 .PHONY: build
 build: ## Build the auth0-mock binary into bin/
-	@echo "==> Building $(BINARY_NAME) within $(BINARIES_DIR)"
-	@go build -v -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
+	@echo "==> Building $(BINARY_NAME) $(VERSION) within $(BINARIES_DIR)"
+	@go build -v -ldflags="$(LDFLAGS)" -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
 
 .PHONY: build-with-cover
 build-with-cover: ## Build a coverage-instrumented binary that emits covdata to GOCOVERDIR at runtime
-	@echo "==> Building $(BINARY_NAME) (coverage-instrumented) within $(BINARIES_DIR)"
-	@go build -cover -coverpkg=./... -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
+	@echo "==> Building $(BINARY_NAME) $(VERSION) (coverage-instrumented) within $(BINARIES_DIR)"
+	@go build -cover -coverpkg=./... -ldflags="$(LDFLAGS)" -o "$(BINARIES_DIR)/$(BINARY_NAME)" "$(CURDIR)/cmd/api/main.go"
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Test (https://pkg.go.dev/testing — unit + godog acceptance + coverage)

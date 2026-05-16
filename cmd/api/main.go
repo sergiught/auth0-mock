@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	stdLog "log"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/server"
 	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/internal/tlscert"
+	"github.com/sergiught/auth0-mock/internal/version"
 )
 
 func main() {
@@ -36,11 +38,23 @@ func main() {
 // before exiting non-zero — using log.Fatal / os.Exit directly would skip
 // any pending defers (signal.NotifyContext's stop, in particular).
 func run() error {
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.String())
+		return nil
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
 	log := logger.New(cfg.Environment)
+	log.Info().
+		Str("version", version.Version).
+		Str("commit", version.Commit).
+		Str("date", version.Date).
+		Msg("auth0-mock starting")
 
 	keys, err := jwks.NewKeySet(jwks.Config{
 		Issuer:         cfg.IssuerURL,
