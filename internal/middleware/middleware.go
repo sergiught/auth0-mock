@@ -4,6 +4,8 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -113,18 +116,40 @@ func MaxBodyBytes(limit int64) func(http.Handler) http.Handler {
 // truncated with a "…(truncated, N bytes total)" suffix.
 const debugBodyCap = 8 * 1024
 
+// debugDumpMu serialises a "structured log line + pretty body block"
+// pair so concurrent requests can't interleave a body half-way through
+// another request's metadata.
+var debugDumpMu sync.Mutex
+
 // DebugDump logs every request (method, path, query, headers, body) and
 // every response (status, headers, body) at INFO level. Off by default
-// — enable via the DEBUG env var. Authorization and Cookie headers are
-// redacted (first 8 chars + "…<redacted>") so dev logs don't accidentally
-// commit bearer tokens to terminal history. Bodies are truncated at
-// debugBodyCap (8 KiB) to keep the console scannable.
+// — enable via the DEBUG env var. Output shape per request:
+//
+//	21:39:28 INFO  → request  method=POST  path=/oauth/token  body_bytes=63
+//	    grant_type=client_credentials
+//	    client_id=docs
+//	    client_secret=<redacted>
+//	21:39:28 INFO  ← response  status=200  body_bytes=142
+//	    {
+//	      "access_token": "<redacted>",
+//	      "token_type": "Bearer",
+//	      "expires_in": 86400
+//	    }
+//
+// Bodies print AFTER the structured line as indented multi-line blocks
+// because zerolog escapes everything inside a field value (which turns
+// nested JSON into unreadable `\"` soup). JSON bodies get
+// pretty-printed; form-encoded bodies split one key=value per line;
+// everything else prints as-is. Authorization/Cookie headers are
+// redacted (first 8 chars + "…<redacted>"); JWT/secret field values
+// inside bodies are redacted to `<redacted>`. Bodies are capped at
+// debugBodyCap (8 KiB).
 //
 // NOT for production — buffering every request + response body and
 // serialising through the logger costs an allocation and a synchronous
 // write per request. Auth0-mock is local-dev / CI tooling, but even
 // here you only want this on while actively debugging an SDK trace.
-func DebugDump(log zerolog.Logger) func(http.Handler) http.Handler {
+func DebugDump(log zerolog.Logger, bodyOut io.Writer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			reqBody, _ := io.ReadAll(r.Body)
@@ -132,32 +157,106 @@ func DebugDump(log zerolog.Logger) func(http.Handler) http.Handler {
 			r.Body = io.NopCloser(bytes.NewReader(reqBody))
 
 			rid := RequestIDFromContext(r.Context())
+			reqCT := r.Header.Get("Content-Type")
+
+			debugDumpMu.Lock()
 			log.Info().
 				Str("request_id", rid).
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Str("query", scrubSensitiveQuery(r.URL.RawQuery)).
 				Str("headers", flatHeaders(r.Header)).
-				Str("body", truncateForLog(redactSensitiveInBody(reqBody))).
+				Int("body_bytes", len(reqBody)).
 				Msg("→ request")
+			writeBodyBlock(bodyOut, reqBody, len(reqBody), reqCT)
+			debugDumpMu.Unlock()
 
 			rec := &debugRecorder{ResponseWriter: w, body: &bytes.Buffer{}}
 			next.ServeHTTP(rec, r)
+			respCT := rec.Header().Get("Content-Type")
 
+			debugDumpMu.Lock()
 			log.Info().
 				Str("request_id", rid).
 				Int("status", rec.statusOrOK()).
 				Str("headers", flatHeaders(rec.Header())).
-				Str("body", rec.loggedBody()).
+				Int("body_bytes", rec.totalLen).
 				Msg("← response")
+			writeBodyBlock(bodyOut, rec.body.Bytes(), rec.totalLen, respCT)
+			debugDumpMu.Unlock()
 		})
 	}
 }
 
+const bodyIndent = "    "
+
+// writeBodyBlock renders the body for human eyeballs: redact sensitive
+// fields, pretty-print JSON, split form-encoded into one pair per line,
+// indent every output line with bodyIndent, and add a truncation suffix
+// when the original write was bigger than the captured slice. Empty
+// bodies print nothing.
+func writeBodyBlock(out io.Writer, captured []byte, totalLen int, contentType string) {
+	if len(captured) == 0 {
+		return
+	}
+	pretty := strings.TrimRight(prettyBody(redactSensitiveInBody(captured), contentType), "\n")
+	if totalLen > len(captured) {
+		pretty += "\n…(truncated, " + strconv.Itoa(totalLen) + " bytes total)"
+	}
+	// Best-effort write — if the body block can't be flushed (broken
+	// pipe on a piped tail, full disk on a capture), we'd rather drop
+	// the dump than crash the request path it decorates.
+	_, _ = fmt.Fprintln(out, indentLines(pretty, bodyIndent))
+}
+
+// prettyBody pretty-prints JSON bodies (two-space indent) and splits
+// form-encoded bodies one key=value per line. Everything else returns
+// as-is. JSON parse failures fall back to raw — a truncated JSON body
+// is invalid JSON but the partial content is still useful.
+func prettyBody(body []byte, contentType string) string {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "json") || looksLikeJSON(body) {
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, body, "", "  "); err == nil {
+			return buf.String()
+		}
+	}
+	if strings.Contains(ct, "x-www-form-urlencoded") {
+		return strings.ReplaceAll(string(body), "&", "\n")
+	}
+	return string(body)
+}
+
+// looksLikeJSON does a cheap first-byte check so bodies without a
+// Content-Type but with obvious JSON shape still get pretty-printed.
+func looksLikeJSON(b []byte) bool {
+	for _, c := range b {
+		switch c {
+		case ' ', '\t', '\n', '\r':
+			continue
+		case '{', '[':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// indentLines prefixes every line of s with the given indent.
+func indentLines(s, indent string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = indent + l
+	}
+	return strings.Join(lines, "\n")
+}
+
 // debugRecorder wraps http.ResponseWriter to capture status code, the
 // total number of body bytes written, and a bounded copy of the body
-// for DebugDump. We track totalLen separately so truncateForLog can
-// report the original size in the truncation suffix.
+// for DebugDump. TotalLen is tracked separately from body.Len() so
+// writeBodyBlock can report the original size in the truncation suffix
+// when the response was bigger than what we captured.
 type debugRecorder struct {
 	http.ResponseWriter
 	status   int
@@ -190,20 +289,6 @@ func (d *debugRecorder) statusOrOK() int {
 		return http.StatusOK
 	}
 	return d.status
-}
-
-// loggedBody renders the captured body with sensitive fields redacted and
-// a truncation suffix when the original write was bigger than the
-// captured slice. Redaction runs on the captured slice (not the
-// original) so an over-cap response that contains a token in the
-// captured prefix still gets its token scrubbed; tokens that landed
-// past the cap aren't logged at all.
-func (d *debugRecorder) loggedBody() string {
-	captured := redactSensitiveInBody(d.body.Bytes())
-	if d.totalLen <= d.body.Len() {
-		return string(captured)
-	}
-	return string(captured) + "…(truncated, " + strconv.Itoa(d.totalLen) + " bytes total)"
 }
 
 // flatHeaders renders an http.Header map as a sorted "k=v; k=v" string,
@@ -242,15 +327,6 @@ func redact(v string) string {
 		return "<redacted>"
 	}
 	return v[:8] + "…<redacted>"
-}
-
-// truncateForLog caps a body at debugBodyCap with a clear suffix so the
-// reader knows it was truncated. Empty bodies render as "".
-func truncateForLog(b []byte) string {
-	if len(b) <= debugBodyCap {
-		return string(b)
-	}
-	return string(b[:debugBodyCap]) + "…(truncated, " + strconv.Itoa(len(b)) + " bytes total)"
 }
 
 // sensitiveBodyFields are the Auth0/OAuth field names whose values look

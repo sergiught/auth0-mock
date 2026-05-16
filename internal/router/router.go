@@ -4,6 +4,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
@@ -71,7 +72,7 @@ func New(d Deps) (http.Handler, error) {
 		//   → handler runs
 		//   ← response …    (DebugDump post-handler)
 		//   http request …  (Logging summary)
-		r.Use(middleware.DebugDump(d.Log))
+		r.Use(middleware.DebugDump(d.Log, os.Stdout))
 	}
 
 	mountHealthz(r, d.Log)
