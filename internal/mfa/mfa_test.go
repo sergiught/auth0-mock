@@ -77,3 +77,30 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestStore_Consume_RespectsInjectedClock(t *testing.T) {
+	t.Parallel()
+	var now time.Time
+	s := NewStore(WithNow(func() time.Time { return now }))
+
+	now = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	tok := s.Issue(Context{ClientID: "demo", Audience: "x", Subject: "sub"})
+
+	// Still within TTL.
+	_, ok := s.Consume(tok)
+	require.True(t, ok)
+
+	// New token, fast-forward past TTL.
+	tok2 := s.Issue(Context{ClientID: "demo"})
+	now = now.Add(DefaultTokenTTL + time.Second)
+	_, ok = s.Consume(tok2)
+	assert.False(t, ok)
+}
+
+func TestStore_NewStore_NoOptions_UsesTimeNow(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	tok := s.Issue(Context{ClientID: "demo"})
+	_, ok := s.Consume(tok)
+	assert.True(t, ok)
+}
