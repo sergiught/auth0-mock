@@ -11,7 +11,8 @@ Feature: Mgmt API requires a bearer; admin surface does not
       """
       {"status":200,"body":{"user_id":"auth0|123","email":"a@x"}}
       """
-    Then I receive a 204 response
+    Then I receive a 201 response
+    And the response body contains "id"
 
   Scenario: clearing an expectation accepts requests without a bearer
     Given the mock is running

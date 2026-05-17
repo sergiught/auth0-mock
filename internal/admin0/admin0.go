@@ -34,6 +34,10 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
 	r.Method(http.MethodDelete, "/admin0/expectations", &DeleteExpectationsHandler{Store: d.Matches})
+	// Per-ID GET / DELETE for the SDK's RegisteredExpectation handle
+	// (Hits() / Clear() respectively).
+	r.Method(http.MethodGet, "/admin0/expectations/{id}", &GetExpectationByIDHandler{Store: d.Matches})
+	r.Method(http.MethodDelete, "/admin0/expectations/{id}", &DeleteExpectationByIDHandler{Store: d.Matches})
 
 	r.Method(http.MethodGet, "/admin0/claims", &GetClaimsHandler{Store: d.Claims})
 	r.Method(http.MethodPut, "/admin0/claims", &PutClaimsHandler{Store: d.Claims})

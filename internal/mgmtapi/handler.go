@@ -51,8 +51,9 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// 2. Find a registered expectation for this request.
 	exp := h.Store.Find(r.Method, r.URL.Path, h.Op.Template, matches.MatchableRequest{
-		Query: r.URL.Query(),
-		Body:  body,
+		Query:   r.URL.Query(),
+		Headers: r.Header,
+		Body:    body,
 	})
 	if exp == nil {
 		httperr.WriteMgmt(w, http.StatusNotFound, "Not Found",

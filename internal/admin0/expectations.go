@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
@@ -82,14 +83,22 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	if kind == matches.KindTemplate {
 		storePath = op.Template
 	}
-	h.Store.Put(matches.Expectation{
+	stored := h.Store.Put(matches.Expectation{
 		Method:   p.Method,
 		Path:     storePath,
 		Kind:     kind,
 		Request:  req,
 		Response: p.Response,
 	})
-	w.WriteHeader(http.StatusNoContent)
+	// Echo the assigned ID so the SDK / curl caller can hold a handle
+	// to this specific registration (used by per-stub Hits / Clear in
+	// batches 6b and 6d). Status changes 204 → 201 to advertise the
+	// new resource.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(struct {
+		ID string `json:"id"`
+	}{ID: stored.ID})
 }
 
 type listExpectationsResponse struct {
@@ -147,4 +156,48 @@ func (h *DeleteExpectationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 	}
 	h.Store.ResetEndpoint(p.Method, p.Path, matches.KindOf(p.Path))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteExpectationByIDHandler removes a single expectation by its
+// store-assigned ID. The route is /admin0/expectations/{id}; chi
+// extracts the id parameter. Idempotent — deleting an unknown id is
+// a 204 no-op, same as the bulk DELETE on an unregistered operation.
+type DeleteExpectationByIDHandler struct {
+	Store *matches.Store
+}
+
+func (h *DeleteExpectationByIDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"expectation id is required", "invalid_body")
+		return
+	}
+	h.Store.DeleteByID(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetExpectationByIDHandler returns a single expectation by its
+// store-assigned ID with its current Hits counter populated. Used by
+// the SDK's RegisteredExpectation.Hits(ctx). 404 (unknown_id) when no
+// such expectation exists — distinguishes "cleared" from "never hit"
+// for the caller.
+type GetExpectationByIDHandler struct {
+	Store *matches.Store
+}
+
+func (h *GetExpectationByIDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"expectation id is required", "invalid_body")
+		return
+	}
+	exp := h.Store.GetByID(id)
+	if exp == nil {
+		httperr.WriteMgmt(w, http.StatusNotFound, "Not Found",
+			"no expectation with id "+id, "unknown_id")
+		return
+	}
+	render.JSON(w, r, exp)
 }
