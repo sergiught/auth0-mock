@@ -68,13 +68,16 @@ type GetClockHandler struct {
 }
 
 func (h *GetClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	mode, now := h.Clock.State()
+	// Snapshot reads mode, now, and offset under one RLock so a
+	// concurrent PUT can't sneak between the reads and produce an
+	// inconsistent response (e.g. mode=frozen with an offset field).
+	mode, now, offset, hasOffset := h.Clock.Snapshot()
 	resp := clockGetResponse{
 		Mode: string(mode),
 		Now:  now.UTC().Format(time.RFC3339),
 	}
-	if off, ok := h.Clock.ConfiguredOffset(); ok {
-		resp.Offset = off.String()
+	if hasOffset {
+		resp.Offset = offset.String()
 	}
 	render.JSON(w, r, resp)
 }
@@ -148,6 +151,11 @@ func (h *AdvanceClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				err.Error(), "invalid_clock_state")
 			return
 		}
+		// Unreachable today — Controlled.Advance only returns
+		// ErrAdvanceInRealMode. Kept as a defensive 500 in case
+		// Advance ever grows additional error returns (e.g. an
+		// "advance would overflow time.Time" guard) so the handler
+		// surfaces the failure instead of silently 204ing.
 		httperr.WriteMgmt(w, http.StatusInternalServerError,
 			"Internal Server Error", err.Error(), "clock_advance_failed")
 		return

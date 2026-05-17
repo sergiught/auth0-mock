@@ -125,3 +125,71 @@ func TestControlled_ImplementsClockInterface(t *testing.T) {
 	var _ clock.Clock = clock.Real{}
 	var _ clock.Clock = clock.NewControlled()
 }
+
+func TestControlled_Snapshot_Frozen(t *testing.T) {
+	c := clock.NewControlled()
+	t0 := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	c.Freeze(t0)
+
+	mode, now, offset, hasOffset := c.Snapshot()
+	assert.Equal(t, clock.ModeFrozen, mode)
+	assert.True(t, now.Equal(t0))
+	assert.Equal(t, time.Duration(0), offset)
+	assert.False(t, hasOffset)
+}
+
+func TestControlled_Snapshot_Offset(t *testing.T) {
+	c := clock.NewControlled()
+	c.Offset(25 * time.Hour)
+
+	mode, now, offset, hasOffset := c.Snapshot()
+	assert.Equal(t, clock.ModeOffset, mode)
+	approxNow(t, now, 25*time.Hour, 50*time.Millisecond)
+	assert.Equal(t, 25*time.Hour, offset)
+	assert.True(t, hasOffset)
+}
+
+func TestControlled_Snapshot_Real(t *testing.T) {
+	c := clock.NewControlled()
+	mode, now, offset, hasOffset := c.Snapshot()
+	assert.Equal(t, clock.ModeReal, mode)
+	approxNow(t, now, 0, 50*time.Millisecond)
+	assert.Equal(t, time.Duration(0), offset)
+	assert.False(t, hasOffset)
+}
+
+// TestControlled_Snapshot_NeverInconsistentUnderContention pushes the
+// Snapshot accessor through many concurrent mode flips and asserts
+// that every (mode, hasOffset) pair returned is internally consistent
+// — i.e. hasOffset is true if and only if mode == "offset". The
+// previous State + ConfiguredOffset combo took two separate RLocks
+// and could return inconsistent pairs under contention; this test is
+// the regression guard for that.
+func TestControlled_Snapshot_NeverInconsistentUnderContention(t *testing.T) {
+	c := clock.NewControlled()
+	// Prime in offset mode so both flip directions are exercised.
+	c.Offset(time.Hour)
+
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				c.Freeze(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
+				c.Offset(time.Hour)
+			}
+		}
+	}()
+	defer close(done)
+
+	for range 10_000 {
+		mode, _, _, hasOffset := c.Snapshot()
+		if mode == clock.ModeOffset {
+			assert.True(t, hasOffset, "offset mode must have hasOffset=true")
+		} else {
+			assert.False(t, hasOffset, "non-offset mode (%s) must have hasOffset=false", mode)
+		}
+	}
+}

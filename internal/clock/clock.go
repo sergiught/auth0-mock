@@ -87,9 +87,9 @@ func (c *Controlled) State() (Mode, time.Time) {
 }
 
 // ConfiguredOffset returns the configured offset and true when the
-// clock is in offset mode; (0, false) otherwise. Used by the GET
-// /admin0/clock handler to surface the skew alongside the resolved
-// now so callers don't have to compute now - wall_clock.
+// clock is in offset mode; (0, false) otherwise. Used by callers that
+// want the raw offset without the resolved Now (Snapshot is the
+// better choice for callers that need both).
 func (c *Controlled) ConfiguredOffset() (time.Duration, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -97,6 +97,27 @@ func (c *Controlled) ConfiguredOffset() (time.Duration, bool) {
 		return 0, false
 	}
 	return c.offset, true
+}
+
+// Snapshot returns (mode, now, offset, hasOffset) under a single RLock
+// so callers get a consistent view. `hasOffset` is true only when
+// `mode == ModeOffset`; in that case `offset` is the configured skew.
+//
+// Prefer Snapshot over composing State + ConfiguredOffset when both
+// values are needed: a concurrent Freeze/Offset call between the two
+// accessor calls would otherwise produce an inconsistent picture (e.g.
+// mode=frozen but hasOffset=true).
+func (c *Controlled) Snapshot() (mode Mode, now time.Time, offset time.Duration, hasOffset bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	switch c.mode {
+	case ModeFrozen:
+		return c.mode, c.pinned, 0, false
+	case ModeOffset:
+		return c.mode, time.Now().Add(c.offset), c.offset, true
+	default:
+		return c.mode, time.Now(), 0, false
+	}
 }
 
 // Freeze pins Now to t until the next mode change. Also zeroes the
