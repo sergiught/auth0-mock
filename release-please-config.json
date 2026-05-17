@@ -19,7 +19,7 @@
         { "type": "docs",     "section": "Documentation" },
         { "type": "build",    "section": "Build" },
         { "type": "ci",       "section": "CI",       "hidden": true },
-        { "type": "chore",    "section": "Chores",   "hidden": true },
+        { "type": "chore",    "section": "Chores" },
         { "type": "style",    "section": "Style",    "hidden": true },
         { "type": "revert",   "section": "Reverts" }
       ]
