@@ -12,6 +12,7 @@ import (
 
 	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/claims"
+	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/config"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/logger"
@@ -56,11 +57,17 @@ func run() error {
 		Str("date", version.Date).
 		Msg("auth0-mock starting")
 
+	// Controllable clock — drives JWT iat/exp, PKCE code TTLs, MFA token
+	// TTLs, and bearer exp/nbf validation. Mounted at /admin0/clock so
+	// tests can freeze and advance time at runtime.
+	clk := clock.NewControlled()
+
 	keys, err := jwks.NewKeySet(jwks.Config{
 		Issuer:         cfg.IssuerURL,
 		KeyFile:        cfg.SigningKeyFile,
 		AccessTokenTTL: cfg.AccessTokenTTL,
 		IDTokenTTL:     cfg.IDTokenTTL,
+		Now:            clk.Now,
 	})
 	if err != nil {
 		return fmt.Errorf("jwks init: %w", err)
@@ -78,8 +85,8 @@ func run() error {
 	store := matches.NewStore()
 	claimsStore := claims.NewStore()
 	permsStore := permissions.NewStore()
-	pkceStore := pkce.NewStore()
-	mfaStore := mfa.NewStore()
+	pkceStore := pkce.NewStore(pkce.WithNow(clk.Now))
+	mfaStore := mfa.NewStore(mfa.WithNow(clk.Now))
 	handler, err := router.New(router.Deps{
 		Log:                          log,
 		Store:                        store,
@@ -90,6 +97,7 @@ func run() error {
 		Keys:                         keys,
 		Spec:                         openapiSpec,
 		Validator:                    validator,
+		Clock:                        clk,
 		Issuer:                       cfg.IssuerURL,
 		DefaultAudience:              cfg.DefaultAudience,
 		SpecValidationStrict:         cfg.SpecValidationStrict,
