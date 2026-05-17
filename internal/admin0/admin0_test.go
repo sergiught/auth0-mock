@@ -199,6 +199,72 @@ func TestClock_PutBadRFC3339_400(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "invalid_clock_time")
 }
 
+// TestClock_Get_AtomicUnderConcurrentPut is the handler-level
+// regression guard for the inconsistent-GET bug fixed by commit
+// b26e17b. Spins a goroutine flipping the clock between frozen and
+// offset modes while the test issues GET /admin0/clock requests in
+// parallel, asserting no response ever surfaces an impossible
+// (mode, offset) pair — e.g. mode=frozen with an offset field, or
+// mode=offset without one.
+//
+// Without this test, a future refactor that reverted GetClockHandler
+// to two separate Clock accessor calls would silently reintroduce
+// the inconsistent-response bug (the unit-level
+// TestControlled_Snapshot_NeverInconsistentUnderContention only
+// covers the primitive, not the handler).
+func TestClock_Get_AtomicUnderConcurrentPut(t *testing.T) {
+	d := newDeps()
+	d.Clock.Offset(time.Hour) // prime offset mode so both flip directions exercise.
+	r := newRouter(d)
+
+	done := make(chan struct{})
+	go func() {
+		bodies := []string{
+			`{"now":"2030-01-01T00:00:00Z"}`,
+			`{"offset":"1h"}`,
+		}
+		i := 0
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				req := httptest.NewRequest("PUT", "/admin0/clock",
+					strings.NewReader(bodies[i%2]))
+				r.ServeHTTP(httptest.NewRecorder(), req)
+				i++
+			}
+		}
+	}()
+	defer close(done)
+
+	for range 2000 {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/clock", nil))
+		require.Equal(t, 200, w.Code)
+
+		var got struct {
+			Mode   string `json:"mode"`
+			Now    string `json:"now"`
+			Offset string `json:"offset"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+
+		// The contract: offset field is present iff mode == "offset".
+		// Any other combination is the bug.
+		switch got.Mode {
+		case "offset":
+			assert.NotEmpty(t, got.Offset,
+				"mode=offset must have an offset field; got %+v", got)
+		case "frozen", "real":
+			assert.Empty(t, got.Offset,
+				"mode=%s must NOT have an offset field; got %+v", got.Mode, got)
+		default:
+			t.Fatalf("unexpected mode %q in response %+v", got.Mode, got)
+		}
+	}
+}
+
 func TestClock_PutBadDuration_400(t *testing.T) {
 	t.Parallel()
 	d := newDeps()
