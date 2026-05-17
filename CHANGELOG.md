@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.226.0](https://github.com/sergiught/auth0-mock/compare/v0.225.0...v0.226.0) (2026-05-17)
+
+
+### Features
+
+* **sdk:** pkg/auth0mock — typed Go client for the auth0-mock control plane ([#10](https://github.com/sergiught/auth0-mock/issues/10)) ([93084c8](https://github.com/sergiught/auth0-mock/commit/93084c85910854b55de480a196c298f3114c172f))
+* **server:** per-expectation IDs, hit counters, header matching, per-stub endpoints ([#9](https://github.com/sergiught/auth0-mock/issues/9)) ([2c6f725](https://github.com/sergiught/auth0-mock/commit/2c6f725aec5cc5fb99cebda20857d73f8a37dd71))
+
 ## 0.225.0 (2026-05-16)
 
 
