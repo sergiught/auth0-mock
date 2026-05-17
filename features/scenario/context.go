@@ -22,6 +22,7 @@ import (
 
 	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/claims"
+	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -57,8 +58,10 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	t.Helper()
 
 	addr := freePort(t)
+	clk := clock.NewControlled()
 	ks, err := jwks.NewKeySet(jwks.Config{
 		Issuer: "http://" + addr + "/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+		Now: clk.Now,
 	})
 	if err != nil {
 		t.Fatalf("jwks: %v", err)
@@ -70,8 +73,8 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	store := matches.NewStore()
 	claimsStore := claims.NewStore()
 	permsStore := permissions.NewStore()
-	pkceStore := pkce.NewStore()
-	mfaStore := mfa.NewStore()
+	pkceStore := pkce.NewStore(pkce.WithNow(clk.Now))
+	mfaStore := mfa.NewStore(mfa.WithNow(clk.Now))
 	validator, err := spec.NewValidator(openapiSpec)
 	if err != nil {
 		t.Fatalf("spec validator: %v", err)
@@ -86,6 +89,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		Keys:                 ks,
 		Spec:                 openapiSpec,
 		Validator:            validator,
+		Clock:                clk,
 		Issuer:               "http://" + addr + "/",
 		DefaultAudience:      "http://" + addr + "/api/v2/",
 		SpecValidationStrict: true,

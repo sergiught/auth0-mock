@@ -273,8 +273,9 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
-	// Bodyless request with an explicit verb (covers DELETE).
-	sc.Step(`^I (PUT|DELETE) "([^"]+)"$`, func(method, path string) error {
+	// Bodyless request with an explicit verb (covers GET/DELETE on
+	// admin endpoints that don't require a body).
+	sc.Step(`^I (GET|PUT|DELETE) "([^"]+)"$`, func(method, path string) error {
 		c.Do(method, path, "", false)
 		return nil
 	})
