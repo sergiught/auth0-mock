@@ -228,10 +228,29 @@ func phase5MFA(ctx context.Context, c *auth0mock.Client) error {
 	return nil
 }
 
-// phase6Clock demonstrates the admin0/clock surface. Freezes at a
-// memorable instant, advances twice, and reads the resulting state
-// back. The end state (2030-01-02T02:00:00Z) is the iat phase 8's
-// go-auth0 token mint will inherit.
+// The clock script phase 6 runs. Declared at package scope so phase 8
+// can assert against the resulting "now" without re-encoding the
+// freeze/advance values — change these here and the assertion follows.
+var (
+	clockFreezeStart = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	clockAdvances    = []time.Duration{time.Hour, 25 * time.Hour}
+)
+
+// clockEnd is the wall-time the mock holds after phase 6 runs. Phase
+// 8 asserts the minted token's iat equals this value — proving the
+// clock reaches the minter end-to-end.
+func clockEnd() time.Time {
+	end := clockFreezeStart
+	for _, d := range clockAdvances {
+		end = end.Add(d)
+	}
+	return end
+}
+
+// phase6Clock demonstrates the admin0/clock surface. Freezes at
+// clockFreezeStart, applies clockAdvances in order, and reads the
+// resulting state back. The end state is the iat phase 8's go-auth0
+// token mint will inherit.
 func phase6Clock(ctx context.Context, c *auth0mock.Client) error {
 	section(6, "Control the clock")
 	explain("Freeze, offset, and advance the mock's perception of time.",
@@ -239,25 +258,19 @@ func phase6Clock(ctx context.Context, c *auth0mock.Client) error {
 		"hand-minting fixtures. The end state here is the `now`",
 		"phase 8's go-auth0 token mint will inherit.")
 
-	t0 := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
-
 	wire("PUT", "/admin0/clock")
-	fmt.Printf("  Freezing at %s\n", t0.Format(time.RFC3339))
-	if err := c.Clock.Freeze(ctx, t0); err != nil {
+	fmt.Printf("  Freezing at %s\n", clockFreezeStart.Format(time.RFC3339))
+	if err := c.Clock.Freeze(ctx, clockFreezeStart); err != nil {
 		return fmt.Errorf("freeze: %w", err)
 	}
 	ok("Clock frozen")
 
-	wire("POST", "/admin0/clock/advance")
-	fmt.Println("  Advancing 1h")
-	if err := c.Clock.Advance(ctx, time.Hour); err != nil {
-		return fmt.Errorf("advance 1h: %w", err)
-	}
-
-	wire("POST", "/admin0/clock/advance")
-	fmt.Println("  Advancing 25h")
-	if err := c.Clock.Advance(ctx, 25*time.Hour); err != nil {
-		return fmt.Errorf("advance 25h: %w", err)
+	for _, d := range clockAdvances {
+		wire("POST", "/admin0/clock/advance")
+		fmt.Printf("  Advancing %s\n", d)
+		if err := c.Clock.Advance(ctx, d); err != nil {
+			return fmt.Errorf("advance %s: %w", d, err)
+		}
 	}
 
 	wire("GET", "/admin0/clock")
@@ -380,9 +393,10 @@ func phase8DriveWithGoAuth0(ctx context.Context, mockURL string, hc *http.Client
 		time.Unix(iat, 0).UTC().Format(time.RFC3339),
 		time.Unix(exp, 0).UTC().Format(time.RFC3339))
 
-	wantIat := time.Date(2030, 1, 2, 2, 0, 0, 0, time.UTC).Unix()
+	wantIat := clockEnd().Unix()
 	if iat != wantIat {
-		return "", fmt.Errorf("iat = %d, want %d (clock should be frozen at 2030-01-02T02:00:00Z from phase 6)", iat, wantIat)
+		return "", fmt.Errorf("iat = %d, want %d (clock should be at %s after phase 6)",
+			iat, wantIat, clockEnd().Format(time.RFC3339))
 	}
 	ok("iat matches the clock state set in phase 6 — clock reaches the minter")
 
