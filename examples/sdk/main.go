@@ -126,10 +126,10 @@ func run(ctx context.Context, c *auth0mock.Client, mockURL string, hc *http.Clie
 func phase1Reset(ctx context.Context, c *auth0mock.Client) error {
 	section(1, "Reset")
 	wire("POST", "/admin0/reset")
-	explain("Wipes every expectation, claim, permission, and MFA flag",
-		"back to startup defaults. Equivalent to restarting the mock",
-		"process — but ~1000x faster. Call from t.Cleanup so each test",
-		"starts from a known-empty mock.")
+	explain("Wipes every expectation, claim, permission, and MFA flag,",
+		"and restores the clock to real mode. Equivalent to restarting",
+		"the mock process — but ~1000x faster. Call from t.Cleanup so",
+		"each test starts from a known-empty mock.")
 	if err := c.Reset(ctx); err != nil {
 		return fmt.Errorf("reset: %w", err)
 	}
