@@ -99,24 +99,28 @@ func (c *Controlled) ConfiguredOffset() (time.Duration, bool) {
 	return c.offset, true
 }
 
-// Freeze pins Now to t until the next mode change. Leaves the
-// `offset` field at whatever it was — Now switches on mode and never
-// reads `offset` in frozen mode.
+// Freeze pins Now to t until the next mode change. Also zeroes the
+// offset field even though Now never reads it in frozen mode — a
+// future method that touches offset without rechecking mode (e.g. a
+// "scale offset by N" helper) shouldn't see leftover state from a
+// prior Offset() call.
 func (c *Controlled) Freeze(t time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.mode = ModeFrozen
 	c.pinned = t
+	c.offset = 0
 }
 
 // Offset switches to offset mode with the given skew. The wall clock
-// keeps ticking; Now returns time.Now() + d. Leaves `pinned` at
-// whatever it was — Now never reads it in offset mode.
+// keeps ticking; Now returns time.Now() + d. Also zeroes the pinned
+// field for the same future-safety reason as Freeze.
 func (c *Controlled) Offset(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.mode = ModeOffset
 	c.offset = d
+	c.pinned = time.Time{}
 }
 
 // Advance mutates the held value by d. In frozen mode the pinned
