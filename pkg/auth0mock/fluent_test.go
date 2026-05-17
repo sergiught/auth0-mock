@@ -93,7 +93,7 @@ func TestFluent_QueryReplaceSemantics(t *testing.T) {
 	rec, c := newStub(t)
 	_, err := c.ExpectGet("/p").
 		WithQuery("k", "first").
-		WithQuery("k", "second"). // later wins
+		WithQuery("k", "second"). // Later wins.
 		WithQuery("other", "v").
 		Respond(200).
 		Apply(context.Background())
@@ -130,7 +130,7 @@ func TestFluent_MarshalErrorDeferredToApply(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
-		// build mutates the chain so the marshal error originates
+		// Build mutates the chain so the marshal error originates
 		// from the call we're stress-testing.
 		build        func(*auth0mock.Client) *auth0mock.ResponseBuilder
 		wantContains string
@@ -139,7 +139,7 @@ func TestFluent_MarshalErrorDeferredToApply(t *testing.T) {
 			name: "WithBodyJSON",
 			build: func(c *auth0mock.Client) *auth0mock.ResponseBuilder {
 				return c.ExpectPost("/p").
-					WithBodyJSON(make(chan int)). // unencodable
+					WithBodyJSON(make(chan int)). // Unencodable.
 					Respond(200)
 			},
 			wantContains: "WithBodyJSON",
@@ -149,7 +149,7 @@ func TestFluent_MarshalErrorDeferredToApply(t *testing.T) {
 			build: func(c *auth0mock.Client) *auth0mock.ResponseBuilder {
 				return c.ExpectGet("/p").
 					Respond(200).
-					JSON(make(chan int)) // unencodable
+					JSON(make(chan int)) // Unencodable.
 			},
 			wantContains: "Respond.JSON",
 		},
@@ -178,10 +178,10 @@ func TestFluent_FirstErrorWinsInChain(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
 	_, err := c.ExpectPost("/p").
-		WithBodyJSON(make(chan int)).             // error #1 (this wins)
-		WithBodyJSON(map[string]any{"ok": true}). // would otherwise overwrite
+		WithBodyJSON(make(chan int)).             // Error #1 (this wins).
+		WithBodyJSON(map[string]any{"ok": true}). // Would otherwise overwrite.
 		Respond(200).
-		JSON(make(chan float64)). // error #2 (suppressed)
+		JSON(make(chan float64)). // Error #2 (suppressed).
 		Apply(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "WithBodyJSON")

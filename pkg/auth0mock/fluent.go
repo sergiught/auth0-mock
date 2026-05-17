@@ -25,7 +25,7 @@ import (
 type ExpectationBuilder struct {
 	client *Client
 	exp    Expectation
-	err    error // first marshal error seen anywhere in the chain
+	err    error // First marshal error seen anywhere in the chain.
 }
 
 // ExpectGet starts a stub for an incoming GET to path. Convenience
@@ -71,7 +71,7 @@ func (b *ExpectationBuilder) WithQuery(key, value string) *ExpectationBuilder {
 }
 
 // WithBodyJSON narrows the matcher to requests whose JSON body is a
-// superset of v. v is marshalled with json.Marshal — if marshalling
+// superset of v. V is marshalled with json.Marshal — if marshalling
 // fails (chan / func / cyclic value) the error is captured on the
 // builder and returned by Apply(ctx) instead of panicking mid-chain.
 // For pre-encoded bodies use WithBody.

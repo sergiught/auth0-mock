@@ -128,7 +128,7 @@ const sdkPkgPrefix = "github.com/sergiught/auth0-mock/pkg/auth0mock"
 func callerFrame() string {
 	const maxFrames = 16
 	pcs := make([]uintptr, maxFrames)
-	n := runtime.Callers(2, pcs) // skip runtime.Callers + callerFrame
+	n := runtime.Callers(2, pcs) // Skip runtime.Callers + callerFrame.
 	if n == 0 {
 		return ""
 	}
@@ -156,8 +156,8 @@ func isSDKFrame(fn string) bool {
 		return false
 	}
 	rest := fn[len(sdkPkgPrefix):]
-	// "github.com/.../auth0mock.(*Client).Foo" → rest starts with "."
-	// "github.com/.../auth0mock/auth0mocktest.Foo" → rest starts with "/"
+	// "github.com/.../auth0mock.(*Client).Foo" → rest starts with ".".
+	// "github.com/.../auth0mock/auth0mocktest.Foo" → rest starts with "/".
 	return strings.HasPrefix(rest, ".") || strings.HasPrefix(rest, "/")
 }
 
@@ -288,24 +288,24 @@ type RegisteredExpectation struct {
 
 	client *Client
 
-	// method, path snapshot what was registered so Verify violation
+	// Method, path snapshot what was registered so Verify violation
 	// messages can name "GET /api/v2/users/{id}" instead of just the
 	// opaque UUID. Frozen at Add() time; later server-side mutation
 	// won't change what describeLabel reports.
 	method, path string
 
-	// registeredAt is the file:line of the caller that invoked Add,
+	// RegisteredAt is the file:line of the caller that invoked Add,
 	// captured via runtime.Callers and trimmed to a short form. Lets
 	// Verify failures point at the test that set the expectation
 	// instead of forcing the user to grep the UUID. Also frozen at
 	// Add() time.
 	registeredAt string
 
-	// expected records the hit-count constraint set via
-	// Times / AtLeast / AtMost / AnyTimes for verification. nil means
+	// Expected records the hit-count constraint set via
+	// Times / AtLeast / AtMost / AnyTimes for verification. Nil means
 	// no expectation set — Verify treats this handle as a no-op.
 	//
-	// atomic.Pointer so Times/AtLeast/AtMost/AnyTimes (writers) and
+	// Atomic.Pointer so Times/AtLeast/AtMost/AnyTimes (writers) and
 	// Verify's read can race cleanly under -race. Each setter swaps
 	// in a fresh *hitsConstraint; readers Load atomically.
 	expected atomic.Pointer[hitsConstraint]

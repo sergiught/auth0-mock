@@ -154,7 +154,7 @@ func ExampleAPIError() {
 	_, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
 		Method:   "GET",
 		Path:     "/api/v2/users",
-		Response: auth0mock.ResponseDef{}, // missing Status → server rejects
+		Response: auth0mock.ResponseDef{}, // Missing Status → server rejects.
 	})
 
 	var apiErr *auth0mock.APIError
@@ -192,9 +192,9 @@ func ExampleExpectationsClient_Verify() {
 	reg3, _ := c.ExpectDelete("/api/v2/users/auth0|alice").
 		Respond(204).
 		Apply(ctx)
-	reg3.Times(0) // equivalent to .AtMost(0)
+	reg3.Times(0) // Equivalent to .AtMost(0).
 
-	// ... exercise the system-under-test here ...
+	// ... Exercise the system-under-test here ...
 
 	// Verify joins every violation into one error. Returns nil when
 	// every constraint is satisfied or no constraint was set.

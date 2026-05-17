@@ -256,7 +256,7 @@ func TestRegisteredExpectation_Clear(t *testing.T) {
 
 	// Now Clear — assert the second recorded call hits the per-ID
 	// DELETE endpoint with no body.
-	rec.respond = nil // back to 204 default
+	rec.respond = nil // Back to 204 default.
 	require.NoError(t, stored.Clear(context.Background()))
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)
@@ -366,7 +366,7 @@ func TestVerify_AddClearReset_NoSafetyNetMisfire(t *testing.T) {
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
-	reg.Times(1) // would be unmet, but we Clear before Reset
+	reg.Times(1) // Would be unmet, but we Clear before Reset.
 
 	require.NoError(t, reg.Clear(context.Background()))
 	require.NoError(t, c.Reset(context.Background()))
@@ -412,10 +412,10 @@ func TestRegisteredExpectation_Hits_ClearedStubReturns404(t *testing.T) {
 	rec.respond = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
-		case http.MethodPost: // Add
+		case http.MethodPost: // Add.
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"abc"}`))
-		case http.MethodGet: // Hits
+		case http.MethodGet: // Hits.
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"statusCode":404,"error":"Not Found","message":"no expectation with id abc","errorCode":"unknown_id"}`))
 		default:
