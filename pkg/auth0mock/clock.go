@@ -61,6 +61,14 @@ func (cl *ClockClient) Get(ctx context.Context) (*ClockState, error) {
 
 // Freeze pins the mock's clock to t. Subsequent token mints and
 // bearer validations see Now == t until the next Freeze/Offset/Reset.
+//
+// The wire format is RFC 3339 with second precision, so any
+// sub-second component of t is truncated — i.e. Freeze(t) on the
+// client and Get(...).Now on the way back round-trip equal up to
+// the second, not the nanosecond. The server's Mode/State accessors
+// use the same precision, so the round-trip is symmetric — just
+// don't compare a frozen `Now` to a `time.Now()`-with-nanos and
+// expect Equal to hold.
 func (cl *ClockClient) Freeze(ctx context.Context, t time.Time) error {
 	body := map[string]string{"now": t.UTC().Format(time.RFC3339)}
 	return cl.c.do(ctx, http.MethodPut, "/admin0/clock", body, nil)
@@ -70,6 +78,10 @@ func (cl *ClockClient) Freeze(ctx context.Context, t time.Time) error {
 // wall clock keeps ticking; Now returns time.Now() + d server-side.
 // Replaces any prior offset value (does not add to it — use Advance
 // for incremental shifts).
+//
+// Offset(0) is allowed and stays in "offset" mode with a zero skew —
+// observationally identical to real mode, but Get(...).Mode still
+// reports "offset". Use Reset to actually return the clock to real.
 func (cl *ClockClient) Offset(ctx context.Context, d time.Duration) error {
 	body := map[string]string{"offset": d.String()}
 	return cl.c.do(ctx, http.MethodPut, "/admin0/clock", body, nil)
