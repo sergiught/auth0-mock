@@ -198,6 +198,40 @@ func TestClock_PutBadDuration_400(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "invalid_clock_duration")
 }
 
+// TestClock_PutUnknownField_400 covers the typo-protection path: an
+// unrecognised field like {"noow":"..."} would otherwise decode to a
+// PUT body with both Now and Offset nil, masquerading as the
+// "specify exactly one" error. DisallowUnknownFields turns this into
+// a specific decode error that names the bad field.
+func TestClock_PutUnknownField_400(t *testing.T) {
+	t.Parallel()
+	d := newDeps()
+	r := newRouter(d)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/clock",
+		strings.NewReader(`{"noow":"2030-01-01T00:00:00Z"}`)))
+	require.Equal(t, 400, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "invalid_clock_request")
+	assert.Contains(t, body, "noow") // field name surfaces inside the decode error
+}
+
+func TestClock_PostAdvance_UnknownField_400(t *testing.T) {
+	t.Parallel()
+	d := newDeps()
+	d.Clock.Freeze(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
+	r := newRouter(d)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/admin0/clock/advance",
+		strings.NewReader(`{"bye":"1h"}`)))
+	require.Equal(t, 400, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "invalid_clock_request")
+	assert.Contains(t, body, "bye") // field name surfaces inside the decode error
+}
+
 func TestMFARequired_PutGet(t *testing.T) {
 	d := newDeps()
 	r := newRouter(d)

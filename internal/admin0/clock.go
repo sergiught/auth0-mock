@@ -59,7 +59,9 @@ type PutClockHandler struct {
 
 func (h *PutClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body clockPutBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"decode body: "+err.Error(), "invalid_clock_request")
 		return
@@ -102,7 +104,9 @@ type AdvanceClockHandler struct {
 
 func (h *AdvanceClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body clockAdvanceBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"decode body: "+err.Error(), "invalid_clock_request")
 		return
