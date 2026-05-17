@@ -29,6 +29,11 @@ type Config struct {
 	KeyFile        string
 	AccessTokenTTL time.Duration // Default TTL for mint.
 	IDTokenTTL     time.Duration
+	// Now returns the time used for protocol-output timestamps
+	// (iat/exp on Mint; exp/nbf/iat checks on Verify). Nil means
+	// time.Now. Wire to clock.Controlled.Now to get runtime control
+	// over JWT issuance and validation.
+	Now func() time.Time
 }
 
 // KeySet owns the active RS256 signing key.
@@ -43,6 +48,9 @@ func NewKeySet(cfg Config) (*KeySet, error) {
 	priv, err := loadOrGenerate(cfg.KeyFile)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
 	}
 	return &KeySet{
 		cfg:   cfg,
