@@ -11,6 +11,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Inject a custom claim into every minted token](#inject-a-custom-claim-into-every-minted-token)
 - [Test a PKCE flow end-to-end](#test-a-pkce-flow-end-to-end)
 - [Test an MFA challenge flow](#test-an-mfa-challenge-flow)
+- [Test token expiry without sleeps](#test-token-expiry-without-sleeps)
 - [Test the password-realm grant](#test-the-password-realm-grant)
 - [Stub an error response (400, 429, 500)](#stub-an-error-response-400-429-500)
 - [Reset state between tests](#reset-state-between-tests)
@@ -211,6 +212,59 @@ The accepted factor values are constants:
 | `recovery_code` | `ABCDEFGHIJKLMNOP` |
 
 Wrong factors return `403 invalid_grant`. The minted token carries `gty=mfa-otp` (or `mfa-oob` / `mfa-recovery-code`) so downstream services can identify stepped-up sessions.
+
+## Test token expiry without sleeps
+
+Freeze the clock, mint a token, advance past its `exp`, then watch the
+bearer middleware reject the same token. Instant and deterministic —
+no `sleep`, no flaky CI on slow runners.
+
+```bash
+# 1. Freeze the mock's clock at a memorable instant.
+curl -X PUT http://localhost:8080/admin0/clock \
+  -H 'Content-Type: application/json' \
+  -d '{"now":"2030-01-01T00:00:00Z"}'
+
+# 2. Mint a token (defaults to ACCESS_TOKEN_TTL = 24h).
+TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=client_credentials&client_id=demo&client_secret=x&audience=http://localhost:8080/api/v2/' \
+  | jq -r .access_token)
+
+# 3. Stub something on /api/v2 so a 200 is possible.
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"GET","path":"/api/v2/users/x","response":{"status":200,"body":{"user_id":"x"}}}'
+
+# 4. The token works right now.
+curl -i http://localhost:8080/api/v2/users/x \
+  -H "Authorization: Bearer ${TOKEN}"
+# HTTP/1.1 200 OK
+
+# 5. Advance the clock 25h — past the token's exp.
+curl -X POST http://localhost:8080/admin0/clock/advance \
+  -H 'Content-Type: application/json' \
+  -d '{"by":"25h"}'
+
+# 6. Same token, now rejected as expired.
+curl -i http://localhost:8080/api/v2/users/x \
+  -H "Authorization: Bearer ${TOKEN}"
+# HTTP/1.1 401 Unauthorized
+# {"errorCode":"invalid_bearer","message":"invalid bearer token", ...}
+
+# 7. Back to wall clock when you're done.
+curl -X DELETE http://localhost:8080/admin0/clock
+```
+
+The same clock drives the minter (`iat`/`exp` on `/oauth/token`) and
+the bearer middleware (`exp`/`nbf` check on `/api/v2/*`), so the round
+trip is internally consistent — you can freeze at any point in time and
+mint tokens that look exactly like Auth0 would have issued at that
+moment.
+
+From Go tests, use `c.Clock.Freeze(ctx, t)` and `c.Clock.Advance(ctx, d)`
+instead of `curl`. `auth0mocktest.Bracket(t, c)` automatically resets
+the clock on cleanup along with every other admin store.
 
 ## Test the password-realm grant
 

@@ -2,8 +2,8 @@
 //
 // It wraps the /admin0/* HTTP surface of a running auth0-mock instance
 // with a typed Go API, so test code can register stubs, inject custom
-// JWT claims, set per-audience permissions, and toggle MFA without
-// hand-marshalling JSON.
+// JWT claims, set per-audience permissions, toggle MFA, and freeze /
+// advance the mock's clock without hand-marshalling JSON.
 //
 // This SDK is NOT for calling the mocked Auth0 APIs (/oauth/*, /api/v2/*) —
 // point your existing Auth0 SDK (auth0-go, auth0-js) at the mock's
