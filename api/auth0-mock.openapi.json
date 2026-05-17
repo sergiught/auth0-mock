@@ -53908,7 +53908,7 @@
             "description": "Clock updated."
           },
           "400": {
-            "description": "Body could not be parsed, set both/neither of `now`/`offset`,\nor contained an invalid value.\n"
+            "description": "Body could not be parsed, set both/neither of `now`/`offset`,\ncontained an unknown field (e.g. `noow` instead of `now` →\n`errorCode: \"invalid_clock_field\"`), or contained an\ninvalid value.\n"
           }
         },
         "summary": "Freeze the clock at an instant or switch to offset mode.",
@@ -53944,7 +53944,7 @@
             "description": "Clock advanced."
           },
           "400": {
-            "description": "Body could not be parsed, contained an invalid duration, or\nattempted to advance the clock in real mode.\n"
+            "description": "Body could not be parsed, contained an unknown field\n(`errorCode: \"invalid_clock_field\"`), contained an invalid\nduration, or attempted to advance the clock in real mode.\n"
           }
         },
         "summary": "Mutate the held value by a delta.",

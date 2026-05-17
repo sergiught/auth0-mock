@@ -265,7 +265,9 @@ paths:
         "400":
           description: |
             Body could not be parsed, set both/neither of `now`/`offset`,
-            or contained an invalid value.
+            contained an unknown field (e.g. `noow` instead of `now` →
+            `errorCode: "invalid_clock_field"`), or contained an
+            invalid value.
     delete:
       tags: [Clock]
       summary: Restore the clock to real mode.
@@ -295,8 +297,9 @@ paths:
         "204": { description: Clock advanced. }
         "400":
           description: |
-            Body could not be parsed, contained an invalid duration, or
-            attempted to advance the clock in real mode.
+            Body could not be parsed, contained an unknown field
+            (`errorCode: "invalid_clock_field"`), contained an invalid
+            duration, or attempted to advance the clock in real mode.
 components:
   schemas:
     Expectation:

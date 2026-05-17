@@ -202,7 +202,7 @@ func TestClock_PutBadDuration_400(t *testing.T) {
 // unrecognised field like {"noow":"..."} would otherwise decode to a
 // PUT body with both Now and Offset nil, masquerading as the
 // "specify exactly one" error. DisallowUnknownFields turns this into
-// a specific decode error that names the bad field.
+// a distinct invalid_clock_field error code that names the bad field.
 func TestClock_PutUnknownField_400(t *testing.T) {
 	t.Parallel()
 	d := newDeps()
@@ -213,7 +213,9 @@ func TestClock_PutUnknownField_400(t *testing.T) {
 		strings.NewReader(`{"noow":"2030-01-01T00:00:00Z"}`)))
 	require.Equal(t, 400, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "invalid_clock_request")
+	assert.Contains(t, body, "invalid_clock_field")
+	assert.NotContains(t, body, "invalid_clock_request",
+		"unknown-field rejection should use its own error code, not the catch-all")
 	assert.Contains(t, body, "noow") // field name surfaces inside the decode error
 }
 
@@ -228,8 +230,27 @@ func TestClock_PostAdvance_UnknownField_400(t *testing.T) {
 		strings.NewReader(`{"bye":"1h"}`)))
 	require.Equal(t, 400, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "invalid_clock_request")
+	assert.Contains(t, body, "invalid_clock_field")
+	assert.NotContains(t, body, "invalid_clock_request",
+		"unknown-field rejection should use its own error code, not the catch-all")
 	assert.Contains(t, body, "bye") // field name surfaces inside the decode error
+}
+
+// TestClock_PutMalformedJSON_400 confirms that *non-unknown-field*
+// decode failures still get the invalid_clock_request code — only
+// unknown fields get the new invalid_clock_field code.
+func TestClock_PutMalformedJSON_400(t *testing.T) {
+	t.Parallel()
+	d := newDeps()
+	r := newRouter(d)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/clock",
+		strings.NewReader(`not json at all`)))
+	require.Equal(t, 400, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "invalid_clock_request")
+	assert.NotContains(t, body, "invalid_clock_field")
 }
 
 func TestMFARequired_PutGet(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/render"
@@ -11,6 +12,33 @@ import (
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 )
+
+// decodeClockBody decodes body strictly (rejects unknown fields) and
+// classifies the failure mode into one of:
+//
+//   - "invalid_clock_field" — body contained a JSON field not in the
+//     target struct (typos like {"noow":"..."}). Distinct so callers
+//     can spot misspellings without parsing the human-readable message.
+//   - "invalid_clock_request" — everything else (malformed JSON, wrong
+//     types, etc.).
+//
+// encoding/json doesn't expose a typed unknown-field error, so the
+// canonical detection is a prefix check on its hardcoded format string
+// ("json: unknown field %q"). The fmt.Errorf call site is at
+// src/encoding/json/decode.go:740 in Go 1.26 and has been stable
+// across major versions; if it ever moves, the unknown-field path
+// degrades to invalid_clock_request, not a hard failure.
+func decodeClockBody(r *http.Request, target any) (errorCode string, err error) {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(target); err != nil {
+		if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			return "invalid_clock_field", err
+		}
+		return "invalid_clock_request", err
+	}
+	return "", nil
+}
 
 // clockGetResponse is the wire shape returned by GET /admin0/clock.
 // `now` is RFC 3339 UTC with second precision. `offset` is only
@@ -59,11 +87,9 @@ type PutClockHandler struct {
 
 func (h *PutClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body clockPutBody
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil {
+	if code, err := decodeClockBody(r, &body); err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"decode body: "+err.Error(), "invalid_clock_request")
+			"decode body: "+err.Error(), code)
 		return
 	}
 	hasNow := body.Now != nil
@@ -104,11 +130,9 @@ type AdvanceClockHandler struct {
 
 func (h *AdvanceClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body clockAdvanceBody
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil {
+	if code, err := decodeClockBody(r, &body); err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"decode body: "+err.Error(), "invalid_clock_request")
+			"decode body: "+err.Error(), code)
 		return
 	}
 	d, err := time.ParseDuration(body.By)
