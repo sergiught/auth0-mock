@@ -2,6 +2,7 @@ package matches
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"testing"
 
@@ -51,6 +52,33 @@ func TestRequestMatcher_Matches(t *testing.T) {
 	assert.True(t, query.Matches(MatchableRequest{Query: url.Values{"q": {"email:a@x"}, "page": {"1"}}}))
 	assert.False(t, query.Matches(MatchableRequest{Query: url.Values{"q": {"email:b@x"}}}))
 	assert.False(t, query.Matches(MatchableRequest{Query: url.Values{}}))
+
+	// Header matcher — single key.
+	headers := &RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}}
+	assert.True(t, headers.Matches(MatchableRequest{Headers: http.Header{"X-Tenant": {"acme"}}}))
+	assert.True(t, headers.Matches(MatchableRequest{Headers: http.Header{"X-Tenant": {"acme"}, "X-Other": {"v"}}}),
+		"extra headers must not disqualify a match (subset semantics)")
+	assert.False(t, headers.Matches(MatchableRequest{Headers: http.Header{"X-Tenant": {"globex"}}}))
+	assert.False(t, headers.Matches(MatchableRequest{}))
+
+	// Header matcher — case-insensitive (HTTP canonical form via http.Header.Get).
+	caseInsensitive := &RequestMatcher{Headers: map[string]string{"x-tenant": "acme"}}
+	assert.True(t, caseInsensitive.Matches(MatchableRequest{Headers: http.Header{"X-Tenant": {"acme"}}}),
+		"matcher header key must be canonicalised case-insensitively")
+
+	// Header matcher — combined with body subset.
+	combined := &RequestMatcher{
+		Headers: map[string]string{"Authorization": "Bearer foo"},
+		Body:    json.RawMessage(`{"k":"v"}`),
+	}
+	assert.True(t, combined.Matches(MatchableRequest{
+		Headers: http.Header{"Authorization": {"Bearer foo"}},
+		Body:    []byte(`{"k":"v","extra":1}`),
+	}))
+	assert.False(t, combined.Matches(MatchableRequest{
+		Headers: http.Header{"Authorization": {"Bearer bar"}},
+		Body:    []byte(`{"k":"v"}`),
+	}), "header mismatch alone is enough to fail the match")
 }
 
 func TestRequestMatcher_IsEmpty(t *testing.T) {
@@ -62,6 +90,8 @@ func TestRequestMatcher_IsEmpty(t *testing.T) {
 	assert.True(t, (&RequestMatcher{Body: json.RawMessage("  ")}).IsEmpty())
 	assert.False(t, (&RequestMatcher{Query: map[string]string{"a": "b"}}).IsEmpty())
 	assert.False(t, (&RequestMatcher{Body: json.RawMessage(`{"a":1}`)}).IsEmpty())
+	assert.False(t, (&RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}}).IsEmpty(),
+		"a header-only matcher must not collapse to catch-all")
 }
 
 func TestRequestMatcherEqual(t *testing.T) {
@@ -83,5 +113,15 @@ func TestRequestMatcherEqual(t *testing.T) {
 	assert.False(t, requestMatcherEqual(
 		&RequestMatcher{Query: map[string]string{"a": "b"}},
 		&RequestMatcher{Query: map[string]string{"a": "c"}},
+	))
+
+	// Two matchers with equal Headers maps are equal.
+	assert.True(t, requestMatcherEqual(
+		&RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}},
+		&RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}},
+	))
+	assert.False(t, requestMatcherEqual(
+		&RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}},
+		&RequestMatcher{Headers: map[string]string{"X-Tenant": "globex"}},
 	))
 }

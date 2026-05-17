@@ -68,7 +68,7 @@ func TestPostExpectation_RegistersValid(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
 	m := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
@@ -81,7 +81,7 @@ func TestPostExpectation_TemplatePathIsTemplateKind(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/{id}","response":{"status":200,"body":{"id":"x"}}}`)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	m := store.Find("GET", "/api/v2/widgets/anything", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
 	assert.Equal(t, matches.KindTemplate, m.Kind)
@@ -91,7 +91,7 @@ func TestPostExpectation_TemplatePathCanonicalised(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/{anything}","response":{"status":200,"body":{"id":"x"}}}`)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	m := store.Find("GET", "/api/v2/widgets/whatever", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
 	assert.Equal(t, matches.KindTemplate, m.Kind)
@@ -101,7 +101,7 @@ func TestPostExpectation_RegistersRequestBodyMatcher(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"POST","path":"/api/v2/widgets","request":{"body":{"name":"w1"}},"response":{"status":201,"body":{"id":"w1"}}}`)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
 	m := store.Find("POST", "/api/v2/widgets", "/api/v2/widgets",
 		matches.MatchableRequest{Body: []byte(`{"name":"w1","size":3}`)})
@@ -117,7 +117,7 @@ func TestPostExpectation_RegistersQueryMatcher(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/{id}","request":{"query":{"fields":"id"}},"response":{"status":200,"body":{"id":"x"}}}`)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
 	hit := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}",
 		matches.MatchableRequest{Query: url.Values{"fields": {"id"}}})
@@ -133,7 +133,7 @@ func TestPostExpectation_EmptyRequestMatcherIsCatchAll(t *testing.T) {
 	r, store := newExpectationsRouter(t)
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/abc","request":{},"response":{"status":200,"body":{"id":"abc"}}}`)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	m := store.Find("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}", matches.MatchableRequest{})
 	require.NotNil(t, m)
 	assert.Nil(t, m.Request, "an empty request object must normalize to a nil catch-all")
@@ -170,7 +170,7 @@ func TestPostExpectation_RequestMatcherAcceptsValidPartial(t *testing.T) {
 	// only the optional "size" field must be accepted.
 	rec := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"POST","path":"/api/v2/widgets","request":{"body":{"size":5}},"response":{"status":201,"body":{"id":"x"}}}`)
-	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 }
 
 func TestListExpectations(t *testing.T) {

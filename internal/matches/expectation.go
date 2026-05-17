@@ -23,19 +23,40 @@ const (
 
 // Expectation is a stored mock response, optionally conditioned on the
 // incoming request via Request. A nil Request is a catch-all.
+//
+// ID is assigned by the store on Put() — callers leave it empty on
+// registration and read it back from POST /admin0/expectations or
+// GET /admin0/expectations. It uniquely identifies this expectation
+// for the lifetime of the mock process; re-registering the same
+// (method, path, matcher) tuple generates a fresh ID and supersedes
+// the prior one.
+//
+// Hits is populated by List() and GetByID() from the store's per-ID
+// atomic counter — every match served by Find() increments it by one.
+// Callers leave Hits zero on Put(); the counter starts at 0 and is
+// reset when the expectation is removed.
 type Expectation struct {
+	ID       string          `json:"id,omitempty"`
 	Method   string          `json:"method"`
 	Path     string          `json:"path"`
 	Kind     Kind            `json:"-"`
 	Request  *RequestMatcher `json:"request,omitempty"`
 	Response ResponseDef     `json:"response"`
+	Hits     int64           `json:"hits"`
 }
 
 // RequestMatcher is the optional set of conditions an incoming request must
 // satisfy for an Expectation to apply.
+//
+// Headers are compared case-insensitively (canonical-MIME-header form), and
+// subset-matched: every header in the matcher must be present with an equal
+// value, but extra headers on the incoming request don't disqualify a match.
+// Useful for stubbing different responses based on Authorization (Bearer vs
+// DPoP), Accept-Language, Tenant-Id, etc.
 type RequestMatcher struct {
-	Query map[string]string `json:"query,omitempty"`
-	Body  json.RawMessage   `json:"body,omitempty"`
+	Query   map[string]string `json:"query,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 // ResponseDef is the canned response an Expectation returns.

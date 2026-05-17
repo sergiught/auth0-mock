@@ -3,6 +3,7 @@ package matches
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"reflect"
 )
@@ -10,8 +11,9 @@ import (
 // MatchableRequest carries the parts of an incoming request that a
 // RequestMatcher is compared against.
 type MatchableRequest struct {
-	Query url.Values
-	Body  []byte
+	Query   url.Values
+	Headers http.Header
+	Body    []byte
 }
 
 // IsEmpty reports whether the matcher carries no criteria. An empty matcher is
@@ -21,19 +23,30 @@ func (rm *RequestMatcher) IsEmpty() bool {
 		return true
 	}
 	body := bytes.TrimSpace(rm.Body)
-	return len(rm.Query) == 0 && (len(body) == 0 || string(body) == "null")
+	return len(rm.Query) == 0 &&
+		len(rm.Headers) == 0 &&
+		(len(body) == 0 || string(body) == "null")
 }
 
 // Matches reports whether req satisfies the matcher. A nil matcher (catch-all)
-// always matches. Query keys are subset-matched (every matcher key must be
-// present with an equal value; extra query params are allowed); the body is
+// always matches. Query and header keys are subset-matched (every matcher key
+// must be present with an equal value; extras are allowed); the body is
 // subset-matched via subsetMatch.
+//
+// Header lookup is case-insensitive — http.Header.Get canonicalises the key
+// against the canonical MIME header form, so a matcher entry "X-Tenant: acme"
+// matches an incoming header named "x-tenant" or "X-TENANT".
 func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
 	if rm == nil {
 		return true
 	}
 	for k, v := range rm.Query {
 		if req.Query.Get(k) != v {
+			return false
+		}
+	}
+	for k, v := range rm.Headers {
+		if req.Headers.Get(k) != v {
 			return false
 		}
 	}
@@ -72,13 +85,16 @@ func subsetMatch(want, got any) bool {
 }
 
 // requestMatcherEqual reports whether two matchers are equivalent. Two nil
-// (catch-all) matchers are equal; otherwise the query maps must be equal and
-// the bodies must be semantically equal JSON.
+// (catch-all) matchers are equal; otherwise the query and header maps must
+// be equal and the bodies must be semantically equal JSON.
 func requestMatcherEqual(a, b *RequestMatcher) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
 	if !reflect.DeepEqual(a.Query, b.Query) {
+		return false
+	}
+	if !reflect.DeepEqual(a.Headers, b.Headers) {
 		return false
 	}
 	return jsonEqual(a.Body, b.Body)
