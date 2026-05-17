@@ -33,14 +33,17 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/auth0/go-auth0"
 	"github.com/auth0/go-auth0/authentication"
@@ -99,16 +102,23 @@ func run(ctx context.Context, c *auth0mock.Client, mockURL string, hc *http.Clie
 	if err := phase5MFA(ctx, c); err != nil {
 		return err
 	}
-	if err := phase6Readback(ctx, c); err != nil {
+	if err := phase6Clock(ctx, c); err != nil {
 		return err
 	}
-	if err := phase7DriveWithGoAuth0(ctx, mockURL, hc); err != nil {
+	if err := phase7Readback(ctx, c); err != nil {
 		return err
 	}
-	if err := phase8Verify(ctx, c, aliceStub); err != nil {
+	accessToken, err := phase8DriveWithGoAuth0(ctx, mockURL, hc)
+	if err != nil {
 		return err
 	}
-	return phase9Cleanup(ctx, c)
+	if err := phase9TokenExpired(ctx, c, mockURL, accessToken, hc); err != nil {
+		return err
+	}
+	if err := phase10Verify(ctx, c, aliceStub); err != nil {
+		return err
+	}
+	return phase11Cleanup(ctx, c)
 }
 
 // ── Phases ──────────────────────────────────────────────────────────
@@ -218,8 +228,50 @@ func phase5MFA(ctx context.Context, c *auth0mock.Client) error {
 	return nil
 }
 
-func phase6Readback(ctx context.Context, c *auth0mock.Client) error {
-	section(6, "Read state back")
+// phase6Clock demonstrates the admin0/clock surface. Freezes at a
+// memorable instant, advances twice, and reads the resulting state
+// back. The end state (2030-01-02T02:00:00Z) is the iat phase 8's
+// go-auth0 token mint will inherit.
+func phase6Clock(ctx context.Context, c *auth0mock.Client) error {
+	section(6, "Control the clock")
+	explain("Freeze, offset, and advance the mock's perception of time.",
+		"Lets tests assert on token iat/exp without sleeping or",
+		"hand-minting fixtures. The end state here is the `now`",
+		"phase 8's go-auth0 token mint will inherit.")
+
+	t0 := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	wire("PUT", "/admin0/clock")
+	fmt.Printf("  Freezing at %s\n", t0.Format(time.RFC3339))
+	if err := c.Clock.Freeze(ctx, t0); err != nil {
+		return fmt.Errorf("freeze: %w", err)
+	}
+	ok("Clock frozen")
+
+	wire("POST", "/admin0/clock/advance")
+	fmt.Println("  Advancing 1h")
+	if err := c.Clock.Advance(ctx, time.Hour); err != nil {
+		return fmt.Errorf("advance 1h: %w", err)
+	}
+
+	wire("POST", "/admin0/clock/advance")
+	fmt.Println("  Advancing 25h")
+	if err := c.Clock.Advance(ctx, 25*time.Hour); err != nil {
+		return fmt.Errorf("advance 25h: %w", err)
+	}
+
+	wire("GET", "/admin0/clock")
+	state, err := c.Clock.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("get clock: %w", err)
+	}
+	fmt.Printf("  Clock now: mode=%s now=%s\n", state.Mode, state.Now.Format(time.RFC3339))
+	ok("Phase 8's mint will see this exact instant")
+	return nil
+}
+
+func phase7Readback(ctx context.Context, c *auth0mock.Client) error {
+	section(7, "Read state back")
 	explain("Every sub-client exposes a Get/List/All counterpart for the",
 		"setter. Useful for snapshot-style assertions or sanity-checking",
 		"test setup before the system-under-test runs.")
@@ -267,13 +319,17 @@ func phase6Readback(ctx context.Context, c *auth0mock.Client) error {
 	return nil
 }
 
-// phase7DriveWithGoAuth0 closes the loop: the official go-auth0 SDK
+// phase8DriveWithGoAuth0 closes the loop: the official go-auth0 SDK
 // makes the SAME API calls a production service would, but lands on
 // the mock instead of Auth0. The mock answers from the stubs phase 2
 // registered through our SDK. From go-auth0's point of view, it's
 // talking to Auth0; it has no idea the response came from a fixture.
-func phase7DriveWithGoAuth0(ctx context.Context, mockURL string, hc *http.Client) error {
-	section(7, "Drive the stubs through the real go-auth0 SDK")
+//
+// Returns the minted access token so phase 9 can reuse it for the
+// expiry assertion — proving the bearer middleware shares the same
+// clock as the minter.
+func phase8DriveWithGoAuth0(ctx context.Context, mockURL string, hc *http.Client) (string, error) {
+	section(8, "Drive the stubs through the real go-auth0 SDK")
 	explain("Until now every wire call was made by the auth0-mock SDK.",
 		"This phase boots a real go-auth0 client pointed at the mock's",
 		"HTTPS listener, mints a token, then calls api.User.Read — the",
@@ -290,13 +346,13 @@ func phase7DriveWithGoAuth0(ctx context.Context, mockURL string, hc *http.Client
 		authentication.WithClient(hc),
 	)
 	if err != nil {
-		return fmt.Errorf("new go-auth0 authentication client: %w", err)
+		return "", fmt.Errorf("new go-auth0 authentication client: %w", err)
 	}
 	tokens, err := auth.OAuth.LoginWithClientCredentials(ctx, oauth.LoginWithClientCredentialsRequest{
 		Audience: "https://api.example.com/",
 	}, oauth.IDTokenValidationOptions{})
 	if err != nil {
-		return fmt.Errorf("client_credentials grant: %w", err)
+		return "", fmt.Errorf("client_credentials grant: %w", err)
 	}
 	// Show the JWT header prefix only (~12 chars) so the demo output
 	// has a visible "yes we got a token" signal without spilling
@@ -306,31 +362,102 @@ func phase7DriveWithGoAuth0(ctx context.Context, mockURL string, hc *http.Client
 	ok(fmt.Sprintf("Got an access token (%s..., %d bytes total)",
 		preview(tokens.AccessToken, 12), len(tokens.AccessToken)))
 
+	// Decode the token and prove the clock from phase 6 drove the
+	// minter. iat must equal the frozen instant + 26h of advances.
+	claims, err := decodeJWTPayload(tokens.AccessToken)
+	if err != nil {
+		return "", fmt.Errorf("decode minted token: %w", err)
+	}
+	iat, err := claimUnix(claims, "iat")
+	if err != nil {
+		return "", fmt.Errorf("iat: %w", err)
+	}
+	exp, err := claimUnix(claims, "exp")
+	if err != nil {
+		return "", fmt.Errorf("exp: %w", err)
+	}
+	fmt.Printf("  Decoded token: iat=%s exp=%s\n",
+		time.Unix(iat, 0).UTC().Format(time.RFC3339),
+		time.Unix(exp, 0).UTC().Format(time.RFC3339))
+
+	wantIat := time.Date(2030, 1, 2, 2, 0, 0, 0, time.UTC).Unix()
+	if iat != wantIat {
+		return "", fmt.Errorf("iat = %d, want %d (clock should be frozen at 2030-01-02T02:00:00Z from phase 6)", iat, wantIat)
+	}
+	ok("iat matches the clock state set in phase 6 — clock reaches the minter")
+
 	api, err := management.New(domain,
 		management.WithStaticToken(tokens.AccessToken),
 		management.WithClient(hc),
 	)
 	if err != nil {
-		return fmt.Errorf("new go-auth0 management client: %w", err)
+		return "", fmt.Errorf("new go-auth0 management client: %w", err)
 	}
 
 	wire("GET", "/api/v2/users/auth0|alice")
 	fmt.Println("  Calling api.User.Read('auth0|alice') via go-auth0 ...")
 	user, err := api.User.Read(ctx, "auth0|alice")
 	if err != nil {
-		return fmt.Errorf("api.User.Read: %w", err)
+		return "", fmt.Errorf("api.User.Read: %w", err)
 	}
 	fmt.Printf("  ↳ got back user: id=%s email=%s\n",
 		auth0.StringValue(user.ID), auth0.StringValue(user.Email))
 	ok("go-auth0 SDK received exactly what the auth0mock SDK stubbed")
+	return tokens.AccessToken, nil
+}
+
+// phase9TokenExpired proves the bearer middleware shares the same
+// clock as the minter. Reuses the access token minted in phase 8
+// (frozen at 2030-01-02T02:00:00Z, TTL 1h ⇒ exp = 2030-01-02T03:00:00Z).
+// Advances the clock 7 days, then re-runs the stubbed Read call with
+// the same token — expects 401 because the token's exp is now well
+// in the past from the mock's POV.
+//
+// Phase 2's stub still has Times(1): bearer middleware short-circuits
+// before the matcher fires, so the failed call doesn't count against
+// the constraint and phase 10's Verify stays green.
+func phase9TokenExpired(ctx context.Context, c *auth0mock.Client, mockURL, accessToken string, hc *http.Client) error {
+	section(9, "Token expiry (negative test) — same token, expired by the clock")
+	explain("Advances the mock's clock 7 days past where phase 8 minted",
+		"the token. The bearer middleware now sees an expired token and",
+		"returns 401 — proving the validator is wired to the same clock",
+		"as the minter.")
+
+	wire("POST", "/admin0/clock/advance")
+	fmt.Println("  Advancing the clock by 7 days")
+	if err := c.Clock.Advance(ctx, 7*24*time.Hour); err != nil {
+		return fmt.Errorf("advance 7d: %w", err)
+	}
+
+	wire("GET", "/api/v2/users/auth0|alice  (expecting 401)")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		mockURL+"/api/v2/users/auth0|alice", nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("do request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("expected 401, got %d: %s", resp.StatusCode, string(body))
+	}
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Printf("  ↳ got 401: %s\n", strings.TrimSpace(string(body)))
+	ok("Bearer middleware rejected the token — clock reaches the validator too")
 	return nil
 }
 
-// phase8Verify proves the go-auth0 call in phase 7 actually hit the
+// phase10Verify proves the go-auth0 call in phase 8 actually hit the
 // stub we registered in phase 2 — by checking the Times(1) constraint
-// set on the handle there.
-func phase8Verify(ctx context.Context, c *auth0mock.Client, alice *auth0mock.RegisteredExpectation) error {
-	section(8, "Verify the stub was hit (Times constraint)")
+// set on the handle there. Phase 9's 401 doesn't count: bearer
+// middleware short-circuits before the matcher fires.
+func phase10Verify(ctx context.Context, c *auth0mock.Client, alice *auth0mock.RegisteredExpectation) error {
+	section(10, "Verify the stub was hit (Times constraint)")
 	explain("Phase 2 set Times(1) on the alice stub. Now that go-auth0",
 		"has run, calling Verify checks every registered constraint",
 		"server-side and returns nil on success or a joined error",
@@ -350,16 +477,29 @@ func phase8Verify(ctx context.Context, c *auth0mock.Client, alice *auth0mock.Reg
 	return nil
 }
 
-func phase9Cleanup(ctx context.Context, c *auth0mock.Client) error {
-	section(9, "Final cleanup")
+func phase11Cleanup(ctx context.Context, c *auth0mock.Client) error {
+	section(11, "Final cleanup")
 	wire("POST", "/admin0/reset")
 	explain("Always reset on exit so the next test or example starts",
 		"from a clean slate. auth0mocktest.Bracket(t, c) does this",
-		"automatically + wires Verify in one call.")
+		"automatically + wires Verify in one call. The same Reset also",
+		"restores the clock to real mode, so phase 6's freeze doesn't",
+		"leak across runs.")
 	if err := c.Reset(ctx); err != nil {
 		return fmt.Errorf("final reset: %w", err)
 	}
 	ok("Mock state cleared")
+
+	wire("GET", "/admin0/clock")
+	state, err := c.Clock.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("post-reset clock get: %w", err)
+	}
+	fmt.Printf("  Clock after reset: mode=%s\n", state.Mode)
+	if state.Mode != "real" {
+		return fmt.Errorf("expected mode=real after reset, got %q", state.Mode)
+	}
+	ok("Reset also restored real-time mode")
 	return nil
 }
 
@@ -466,4 +606,39 @@ func sortedKeys(m map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// decodeJWTPayload base64-decodes the payload segment of a compact JWT
+// and JSON-unmarshals it. Verifies nothing — this is a demo-side
+// pretty-printer, not a security check; the real bearer middleware
+// verified the token when it accepted the request.
+func decodeJWTPayload(tok string) (map[string]any, error) {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("token is not a compact JWT (%d segments)", len(parts))
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("decode payload: %w", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return nil, fmt.Errorf("unmarshal payload: %w", err)
+	}
+	return out, nil
+}
+
+// claimUnix returns the integer Unix-seconds value of a numeric claim,
+// or an error if the claim is missing / wrong type. encoding/json
+// decodes JSON numbers as float64 by default.
+func claimUnix(claims map[string]any, name string) (int64, error) {
+	v, ok := claims[name]
+	if !ok {
+		return 0, fmt.Errorf("claim %q absent", name)
+	}
+	f, ok := v.(float64)
+	if !ok {
+		return 0, fmt.Errorf("claim %q is %T, want number", name, v)
+	}
+	return int64(f), nil
 }
