@@ -97,7 +97,7 @@ func (h *PutClockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	hasNow := body.Now != nil
 	hasOff := body.Offset != nil
-	if hasNow == hasOff { // both true or both false
+	if hasNow == hasOff { // Both true or both false.
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			`specify exactly one of "now" or "offset"`,
 			"invalid_clock_request")

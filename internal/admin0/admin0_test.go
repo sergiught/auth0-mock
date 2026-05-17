@@ -214,7 +214,7 @@ func TestClock_PutBadRFC3339_400(t *testing.T) {
 // covers the primitive, not the handler).
 func TestClock_Get_AtomicUnderConcurrentPut(t *testing.T) {
 	d := newDeps()
-	d.Clock.Offset(time.Hour) // prime offset mode so both flip directions exercise.
+	d.Clock.Offset(time.Hour) // Prime offset mode so both flip directions exercise.
 	r := newRouter(d)
 
 	done := make(chan struct{})
@@ -295,7 +295,7 @@ func TestClock_PutUnknownField_400(t *testing.T) {
 	assert.Contains(t, body, "invalid_clock_field")
 	assert.NotContains(t, body, "invalid_clock_request",
 		"unknown-field rejection should use its own error code, not the catch-all")
-	assert.Contains(t, body, "noow") // field name surfaces inside the decode error
+	assert.Contains(t, body, "noow") // Field name surfaces inside the decode error.
 }
 
 func TestClock_PostAdvance_UnknownField_400(t *testing.T) {
@@ -312,7 +312,7 @@ func TestClock_PostAdvance_UnknownField_400(t *testing.T) {
 	assert.Contains(t, body, "invalid_clock_field")
 	assert.NotContains(t, body, "invalid_clock_request",
 		"unknown-field rejection should use its own error code, not the catch-all")
-	assert.Contains(t, body, "bye") // field name surfaces inside the decode error
+	assert.Contains(t, body, "bye") // Field name surfaces inside the decode error.
 }
 
 // TestClock_PutMalformedJSON_400 confirms that *non-unknown-field*

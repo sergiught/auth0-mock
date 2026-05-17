@@ -48,8 +48,8 @@ var ErrAdvanceInRealMode = errors.New("clock: cannot advance while in real mode 
 type Controlled struct {
 	mu     sync.RWMutex
 	mode   Mode
-	pinned time.Time     // valid only when mode == ModeFrozen
-	offset time.Duration // valid only when mode == ModeOffset
+	pinned time.Time     // Valid only when mode == ModeFrozen.
+	offset time.Duration // Valid only when mode == ModeOffset.
 }
 
 // NewControlled returns a Controlled in real mode.
