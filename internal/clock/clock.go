@@ -99,23 +99,24 @@ func (c *Controlled) ConfiguredOffset() (time.Duration, bool) {
 	return c.offset, true
 }
 
-// Freeze pins Now to t until the next mode change.
+// Freeze pins Now to t until the next mode change. Leaves the
+// `offset` field at whatever it was — Now switches on mode and never
+// reads `offset` in frozen mode.
 func (c *Controlled) Freeze(t time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.mode = ModeFrozen
 	c.pinned = t
-	c.offset = 0
 }
 
 // Offset switches to offset mode with the given skew. The wall clock
-// keeps ticking; Now returns time.Now() + d.
+// keeps ticking; Now returns time.Now() + d. Leaves `pinned` at
+// whatever it was — Now never reads it in offset mode.
 func (c *Controlled) Offset(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.mode = ModeOffset
 	c.offset = d
-	c.pinned = time.Time{}
 }
 
 // Advance mutates the held value by d. In frozen mode the pinned
