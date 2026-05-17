@@ -35,6 +35,7 @@ Feature: Clock control
       """
     Then I receive a 204 response
     When I GET "/admin0/clock"
+    Then I receive a 200 response
     And the response JSON path "now" equals "2030-01-02T01:00:00Z"
 
   Scenario: Offset includes the configured skew on GET
