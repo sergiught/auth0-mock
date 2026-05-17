@@ -128,3 +128,37 @@ func TestStore_Reset(t *testing.T) {
 	_, ok = s.Consume("b")
 	assert.False(t, ok)
 }
+
+func TestStore_Consume_RespectsInjectedClock(t *testing.T) {
+	t.Parallel()
+	var now time.Time
+	s := NewStore(WithNow(func() time.Time { return now }))
+
+	now = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	s.Put("code-1", Entry{
+		Challenge: "abc",
+		Method:    MethodPlain,
+		ClientID:  "demo",
+		Redirect:  "https://test/cb",
+	})
+
+	// Still within TTL — Consume succeeds.
+	e, ok := s.Consume("code-1")
+	require.True(t, ok)
+	assert.Equal(t, "abc", e.Challenge)
+
+	// Re-put and advance past TTL — Consume fails.
+	s.Put("code-2", Entry{Challenge: "abc", Method: MethodPlain})
+	now = now.Add(DefaultTTL + time.Second)
+	_, ok = s.Consume("code-2")
+	assert.False(t, ok)
+}
+
+func TestStore_NewStore_NoOptions_UsesTimeNow(t *testing.T) {
+	t.Parallel()
+	// Backwards-compat smoke test: the no-arg form still works.
+	s := NewStore()
+	s.Put("c", Entry{Challenge: "abc", Method: MethodPlain})
+	_, ok := s.Consume("c")
+	assert.True(t, ok)
+}
