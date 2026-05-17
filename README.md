@@ -26,6 +26,7 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 - [🛡️ Verifying releases](#️-verifying-releases)
 - [🏗 Architecture](#-architecture)
 - [📂 Example consumer](#-example-consumer)
+- [🐹 Go SDK](#-go-sdk)
 - [🤝 Contributing](#-contributing)
 - [📖 Documentation map](#-documentation-map)
 - [⚖️ License](#️-license)
@@ -432,6 +433,76 @@ Under the hood, `make demo` boots the binary with a persisted self-signed cert, 
 go run ./cmd/api &
 go run ./examples/consumer
 ```
+
+<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+
+## 🐹 Go SDK
+
+[`pkg/auth0mock`](pkg/auth0mock) is the typed Go client for the `/admin0/*` control plane. Use it from Go test code to register stubs, inject claims, set per-audience permissions, and toggle MFA — without hand-marshalling JSON.
+
+```go
+import (
+    "testing"
+
+    "github.com/sergiught/auth0-mock/pkg/auth0mock"
+    "github.com/sergiught/auth0-mock/pkg/auth0mock/auth0mocktest"
+)
+
+func TestUserLookup(t *testing.T) {
+    // /admin0 listens on HTTP (8080) by default — no TLS dance needed.
+    // For HTTPS (8443) pair with `auth0mock.WithHTTPClient(tlsClient)`,
+    // see examples/sdk for the pattern.
+    c, err := auth0mock.NewClient("http://localhost:8080")
+    if err != nil {
+        t.Fatal(err)
+    }
+    // Reset on entry + exit, Verify all constraints at exit, in the
+    // correct LIFO order. One line replaces two and removes the
+    // "constraint silently dropped" footgun that comes from getting
+    // the cleanup order wrong.
+    auth0mocktest.Bracket(t, c)
+
+    // Register a stub and demand it's hit exactly once.
+    reg := auth0mocktest.MustApply(t, c.ExpectGet("/api/v2/users/auth0|alice").
+        Respond(200).
+        JSON(map[string]any{"user_id": "auth0|alice", "email": "alice@example.com"}))
+    reg.Times(1)
+
+    // ... your code under test calls the mock the same way it calls Auth0 ...
+}
+```
+
+What's covered:
+
+| Resource | Read | Write | Wipe | Verify |
+|---|---|---|---|---|
+| `Expectations` | `List` | `Add`, fluent `ExpectGet/Post/Put/Patch/Delete(...).Respond(...).JSON(...).Apply(ctx)` | `Clear`, `ClearOp(method, path)` | `Verify(ctx)`; per-stub: `Hits(ctx)`, `Times(n)`, `AtLeast(n)`, `AtMost(n)`, `AnyTimes()` |
+| `Claims` | `Get` | `Set` | `Clear` | — |
+| `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
+| `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
+| top-level | — | — | `Reset` — wipes every store | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
+
+`Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.
+
+**Which helper?** Use `auth0mocktest.Bracket(t, c)` for every test that wants hit-count assertions — one line wires Reset on entry, Reset on exit, and Verify on exit in the correct LIFO order. Use `auth0mocktest.ResetOnCleanup(t, c)` when you only want isolation (no Times/AtLeast/AtMost constraints anywhere in the test).
+
+**When a stub doesn't match,** the mock returns `{"errorCode":"no_match"}` with HTTP 404 to the SUT. From your test, the quickest debug move is `exps, _ := c.Expectations.List(ctx); fmt.Println(exps)` to see what's actually registered, and `reg.Hits(ctx)` on a specific handle to see if it fired.
+
+What's NOT covered: the Auth0 APIs themselves (`/oauth/*`, `/api/v2/*`) — point your existing Auth0 SDK at the mock for those. The SDK only wraps the test-fixture-shaping surface.
+
+A runnable end-to-end walk-through lives at [`examples/sdk/`](examples/sdk/) — its own Go module (with a local-path `replace` so the example doubles as a copy-and-pin template). The example drives stubs registered through this SDK with the real [`go-auth0`](https://github.com/auth0/go-auth0) SDK end-to-end (token mint → typed Management API call → Verify the stub was hit). Defaults to `https://localhost:8443` because go-auth0 only speaks TLS.
+
+```bash
+make demo-sdk                                      # full setup: mock + TLS cert + run + teardown
+# or, against an already-running mock:
+cd examples/sdk && go run . -cert=/path/to/tls.crt # full chain verification
+cd examples/sdk && go run .                        # InsecureSkipVerify fallback (demo only)
+```
+
+Full godoc: [pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock](https://pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock).
+
+> [!NOTE]
+> The SDK's API is **unstable until v1.0.0**. Pin a tagged version (`go get github.com/sergiught/auth0-mock@v0.226.0` or later) and treat any minor bump as potentially breaking.
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 

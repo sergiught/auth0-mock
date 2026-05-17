@@ -32,6 +32,13 @@ go.work
 /licenses/
 /bin/
 
+# Stray binaries from `cd examples/<name> && go build .` — each example
+# is its own module and `go build .` writes a binary named after the
+# directory. Listed explicitly so an accidental local build never lands
+# in a commit.
+/examples/sdk/sdk
+/examples/consumer/consumer
+
 # IDE
 .idea/
 .vscode/
