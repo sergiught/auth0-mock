@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,7 +52,19 @@ func newStub(t *testing.T) (*captureRecorder, *auth0mock.Client) {
 	rec := &captureRecorder{}
 	srv := httptest.NewServer(rec.handler())
 	t.Cleanup(srv.Close)
-	c, err := auth0mock.NewClient(srv.URL)
+
+	// Per-test Transport so the idle-connection pool can be drained
+	// explicitly before the server shuts down — see the comment on
+	// the sibling newStub in pkg/auth0mock/expectations_test.go for
+	// the full rationale (Go 1.26 keep-alive race with srv.Close).
+	transport := &http.Transport{}
+	t.Cleanup(transport.CloseIdleConnections)
+
+	c, err := auth0mock.NewClient(srv.URL,
+		auth0mock.WithHTTPClient(&http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		}))
 	require.NoError(t, err)
 	return rec, c
 }
