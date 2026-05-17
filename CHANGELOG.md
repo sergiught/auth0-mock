@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.227.0](https://github.com/sergiught/auth0-mock/compare/v0.226.0...v0.227.0) (2026-05-17)
+
+
+### Features
+
+* runtime clock control for deterministic token-expiry tests ([#12](https://github.com/sergiught/auth0-mock/issues/12)) ([baa78e6](https://github.com/sergiught/auth0-mock/commit/baa78e6a6c0427f23cd0bb2425af75663a1d7f9b))
+
 ## [0.226.0](https://github.com/sergiught/auth0-mock/compare/v0.225.0...v0.226.0) (2026-05-17)
 
 
