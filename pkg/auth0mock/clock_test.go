@@ -56,6 +56,22 @@ func TestClock_Get_BadServerNow_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse server now")
 }
 
+// TestClock_Get_BadServerOffset_ReturnsError is the symmetric case
+// to the bad-now test above — exercises the parse-error path on the
+// offset field so neither field's error branch is silent in CI.
+func TestClock_Get_BadServerOffset_ReturnsError(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"mode":"offset","now":"2030-01-01T00:00:00Z","offset":"twenty-five hours"}`))
+	}
+
+	_, err := c.Clock.Get(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse server offset")
+}
+
 func TestClock_Freeze(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)

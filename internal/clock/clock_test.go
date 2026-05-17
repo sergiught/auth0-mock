@@ -35,6 +35,14 @@ func TestControlled_StartsInRealMode(t *testing.T) {
 	approxNow(t, now, 0, 50*time.Millisecond)
 }
 
+// TestControlled_Now_RealMode exercises Now() directly in the default
+// (real) mode. State and Snapshot were already covered; Now's default
+// branch wasn't being touched by any test.
+func TestControlled_Now_RealMode(t *testing.T) {
+	c := clock.NewControlled()
+	approxNow(t, c.Now(), 0, 50*time.Millisecond)
+}
+
 func TestControlled_Freeze(t *testing.T) {
 	c := clock.NewControlled()
 	t0 := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)

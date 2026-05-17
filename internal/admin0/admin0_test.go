@@ -137,6 +137,19 @@ func TestClock_PostAdvance_RealMode_400(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "invalid_clock_state")
 }
 
+func TestClock_PostAdvance_BadDuration_400(t *testing.T) {
+	t.Parallel()
+	d := newDeps()
+	d.Clock.Freeze(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
+	r := newRouter(d)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/admin0/clock/advance",
+		strings.NewReader(`{"by":"twenty-five hours"}`)))
+	require.Equal(t, 400, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid_clock_duration")
+}
+
 func TestClock_Delete_RestoresReal(t *testing.T) {
 	t.Parallel()
 	d := newDeps()
