@@ -246,6 +246,15 @@ demo-sdk: build ## Run the pkg/auth0mock SDK + go-auth0 round-trip against a thr
 		echo "==> ERROR: localhost:8443 is already in use. Stop the listener and re-run \`make demo-sdk\`."; \
 		exit 1; \
 	fi
+	@# Refresh examples/sdk's vendor tree. The example uses a local-path
+	@# `replace` directive to pick up in-tree changes to pkg/auth0mock,
+	@# but Go uses the vendor copy when one exists — and examples/sdk
+	@# vendors its deps + ignores the vendor dir from git. On a fresh
+	@# clone (or after the SDK gains new symbols), the vendor tree is
+	@# stale and `go run .` fails with "undefined" errors. Refresh up
+	@# front so the demo always reflects the current SDK.
+	@echo "==> Refreshing examples/sdk vendor against in-tree pkg/auth0mock"
+	@cd examples/sdk && go mod vendor
 	@echo "==> Starting $(BINARY_NAME) for the SDK demo (with persisted TLS cert)"
 	@TLS_DIR=/tmp/auth0-mock-demo-sdk-tls; \
 	mkdir -p $$TLS_DIR; \
