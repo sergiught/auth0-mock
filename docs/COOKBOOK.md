@@ -363,9 +363,9 @@ For ephemeral CI tests that just need to skip verification, set `InsecureSkipVer
 
 ## Use a Go test that boots the mock in-process
 
-Until we ship a stable public Go API (planned), the simplest pattern is to start the binary as a subprocess in a `TestMain`. For a worked end-to-end example, see [`examples/consumer/main.go`](../examples/consumer/main.go).
+For stub registration, claim injection, permission setup, and clock control from Go test code, use [`pkg/auth0mock`](../pkg/auth0mock) — a typed client over `/admin0/*` that removes the JSON-marshalling boilerplate. See the [Go SDK section of the README](../README.md#-go-sdk) for the API surface and [`examples/sdk/`](../examples/sdk/) for a worked end-to-end walk-through.
 
-For the in-process pattern used by our own godog suite, see [`features/scenario/context.go`](../features/scenario/context.go); that's the canonical reference for boot/teardown.
+For booting the mock itself: subprocess from `TestMain` (see [`examples/consumer/main.go`](../examples/consumer/main.go)) or in-process on a random port (see [`features/scenario/context.go`](../features/scenario/context.go), the pattern the godog suite uses).
 
 ## Trusting the self-signed cert
 

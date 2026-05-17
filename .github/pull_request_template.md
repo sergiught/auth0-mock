@@ -48,6 +48,5 @@ make test-features
 
 - [ ] Tests added or updated (unit and/or `features/*.feature` as appropriate)
 - [ ] Documentation updated (README, `docs/COOKBOOK.md`, `docs/ARCHITECTURE.md`, or per-package godoc)
-- [ ] `CHANGELOG.md` entry added under `## [Unreleased]`
-- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — CI's `commitlint` job will reject otherwise
+- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — CI's `commitlint` job will reject otherwise (release-please derives `CHANGELOG.md` from them; don't hand-edit it)
 - [ ] `make lint`, `make test`, and `make test-features` all pass locally

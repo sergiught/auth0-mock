@@ -63,15 +63,12 @@ It is not for: production traffic, replacing your IdP, or anything that needs a 
 
 ### From a release (recommended)
 
-> [!IMPORTANT]
-> **Available once `v0.1.0` ships.** Until the first tagged release exists, the script exits with `could not resolve latest release (does sergiught/auth0-mock have any published releases yet?)` — use the **From source** or **Via `go install`** paths below in the meantime.
-
 ```bash
 # latest stable
 curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash
 
 # pinned version
-curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.1.0
+curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.227.0
 
 # install to a user-writable dir (no sudo)
 BIN_DIR="$HOME/.local/bin" bash <(curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh)
@@ -387,7 +384,7 @@ The godog harness boots the service in-process on a random port and exercises ev
 
 Every tagged release ships with a Cosign signature on each Docker image and an SPDX-JSON SBOM per release archive. Both are produced by GitHub-hosted CI and uploaded as part of the same workflow that publishes the binaries.
 
-**Verify a Docker image** (keyless signing — no shared secret required). Replace `vX.Y.Z` with the tag you want to verify, e.g. `v0.1.0`:
+**Verify a Docker image** (keyless signing — no shared secret required). Replace `vX.Y.Z` with the tag you want to verify, e.g. `v0.227.0`:
 
 ```bash
 cosign verify \
@@ -515,7 +512,7 @@ cd examples/sdk && go run .                        # InsecureSkipVerify fallback
 Full godoc: [pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock](https://pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock).
 
 > [!NOTE]
-> The SDK's API is **unstable until v1.0.0**. Pin a tagged version (`go get github.com/sergiught/auth0-mock@v0.226.0` or later) and treat any minor bump as potentially breaking.
+> The SDK's API is **unstable until v1.0.0**. Pin a tagged version (`go get github.com/sergiught/auth0-mock@v0.227.0` or later) and treat any minor bump as potentially breaking.
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
