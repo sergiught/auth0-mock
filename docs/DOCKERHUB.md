@@ -56,7 +56,7 @@ All tags are multi-arch manifests covering `linux/amd64` and `linux/arm64`.
 
 ### Provenance
 
-Every `ghcr.io/sergiught/auth0-mock:vX.Y.Z` image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). The Docker Hub mirror (`sergiught/auth0-mock:vX.Y.Z`) is a publish-only convenience: pull the equivalent GHCR digest to verify provenance. Replace `vX.Y.Z` below with the tag you want to verify, e.g. `v0.1.0`:
+Every `ghcr.io/sergiught/auth0-mock:vX.Y.Z` image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). The Docker Hub mirror (`sergiught/auth0-mock:vX.Y.Z`) is a publish-only convenience: pull the equivalent GHCR digest to verify provenance. Replace `vX.Y.Z` below with the tag you want to verify, e.g. `v0.227.0`:
 
 ```bash
 cosign verify \

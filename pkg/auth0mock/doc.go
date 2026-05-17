@@ -88,7 +88,7 @@
 // # Stability
 //
 // This package's API is unstable until the auth0-mock module reaches
-// v1.0.0. Pin a tagged version (e.g. v0.226.0) and treat any minor
+// v1.0.0. Pin a tagged version (e.g. v0.227.0) and treat any minor
 // bump as potentially breaking. The package doc will call out the
 // stability promise when v1 is approaching.
 //

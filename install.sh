@@ -9,11 +9,11 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.1.0
+#   curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.227.0
 #   BIN_DIR=$HOME/.local/bin bash install.sh
 #
 # Variables (env or first positional arg for VERSION):
-#   VERSION    Specific tag (e.g. v0.1.0). Default: latest.
+#   VERSION    Specific tag (e.g. v0.227.0). Default: latest.
 #   BIN_DIR    Install directory. Default: /usr/local/bin.
 #   GH_REPO    Repository to fetch from. Default: sergiught/auth0-mock.
 

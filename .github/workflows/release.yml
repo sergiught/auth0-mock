@@ -141,16 +141,3 @@ jobs:
           # docker.io push when they aren't (envOrDefault check). GHCR push
           # is unaffected and always proceeds.
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-
-      # peter-evans/dockerhub-description v4.0.2
-      # Skipped on prerelease tags (e.g. v0.2.0-rc.1) so the Docker Hub page
-      # only mirrors the latest stable description.
-      - name: sync Docker Hub repository description
-        if: ${{ env.DOCKERHUB_USERNAME != '' && !contains(needs.release-please.outputs.tag_name, '-') }}
-        uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae
-        with:
-          username:          ${{ env.DOCKERHUB_USERNAME }}
-          password:          ${{ env.DOCKERHUB_TOKEN }}
-          repository:        sergiught/auth0-mock
-          short-description: ${{ github.event.repository.description }}
-          readme-filepath:   ./docs/DOCKERHUB.md

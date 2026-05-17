@@ -49,7 +49,7 @@ body:
     id: version
     attributes:
       label: auth0-mock version
-      description: Tag (e.g. `v0.1.0`) or commit SHA. `./bin/auth0-mock --version` if that's wired up; otherwise `git rev-parse --short HEAD`.
+      description: Tag (e.g. `v0.227.0`) or commit SHA. `./bin/auth0-mock --version` if that's wired up; otherwise `git rev-parse --short HEAD`.
     validations:
       required: true
 
