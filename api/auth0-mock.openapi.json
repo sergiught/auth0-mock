@@ -79645,7 +79645,6 @@
         "Branding",
         "Client Grants",
         "Clients",
-        "Clock",
         "Connection Profiles",
         "Connections",
         "Connections Directory Provisionings",
@@ -79695,7 +79694,8 @@
         "Claims",
         "Permissions",
         "MFA",
-        "Expectations"
+        "Expectations",
+        "Clock"
       ]
     },
     {

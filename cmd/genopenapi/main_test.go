@@ -170,14 +170,14 @@ func TestBundleAppliesTagGroupsForSidebar(t *testing.T) {
 		[]string{"OAuth & OIDC", "Database Connections", "Passwordless"},
 		byName["Authentication API"])
 	assert.ElementsMatch(t,
-		[]string{"Claims", "Permissions", "MFA", "Expectations"},
+		[]string{"Claims", "Permissions", "MFA", "Expectations", "Clock"},
 		byName["admin0"])
 	assert.Equal(t, []string{"Service"}, byName["Service"])
 	assert.NotEmpty(t, byName["Management API"],
 		"Management API group must contain the upstream Auth0 tags")
 	for _, surfaceTag := range []string{
 		"OAuth & OIDC", "Database Connections", "Passwordless",
-		"Claims", "Permissions", "MFA", "Expectations", "Service",
+		"Claims", "Permissions", "MFA", "Expectations", "Clock", "Service",
 	} {
 		assert.NotContainsf(t, byName["Management API"], surfaceTag,
 			"surface tag %q leaked into the Management API group", surfaceTag)
