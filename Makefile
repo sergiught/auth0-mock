@@ -232,3 +232,29 @@ demo: build ## Run the go-auth0 SDK example against a throwaway mock instance
 	done; \
 	echo "==> Running examples/consumer against the mock"; \
 	cd examples/consumer && go run . -cert=$$TLS_DIR/tls.crt
+
+#-----------------------------------------------------------------------------------------------------------------------
+# Demo-sdk (drives the pkg/auth0mock Go SDK + the real go-auth0 SDK against a throwaway mock)
+#-----------------------------------------------------------------------------------------------------------------------
+.PHONY: demo-sdk
+demo-sdk: build ## Run the pkg/auth0mock SDK + go-auth0 round-trip against a throwaway mock
+	@# The SDK example now drives stubs through the real go-auth0 SDK,
+	@# which only speaks HTTPS — so the mock has to boot on :8443 with
+	@# a persisted TLS cert that the example can trust (same setup
+	@# `make demo` uses for the consumer example).
+	@if command -v nc >/dev/null 2>&1 && nc -z -w 1 127.0.0.1 8443 >/dev/null 2>&1; then \
+		echo "==> ERROR: localhost:8443 is already in use. Stop the listener and re-run \`make demo-sdk\`."; \
+		exit 1; \
+	fi
+	@echo "==> Starting $(BINARY_NAME) for the SDK demo (with persisted TLS cert)"
+	@TLS_DIR=/tmp/auth0-mock-demo-sdk-tls; \
+	mkdir -p $$TLS_DIR; \
+	TLS_CACHE_DIR=$$TLS_DIR "$(BINARIES_DIR)/$(BINARY_NAME)" > /tmp/auth0-mock-demo-sdk.log 2>&1 & \
+	MOCK_PID=$$!; \
+	trap 'kill $$MOCK_PID 2>/dev/null' EXIT; \
+	for i in $$(seq 1 50); do \
+		curl -sk https://localhost:8443/healthz >/dev/null 2>&1 && [ -f $$TLS_DIR/tls.crt ] && break; \
+		sleep 0.2; \
+	done; \
+	echo "==> Running examples/sdk against the mock"; \
+	cd examples/sdk && go run . -cert=$$TLS_DIR/tls.crt
