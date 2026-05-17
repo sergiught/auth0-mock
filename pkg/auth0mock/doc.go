@@ -61,6 +61,22 @@
 //	        t.Fatal(err)
 //	    }
 //
+//	    // Freeze the mock's clock so tokens have deterministic
+//	    // iat/exp. The wire format is RFC 3339 with second precision,
+//	    // so any sub-second component of the time you pass is
+//	    // truncated — symmetric with what Get() reads back, but worth
+//	    // knowing if you compare a frozen Now against a time.Now()
+//	    // with nanos.
+//	    if err := c.Clock.Freeze(ctx, time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+//	        t.Fatal(err)
+//	    }
+//
+//	    // To restore real time, use Reset — NOT Offset(0). Offset(0)
+//	    // stays in "offset" mode (skew of zero), observationally
+//	    // identical to real for Now() but Get(...).Mode still reports
+//	    // "offset". Bracket calls Reset on cleanup so most tests don't
+//	    // need to think about this.
+//
 //	    // ... call the system-under-test here ...
 //	}
 //
