@@ -19,7 +19,7 @@ type MintOpts struct {
 
 // Mint issues a signed RS256 JWT.
 func (k *KeySet) Mint(opts MintOpts) (string, error) {
-	now := time.Now()
+	now := k.cfg.Now()
 	claims := jwt.MapClaims{
 		"iss": k.cfg.Issuer,
 		"sub": opts.Subject,

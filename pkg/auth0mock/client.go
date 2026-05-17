@@ -45,6 +45,12 @@ type Client struct {
 	// grants behind an MFA step-up.
 	MFA *MFAClient
 
+	// Clock is the typed entry point for /admin0/clock — runtime
+	// control over the mock's perception of time (freeze, offset,
+	// advance) that drives JWT iat/exp on mint and the bearer
+	// middleware's expiry check on validate.
+	Clock *ClockClient
+
 	// RegisteredMu guards registered (the list of handles returned
 	// from Expectations.Add). Consulted by Expectations.Verify and
 	// pruned by Clear / Reset.
@@ -233,6 +239,7 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	c.Claims = &ClaimsClient{c: c}
 	c.Permissions = &PermissionsClient{c: c}
 	c.MFA = &MFAClient{c: c}
+	c.Clock = &ClockClient{c: c}
 	return c, nil
 }
 

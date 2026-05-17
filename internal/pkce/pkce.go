@@ -48,13 +48,31 @@ type Store struct {
 	now     func() time.Time
 }
 
+// Option configures a Store at construction.
+type Option func(*Store)
+
+// WithNow overrides the time source used for entry expiry. Wire to a
+// clock.Controlled.Now to give tests runtime control over PKCE-code
+// expiry windows. Nil is silently ignored.
+func WithNow(now func() time.Time) Option {
+	return func(s *Store) {
+		if now != nil {
+			s.now = now
+		}
+	}
+}
+
 // NewStore returns an empty Store with the default TTL.
-func NewStore() *Store {
-	return &Store{
+func NewStore(opts ...Option) *Store {
+	s := &Store{
 		entries: make(map[string]Entry),
 		ttl:     DefaultTTL,
 		now:     time.Now,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Put records a challenge for the given code. The entry is single-use and

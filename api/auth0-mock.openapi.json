@@ -53827,6 +53827,132 @@
         ]
       }
     },
+    "/admin0/clock": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Clock restored to real."
+          }
+        },
+        "summary": "Restore the clock to real mode.",
+        "tags": [
+          "Clock"
+        ]
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "real",
+                        "frozen",
+                        "offset"
+                      ],
+                      "type": "string"
+                    },
+                    "now": {
+                      "description": "RFC 3339 UTC representation of the current effective\ntime according to the mock.\n",
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "offset": {
+                      "description": "Configured skew in Go duration form (e.g. \"25h0m0s\").\nPresent only when `mode` is `offset`.\n",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "now"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current clock state."
+          }
+        },
+        "summary": "Report the current clock mode and resolved Now.",
+        "tags": [
+          "Clock"
+        ]
+      },
+      "put": {
+        "description": "Body must contain exactly one of `now` (RFC 3339 instant — switches\nto frozen mode) or `offset` (Go duration string — switches to offset\nmode). Sending both, neither, or unparseable values returns 400.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "now": {
+                    "description": "RFC 3339 instant. Freezes Now() here.",
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Go duration string (e.g. \"25h\"). Negative durations\nare accepted, but use the explicit hours form like\n\"-168h\" — Go's parser doesn't support unit \"d\".\n",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Clock updated."
+          },
+          "400": {
+            "description": "Body could not be parsed, set both/neither of `now`/`offset`,\ncontained an unknown field (e.g. `noow` instead of `now` →\n`errorCode: \"invalid_clock_field\"`), or contained an\ninvalid value.\n"
+          }
+        },
+        "summary": "Freeze the clock at an instant or switch to offset mode.",
+        "tags": [
+          "Clock"
+        ]
+      }
+    },
+    "/admin0/clock/advance": {
+      "post": {
+        "description": "Adds `by` to the held clock value. In frozen mode the pinned\ninstant moves by `by`; in offset mode the configured offset\ngrows by `by`. In real mode returns 400 invalid_clock_state.\nNegative durations are allowed.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "by": {
+                    "description": "Go duration (e.g. \"25h\", \"-30m\").",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "by"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Clock advanced."
+          },
+          "400": {
+            "description": "Body could not be parsed, contained an unknown field\n(`errorCode: \"invalid_clock_field\"`), contained an invalid\nduration, or attempted to advance the clock in real mode.\n"
+          }
+        },
+        "summary": "Mutate the held value by a delta.",
+        "tags": [
+          "Clock"
+        ]
+      }
+    },
     "/admin0/expectations": {
       "delete": {
         "description": "With an empty body, clears every registered expectation. With a\n`{ \"method\": ..., \"path\": ... }` body, clears every expectation\nregistered for that operation (the catch-all and every\nrequest-matched one).\n",
@@ -79495,6 +79621,10 @@
     {
       "description": "Registered canned responses (\"expectations\") for Management API\noperations, plus the global state reset. None of these require\nauthentication.\n",
       "name": "Expectations"
+    },
+    {
+      "description": "Runtime clock control. Lets tests freeze the mock's perception of\ntime, set an offset against wall-clock, or advance step-by-step\nthrough time — so token expiry, code TTLs, and refresh windows can\nbe exercised deterministically without sleeps. The same clock\ndrives JWT iat/exp on mint and the bearer middleware's expiry\ncheck on validate.\n",
+      "name": "Clock"
     }
   ],
   "x-tagGroups": [
@@ -79564,7 +79694,8 @@
         "Claims",
         "Permissions",
         "MFA",
-        "Expectations"
+        "Expectations",
+        "Clock"
       ]
     },
     {

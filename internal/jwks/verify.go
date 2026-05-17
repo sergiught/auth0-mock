@@ -58,6 +58,7 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 		jwt.WithExpirationRequired(),
 		jwt.WithIssuedAt(),
 		jwt.WithLeeway(verifyLeeway),
+		jwt.WithTimeFunc(k.cfg.Now),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)

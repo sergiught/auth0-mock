@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/render"
 
 	"github.com/sergiught/auth0-mock/internal/claims"
+	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -26,6 +27,7 @@ type Deps struct {
 	Permissions *permissions.Store
 	MFA         *mfa.Store
 	Validator   *spec.Validator
+	Clock       *clock.Controlled
 }
 
 // Mount registers every /admin0/* route on r.
@@ -54,6 +56,11 @@ func Mount(r chi.Router, d Deps) {
 
 	r.Method(http.MethodGet, "/admin0/mfa-required", &GetMFARequiredHandler{Store: d.MFA})
 	r.Method(http.MethodPut, "/admin0/mfa-required", &PutMFARequiredHandler{Store: d.MFA})
+
+	r.Method(http.MethodGet, "/admin0/clock", &GetClockHandler{Clock: d.Clock})
+	r.Method(http.MethodPut, "/admin0/clock", &PutClockHandler{Clock: d.Clock})
+	r.Method(http.MethodPost, "/admin0/clock/advance", &AdvanceClockHandler{Clock: d.Clock})
+	r.Method(http.MethodDelete, "/admin0/clock", &DeleteClockHandler{Clock: d.Clock})
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
@@ -74,6 +81,9 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 	if h.Deps.MFA != nil {
 		h.Deps.MFA.Reset()
+	}
+	if h.Deps.Clock != nil {
+		h.Deps.Clock.Reset()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

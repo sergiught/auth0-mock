@@ -6,9 +6,10 @@ import (
 )
 
 // Reset clears every expectation, claim, permission, and MFA flag back
-// to the mock's startup defaults. Equivalent to restarting the mock
-// process from the perspective of registered state, but ~1000x faster —
-// call this from t.Cleanup so each test starts from a known-empty mock.
+// to the mock's startup defaults, and restores the clock to real mode.
+// Equivalent to restarting the mock process from the perspective of
+// registered state, but ~1000x faster — call this from t.Cleanup so
+// each test starts from a known-empty mock.
 //
 // Also drops the Client's local verification ledger (the list of
 // *RegisteredExpectation handles tracked for Expectations.Verify) so

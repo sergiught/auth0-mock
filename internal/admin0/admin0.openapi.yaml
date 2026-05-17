@@ -20,6 +20,14 @@ tags:
       Registered canned responses ("expectations") for Management API
       operations, plus the global state reset. None of these require
       authentication.
+  - name: Clock
+    description: |
+      Runtime clock control. Lets tests freeze the mock's perception of
+      time, set an offset against wall-clock, or advance step-by-step
+      through time — so token expiry, code TTLs, and refresh windows can
+      be exercised deterministically without sleeps. The same clock
+      drives JWT iat/exp on mint and the bearer middleware's expiry
+      check on validate.
 paths:
   /admin0/reset:
     post:
@@ -201,6 +209,97 @@ paths:
                 required: { type: boolean }
       responses:
         "204": { description: Flag updated. }
+  /admin0/clock:
+    get:
+      tags: [Clock]
+      summary: Report the current clock mode and resolved Now.
+      responses:
+        "200":
+          description: Current clock state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode, now]
+                properties:
+                  mode:
+                    type: string
+                    enum: [real, frozen, offset]
+                  now:
+                    type: string
+                    format: date-time
+                    description: |
+                      RFC 3339 UTC representation of the current effective
+                      time according to the mock.
+                  offset:
+                    type: string
+                    description: |
+                      Configured skew in Go duration form (e.g. "25h0m0s").
+                      Present only when `mode` is `offset`.
+    put:
+      tags: [Clock]
+      summary: Freeze the clock at an instant or switch to offset mode.
+      description: |
+        Body must contain exactly one of `now` (RFC 3339 instant — switches
+        to frozen mode) or `offset` (Go duration string — switches to offset
+        mode). Sending both, neither, or unparseable values returns 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now:
+                  type: string
+                  format: date-time
+                  description: RFC 3339 instant. Freezes Now() here.
+                offset:
+                  type: string
+                  description: |
+                    Go duration string (e.g. "25h"). Negative durations
+                    are accepted, but use the explicit hours form like
+                    "-168h" — Go's parser doesn't support unit "d".
+      responses:
+        "204": { description: Clock updated. }
+        "400":
+          description: |
+            Body could not be parsed, set both/neither of `now`/`offset`,
+            contained an unknown field (e.g. `noow` instead of `now` →
+            `errorCode: "invalid_clock_field"`), or contained an
+            invalid value.
+    delete:
+      tags: [Clock]
+      summary: Restore the clock to real mode.
+      responses:
+        "204": { description: Clock restored to real. }
+  /admin0/clock/advance:
+    post:
+      tags: [Clock]
+      summary: Mutate the held value by a delta.
+      description: |
+        Adds `by` to the held clock value. In frozen mode the pinned
+        instant moves by `by`; in offset mode the configured offset
+        grows by `by`. In real mode returns 400 invalid_clock_state.
+        Negative durations are allowed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [by]
+              properties:
+                by:
+                  type: string
+                  description: Go duration (e.g. "25h", "-30m").
+      responses:
+        "204": { description: Clock advanced. }
+        "400":
+          description: |
+            Body could not be parsed, contained an unknown field
+            (`errorCode: "invalid_clock_field"`), contained an invalid
+            duration, or attempted to advance the clock in real mode.
 components:
   schemas:
     Expectation:

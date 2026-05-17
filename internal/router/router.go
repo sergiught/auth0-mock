@@ -12,6 +12,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/admin0"
 	"github.com/sergiught/auth0-mock/internal/authapi"
 	"github.com/sergiught/auth0-mock/internal/claims"
+	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -56,6 +57,11 @@ type Deps struct {
 	// headers/body log line at INFO level. Authorization + Cookie headers
 	// are redacted, bodies truncated at 8 KiB.
 	Debug bool
+	// Clock is the controllable time source mounted at /admin0/clock and
+	// surfaced via the SDK's Client.Clock. May be nil in tests that don't
+	// exercise the admin surface, in which case /admin0/clock handlers
+	// will panic if hit.
+	Clock *clock.Controlled
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -83,6 +89,7 @@ func New(d Deps) (http.Handler, error) {
 		Permissions: d.Permissions,
 		MFA:         d.MFA,
 		Validator:   d.Validator,
+		Clock:       d.Clock,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {

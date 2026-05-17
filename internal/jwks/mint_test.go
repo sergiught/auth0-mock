@@ -123,3 +123,87 @@ func TestVerify_RejectsMalformed(t *testing.T) {
 		})
 	}
 }
+
+// TestMint_UsesConfigNow_FrozenIat confirms that Config.Now drives
+// the iat/exp values Mint stamps on the token — the load-bearing
+// wire for clock control on the issuance side.
+func TestMint_UsesConfigNow_FrozenIat(t *testing.T) {
+	t0 := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	ks, err := NewKeySet(Config{
+		Issuer:         "https://mock/",
+		AccessTokenTTL: time.Hour,
+		Now:            func() time.Time { return t0 },
+	})
+	require.NoError(t, err)
+
+	tok, err := ks.Mint(MintOpts{
+		Subject:  "demo",
+		Audience: []string{"https://api/"},
+		TTL:      24 * time.Hour,
+	})
+	require.NoError(t, err)
+
+	parsed, _, err := new(jwt.Parser).ParseUnverified(tok, jwt.MapClaims{})
+	require.NoError(t, err)
+	claims := parsed.Claims.(jwt.MapClaims)
+
+	assert.Equal(t, float64(t0.Unix()), claims["iat"])
+	assert.Equal(t, float64(t0.Add(24*time.Hour).Unix()), claims["exp"])
+}
+
+// TestVerify_UsesConfigNow_RejectsExpiredAfterAdvance confirms that
+// Config.Now drives the validator's notion of "now" as well — the
+// load-bearing wire for clock control on the validation side.
+func TestVerify_UsesConfigNow_RejectsExpiredAfterAdvance(t *testing.T) {
+	mintAt := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	var verifyNow time.Time
+	ks, err := NewKeySet(Config{
+		Issuer:         "https://mock/",
+		AccessTokenTTL: time.Hour,
+		Now:            func() time.Time { return verifyNow },
+	})
+	require.NoError(t, err)
+
+	verifyNow = mintAt
+	tok, err := ks.Mint(MintOpts{
+		Subject:  "demo",
+		Audience: []string{"https://api/"},
+		TTL:      time.Hour,
+	})
+	require.NoError(t, err)
+
+	// Verify immediately succeeds.
+	_, err = ks.Verify(tok, VerifyOpts{})
+	require.NoError(t, err)
+
+	// Advance verifier's clock past exp + leeway (verifyLeeway = 60s).
+	verifyNow = mintAt.Add(time.Hour + 5*time.Minute)
+	_, err = ks.Verify(tok, VerifyOpts{})
+	require.Error(t, err)
+	assert.Contains(t, strings.ToLower(err.Error()), "expired")
+}
+
+// TestNewKeySet_NilNow_DefaultsToTimeNow keeps the zero-value
+// Config{} usable so existing tests don't break.
+func TestNewKeySet_NilNow_DefaultsToTimeNow(t *testing.T) {
+	ks, err := NewKeySet(Config{
+		Issuer:         "https://mock/",
+		AccessTokenTTL: time.Hour,
+		// Now intentionally omitted.
+	})
+	require.NoError(t, err)
+
+	tok, err := ks.Mint(MintOpts{Subject: "demo", Audience: []string{"a"}, TTL: time.Hour})
+	require.NoError(t, err)
+	parsed, _, err := new(jwt.Parser).ParseUnverified(tok, jwt.MapClaims{})
+	require.NoError(t, err)
+	claims := parsed.Claims.(jwt.MapClaims)
+
+	iat := int64(claims["iat"].(float64))
+	wall := time.Now().Unix()
+	diff := wall - iat
+	if diff < 0 {
+		diff = -diff
+	}
+	assert.LessOrEqual(t, diff, int64(5))
+}

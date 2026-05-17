@@ -244,12 +244,14 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, permissions, MFA flag |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, permissions, MFA flag, clock |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
+| `/admin0/clock` | GET / PUT / DELETE | Freeze the clock at an instant (`{"now":"..."}`), set an offset (`{"offset":"25h"}`), or restore real time. Drives JWT `iat`/`exp` and bearer validation. |
+| `/admin0/clock/advance` | POST | Step the held clock by a Go duration (`{"by":"25h"}`). Negative durations allowed. |
 
 > [!WARNING]
 > **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
@@ -282,6 +284,16 @@ curl -X PUT http://localhost:8080/admin0/permissions/https://api.example.com/ \
 curl -X PUT http://localhost:8080/admin0/mfa-required \
   -H 'Content-Type: application/json' \
   -d '{"required":true}'
+
+# Freeze the clock so token iat/exp are deterministic
+curl -X PUT http://localhost:8080/admin0/clock \
+  -H 'Content-Type: application/json' \
+  -d '{"now":"2030-01-01T00:00:00Z"}'
+
+# Advance 7 days to simulate token expiry without sleeping
+curl -X POST http://localhost:8080/admin0/clock/advance \
+  -H 'Content-Type: application/json' \
+  -d '{"by":"168h"}'
 
 # Reset everything between tests
 curl -X POST http://localhost:8080/admin0/reset
@@ -480,7 +492,8 @@ What's covered:
 | `Claims` | `Get` | `Set` | `Clear` | — |
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
-| top-level | — | — | `Reset` — wipes every store | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
+| `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
+| top-level | — | — | `Reset` — wipes every store (including the clock back to real mode) | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
 
 `Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.
 

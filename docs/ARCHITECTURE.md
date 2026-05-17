@@ -137,8 +137,11 @@ The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.
 | [`internal/permissions/`](../internal/permissions/) | `map[audience] → []permission` for RBAC claim injection | `PUT/DELETE /admin0/permissions[/{audience}]`, `POST /admin0/reset` | `TokenHandler.augmentExtra` (looks up by audience), `PasswordlessVerifyHandler` |
 | [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | (none) |
 | [`internal/mfa/`](../internal/mfa/) | `mfa_token → Context` with 10-min TTL + atomic "required" flag | `PUT /admin0/mfa-required`, `POST /admin0/reset`, `TokenHandler.requireMFA` | `respondPassword`, `respondPasswordRealm`, `respondMFA*` |
+| [`internal/clock/`](../internal/clock/) | Controllable time source — `real`, `frozen` (pinned instant), or `offset` (real + skew) mode | `PUT/POST/DELETE /admin0/clock[/advance]`, `POST /admin0/reset` | `jwks.Mint` (iat/exp), `jwks.Verify` (exp/nbf check), `pkce.Store` (code TTL), `mfa.Store` (mfa_token TTL) |
 
 Every store is mutex-protected and snapshot-isolating on reads (so the caller can mutate the returned slice/map without corrupting the store).
+
+The clock is the one store whose state affects *protocol output*: the same instance drives JWT issuance in `internal/jwks` and JWT validation in the bearer middleware (via `jwt.WithTimeFunc`), so a frozen clock keeps tests internally consistent end-to-end. Wall-clock concerns (request logging timestamps, HTTP server timeouts) deliberately keep using `time.Now` so log timestamps don't lie when protocol time is frozen — convention-only today; an allowlist analyzer is on the backlog to enforce it automatically.
 
 There is **no persistence** anywhere. Each process restart is a clean slate. That's a deliberate design choice: tests get isolation for free; you don't need a teardown step beyond `POST /admin0/reset` (which is also called automatically between godog scenarios via the scenario harness).
 

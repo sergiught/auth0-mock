@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,27 @@ func newStub(t *testing.T) (*captureRecorder, *auth0mock.Client) {
 	rec := &captureRecorder{}
 	srv := httptest.NewServer(rec.handler())
 	t.Cleanup(srv.Close)
-	c, err := auth0mock.NewClient(srv.URL)
+
+	// Per-test Transport so the idle-connection pool can be drained
+	// explicitly before the server shuts down. The default
+	// http.Transport is process-shared, and Go 1.26 tightened the race
+	// between srv.Close() and the client reusing a pooled keep-alive
+	// connection — without this, the suite occasionally fails with
+	// "transport connection broken: http: CloseIdleConnections called"
+	// when an in-flight request lands on a connection the server-side
+	// Close just yanked.
+	//
+	// T.Cleanup runs in LIFO order. Registering CloseIdleConnections
+	// AFTER srv.Close means it fires FIRST at test end, so the
+	// client's pool is empty by the time srv.Close runs.
+	transport := &http.Transport{}
+	t.Cleanup(transport.CloseIdleConnections)
+
+	c, err := auth0mock.NewClient(srv.URL,
+		auth0mock.WithHTTPClient(&http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		}))
 	require.NoError(t, err)
 	return rec, c
 }

@@ -58,13 +58,31 @@ type Store struct {
 	required atomic.Bool
 }
 
+// Option configures a Store at construction.
+type Option func(*Store)
+
+// WithNow overrides the time source used for mfa_token expiry. Wire to
+// clock.Controlled.Now for runtime control over the MFA challenge
+// window. Nil is silently ignored.
+func WithNow(now func() time.Time) Option {
+	return func(s *Store) {
+		if now != nil {
+			s.now = now
+		}
+	}
+}
+
 // NewStore returns an empty Store with the default TTL and MFA disabled.
-func NewStore() *Store {
-	return &Store{
+func NewStore(opts ...Option) *Store {
+	s := &Store{
 		tokens: make(map[string]Context),
 		ttl:    DefaultTokenTTL,
 		now:    time.Now,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // SetRequired toggles the global flag. When true, the password and
