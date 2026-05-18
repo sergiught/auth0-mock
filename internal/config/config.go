@@ -34,6 +34,12 @@ type Specification struct {
 	MaxRequestBodyBytes  int64         `env:"MAX_REQUEST_BODY_BYTES" envDefault:"1048576"` // 1 MiB.
 	ShutdownTimeout      time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"5s"`
 
+	// EventsReplayBuffer caps the SSE replay ring buffer at GET /events.
+	// Reconnecting subscribers can resume from Last-Event-ID, ?from, or
+	// ?from_timestamp up to this many events back. <= 0 disables replay
+	// (the endpoint still works; resume params become no-ops).
+	EventsReplayBuffer int `env:"EVENTS_REPLAY_BUFFER" envDefault:"100"`
+
 	// LogoutAllowedURLs is the comma-separated allow-list of absolute
 	// returnTo URLs that /v2/logout will redirect to. Relative URLs are
 	// always allowed (they can't escape the mock's origin). Mirrors

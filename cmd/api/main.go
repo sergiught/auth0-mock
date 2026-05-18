@@ -106,6 +106,7 @@ func run() error {
 		AuthorizeAllowedRedirectURIs: cfg.AuthorizeAllowedCallbacks,
 		BearerRequireAudience:        cfg.BearerRequireAudience,
 		Debug:                        cfg.Debug,
+		EventsReplayBuffer:           cfg.EventsReplayBuffer,
 	})
 	if err != nil {
 		return fmt.Errorf("router init: %w", err)

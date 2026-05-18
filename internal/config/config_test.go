@@ -67,7 +67,23 @@ func clearEnv(t *testing.T) {
 		"TLS_CACHE_DIR", "TLS_HOSTNAMES", "SIGNING_KEY_FILE", "ISSUER_URL",
 		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
+		"EVENTS_REPLAY_BUFFER",
 	} {
 		_ = os.Unsetenv(k)
 	}
+}
+
+func TestLoad_EventsReplayBuffer_DefaultsTo100(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 100, spec.EventsReplayBuffer)
+}
+
+func TestLoad_EventsReplayBuffer_HonoursOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("EVENTS_REPLAY_BUFFER", "500")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 500, spec.EventsReplayBuffer)
 }
