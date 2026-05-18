@@ -28,6 +28,11 @@ type Deps struct {
 	MFA         *mfa.Store
 	Validator   *spec.Validator
 	Clock       *clock.Controlled
+	// Events is the SSE hub for POST /admin0/events. Nil is fine for
+	// admin0 tests that don't exercise the events surface — the route
+	// only registers when both Events and Validator are non-nil, and
+	// reset's shutdown call is skipped.
+	Events EventsPublisher
 }
 
 // Mount registers every /admin0/* route on r.
@@ -61,6 +66,12 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodPut, "/admin0/clock", &PutClockHandler{Clock: d.Clock})
 	r.Method(http.MethodPost, "/admin0/clock/advance", &AdvanceClockHandler{Clock: d.Clock})
 	r.Method(http.MethodDelete, "/admin0/clock", &DeleteClockHandler{Clock: d.Clock})
+
+	if d.Events != nil && d.Validator != nil {
+		r.Method(http.MethodPost, "/admin0/events", &PostEventsHandler{
+			Events: d.Events, Validator: d.Validator,
+		})
+	}
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
@@ -69,7 +80,7 @@ type ResetHandler struct {
 	Deps Deps
 }
 
-func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Deps.Matches != nil {
 		h.Deps.Matches.ResetAll()
 	}
@@ -84,6 +95,13 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 	if h.Deps.Clock != nil {
 		h.Deps.Clock.Reset()
+	}
+	if h.Deps.Events != nil {
+		// Drain every open SSE subscriber so the next test starts
+		// fresh. Errors are ignored: by the time reset fires the test
+		// verdict is usually decided and a failing shutdown shouldn't
+		// mask the original failure.
+		_ = h.Deps.Events.Shutdown(r.Context())
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
