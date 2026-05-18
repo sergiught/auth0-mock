@@ -17,6 +17,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Reset state between tests](#reset-state-between-tests)
 - [Inspect what's currently registered](#inspect-whats-currently-registered)
 - [Run against HTTPS with a trusted cert](#run-against-https-with-a-trusted-cert)
+- [Drive an event-stream consumer from a test](#drive-an-event-stream-consumer-from-a-test)
 - [Use a Go test that boots the mock in-process](#use-a-go-test-that-boots-the-mock-in-process)
 - [Trust the self-signed cert system-wide](#trusting-the-self-signed-cert)
 
@@ -360,6 +361,82 @@ curl https://localhost:8443/.well-known/openid-configuration   # no -k needed
 ```
 
 For ephemeral CI tests that just need to skip verification, set `InsecureSkipVerify: true` on your client's TLS config (Go) or pass `-k` (curl). Don't do this in production.
+
+## Drive an event-stream consumer from a test
+
+Use this when your service consumes Auth0's event stream and you want
+to assert it reacts correctly to specific events. The mock exposes
+`GET /api/v2/events` as a real SSE endpoint and `POST /admin0/events`
+as the producer side. The `auth0mocktest` helpers handle the SSE
+framing so the test stays focused on intent.
+
+```go
+import (
+    "testing"
+    "time"
+
+    "github.com/sergiught/auth0-mock/pkg/auth0mock"
+    "github.com/sergiught/auth0-mock/pkg/auth0mock/auth0mocktest"
+)
+
+func TestConsumer_ReactsToUserCreated(t *testing.T) {
+    c, err := auth0mock.NewClient("http://localhost:8080")
+    if err != nil { t.Fatal(err) }
+    auth0mocktest.ResetOnCleanup(t, c)
+
+    bearer := mintBearerForYourConsumer(t) // however your test rig gets one
+
+    // Open a subscription with an event-type filter. The helper
+    // strips keep-alives and yields one SSEEvent per real frame.
+    stream := auth0mocktest.SubscribeEvents(t, c, bearer, "event_type=user.created")
+    time.Sleep(50 * time.Millisecond) // let the subscription register
+
+    // Push an event. The mock validates the envelope against the
+    // OpenAPI text/event-stream schema; misshapen bodies surface
+    // as APIError("invalid_event") with a one-line reason.
+    auth0mocktest.MustPush(t, c, `{
+        "type":"user.created","offset":"0",
+        "event":{
+            "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
+            "id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z",
+            "a0tenant":"my-tenant","a0stream":"est_aaaaaaaaaaaaaaaa",
+            "data":{"object":{
+                "user_id":"u-1",
+                "created_at":"2026-05-19T00:00:00Z",
+                "updated_at":"2026-05-19T00:00:00Z",
+                "identities":[]
+            }}
+        }
+    }`)
+
+    // Block until your consumer (downstream of the SSE stream)
+    // observes the event, then assert it reacted as expected.
+    evt := stream.NextEvent(t, 3*time.Second)
+    if evt.ID != "evt_aaaaaaaaaaaaaaaa" {
+        t.Fatalf("got id=%q want evt_aaaaaaaaaaaaaaaa", evt.ID)
+    }
+    // ... drive your consumer's assertion here ...
+}
+```
+
+**Resume from a known event ID** by passing `from=evt_xxx` or
+`from_timestamp=<rfc3339>` as the query string. The mock keeps a
+bounded ring buffer (default 100 events, see
+`EVENTS_REPLAY_BUFFER`) and replays missed events on reconnect.
+
+**Reset between tests** via `auth0mocktest.ResetOnCleanup(t, c)` —
+this drains every open subscriber and clears the replay buffer
+without permanently breaking the hub, so the next test starts from a
+known-empty state.
+
+**Common errors** the mock returns:
+
+| Status | `errorCode` | Cause |
+|---|---|---|
+| 400 | `invalid_event` | Schema violation. The `message` field lists each failed `/json/pointer: reason` on a single line. |
+| 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339. |
+| 410 | `event_aged_out` | `Last-Event-ID` / `?from` / resolved `?from_timestamp` references an event the ring buffer no longer holds. |
+| 401 | _bearer envelope_ | No / invalid bearer on `/api/v2/events`. |
 
 ## Use a Go test that boots the mock in-process
 
