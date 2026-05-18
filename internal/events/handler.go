@@ -5,37 +5,55 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 )
 
-// drainableWriter wraps an http.ResponseWriter and, once Drain is
-// called, silently discards subsequent Write / Flush calls. The
+// drainableWriter wraps an http.ResponseWriter and, once markDrained
+// is called, silently discards subsequent Write / Flush calls. The
 // underlying connection still closes when the handler returns; the
 // goal is to suppress the library's "provider is closed" / "context
 // canceled" error text that sse.Server.ServeHTTP writes via
 // http.Error after our drain cancels its subscribe loop.
+//
+// Writes are serialized through a mutex so the race detector sees a
+// happens-before edge between any in-flight library write and the
+// handler's return: markDrained acquires the same mutex, so once it
+// returns no further write can reach the underlying writer, and
+// net/http is free to close the connection without a concurrent
+// touch.
 type drainableWriter struct {
 	http.ResponseWriter
-	drained atomic.Bool
+	mu      sync.Mutex
+	drained bool
 }
 
 func (d *drainableWriter) Write(b []byte) (int, error) {
-	if d.drained.Load() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.drained {
 		return len(b), nil
 	}
 	return d.ResponseWriter.Write(b)
 }
 
 func (d *drainableWriter) Flush() {
-	if d.drained.Load() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.drained {
 		return
 	}
 	if f, ok := d.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (d *drainableWriter) markDrained() {
+	d.mu.Lock()
+	d.drained = true
+	d.mu.Unlock()
 }
 
 // Unwrap lets http.NewResponseController find the underlying writer
@@ -165,13 +183,13 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 // registerSub adds the request's cancellable context and drainable
 // writer to the hub's active set, and returns the child context plus a
-// cleanup func. The cleanup func cancels the context, drains the
-// writer (suppressing any late library writes), and removes the entry
-// from the active set. Callers must `defer cleanup()`.
+// cleanup func. The cleanup func cancels the context, marks the writer
+// as drained (suppressing any late library writes), and removes the
+// entry from the active set. Callers must `defer cleanup()`.
 func registerSub(h *Hub, r *http.Request, dw *drainableWriter) (context.Context, func()) {
 	ctx, ctxCancel := context.WithCancel(r.Context())
 	cancelAndDrain := func() {
-		dw.drained.Store(true)
+		dw.markDrained()
 		ctxCancel()
 	}
 	h.activeMu.Lock()
