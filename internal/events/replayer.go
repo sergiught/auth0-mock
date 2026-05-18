@@ -76,7 +76,13 @@ type recordingReplayer struct {
 // so events pushed without an explicit ID still get one (which the
 // index needs to be useful). Now defaults to time.Now when nil.
 func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplayer, error) {
-	inner, err := sse.NewFiniteReplayer(capacity, true)
+	// AutoIDs is false: the /admin0/events handler enforces the
+	// CloudEvent schema's `id` requirement before Hub.Publish ever
+	// reaches us, so every message arrives with an ID already set.
+	// AutoIDs=true would actively reject messages with explicit IDs
+	// ("message already has an ID, can't use generated ID"), which is
+	// the opposite of what we want.
+	inner, err := sse.NewFiniteReplayer(capacity, false)
 	if err != nil {
 		return nil, err
 	}

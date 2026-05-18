@@ -77,7 +77,7 @@ func newTestMessage(t *testing.T, id string) *sse.Message {
 	return m
 }
 
-func TestRecordingReplayer_PutIndexesAutoIDsAndForwards(t *testing.T) {
+func TestRecordingReplayer_PutIndexesAndForwards(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0).UTC()
 	calls := 0
 	now := func() time.Time {
@@ -88,16 +88,18 @@ func TestRecordingReplayer_PutIndexesAutoIDsAndForwards(t *testing.T) {
 	r, err := newRecordingReplayer(3, now)
 	require.NoError(t, err)
 
-	// Put three messages without IDs; FiniteReplayer with autoIDs=true
-	// stamps each with a fresh ID and the recordingReplayer indexes it.
-	for range 3 {
-		out, err := r.Put(newTestMessage(t, ""), []string{"t1"})
+	// Put three messages with explicit IDs; FiniteReplayer is configured
+	// with autoIDs=false because the /admin0/events handler enforces
+	// CloudEvent's `id` requirement upstream.
+	for _, id := range []string{"a", "b", "c"} {
+		out, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
-		require.NotNil(t, out, "FiniteReplayer should return a message with an auto ID")
+		require.NotNil(t, out)
 	}
 
-	// Mid-window lookup returns one of the indexed IDs.
-	got, ok := r.IDBefore(base.Add(25 * time.Second))
+	// Lookup at 15s: only "a" (t=0) and "b" (t=10) are strictly
+	// before; latest of those is "b".
+	got, ok := r.IDBefore(base.Add(15 * time.Second))
 	require.True(t, ok)
-	assert.NotEmpty(t, got)
+	assert.Equal(t, "b", got)
 }
