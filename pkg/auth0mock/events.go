@@ -2,10 +2,34 @@ package auth0mock
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 )
+
+// NewEventID returns a fresh event ID conforming to Auth0's
+// event-stream `id` pattern (`evt_` + 16 alphanumeric chars). Tests
+// that don't need a specific id value can call this instead of
+// hand-rolling a 16-character placeholder — the schema validator
+// rejects anything that doesn't match the pattern, and a too-short
+// or too-long literal is the most common paste-and-go mistake.
+func NewEventID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "evt_" + hex.EncodeToString(b)
+}
+
+// NewStreamID returns a fresh event-stream ID conforming to Auth0's
+// `est_` + 16 alphanumeric chars pattern. Same rationale as
+// NewEventID — saves callers from re-deriving "I need exactly 16
+// chars after the prefix" by trial and error.
+func NewStreamID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "est_" + hex.EncodeToString(b)
+}
 
 // EventsClient pushes events into the mock's SSE hub. Reach it via
 // Client.Events. Push is fire-and-forget on the consumer side — the

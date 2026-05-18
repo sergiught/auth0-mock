@@ -393,13 +393,18 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
 
     // Push an event. The mock validates the envelope against the
     // OpenAPI text/event-stream schema; misshapen bodies surface
-    // as APIError("invalid_event") with a one-line reason.
-    auth0mocktest.MustPush(t, c, `{
+    // as APIError("invalid_event") with a one-line reason. Use
+    // auth0mock.NewEventID() to get a fresh ID that conforms to the
+    // `evt_` + 16-char pattern — the schema rejects literals of the
+    // wrong length, and hand-counting is a common paste-and-go trap.
+    eventID := auth0mock.NewEventID()
+    streamID := auth0mock.NewStreamID()
+    auth0mocktest.MustPush(t, c, fmt.Sprintf(`{
         "type":"user.created","offset":"0",
         "event":{
             "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
-            "id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z",
-            "a0tenant":"my-tenant","a0stream":"est_aaaaaaaaaaaaaaaa",
+            "id":%q,"time":"2026-05-19T00:00:00Z",
+            "a0tenant":"my-tenant","a0stream":%q,
             "data":{"object":{
                 "user_id":"u-1",
                 "created_at":"2026-05-19T00:00:00Z",
@@ -407,13 +412,13 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
                 "identities":[]
             }}
         }
-    }`)
+    }`, eventID, streamID))
 
     // Block until your consumer (downstream of the SSE stream)
     // observes the event, then assert it reacted as expected.
     evt := stream.NextEvent(t, 3*time.Second)
-    if evt.ID != "evt_aaaaaaaaaaaaaaaa" {
-        t.Fatalf("got id=%q want evt_aaaaaaaaaaaaaaaa", evt.ID)
+    if evt.ID != eventID {
+        t.Fatalf("got id=%q want %s", evt.ID, eventID)
     }
     // ... drive your consumer's assertion here ...
 }
