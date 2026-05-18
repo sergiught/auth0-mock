@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +76,13 @@ type Hub struct {
 	active   map[uint64]context.CancelFunc
 	nextSub  uint64
 
+	// LifecycleMu serialises Reset / Shutdown so two concurrent
+	// callers don't both try to drain the same server. Without it
+	// the second caller would race the first into drainAndShutdownOld
+	// and observe sse.Joe's ErrProviderClosed from a second Shutdown
+	// on the same instance.
+	lifecycleMu sync.Mutex
+
 	stop      chan struct{}
 	stopped   sync.Once
 	keepalive sync.WaitGroup
@@ -136,11 +144,14 @@ func (h *Hub) build() error {
 // filterless subscriber) and to evt.Type (reaches every filtered
 // subscriber that listed this type). Keep-alives use a separate
 // topic and never go through this path.
+//
+// The RLock is held across server.Publish so a concurrent Reset
+// can't swap h.server underneath an in-flight publish and produce
+// a spurious "provider is closed" error.
 func (h *Hub) Publish(evt Event) error {
 	h.mu.RLock()
-	server, closed := h.server, h.closed
-	h.mu.RUnlock()
-	if closed || server == nil {
+	defer h.mu.RUnlock()
+	if h.closed || h.server == nil {
 		return errors.New("events: hub is closed")
 	}
 	msg := &sse.Message{Type: sse.Type(evt.Type)}
@@ -154,7 +165,7 @@ func (h *Hub) Publish(evt Event) error {
 	if evt.Type != "" {
 		topics = append(topics, evt.Type)
 	}
-	return server.Publish(msg, topics...)
+	return h.server.Publish(msg, topics...)
 }
 
 // Reset drains every currently-connected subscriber via context
@@ -162,8 +173,11 @@ func (h *Hub) Publish(evt Event) error {
 // then rebuilds the underlying server + replay buffer. After Reset
 // the hub is fully functional again — subscribers can connect, events
 // can be published, replay starts fresh. Intended for the
-// /admin0/reset control-plane hook between tests.
+// /admin0/reset control-plane hook between tests. Idempotent under
+// concurrent callers (serialised via lifecycleMu).
 func (h *Hub) Reset(ctx context.Context) error {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
 	if err := h.drainAndShutdownOld(ctx); err != nil {
 		return err
 	}
@@ -179,6 +193,8 @@ func (h *Hub) Reset(ctx context.Context) error {
 // and marks the hub closed permanently. Intended for process
 // shutdown. Idempotent — extra calls are no-ops.
 func (h *Hub) Shutdown(ctx context.Context) error {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
 	h.stopped.Do(func() { close(h.stop) })
 	h.keepalive.Wait()
 	if err := h.drainAndShutdownOld(ctx); err != nil {
@@ -217,9 +233,17 @@ func (h *Hub) drainAndShutdownOld(ctx context.Context) error {
 		return nil
 	}
 	err := server.Shutdown(ctx)
-	// Sse.Server.Shutdown returns an error if it's already been shut
-	// down or if ctx fires — flatten the benign cases.
-	if err != nil && errors.Is(err, context.Canceled) {
+	// Sse.Server.Shutdown returns an error if it's already shut down
+	// (errProviderClosed) or if ctx fires (context.Canceled). Both
+	// are benign for idempotent Reset / back-to-back Shutdown — the
+	// caller's intent ("drain me") is satisfied either way.
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	if strings.Contains(err.Error(), "provider is closed") {
 		return nil
 	}
 	return err

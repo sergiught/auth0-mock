@@ -118,7 +118,10 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Promote resume hints to Last-Event-ID so the library handles
 	// replay natively. Order: explicit header wins over ?from wins
-	// over ?from_timestamp.
+	// over ?from_timestamp. Track whether WE synthesised the ID so
+	// we don't 410 on it (the up-front Has check below would race a
+	// concurrent Put that evicted the just-looked-up ID).
+	synthesised := false
 	if r.Header.Get("Last-Event-ID") == "" {
 		if id := r.URL.Query().Get("from"); id != "" {
 			r.Header.Set("Last-Event-ID", id)
@@ -136,6 +139,7 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			if replayer != nil {
 				if id, ok := replayer.IDBefore(t); ok {
 					r.Header.Set("Last-Event-ID", id)
+					synthesised = true
 				} else if oldest := replayer.OldestID(); oldest != "" {
 					// No stored event predates t, but the buffer
 					// holds events newer than t — replay them by
@@ -144,6 +148,7 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 					// replays strictly after the given ID); see
 					// recordingReplayer.OldestID for the trade-off.
 					r.Header.Set("Last-Event-ID", oldest)
+					synthesised = true
 				}
 				// Empty buffer: nothing to replay; subscriber joins
 				// live.
@@ -152,11 +157,15 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Surface aged-out resume up-front: if Last-Event-ID (explicit or
-	// promoted) names an ID we no longer carry, return 410 Gone
+	// Surface aged-out resume up-front: if a user-supplied
+	// Last-Event-ID names an ID we no longer carry, return 410 Gone
 	// before opening the stream so the client doesn't silently miss
 	// events. Matches the `410` declared in the OpenAPI spec.
-	if id := r.Header.Get("Last-Event-ID"); id != "" {
+	// Synthesised IDs (looked up from the index moments ago) skip
+	// this check — racing with a concurrent eviction would 410 a
+	// user who never sent a Last-Event-ID, which is worse than the
+	// fallback of joining live.
+	if id := r.Header.Get("Last-Event-ID"); id != "" && !synthesised {
 		h.mu.RLock()
 		replayer := h.replayer
 		h.mu.RUnlock()

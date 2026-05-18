@@ -1,19 +1,11 @@
 package events
 
 import (
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/tmaxmax/go-sse"
 )
-
-// ErrAgedOut is returned by recordingReplayer.Replay when a subscriber
-// presents a Last-Event-ID (or a resolved ?from / ?from_timestamp) that
-// the buffer no longer carries. The Hub.Handler translates it into a
-// 410 Gone response — matching the `410` declared in the OpenAPI spec
-// for GET /events.
-var ErrAgedOut = errors.New("events: requested event ID is no longer in the replay buffer")
 
 // ringIndex keeps the timestamp of every event currently held by the
 // underlying FiniteReplayer, in insertion order. It is sized to match
@@ -131,22 +123,17 @@ func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message
 	return out, nil
 }
 
-// Replay delegates to the inner FiniteReplayer, but first checks our
-// index: if the subscriber's Last-Event-ID is set and is NOT in the
-// buffer, the request has aged out. We return ErrAgedOut so the hub's
-// handler can translate to HTTP 410. The library's FiniteReplayer
-// silently returns nil in this case (it just skips the replay), which
-// would leave the subscriber joined live and unaware they missed
-// events.
+// Replay delegates to the inner FiniteReplayer. The aged-out check
+// (Last-Event-ID no longer in the buffer → HTTP 410) is performed
+// up-front in Hub.Handler via Has, BEFORE the SSE response is
+// committed; that's the source of truth. Returning a non-nil error
+// from this path would let go-sse propagate it via http.Error into
+// the SSE wire body — invisible to the user but ugly when it lands.
+// In the rare race where Has returned true but a concurrent Put
+// evicted the ID before Subscribe ran Replay, the subscriber simply
+// joins live, which is observationally indistinguishable from a
+// legitimate "buffer was empty for this ID" outcome.
 func (r *recordingReplayer) Replay(sub sse.Subscription) error {
-	if sub.LastEventID.IsSet() {
-		r.mu.RLock()
-		ok := r.idx.has(sub.LastEventID.String())
-		r.mu.RUnlock()
-		if !ok {
-			return ErrAgedOut
-		}
-	}
 	return r.inner.Replay(sub)
 }
 
