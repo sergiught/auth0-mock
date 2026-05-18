@@ -97,6 +97,16 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush forwards to the wrapped writer if it supports flushing. The
+// SSE endpoint (and any future streaming handler) needs Flush to push
+// bytes to the client mid-response; without this passthrough the
+// outer middleware would silently swallow the Flusher interface.
+func (sr *statusRecorder) Flush() {
+	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // MaxBodyBytes caps every incoming request body to limit bytes. Reads past
 // the limit return *http.MaxBytesError from the wrapped reader; downstream
 // handlers surface that to the client through their normal decode-error
@@ -416,6 +426,16 @@ func (d *debugRecorder) Write(b []byte) (int, error) {
 		}
 	}
 	return d.ResponseWriter.Write(b)
+}
+
+// Flush forwards to the wrapped writer if it supports flushing. The
+// SSE endpoint (and any future streaming handler) needs Flush to push
+// bytes to the client mid-response; without this passthrough DebugDump
+// would silently swallow the Flusher interface.
+func (d *debugRecorder) Flush() {
+	if f, ok := d.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (d *debugRecorder) statusOrOK() int {
