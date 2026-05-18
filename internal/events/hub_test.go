@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -155,6 +156,159 @@ func TestHub_Handler_EventTypeFilterSelectsMatchingOnly(t *testing.T) {
 	frame := readOneEvent(t, r, 2*time.Second)
 	assert.Contains(t, frame, "id: evt-keep")
 	assert.NotContains(t, frame, "evt-skip")
+}
+
+func TestHub_Handler_LastEventIDHeaderReplays(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	for i, id := range []string{"evt-1", "evt-2", "evt-3"} {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "user.created", ID: id,
+			Payload: json.RawMessage(`{"type":"user.created","id":"` + id + `","seq":` + strconv.Itoa(i) + `}`),
+		}))
+	}
+
+	// Subscribe with Last-Event-ID: evt-1 → should replay evt-2, evt-3.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "evt-1")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	r := bufio.NewReader(resp.Body)
+	f1 := readOneEvent(t, r, 2*time.Second)
+	f2 := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, f1, "id: evt-2")
+	assert.Contains(t, f2, "id: evt-3")
+}
+
+func TestHub_Handler_FromQueryParamPromotedToHeader(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "x.y", ID: id,
+			Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+		}))
+	}
+
+	r, cancel := subscribe(t, srv, "?from=evt-2")
+	defer cancel()
+	f := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, f, "id: evt-3")
+}
+
+func TestHub_Handler_FromTimestampResolvedToID(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0).UTC()
+	step := 0
+	now := func() time.Time {
+		ts := base.Add(time.Duration(step) * 10 * time.Second)
+		step++
+		return ts
+	}
+	h, err := events.NewHub(10, now)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	// Three events at t=0, t=10s, t=20s.
+	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "x.y", ID: id,
+			Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+		}))
+	}
+
+	// From_timestamp at 15s strictly-after-evt-2: ringIndex.idBefore
+	// returns evt-2 → library replays everything with ID > evt-2 → evt-3.
+	ts := base.Add(15 * time.Second).Format(time.RFC3339)
+	r, cancel := subscribe(t, srv, "?from_timestamp="+ts)
+	defer cancel()
+	f := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, f, "id: evt-3")
+}
+
+func TestHub_Handler_FromTimestampBeforeAllReplaysFromOldest(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0).UTC()
+	step := 0
+	now := func() time.Time {
+		ts := base.Add(time.Duration(step) * 10 * time.Second)
+		step++
+		return ts
+	}
+	h, err := events.NewHub(10, now)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "x.y", ID: id,
+			Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+		}))
+	}
+
+	// From_timestamp before everything → adapter injects oldest stored
+	// ID (evt-1) → library replays strictly after, i.e. evt-2 + evt-3.
+	// The oldest event itself is skipped; see recordingReplayer.OldestID
+	// for the rationale.
+	old := base.Add(-time.Hour).Format(time.RFC3339)
+	r, cancel := subscribe(t, srv, "?from_timestamp="+old)
+	defer cancel()
+	f1 := readOneEvent(t, r, 2*time.Second)
+	f2 := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, f1, "id: evt-2")
+	assert.Contains(t, f2, "id: evt-3")
+}
+
+func TestHub_Handler_FromTimestampWithEmptyBufferJoinsLive(t *testing.T) {
+	// Empty buffer + from_timestamp predates anything → no replay
+	// possible; subscriber just joins the live stream.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	old := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	r, cancel := subscribe(t, srv, "?from_timestamp="+old)
+	defer cancel()
+
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, h.Publish(events.Event{
+		Type: "x.y", ID: "live-1",
+		Payload: json.RawMessage(`{"type":"x.y","id":"live-1"}`),
+	}))
+
+	f := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, f, "id: live-1")
+}
+
+func TestHub_Handler_FromTimestampUnparseable_400(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from_timestamp=not-a-timestamp")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestHub_Handler_MultipleSubscribersEachReceiveOnce(t *testing.T) {

@@ -74,25 +74,54 @@ func (h *Hub) Publish(evt Event) error {
 }
 
 // Handler returns the HTTP handler for GET /events. Wire it under
-// bearer middleware at mount time. The handler delegates to the
-// underlying *sse.Server, which uses an OnSession callback to parse
-// `?event_type=...` into the subscriber's topic list. Filterless
-// subscribers (no event_type query) subscribe to sse.DefaultTopic;
-// filtered subscribers subscribe to the requested types AND
-// sse.DefaultTopic so they still receive untyped publishes (the
-// library deduplicates per subscriber).
+// bearer middleware at mount time.
 //
-// The wrapper also pre-flushes the SSE response headers. The library
-// otherwise defers writing headers until the first Send, which keeps
-// http.Client.Do blocked until an event lands — surprising for test
-// rigs and reactive consumers that want to confirm the connection is
-// live before publishing.
-//
-// A later task adds an adapter that promotes ?from / ?from_timestamp
-// to Last-Event-ID; today it just pre-flushes and delegates.
+// The handler:
+//  1. Promotes Auth0's ?from and ?from_timestamp query parameters to
+//     the SSE-spec Last-Event-ID header so the library's native replay
+//     path picks them up. ?from wins over ?from_timestamp when both
+//     are present. ?from_timestamp accepts RFC 3339 only; anything
+//     else returns 400 to fail noisily rather than silently joining
+//     live.
+//  2. Pre-flushes the SSE response headers. The library otherwise
+//     defers writing headers until the first Send, which keeps
+//     http.Client.Do blocked until an event lands — surprising for
+//     test rigs and reactive consumers that want to confirm the
+//     connection is live before publishing.
+//  3. Delegates to the underlying *sse.Server, which uses an
+//     OnSession callback to parse `?event_type=...` into the
+//     subscriber's topic list.
 func (h *Hub) Handler() http.Handler {
 	h.server.OnSession = h.onSession
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Last-Event-ID") == "" {
+			if id := r.URL.Query().Get("from"); id != "" {
+				r.Header.Set("Last-Event-ID", id)
+			} else if ts := r.URL.Query().Get("from_timestamp"); ts != "" {
+				t, err := time.Parse(time.RFC3339, ts)
+				if err != nil {
+					http.Error(w, `from_timestamp must be RFC 3339`, http.StatusBadRequest)
+					return
+				}
+				if h.replayer != nil {
+					if id, ok := h.replayer.IDBefore(t); ok {
+						r.Header.Set("Last-Event-ID", id)
+					} else if oldest := h.replayer.OldestID(); oldest != "" {
+						// No stored event predates t, but the buffer
+						// holds events newer than t — replay them by
+						// resuming from the oldest stored ID. The
+						// oldest event itself is skipped (the library
+						// replays strictly after the given ID); see
+						// recordingReplayer.OldestID for the trade-off.
+						r.Header.Set("Last-Event-ID", oldest)
+					}
+					// Buffer is empty: nothing to replay; subscriber
+					// joins live.
+				}
+				// Replayer is nil: silently ignore, no replay
+				// possible. Matches the "disable buffer" escape hatch.
+			}
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")

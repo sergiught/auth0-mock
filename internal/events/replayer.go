@@ -113,6 +113,22 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 	return r.inner.Replay(sub)
 }
 
+// OldestID returns the ID of the oldest event currently in the index,
+// or "" if the index is empty. Used by Hub.Handler to translate
+// ?from_timestamp-predates-everything into a Last-Event-ID hint —
+// injecting the oldest ID makes the library replay everything strictly
+// after it. The trade-off: the oldest stored event itself is skipped.
+// In practice the buffer's default cap is 100 and the typical
+// from_timestamp-before-all case is "subscriber wants the whole
+// session" — a single missed event at the oldest edge is acceptable
+// (and far cheaper than mirroring the library's payload queue).
+func (r *recordingReplayer) OldestID() string {
+	if len(r.idx.entries) == 0 {
+		return ""
+	}
+	return r.idx.entries[0].id
+}
+
 // IDBefore is the timestamp→ID lookup the hub uses to translate
 // ?from_timestamp into a Last-Event-ID. See ringIndex.idBefore for the
 // semantics.
