@@ -10,20 +10,70 @@ import (
 	"github.com/tmaxmax/go-sse"
 )
 
-// KeepAliveIntervalForTest is the interval at which a keep-alive
-// comment frame is published to every connected subscriber. Exported
-// so tests can shorten it from the 15s default; do NOT mutate from
-// production code.
-var KeepAliveIntervalForTest = 15 * time.Second
+// broadcastTopic is the dedicated fan-out topic for filterless
+// subscribers. Publishers send every event to broadcastTopic AND
+// evt.Type so filterless subscribers (subscribed to broadcastTopic)
+// see everything while filtered subscribers (subscribed to specific
+// event_types) see only matching events.
+const broadcastTopic = "__broadcast__"
+
+// keepAliveTopic is a separate fan-out topic used ONLY for keep-alive
+// comments. Every subscriber — filtered or not — subscribes to it so
+// that filtered subscribers behind idle-timeout proxies still receive
+// heartbeats. Publishers of real events never target this topic, so
+// keep-alives don't interfere with event filtering.
+const keepAliveTopic = "__keep_alive__"
+
+// DefaultKeepAliveInterval is the cadence at which a `:keep-alive`
+// comment is broadcast to every connected subscriber. 15s matches
+// what most SSE deployments use; the library doesn't auto-emit.
+const DefaultKeepAliveInterval = 15 * time.Second
+
+// keepAliveInterval is the live cadence used by NewHub. Tests
+// override it via SetKeepAliveIntervalForTest; production code never
+// touches it directly.
+var keepAliveInterval = DefaultKeepAliveInterval
+
+// SetKeepAliveIntervalForTest changes the keep-alive cadence for the
+// duration of a single test. Registers t.Cleanup to restore the
+// original value, so tests can't accidentally bleed configuration
+// between cases. Intended for use only from _test.go files.
+func SetKeepAliveIntervalForTest(t interface{ Cleanup(func()) }, d time.Duration) {
+	prev := keepAliveInterval
+	keepAliveInterval = d
+	t.Cleanup(func() { keepAliveInterval = prev })
+}
 
 // Hub is the SSE fan-out the mock owns. One Hub per process; the
 // HTTP handler at GET /events is hub.Handler(), and POST /admin0/events
-// pushes via hub.Publish. Hub is safe for concurrent use — every
-// underlying primitive (sse.Server, sse.Joe, recordingReplayer's
-// internals) is.
+// pushes via hub.Publish. Hub is safe for concurrent use; every
+// underlying primitive (sse.Server, sse.Joe, recordingReplayer) is.
+//
+// Lifecycle:
+//   - NewHub starts a keep-alive goroutine.
+//   - Reset drains current subscribers and rebuilds the underlying
+//     server + replay buffer, so /admin0/reset between tests is
+//     non-destructive to the hub itself.
+//   - Shutdown drains every subscriber permanently and stops the
+//     keep-alive goroutine; intended for process shutdown.
 type Hub struct {
+	bufferSize int
+	now        func() time.Time
+
+	// Mu protects server / replayer swap. Read-locked by Publish and
+	// Handler; write-locked by Reset and Shutdown.
+	mu       sync.RWMutex
 	server   *sse.Server
 	replayer *recordingReplayer // Nil when buffer is disabled.
+	closed   bool
+
+	// ActiveMu protects active subscriber cancels. Reset/Shutdown
+	// iterate this list to drain in-flight subscribers via context
+	// cancellation, which lets sse.Joe's subscribe loop unwind
+	// cleanly (no "provider is closed" error string in the wire body).
+	activeMu sync.Mutex
+	active   map[uint64]context.CancelFunc
+	nextSub  uint64
 
 	stop      chan struct{}
 	stopped   sync.Once
@@ -32,68 +82,67 @@ type Hub struct {
 
 // NewHub constructs a Hub. BufferSize is the cap of the replay buffer
 // (used for resume via Last-Event-ID / ?from / ?from_timestamp);
-// values <= 0 disable replay entirely (sse.Joe accepts a nil Replayer).
-// Now is the clock the replayer's timestamp index uses; nil falls back
-// to time.Now. The caller should wire this to internal/clock.Clock.Now
-// when a controllable clock is present so ?from_timestamp behaves
-// deterministically in clock-controlled tests.
+// values <= 0 disable replay entirely (sse.Joe accepts a nil
+// Replayer); values of 1 are clamped to 2 because the library
+// requires a count of at least 2. Now is the clock the replayer's
+// timestamp index uses; nil falls back to time.Now. The caller should
+// wire this to internal/clock.Clock.Now when a controllable clock is
+// present so ?from_timestamp behaves deterministically in
+// clock-controlled tests.
 func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
-	h := &Hub{stop: make(chan struct{})}
-	joe := &sse.Joe{}
-	if bufferSize > 0 {
-		rr, err := newRecordingReplayer(bufferSize, now)
-		if err != nil {
-			return nil, err
-		}
-		joe.Replayer = rr
-		h.replayer = rr
+	if bufferSize == 1 {
+		// The library's NewFiniteReplayer enforces count >= 2;
+		// clamp to that minimum rather than crashing the process
+		// at startup over a one-off configuration choice.
+		bufferSize = 2
 	}
-	h.server = &sse.Server{Provider: joe}
+	h := &Hub{
+		bufferSize: bufferSize,
+		now:        now,
+		active:     make(map[uint64]context.CancelFunc),
+		stop:       make(chan struct{}),
+	}
+	if err := h.build(); err != nil {
+		return nil, err
+	}
 	h.keepalive.Add(1)
 	go h.runKeepAlive()
 	return h, nil
 }
 
-func (h *Hub) runKeepAlive() {
-	defer h.keepalive.Done()
-	t := time.NewTicker(KeepAliveIntervalForTest)
-	defer t.Stop()
-	for {
-		select {
-		case <-h.stop:
-			return
-		case <-t.C:
-			msg := &sse.Message{}
-			msg.AppendComment("keep-alive")
-			// Publish to broadcastTopic AND to no event_type, so
-			// filterless subscribers see it. Filtered subscribers
-			// subscribed to specific event_types do NOT receive
-			// keep-alives — they care about typed events only.
-			// (A keep-alive doesn't help if the subscriber's
-			// filter rejects it.)
-			_ = h.server.Publish(msg, broadcastTopic)
+// build creates a fresh *sse.Server + optional recordingReplayer.
+// Caller must hold mu.Lock (or be the constructor before any goroutine
+// can observe the Hub).
+func (h *Hub) build() error {
+	joe := &sse.Joe{}
+	if h.bufferSize > 0 {
+		rr, err := newRecordingReplayer(h.bufferSize, h.now)
+		if err != nil {
+			return err
 		}
+		joe.Replayer = rr
+		h.replayer = rr
+	} else {
+		h.replayer = nil
 	}
+	srv := &sse.Server{Provider: joe}
+	srv.OnSession = h.onSession
+	h.server = srv
+	return nil
 }
-
-// broadcastTopic is the dedicated topic filterless subscribers join.
-// Publishers send every event to broadcastTopic AND evt.Type so:
-//   - Filterless subscribers (subscribed only to broadcastTopic)
-//     receive every event.
-//   - Filtered subscribers (subscribed only to their requested
-//     event_type list) receive only matching events.
-//
-// Using sse.DefaultTopic for both purposes (the previous design) made
-// every filtered subscriber implicitly receive every event because the
-// DefaultTopic intersected on both sides. A distinct broadcast topic
-// keeps the two cases isolated.
-const broadcastTopic = "__broadcast__"
 
 // Publish broadcasts evt to every subscriber whose topic set
 // intersects. The message is sent to broadcastTopic (reaches every
 // filterless subscriber) and to evt.Type (reaches every filtered
-// subscriber that listed this type).
+// subscriber that listed this type). Keep-alives use a separate
+// topic and never go through this path.
 func (h *Hub) Publish(evt Event) error {
+	h.mu.RLock()
+	server, closed := h.server, h.closed
+	h.mu.RUnlock()
+	if closed || server == nil {
+		return errors.New("events: hub is closed")
+	}
 	msg := &sse.Message{Type: sse.Type(evt.Type)}
 	if evt.ID != "" {
 		msg.ID = sse.ID(evt.ID)
@@ -105,98 +154,126 @@ func (h *Hub) Publish(evt Event) error {
 	if evt.Type != "" {
 		topics = append(topics, evt.Type)
 	}
-	return h.server.Publish(msg, topics...)
+	return server.Publish(msg, topics...)
+}
+
+// Reset drains every currently-connected subscriber via context
+// cancellation (so they see a clean EOF, not "provider is closed"),
+// then rebuilds the underlying server + replay buffer. After Reset
+// the hub is fully functional again — subscribers can connect, events
+// can be published, replay starts fresh. Intended for the
+// /admin0/reset control-plane hook between tests.
+func (h *Hub) Reset(ctx context.Context) error {
+	if err := h.drainAndShutdownOld(ctx); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return nil
+	}
+	return h.build()
+}
+
+// Shutdown drains every subscriber, stops the keep-alive goroutine,
+// and marks the hub closed permanently. Intended for process
+// shutdown. Idempotent — extra calls are no-ops.
+func (h *Hub) Shutdown(ctx context.Context) error {
+	h.stopped.Do(func() { close(h.stop) })
+	h.keepalive.Wait()
+	if err := h.drainAndShutdownOld(ctx); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	h.closed = true
+	h.server = nil
+	h.replayer = nil
+	h.mu.Unlock()
+	return nil
+}
+
+// drainAndShutdownOld cancels every in-flight subscriber's context
+// so their Subscribe goroutines return cleanly with context.Canceled
+// (rather than the library's "provider is closed" error string,
+// which gets written into the SSE wire body). Then it shuts down the
+// underlying sse.Server to stop the Joe worker goroutine. Safe to
+// call when h.server is nil.
+func (h *Hub) drainAndShutdownOld(ctx context.Context) error {
+	h.activeMu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(h.active))
+	for _, c := range h.active {
+		cancels = append(cancels, c)
+	}
+	h.active = make(map[uint64]context.CancelFunc)
+	h.activeMu.Unlock()
+	for _, c := range cancels {
+		c()
+	}
+
+	h.mu.RLock()
+	server := h.server
+	h.mu.RUnlock()
+	if server == nil {
+		return nil
+	}
+	err := server.Shutdown(ctx)
+	// Sse.Server.Shutdown returns an error if it's already been shut
+	// down or if ctx fires — flatten the benign cases.
+	if err != nil && errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+func (h *Hub) runKeepAlive() {
+	defer h.keepalive.Done()
+	t := time.NewTicker(keepAliveInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-h.stop:
+			return
+		case <-t.C:
+			h.mu.RLock()
+			server, closed := h.server, h.closed
+			h.mu.RUnlock()
+			if closed || server == nil {
+				continue
+			}
+			msg := &sse.Message{}
+			msg.AppendComment("keep-alive")
+			// Publish to keepAliveTopic only. Every subscriber
+			// (filterless or filtered) subscribes to keepAliveTopic
+			// in addition to their content topics, so each one
+			// receives exactly one heartbeat per tick.
+			_ = server.Publish(msg, keepAliveTopic)
+		}
+	}
 }
 
 // Handler returns the HTTP handler for GET /events. Wire it under
 // bearer middleware at mount time.
 //
 // The handler:
-//  1. Promotes Auth0's ?from and ?from_timestamp query parameters to
-//     the SSE-spec Last-Event-ID header so the library's native replay
-//     path picks them up. ?from wins over ?from_timestamp when both
-//     are present. ?from_timestamp accepts RFC 3339 only; anything
-//     else returns 400 to fail noisily rather than silently joining
-//     live.
-//  2. Pre-flushes the SSE response headers. The library otherwise
-//     defers writing headers until the first Send, which keeps
-//     http.Client.Do blocked until an event lands — surprising for
-//     test rigs and reactive consumers that want to confirm the
-//     connection is live before publishing.
-//  3. Delegates to the underlying *sse.Server, which uses an
+//  1. Disables the http.Server WriteTimeout for this connection (SSE
+//     is long-lived; the server default would tear down healthy
+//     subscribers after the configured timeout).
+//  2. Promotes Auth0's ?from and ?from_timestamp query parameters to
+//     the SSE-spec Last-Event-ID header so the library's native
+//     replay path picks them up. ?from wins over ?from_timestamp.
+//     ?from_timestamp accepts RFC 3339; clients that send the
+//     timezone `+` unencoded (which URL-decodes to space) are
+//     tolerated by retrying with the space restored.
+//  3. Surfaces aged-out resume requests as 410 Gone (matching the
+//     OpenAPI declaration). Unparseable ?from_timestamp returns 400
+//     with the standard mgmt error envelope.
+//  4. Pre-flushes the SSE response headers so http.Client.Do returns
+//     immediately rather than waiting for the first event.
+//  5. Tracks the request context in the active set so Reset /
+//     Shutdown can drain in-flight subscribers cleanly.
+//  6. Delegates to the underlying *sse.Server, which uses an
 //     OnSession callback to parse `?event_type=...` into the
 //     subscriber's topic list.
 func (h *Hub) Handler() http.Handler {
-	h.server.OnSession = h.onSession
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Last-Event-ID") == "" {
-			if id := r.URL.Query().Get("from"); id != "" {
-				r.Header.Set("Last-Event-ID", id)
-			} else if ts := r.URL.Query().Get("from_timestamp"); ts != "" {
-				t, err := time.Parse(time.RFC3339, ts)
-				if err != nil {
-					http.Error(w, `from_timestamp must be RFC 3339`, http.StatusBadRequest)
-					return
-				}
-				if h.replayer != nil {
-					if id, ok := h.replayer.IDBefore(t); ok {
-						r.Header.Set("Last-Event-ID", id)
-					} else if oldest := h.replayer.OldestID(); oldest != "" {
-						// No stored event predates t, but the buffer
-						// holds events newer than t — replay them by
-						// resuming from the oldest stored ID. The
-						// oldest event itself is skipped (the library
-						// replays strictly after the given ID); see
-						// recordingReplayer.OldestID for the trade-off.
-						r.Header.Set("Last-Event-ID", oldest)
-					}
-					// Buffer is empty: nothing to replay; subscriber
-					// joins live.
-				}
-				// Replayer is nil: silently ignore, no replay
-				// possible. Matches the "disable buffer" escape hatch.
-			}
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		if f, ok := w.(http.Flusher); ok {
-			w.WriteHeader(http.StatusOK)
-			f.Flush()
-		}
-		h.server.ServeHTTP(w, r)
-	})
-}
-
-func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
-	requested := r.URL.Query()["event_type"]
-	if len(requested) == 0 {
-		// Filterless: only the broadcast topic. Publishers send every
-		// event there.
-		return []string{broadcastTopic}, true
-	}
-	// Filtered: ONLY the requested types. NOT broadcastTopic — that
-	// would defeat the filter.
-	return requested, true
-}
-
-// Shutdown drains every open subscription. Called from server shutdown
-// and from POST /admin0/reset so tests don't leak SSE state across each
-// other. Errors from the library on a second call are tolerated by the
-// admin0 reset wiring — by the time reset fires the test verdict is
-// usually decided and we'd rather not mask the original failure.
-func (h *Hub) Shutdown(ctx context.Context) error {
-	if h.server == nil {
-		return nil
-	}
-	h.stopped.Do(func() { close(h.stop) })
-	h.keepalive.Wait()
-	err := h.server.Shutdown(ctx)
-	// Sse.Server.Shutdown returns an error when called on an already-
-	// shut server (depending on library version); flatten that to nil
-	// so reset wiring stays idempotent.
-	if err != nil && errors.Is(err, context.Canceled) {
-		return nil
-	}
-	return err
+	return http.HandlerFunc(h.serveHTTP)
 }

@@ -1,10 +1,19 @@
 package events
 
 import (
+	"errors"
+	"sync"
 	"time"
 
 	"github.com/tmaxmax/go-sse"
 )
+
+// ErrAgedOut is returned by recordingReplayer.Replay when a subscriber
+// presents a Last-Event-ID (or a resolved ?from / ?from_timestamp) that
+// the buffer no longer carries. The Hub.Handler translates it into a
+// 410 Gone response — matching the `410` declared in the OpenAPI spec
+// for GET /events.
+var ErrAgedOut = errors.New("events: requested event ID is no longer in the replay buffer")
 
 // ringIndex keeps the timestamp of every event currently held by the
 // underlying FiniteReplayer, in insertion order. It is sized to match
@@ -31,9 +40,13 @@ func newRingIndex(capacity int) *ringIndex {
 }
 
 // put appends an entry, evicting the oldest if the buffer is full.
+// Uses copy() to shift in place rather than allocating a new slice,
+// keeping the operation a single memmove instead of a copy plus an
+// append-into-the-truncated-slice.
 func (r *ringIndex) put(id string, at time.Time) {
 	if len(r.entries) == r.cap {
-		r.entries = append(r.entries[:0], r.entries[1:]...)
+		copy(r.entries, r.entries[1:])
+		r.entries = r.entries[:r.cap-1]
 	}
 	r.entries = append(r.entries, indexEntry{id: id, at: at})
 }
@@ -60,28 +73,39 @@ func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 	return bestID, found
 }
 
+// has reports whether id is currently in the index.
+func (r *ringIndex) has(id string) bool {
+	for _, e := range r.entries {
+		if e.id == id {
+			return true
+		}
+	}
+	return false
+}
+
 // recordingReplayer wraps sse.FiniteReplayer with a same-capacity
 // ringIndex so the hub can translate ?from_timestamp into a
 // Last-Event-ID before delegating resume to the inner replayer. All
 // Put / Replay calls pass straight through; the only added work is one
-// ringIndex.put per Put.
+// ringIndex.put per Put and one mutex acquisition per access.
+//
+// Concurrency: sse.Joe serialises Put calls, but Hub.Handler reads
+// IDBefore / OldestID / has from arbitrary request goroutines
+// concurrent with those Put calls. The mutex makes those reads safe.
 type recordingReplayer struct {
+	mu    sync.RWMutex
 	inner *sse.FiniteReplayer
 	idx   *ringIndex
 	now   func() time.Time
 }
 
 // newRecordingReplayer constructs a recordingReplayer wrapping a fresh
-// FiniteReplayer of the given capacity. AutoIDs is hard-wired to true
-// so events pushed without an explicit ID still get one (which the
-// index needs to be useful). Now defaults to time.Now when nil.
+// FiniteReplayer of the given capacity. AutoIDs is hard-wired to false
+// because the /admin0/events handler enforces the CloudEvent schema's
+// `id` requirement upstream — every message arrives with an explicit
+// ID, and autoIDs=true would actively reject those. Now defaults to
+// time.Now when nil.
 func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplayer, error) {
-	// AutoIDs is false: the /admin0/events handler enforces the
-	// CloudEvent schema's `id` requirement before Hub.Publish ever
-	// reaches us, so every message arrives with an ID already set.
-	// AutoIDs=true would actively reject messages with explicit IDs
-	// ("message already has an ID, can't use generated ID"), which is
-	// the opposite of what we want.
 	inner, err := sse.NewFiniteReplayer(capacity, false)
 	if err != nil {
 		return nil, err
@@ -92,24 +116,37 @@ func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplaye
 	return &recordingReplayer{inner: inner, idx: newRingIndex(capacity), now: now}, nil
 }
 
-// Put records the event in the index and forwards to the inner replayer.
-// The returned message is whatever the inner replayer returns (an
-// ID-stamped copy when autoIDs=true). We index using the returned
-// message's ID so the auto-generated value matches what subscribers
-// will see and pass back via Last-Event-ID.
+// Put records the event in the index and forwards to the inner
+// replayer.
 func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message, error) {
 	out, err := r.inner.Put(msg, topics)
 	if err != nil {
 		return nil, err
 	}
 	if out != nil {
+		r.mu.Lock()
 		r.idx.put(out.ID.String(), r.now())
+		r.mu.Unlock()
 	}
 	return out, nil
 }
 
-// Replay delegates to the inner FiniteReplayer.
+// Replay delegates to the inner FiniteReplayer, but first checks our
+// index: if the subscriber's Last-Event-ID is set and is NOT in the
+// buffer, the request has aged out. We return ErrAgedOut so the hub's
+// handler can translate to HTTP 410. The library's FiniteReplayer
+// silently returns nil in this case (it just skips the replay), which
+// would leave the subscriber joined live and unaware they missed
+// events.
 func (r *recordingReplayer) Replay(sub sse.Subscription) error {
+	if sub.LastEventID.IsSet() {
+		r.mu.RLock()
+		ok := r.idx.has(sub.LastEventID.String())
+		r.mu.RUnlock()
+		if !ok {
+			return ErrAgedOut
+		}
+	}
 	return r.inner.Replay(sub)
 }
 
@@ -123,6 +160,8 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 // session" — a single missed event at the oldest edge is acceptable
 // (and far cheaper than mirroring the library's payload queue).
 func (r *recordingReplayer) OldestID() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if len(r.idx.entries) == 0 {
 		return ""
 	}
@@ -133,5 +172,16 @@ func (r *recordingReplayer) OldestID() string {
 // ?from_timestamp into a Last-Event-ID. See ringIndex.idBefore for the
 // semantics.
 func (r *recordingReplayer) IDBefore(t time.Time) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.idx.idBefore(t)
+}
+
+// Has reports whether id is currently in the buffer. Used by the hub
+// adapter to surface 410 Gone for unknown ?from values up-front,
+// rather than waiting for Replay to do the same lookup.
+func (r *recordingReplayer) Has(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.idx.has(id)
 }

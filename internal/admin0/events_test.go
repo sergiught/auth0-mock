@@ -18,13 +18,13 @@ import (
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
-// captureHub records every Publish call and Shutdown invocation.
+// captureHub records every Publish call and Reset invocation.
 // Replaces *events.Hub in tests via the EventsPublisher interface so
 // the admin0 handler can be exercised without spinning up a real hub.
 type captureHub struct {
-	mu            sync.Mutex
-	got           []events.Event
-	shutdownCalls int
+	mu         sync.Mutex
+	got        []events.Event
+	resetCalls int
 }
 
 func (h *captureHub) Publish(e events.Event) error {
@@ -34,10 +34,10 @@ func (h *captureHub) Publish(e events.Event) error {
 	return nil
 }
 
-func (h *captureHub) Shutdown(_ context.Context) error {
+func (h *captureHub) Reset(_ context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.shutdownCalls++
+	h.resetCalls++
 	return nil
 }
 
@@ -119,7 +119,7 @@ func TestPostAdmin0Events_RejectsSchemaViolation(t *testing.T) {
 	assert.Empty(t, hub.got)
 }
 
-func TestReset_CallsEventsShutdown(t *testing.T) {
+func TestReset_CallsEventsReset(t *testing.T) {
 	hub := &captureHub{}
 	r := chi.NewRouter()
 	admin0.Mount(r, admin0.Deps{Events: hub})
@@ -129,5 +129,5 @@ func TestReset_CallsEventsShutdown(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Equal(t, 1, hub.shutdownCalls, "reset must drain SSE subscribers")
+	assert.Equal(t, 1, hub.resetCalls, "reset must drain SSE subscribers without destroying the hub")
 }

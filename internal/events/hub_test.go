@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -299,9 +300,7 @@ func TestHub_Handler_FromTimestampWithEmptyBufferJoinsLive(t *testing.T) {
 }
 
 func TestHub_EmitsKeepAliveComments(t *testing.T) {
-	orig := events.KeepAliveIntervalForTest
-	events.KeepAliveIntervalForTest = 50 * time.Millisecond
-	t.Cleanup(func() { events.KeepAliveIntervalForTest = orig })
+	events.SetKeepAliveIntervalForTest(t, 50*time.Millisecond)
 
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
@@ -328,9 +327,7 @@ func TestHub_KeepAlive_FanOutsOncePerSubscriber(t *testing.T) {
 	// versa, so each subscriber would see N=subscriber-count
 	// keep-alives per tick. Asserting equal counts across subscribers
 	// catches the bug regardless of how many ticks happen to fire.
-	orig := events.KeepAliveIntervalForTest
-	events.KeepAliveIntervalForTest = 50 * time.Millisecond
-	t.Cleanup(func() { events.KeepAliveIntervalForTest = orig })
+	events.SetKeepAliveIntervalForTest(t, 50*time.Millisecond)
 
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
@@ -426,4 +423,189 @@ func TestHub_Handler_MultipleSubscribersEachReceiveOnce(t *testing.T) {
 	for i, frame := range received {
 		assert.Contains(t, frame, "id: evt-x", "subscriber %d missed the event", i)
 	}
+}
+
+func TestHub_Reset_RebuildsHub(t *testing.T) {
+	// Regression for the blocker: /admin0/reset must NOT permanently
+	// destroy the hub. After Reset the hub should accept fresh
+	// subscribers and publishes again.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	// Open a subscriber, prove it works.
+	r1, cancel1 := subscribe(t, srv, "")
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, h.Publish(events.Event{
+		Type: "x.y", ID: "before-reset",
+		Payload: json.RawMessage(`{"type":"x.y","id":"before-reset"}`),
+	}))
+	frame := readOneEvent(t, r1, 2*time.Second)
+	assert.Contains(t, frame, "id: before-reset")
+	cancel1()
+
+	// Reset and verify the hub is still functional.
+	require.NoError(t, h.Reset(context.Background()))
+
+	r2, cancel2 := subscribe(t, srv, "")
+	defer cancel2()
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, h.Publish(events.Event{
+		Type: "x.y", ID: "after-reset",
+		Payload: json.RawMessage(`{"type":"x.y","id":"after-reset"}`),
+	}))
+	frame = readOneEvent(t, r2, 2*time.Second)
+	assert.Contains(t, frame, "id: after-reset")
+}
+
+func TestHub_Reset_DoesNotLeakErrorTextToWire(t *testing.T) {
+	// Regression: shutting down the sse.Server while subscribers are
+	// connected writes "go-sse.server: provider is closed" into the
+	// SSE wire body. Reset must drain via context cancellation so
+	// the subscriber sees a clean close instead.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	r, cancel := subscribe(t, srv, "")
+	defer cancel()
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain ANY buffered content from the connection up to this point.
+	doneInit := make(chan struct{})
+	read := make(chan string, 16)
+	go func() {
+		defer close(doneInit)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			read <- line
+		}
+	}()
+
+	require.NoError(t, h.Reset(context.Background()))
+
+	// Collect for 150ms then inspect.
+	collected := []string{}
+	timeout := time.After(150 * time.Millisecond)
+Loop:
+	for {
+		select {
+		case line := <-read:
+			collected = append(collected, line)
+		case <-timeout:
+			break Loop
+		}
+	}
+	joined := strings.Join(collected, "")
+	assert.NotContains(t, joined, "provider is closed",
+		"library error string must not leak into the SSE wire body")
+}
+
+func TestHub_Handler_AgedOutLastEventID_Returns410(t *testing.T) {
+	// Cap=2 so we can force the buffer to evict.
+	h, err := events.NewHub(2, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	for _, id := range []string{"old", "newer", "newest"} {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "x.y", ID: id,
+			Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+		}))
+	}
+	// "old" has been evicted; "newer" and "newest" remain.
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "old")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	assert.Equal(t, http.StatusGone, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "event_aged_out")
+}
+
+func TestHub_Handler_FromTimestampUnencodedPlus_Accepted(t *testing.T) {
+	// Regression: a client that pastes an RFC 3339 timestamp without
+	// URL-encoding the `+` in `+00:00` would previously hit 400
+	// because Go's URL form decoder turns `+` into space.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	// Use a base URL string with the raw `+`; the test sends it
+	// verbatim, simulating a paste-and-go client.
+	rawTS := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	// Force the +00:00 form by re-formatting; UTC's "Z" wouldn't
+	// exercise the path.
+	rawTS = strings.Replace(rawTS, "Z", "+00:00", 1)
+
+	r, cancel := subscribe(t, srv, "?from_timestamp="+rawTS)
+	defer cancel()
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, h.Publish(events.Event{
+		Type: "x.y", ID: "after",
+		Payload: json.RawMessage(`{"type":"x.y","id":"after"}`),
+	}))
+	frame := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, frame, "id: after")
+}
+
+func TestHub_Handler_FromTimestamp400UsesMgmtEnvelope(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from_timestamp=not-a-timestamp")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_from_timestamp")
+}
+
+func TestHub_KeepAlive_ReachesFilteredSubscribers(t *testing.T) {
+	// Regression: filtered subscribers used to be excluded from
+	// keep-alives because they subscribed only to their event-type
+	// topics. They should also receive heartbeats so reverse-proxy
+	// idle timeouts don't tear them down.
+	events.SetKeepAliveIntervalForTest(t, 50*time.Millisecond)
+
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	r, cancel := subscribe(t, srv, "?event_type=user.created")
+	defer cancel()
+
+	// First frame within 150ms should be a keep-alive (no matching
+	// event published).
+	frame := readOneEvent(t, r, 300*time.Millisecond)
+	assert.True(t, strings.HasPrefix(frame, ":") || strings.Contains(frame, "\n:"),
+		"filtered subscriber must receive keep-alive comments; got %q", frame)
+}
+
+func TestNewHub_BufferSizeOneClampedToTwo(t *testing.T) {
+	// Library requires count >= 2; we used to crash at startup
+	// instead of clamping.
+	h, err := events.NewHub(1, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
 }

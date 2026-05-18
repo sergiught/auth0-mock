@@ -97,11 +97,13 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Deps.Clock.Reset()
 	}
 	if h.Deps.Events != nil {
-		// Drain every open SSE subscriber so the next test starts
-		// fresh. Errors are ignored: by the time reset fires the test
-		// verdict is usually decided and a failing shutdown shouldn't
-		// mask the original failure.
-		_ = h.Deps.Events.Shutdown(r.Context())
+		// Drain every open SSE subscriber and clear the replay
+		// buffer so the next test starts fresh. The hub stays
+		// functional after Reset (unlike Shutdown, which permanently
+		// closes it). Errors are ignored: by the time reset fires the
+		// test verdict is usually decided and a failing reset
+		// shouldn't mask the original failure.
+		_ = h.Deps.Events.Reset(r.Context())
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

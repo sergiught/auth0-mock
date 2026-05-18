@@ -13,11 +13,12 @@ import (
 
 // EventsPublisher is the seam between the /admin0/events handler and
 // the SSE hub. The concrete implementation is *events.Hub; tests use
-// fakes that record calls. Shutdown is on the interface because the
-// ResetHandler also needs it (one-stop dependency).
+// fakes that record calls. Reset is on the interface because the
+// ResetHandler drains the SSE state between tests via this hook
+// (without permanently destroying the hub).
 type EventsPublisher interface {
 	Publish(events.Event) error
-	Shutdown(context.Context) error
+	Reset(context.Context) error
 }
 
 // PostEventsHandler validates an incoming Auth0 event-stream envelope
@@ -64,8 +65,11 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Validator.ValidateEventStreamPayload(op, http.StatusOK, body); err != nil {
+		// Flatten kin-openapi's multi-line Schema/Value dump down to
+		// `"/field": reason; "/other": reason` so the wire response
+		// stays a single, scannable line.
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			err.Error(), "invalid_event")
+			spec.ConciseSchemaError(err), "invalid_event")
 		return
 	}
 	var env eventStreamEnvelope

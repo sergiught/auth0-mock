@@ -1,14 +1,8 @@
 package main
 
 import (
-	"bufio"
-	"context"
-	"encoding/json"
-	"io"
 	"net"
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +21,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/router"
 	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/pkg/auth0mock"
+	"github.com/sergiught/auth0-mock/pkg/auth0mock/auth0mocktest"
 )
 
 // startE2EServer boots the full mock against an httptest.Server and
@@ -92,64 +87,25 @@ func TestEvents_E2E_PushAndReceive(t *testing.T) {
 	c, err := auth0mock.NewClient(baseURL)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	got := make(chan string, 1)
-	go func() {
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v2/events", nil)
-		req.Header.Set("Authorization", "Bearer "+bearer)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			got <- "ERR " + err.Error()
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(resp.Body)
-			got <- "BADSTATUS " + resp.Status + " " + string(b)
-			return
-		}
-		r := bufio.NewReader(resp.Body)
-		var frame strings.Builder
-		for {
-			line, err := r.ReadString('\n')
-			if err != nil {
-				got <- "READERR " + err.Error()
-				return
-			}
-			// Skip keep-alive comment frames.
-			if strings.HasPrefix(line, ":") {
-				continue
-			}
-			frame.WriteString(line)
-			if line == "\n" {
-				got <- frame.String()
-				return
-			}
-		}
-	}()
+	// Open the subscription, then push — the helper does keep-alive
+	// filtering and frame parsing so the test reads like the user
+	// journey: subscribe → push → assert what arrived.
+	stream := auth0mocktest.SubscribeEvents(t, c, bearer, "")
+	// Let the subscription register before we push.
+	time.Sleep(100 * time.Millisecond)
 
-	time.Sleep(150 * time.Millisecond)
-	require.NoError(t, c.Events.Push(context.Background(), auth0mock.Event{
-		Type: "user.created",
-		ID:   "evt_e2eaaaaaaaaaaaaa",
-		Payload: json.RawMessage(`{
-		  "type":"user.created","offset":"0",
-		  "event":{
-		    "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
-		    "id":"evt_e2eaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z",
-		    "a0tenant":"e2e","a0stream":"est_aaaaaaaaaaaaaaaa",
-		    "data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}
-		  }
-		}`),
-	}))
+	auth0mocktest.MustPush(t, c, `{
+		"type":"user.created","offset":"0",
+		"event":{
+		  "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
+		  "id":"evt_e2eaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z",
+		  "a0tenant":"e2e","a0stream":"est_aaaaaaaaaaaaaaaa",
+		  "data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}
+		}
+	}`)
 
-	select {
-	case frame := <-got:
-		assert.Contains(t, frame, "id: evt_e2eaaaaaaaaaaaaa")
-		assert.Contains(t, frame, "event: user.created")
-		assert.Contains(t, frame, `"user_id":"u-1"`)
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout waiting for SSE frame")
-	}
+	evt := stream.NextEvent(t, 3*time.Second)
+	assert.Equal(t, "evt_e2eaaaaaaaaaaaaa", evt.ID)
+	assert.Equal(t, "user.created", evt.Type)
+	assert.Contains(t, string(evt.Data), `"user_id":"u-1"`)
 }
