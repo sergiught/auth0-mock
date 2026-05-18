@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
@@ -13,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/authapi"
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
+	"github.com/sergiught/auth0-mock/internal/events"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -62,6 +64,11 @@ type Deps struct {
 	// exercise the admin surface, in which case /admin0/clock handlers
 	// will panic if hit.
 	Clock *clock.Controlled
+	// EventsReplayBuffer is the cap of the SSE replay ring buffer for
+	// GET /events. 100 in production via EVENTS_REPLAY_BUFFER; <= 0
+	// disables replay (the endpoint still works; resume params become
+	// no-ops). Zero value is the test-friendly default.
+	EventsReplayBuffer int
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -83,6 +90,16 @@ func New(d Deps) (http.Handler, error) {
 
 	mountHealthz(r, d.Log)
 	mountReadyz(r, d.Keys, d.Log)
+
+	var clockNow func() time.Time
+	if d.Clock != nil {
+		clockNow = d.Clock.Now
+	}
+	hub, err := events.NewHub(d.EventsReplayBuffer, clockNow)
+	if err != nil {
+		return nil, fmt.Errorf("events hub: %w", err)
+	}
+
 	admin0.Mount(r, admin0.Deps{
 		Matches:     d.Store,
 		Claims:      d.Claims,
@@ -90,6 +107,7 @@ func New(d Deps) (http.Handler, error) {
 		MFA:         d.MFA,
 		Validator:   d.Validator,
 		Clock:       d.Clock,
+		Events:      hub,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {
@@ -114,6 +132,7 @@ func New(d Deps) (http.Handler, error) {
 		Router: r, Spec: d.Spec, Validator: d.Validator,
 		Store: d.Store, Keys: d.Keys, Log: d.Log, Strict: d.SpecValidationStrict,
 		RequireAudience: d.BearerRequireAudience,
+		EventsHandler:   hub.Handler(),
 	}); err != nil {
 		return nil, fmt.Errorf("mount mgmtapi: %w", err)
 	}
