@@ -26,8 +26,25 @@ import (
 // touch.
 type drainableWriter struct {
 	http.ResponseWriter
-	mu      sync.Mutex
-	drained bool
+	mu            sync.Mutex
+	drained       bool
+	headerWritten bool
+}
+
+func (d *drainableWriter) WriteHeader(code int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.drained || d.headerWritten {
+		// Suppress late WriteHeader calls — typically the library's
+		// http.Error(w, "context canceled", 500) on a normal client
+		// disconnect. The pre-flush has already written 200; letting
+		// the 500 reach the underlying writer flips the
+		// statusRecorder's logged status and triggers a "superfluous
+		// response.WriteHeader" warning from net/http.
+		return
+	}
+	d.headerWritten = true
+	d.ResponseWriter.WriteHeader(code)
 }
 
 func (d *drainableWriter) Write(b []byte) (int, error) {
