@@ -51,6 +51,12 @@ type Client struct {
 	// middleware's expiry check on validate.
 	Clock *ClockClient
 
+	// Events is the typed entry point for /admin0/events — pushes
+	// Auth0 event-stream envelopes into the SSE hub feeding GET
+	// /events. Mirrors the production pattern where event-stream
+	// producers POST events for fan-out to subscribed consumers.
+	Events *EventsClient
+
 	// RegisteredMu guards registered (the list of handles returned
 	// from Expectations.Add). Consulted by Expectations.Verify and
 	// pruned by Clear / Reset.
@@ -240,6 +246,7 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	c.Permissions = &PermissionsClient{c: c}
 	c.MFA = &MFAClient{c: c}
 	c.Clock = &ClockClient{c: c}
+	c.Events = &EventsClient{c: c}
 	return c, nil
 }
 
