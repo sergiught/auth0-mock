@@ -107,6 +107,15 @@ func (sr *statusRecorder) Flush() {
 	}
 }
 
+// Unwrap returns the wrapped writer so http.NewResponseController can
+// reach the underlying response for SetWriteDeadline and friends. The
+// SSE handler relies on this — without it ResponseController returns
+// ErrNotSupported and the http.Server's WriteTimeout silently kills
+// long-lived subscribers.
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
+}
+
 // MaxBodyBytes caps every incoming request body to limit bytes. Reads past
 // the limit return *http.MaxBytesError from the wrapped reader; downstream
 // handlers surface that to the client through their normal decode-error
@@ -436,6 +445,14 @@ func (d *debugRecorder) Flush() {
 	if f, ok := d.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Unwrap returns the wrapped writer so http.NewResponseController can
+// reach the underlying response. See statusRecorder.Unwrap for the
+// rationale — without this, SSE WriteTimeout bypass silently fails
+// in DEBUG mode.
+func (d *debugRecorder) Unwrap() http.ResponseWriter {
+	return d.ResponseWriter
 }
 
 func (d *debugRecorder) statusOrOK() int {
