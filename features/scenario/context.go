@@ -95,6 +95,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		SpecValidationStrict: true,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
+		EventsReplayBuffer:   50, // small but functional in scenario tests
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)

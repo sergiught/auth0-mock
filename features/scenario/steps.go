@@ -1,12 +1,17 @@
 package scenario
 
 import (
+	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/cucumber/godog"
 	"github.com/kinbiko/jsonassert"
@@ -378,6 +383,70 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		}
 		return fmt.Errorf("claim %q array does not contain %q (got %s)", claim, item, got.Raw)
 	})
+
+	sc.Step(`^I subscribe to /api/v2/events$`, func() error {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.BaseURL+"/api/v2/events", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
+		resp, err := nonFollowingClient.Do(req) //nolint:bodyclose // SSE body stays open; closed by the matching "delivers" step.
+		if err != nil {
+			return err
+		}
+		c.LastResp = resp
+		return nil
+	})
+
+	sc.Step(`^I push an event:$`, func(body *godog.DocString) error {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+			c.BaseURL+"/admin0/events", strings.NewReader(body.Content))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusAccepted {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("push: status %d body %s", resp.StatusCode, string(b))
+		}
+		return nil
+	})
+
+	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
+		func(wantID string, seconds int) error {
+			deadline := time.After(time.Duration(seconds) * time.Second)
+			r := bufio.NewReader(c.LastResp.Body)
+			defer func() { _ = c.LastResp.Body.Close() }()
+			lines := make(chan string, 64)
+			go func() {
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						close(lines)
+						return
+					}
+					lines <- line
+				}
+			}()
+			for {
+				select {
+				case <-deadline:
+					return fmt.Errorf("timeout waiting for id=%s", wantID)
+				case line, ok := <-lines:
+					if !ok {
+						return fmt.Errorf("stream closed before id=%s arrived", wantID)
+					}
+					if strings.TrimSpace(line) == "id: "+wantID {
+						return nil
+					}
+				}
+			}
+		})
 }
 
 // codeFromLastLocation extracts the `code` query parameter from the Location
