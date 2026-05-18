@@ -30,6 +30,12 @@ type MountOpts struct {
 	// tokens whose `aud` claim doesn't contain this value. Empty = no
 	// audience enforcement (the documented default).
 	RequireAudience string
+	// EventsHandler replaces the generic stub-driven handler for the
+	// subscribe_events operation (GET /events). When non-nil, Mount
+	// registers bearerMW(EventsHandler) for that one route. When nil,
+	// the generic handler is used (the old behaviour — useful in tests
+	// that don't care about the SSE surface).
+	EventsHandler http.Handler
 }
 
 // Mount walks the spec and registers one bearer-protected generic handler per
@@ -39,13 +45,18 @@ func Mount(opts MountOpts) error {
 	bearerMW := bearer.Middleware(opts.Keys, opts.RequireAudience)
 
 	for op := range opts.Spec.Operations() {
-		var generic http.Handler = &GenericHandler{
-			Op: op, Validator: opts.Validator, Store: opts.Store,
-			Log: opts.Log, Strict: opts.Strict,
+		var inner http.Handler
+		if opts.EventsHandler != nil && op.Op.OperationID == "subscribe_events" {
+			inner = opts.EventsHandler
+		} else {
+			inner = &GenericHandler{
+				Op: op, Validator: opts.Validator, Store: opts.Store,
+				Log: opts.Log, Strict: opts.Strict,
+			}
 		}
-		generic = bearerMW(generic)
+		handler := bearerMW(inner)
 
-		if err := safeHandle(opts.Router, op.Method, op.Template, generic); err != nil {
+		if err := safeHandle(opts.Router, op.Method, op.Template, handler); err != nil {
 			if !isRouteConflict(err) {
 				return err
 			}
