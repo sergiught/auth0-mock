@@ -4,10 +4,17 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/tmaxmax/go-sse"
 )
+
+// KeepAliveIntervalForTest is the interval at which a keep-alive
+// comment frame is published to every connected subscriber. Exported
+// so tests can shorten it from the 15s default; do NOT mutate from
+// production code.
+var KeepAliveIntervalForTest = 15 * time.Second
 
 // Hub is the SSE fan-out the mock owns. One Hub per process; the
 // HTTP handler at GET /events is hub.Handler(), and POST /admin0/events
@@ -17,6 +24,10 @@ import (
 type Hub struct {
 	server   *sse.Server
 	replayer *recordingReplayer // Nil when buffer is disabled.
+
+	stop      chan struct{}
+	stopped   sync.Once
+	keepalive sync.WaitGroup
 }
 
 // NewHub constructs a Hub. BufferSize is the cap of the replay buffer
@@ -27,7 +38,7 @@ type Hub struct {
 // when a controllable clock is present so ?from_timestamp behaves
 // deterministically in clock-controlled tests.
 func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
-	h := &Hub{}
+	h := &Hub{stop: make(chan struct{})}
 	joe := &sse.Joe{}
 	if bufferSize > 0 {
 		rr, err := newRecordingReplayer(bufferSize, now)
@@ -38,7 +49,31 @@ func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
 		h.replayer = rr
 	}
 	h.server = &sse.Server{Provider: joe}
+	h.keepalive.Add(1)
+	go h.runKeepAlive()
 	return h, nil
+}
+
+func (h *Hub) runKeepAlive() {
+	defer h.keepalive.Done()
+	t := time.NewTicker(KeepAliveIntervalForTest)
+	defer t.Stop()
+	for {
+		select {
+		case <-h.stop:
+			return
+		case <-t.C:
+			msg := &sse.Message{}
+			msg.AppendComment("keep-alive")
+			// Publish to broadcastTopic AND to no event_type, so
+			// filterless subscribers see it. Filtered subscribers
+			// subscribed to specific event_types do NOT receive
+			// keep-alives — they care about typed events only.
+			// (A keep-alive doesn't help if the subscriber's
+			// filter rejects it.)
+			_ = h.server.Publish(msg, broadcastTopic)
+		}
+	}
 }
 
 // broadcastTopic is the dedicated topic filterless subscribers join.
@@ -154,6 +189,8 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	if h.server == nil {
 		return nil
 	}
+	h.stopped.Do(func() { close(h.stop) })
+	h.keepalive.Wait()
 	err := h.server.Shutdown(ctx)
 	// Sse.Server.Shutdown returns an error when called on an already-
 	// shut server (depending on library version); flatten that to nil

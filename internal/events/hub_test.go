@@ -298,6 +298,90 @@ func TestHub_Handler_FromTimestampWithEmptyBufferJoinsLive(t *testing.T) {
 	assert.Contains(t, f, "id: live-1")
 }
 
+func TestHub_EmitsKeepAliveComments(t *testing.T) {
+	orig := events.KeepAliveIntervalForTest
+	events.KeepAliveIntervalForTest = 50 * time.Millisecond
+	t.Cleanup(func() { events.KeepAliveIntervalForTest = orig })
+
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	r, cancel := subscribe(t, srv, "")
+	defer cancel()
+
+	// Read a keep-alive frame (comment-only frame: leading `:`).
+	frame := readOneEvent(t, r, 1*time.Second)
+	assert.True(t,
+		strings.HasPrefix(frame, ":") || strings.Contains(frame, "\n:"),
+		"expected a comment line starting with ':', got %q", frame,
+	)
+}
+
+func TestHub_KeepAlive_FanOutsOncePerSubscriber(t *testing.T) {
+	// With two subscribers, a per-Hub keep-alive goroutine publishes
+	// once per tick and each subscriber sees that one publish.
+	// A per-session goroutine bug would double up: subscriber 1's
+	// goroutine publishes to all (including subscriber 2), and vice
+	// versa, so each subscriber would see N=subscriber-count
+	// keep-alives per tick. Asserting equal counts across subscribers
+	// catches the bug regardless of how many ticks happen to fire.
+	orig := events.KeepAliveIntervalForTest
+	events.KeepAliveIntervalForTest = 50 * time.Millisecond
+	t.Cleanup(func() { events.KeepAliveIntervalForTest = orig })
+
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	counts := make([]int, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for i := range 2 {
+		go func() {
+			defer wg.Done()
+			r, cancel := subscribe(t, srv, "")
+			defer cancel()
+			// Read for 175ms: 3 ticks at 50ms intervals.
+			done := time.After(175 * time.Millisecond)
+			lines := make(chan string, 32)
+			go func() {
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						close(lines)
+						return
+					}
+					lines <- line
+				}
+			}()
+		Loop:
+			for {
+				select {
+				case <-done:
+					break Loop
+				case line, ok := <-lines:
+					if !ok {
+						break Loop
+					}
+					if strings.HasPrefix(line, ":") {
+						counts[i]++
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	require.Greater(t, counts[0], 0, "subscriber 0 should have seen at least one keep-alive")
+	assert.Equal(t, counts[0], counts[1],
+		"per-Hub fan-out means every subscriber sees the same number of keep-alives; "+
+			"unequal counts would indicate per-session goroutine stacking")
+}
+
 func TestHub_Handler_FromTimestampUnparseable_400(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
