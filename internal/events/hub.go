@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tmaxmax/go-sse"
@@ -30,19 +31,33 @@ const keepAliveTopic = "__keep_alive__"
 // what most SSE deployments use; the library doesn't auto-emit.
 const DefaultKeepAliveInterval = 15 * time.Second
 
-// keepAliveInterval is the live cadence used by NewHub. Tests
-// override it via SetKeepAliveIntervalForTest; production code never
-// touches it directly.
-var keepAliveInterval = DefaultKeepAliveInterval
+// keepAliveIntervalNS is the live cadence (in nanoseconds) used by
+// runKeepAlive when it constructs its ticker. Atomic so tests that
+// run in parallel can't race on the override.
+var keepAliveIntervalNS atomic.Int64
+
+func init() {
+	keepAliveIntervalNS.Store(int64(DefaultKeepAliveInterval))
+}
+
+// keepAliveInterval returns the current cadence.
+func keepAliveInterval() time.Duration {
+	return time.Duration(keepAliveIntervalNS.Load())
+}
 
 // SetKeepAliveIntervalForTest changes the keep-alive cadence for the
 // duration of a single test. Registers t.Cleanup to restore the
 // original value, so tests can't accidentally bleed configuration
 // between cases. Intended for use only from _test.go files.
+//
+// The new cadence only affects Hub instances constructed AFTER the
+// call: runKeepAlive captures the duration in its time.Ticker at hub
+// startup, so changing it later doesn't retro-actively shorten an
+// already-running ticker. Build the hub inside the test (or right
+// after SetKeepAliveIntervalForTest) to apply the override.
 func SetKeepAliveIntervalForTest(t interface{ Cleanup(func()) }, d time.Duration) {
-	prev := keepAliveInterval
-	keepAliveInterval = d
-	t.Cleanup(func() { keepAliveInterval = prev })
+	prev := keepAliveIntervalNS.Swap(int64(d))
+	t.Cleanup(func() { keepAliveIntervalNS.Store(prev) })
 }
 
 // Hub is the SSE fan-out the mock owns. One Hub per process; the
@@ -168,75 +183,110 @@ func (h *Hub) Publish(evt Event) error {
 	return h.server.Publish(msg, topics...)
 }
 
-// Reset drains every currently-connected subscriber via context
-// cancellation (so they see a clean EOF, not "provider is closed"),
-// then rebuilds the underlying server + replay buffer. After Reset
-// the hub is fully functional again — subscribers can connect, events
-// can be published, replay starts fresh. Intended for the
-// /admin0/reset control-plane hook between tests. Idempotent under
-// concurrent callers (serialised via lifecycleMu).
+// Reset swaps in a fresh server + replay buffer (so any concurrent
+// Publish atomically moves to the new instance), drains the
+// subscribers that were attached to the old server, then shuts the
+// old server down — all while the new server is already serving new
+// subscribers and publishes. The swap-before-shutdown ordering is
+// what closes the Publish/Reset race: a publisher that grabbed the
+// RLock immediately before Reset's mu.Lock acquired sees the OLD
+// server (and Reset's Lock blocks until the publish completes
+// because Publish holds RLock across the call); every publisher
+// after that sees the NEW server. The OLD server is then shut down
+// with no concurrent publish in flight.
+//
+// Intended for the /admin0/reset control-plane hook between tests.
+// Idempotent under concurrent callers (serialised via lifecycleMu).
 func (h *Hub) Reset(ctx context.Context) error {
 	h.lifecycleMu.Lock()
 	defer h.lifecycleMu.Unlock()
-	if err := h.drainAndShutdownOld(ctx); err != nil {
-		return err
-	}
+
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if h.closed {
+		h.mu.Unlock()
 		return nil
 	}
-	return h.build()
+	oldServer := h.server
+	// Snapshot the active set BEFORE rebuilding so new subscribers
+	// attaching to the freshly-built server don't get caught up in
+	// the drain of the old one.
+	oldActive := h.takeActiveLocked()
+	if err := h.build(); err != nil {
+		h.mu.Unlock()
+		return err
+	}
+	h.mu.Unlock()
+
+	// Subscribers attached to oldServer wake up via context cancel,
+	// drainable suppresses any late library writes, ServeHTTP
+	// returns. Done lock-free — nothing references oldActive's
+	// cancels beyond this loop.
+	for _, c := range oldActive {
+		c()
+	}
+
+	if oldServer != nil {
+		return flattenShutdownErr(oldServer.Shutdown(ctx))
+	}
+	return nil
 }
 
 // Shutdown drains every subscriber, stops the keep-alive goroutine,
 // and marks the hub closed permanently. Intended for process
 // shutdown. Idempotent — extra calls are no-ops.
+//
+// Uses the same swap-before-shutdown ordering as Reset to keep
+// in-flight publishers race-free: the swap to a nil server happens
+// atomically under mu.Lock, then the old server is shut down with no
+// lock held.
 func (h *Hub) Shutdown(ctx context.Context) error {
 	h.lifecycleMu.Lock()
 	defer h.lifecycleMu.Unlock()
 	h.stopped.Do(func() { close(h.stop) })
 	h.keepalive.Wait()
-	if err := h.drainAndShutdownOld(ctx); err != nil {
-		return err
-	}
+
 	h.mu.Lock()
-	h.closed = true
+	if h.closed {
+		h.mu.Unlock()
+		return nil
+	}
+	oldServer := h.server
+	oldActive := h.takeActiveLocked()
 	h.server = nil
 	h.replayer = nil
+	h.closed = true
 	h.mu.Unlock()
-	return nil
-}
 
-// drainAndShutdownOld cancels every in-flight subscriber's context
-// so their Subscribe goroutines return cleanly with context.Canceled
-// (rather than the library's "provider is closed" error string,
-// which gets written into the SSE wire body). Then it shuts down the
-// underlying sse.Server to stop the Joe worker goroutine. Safe to
-// call when h.server is nil.
-func (h *Hub) drainAndShutdownOld(ctx context.Context) error {
-	h.activeMu.Lock()
-	cancels := make([]context.CancelFunc, 0, len(h.active))
-	for _, c := range h.active {
-		cancels = append(cancels, c)
-	}
-	h.active = make(map[uint64]context.CancelFunc)
-	h.activeMu.Unlock()
-	for _, c := range cancels {
+	for _, c := range oldActive {
 		c()
 	}
 
-	h.mu.RLock()
-	server := h.server
-	h.mu.RUnlock()
-	if server == nil {
-		return nil
+	if oldServer != nil {
+		return flattenShutdownErr(oldServer.Shutdown(ctx))
 	}
-	err := server.Shutdown(ctx)
-	// Sse.Server.Shutdown returns an error if it's already shut down
-	// (errProviderClosed) or if ctx fires (context.Canceled). Both
-	// are benign for idempotent Reset / back-to-back Shutdown — the
-	// caller's intent ("drain me") is satisfied either way.
+	return nil
+}
+
+// takeActiveLocked returns the current active-subscriber cancel set
+// and clears the map. Caller must hold mu.Lock (or be otherwise sole
+// owner). The activeMu lock here is conservative — mu.Lock alone
+// already excludes Handler's register/unregister paths, but holding
+// activeMu keeps the invariant local to this method.
+func (h *Hub) takeActiveLocked() []context.CancelFunc {
+	h.activeMu.Lock()
+	defer h.activeMu.Unlock()
+	out := make([]context.CancelFunc, 0, len(h.active))
+	for _, c := range h.active {
+		out = append(out, c)
+	}
+	h.active = make(map[uint64]context.CancelFunc)
+	return out
+}
+
+// flattenShutdownErr collapses the benign cases of sse.Server.Shutdown
+// — already-shut-down ("provider is closed") and context.Canceled —
+// to nil so back-to-back lifecycle calls stay idempotent.
+func flattenShutdownErr(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -251,7 +301,7 @@ func (h *Hub) drainAndShutdownOld(ctx context.Context) error {
 
 func (h *Hub) runKeepAlive() {
 	defer h.keepalive.Done()
-	t := time.NewTicker(keepAliveInterval)
+	t := time.NewTicker(keepAliveInterval())
 	defer t.Stop()
 	for {
 		select {

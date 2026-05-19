@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -608,4 +610,78 @@ func TestNewHub_BufferSizeOneClampedToTwo(t *testing.T) {
 	h, err := events.NewHub(1, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+}
+
+// TestHub_ConcurrentPushAndReset is the regression for the
+// third-review finding: even after Publish was made to hold mu.RLock
+// across server.Publish, the Reset path called server.Shutdown on
+// the old server lock-free, so a concurrent publisher whose RLock
+// had just been released (or hadn't acquired yet) could land on a
+// shut-down server and get ErrProviderClosed.
+//
+// We hammer Publish on one goroutine and Reset on another for ~500ms
+// and assert zero publish errors.
+func TestHub_ConcurrentPushAndReset(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var publishErrs atomic.Int64
+	var publishOK atomic.Int64
+	var resets atomic.Int64
+
+	// 4 publisher goroutines.
+	for i := range 4 {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := 0; ; n++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				id := fmt.Sprintf("evt_%016x", n*10+i)
+				err := h.Publish(events.Event{
+					Type: "x.y", ID: id,
+					Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+				})
+				if err != nil {
+					publishErrs.Add(1)
+				} else {
+					publishOK.Add(1)
+				}
+			}
+		}()
+	}
+
+	// 1 reset goroutine.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := h.Reset(context.Background()); err == nil {
+				resets.Add(1)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	time.Sleep(500 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	assert.Equal(t, int64(0), publishErrs.Load(),
+		"no Publish should fail; the swap-before-shutdown ordering must guarantee publishers always see a live server. ok=%d resets=%d",
+		publishOK.Load(), resets.Load())
+	assert.Greater(t, publishOK.Load(), int64(0))
+	assert.Greater(t, resets.Load(), int64(0))
 }
