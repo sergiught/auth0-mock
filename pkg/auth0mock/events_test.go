@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,4 +67,28 @@ func TestEventsClient_Push_RejectsEmptyPayload(t *testing.T) {
 	err = c.Events.Push(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "payload is required")
+}
+
+func TestNewEventID_MatchesSchemaPattern(t *testing.T) {
+	// The OpenAPI schema requires `evt_[a-zA-Z0-9]{16}` exactly.
+	// NewEventID uses hex (lowercase a-f + 0-9), which is a subset
+	// of the allowed alphabet. Pin both shape and uniqueness so a
+	// future "let's switch to base32" change can't quietly break
+	// downstream pushes.
+	re := regexp.MustCompile(`^evt_[a-zA-Z0-9]{16}$`)
+	seen := make(map[string]bool, 100)
+	for range 100 {
+		id := auth0mock.NewEventID()
+		assert.True(t, re.MatchString(id), "NewEventID() = %q, want match for %s", id, re)
+		assert.False(t, seen[id], "NewEventID returned duplicate %q", id)
+		seen[id] = true
+	}
+}
+
+func TestNewStreamID_MatchesSchemaPattern(t *testing.T) {
+	re := regexp.MustCompile(`^est_[a-zA-Z0-9]{16}$`)
+	for range 100 {
+		id := auth0mock.NewStreamID()
+		assert.True(t, re.MatchString(id), "NewStreamID() = %q, want match for %s", id, re)
+	}
 }

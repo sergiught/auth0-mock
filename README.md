@@ -269,7 +269,7 @@ The subscriber receives `id: evt_aaaaaaaaaaaaaaaa / event: user.created / data: 
 Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
 
 > [!NOTE]
-> The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes.
+> The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. The mock has no CORS support — browser `EventSource` clients on a different origin will be blocked by the browser's same-origin policy; run the mock on the page's origin or front it with a CORS-enabling proxy.
 
 See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKBOOK.md#drive-an-event-stream-consumer-from-a-test) for the SDK-driven workflow.
 
