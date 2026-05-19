@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.228.0](https://github.com/sergiught/auth0-mock/compare/v0.227.0...v0.228.0) (2026-05-19)
+
+
+### Features
+
+* **events:** real SSE for GET /api/v2/events ([#16](https://github.com/sergiught/auth0-mock/issues/16)) ([7ec8365](https://github.com/sergiught/auth0-mock/commit/7ec83650f37fb04660924fecf9e64ba2fc3b1057))
+
 ## [0.227.0](https://github.com/sergiught/auth0-mock/compare/v0.226.0...v0.227.0) (2026-05-17)
 
 
