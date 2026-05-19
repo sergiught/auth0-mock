@@ -237,6 +237,42 @@ curl -X POST http://localhost:8080/admin0/expectations \
 > [!NOTE]
 > Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier). `response.body` is validated against the operation's response schema at registration time. Invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
 
+### 📡 Event streams
+
+`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<id>`, or `?from_timestamp=<rfc3339>` and the library's native replay path fills in what they missed.
+
+```bash
+# In one terminal: subscribe (bearer required).
+TOKEN=$(curl -sX POST http://localhost:8080/oauth/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=client_credentials&client_id=t&client_secret=t&audience=https://localhost:8443/api/v2/' \
+  | jq -r .access_token)
+curl -N -H "Authorization: Bearer $TOKEN" \
+     'http://localhost:8080/api/v2/events?event_type=user.created'
+
+# In another: push.
+curl -X POST http://localhost:8080/admin0/events \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type":"user.created","offset":"0",
+    "event":{
+      "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
+      "id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z",
+      "a0tenant":"my-tenant","a0stream":"est_aaaaaaaaaaaaaaaa",
+      "data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}
+    }
+  }'
+```
+
+The subscriber receives `id: evt_aaaaaaaaaaaaaaaa / event: user.created / data: {...}`. Comment frames (`:keep-alive`) arrive every 15s so reverse-proxy idle timeouts don't drop the connection.
+
+Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
+
+> [!NOTE]
+> The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. The mock has no CORS support — browser `EventSource` clients on a different origin will be blocked by the browser's same-origin policy; run the mock on the page's origin or front it with a CORS-enabling proxy.
+
+See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKBOOK.md#drive-an-event-stream-consumer-from-a-test) for the SDK-driven workflow.
+
 ### 🛠 Admin surface (no auth, JSON-driven)
 
 | Endpoint | Method | Purpose |
@@ -249,6 +285,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
 | `/admin0/clock` | GET / PUT / DELETE | Freeze the clock at an instant (`{"now":"..."}`), set an offset (`{"offset":"25h"}`), or restore real time. Drives JWT `iat`/`exp` and bearer validation. |
 | `/admin0/clock/advance` | POST | Step the held clock by a Go duration (`{"by":"25h"}`). Negative durations allowed. |
+| `/admin0/events` | POST | Push an Auth0 event-stream envelope onto `GET /api/v2/events` so consumer SDKs see it live. Body is the full envelope `{type, offset, event:{...CloudEvent}}` — validated against the OpenAPI `text/event-stream` schema before fan-out. See [Event streams](#-event-streams). |
 
 > [!WARNING]
 > **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
@@ -318,9 +355,10 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `LOG_LEVEL` | `info` | zerolog levels |
 | `DEBUG` | `false` | When `true`, every request and response is logged in full at INFO level: method, path, query, headers (Authorization / Cookie redacted), and body (truncated at 8 KiB). Off by default — turn on only while debugging an SDK trace; adds an allocation and a synchronous log write per request. |
 | `READ_HEADER_TIMEOUT` | `5s` | http.Server's `ReadHeaderTimeout` |
-| `WRITE_TIMEOUT` | `30s` | http.Server's `WriteTimeout`. Bounds slow-write attacks. |
+| `WRITE_TIMEOUT` | `30s` | http.Server's `WriteTimeout`. Bounds slow-write attacks. **Doesn't apply to `/api/v2/events`** — the SSE handler clears the deadline per-connection so long-lived subscribers aren't torn down. |
 | `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap. Anything larger is read up to this point and the handler surfaces a 400. Set to `0` to disable. |
+| `EVENTS_REPLAY_BUFFER` | `100` | Cap of the `/api/v2/events` SSE replay ring buffer. Reconnecting subscribers can resume from `Last-Event-ID`, `?from=<id>`, or `?from_timestamp=<rfc3339>` up to this many events back. `<= 0` disables replay (the endpoint still works; resume params become no-ops). |
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
 | `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
 | `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |

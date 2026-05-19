@@ -181,7 +181,7 @@ func applyTagGroups(base *openapi3.T) {
 	// Tags contributed by each non-Mgmt surface fragment. Everything else is a
 	// real Auth0 Management API tag and falls into the Management API group.
 	authAPITags := []string{"OAuth & OIDC", "Database Connections", "Passwordless"}
-	admin0Tags := []string{"Claims", "Permissions", "MFA", "Expectations", "Clock"}
+	admin0Tags := []string{"Claims", "Permissions", "MFA", "Expectations", "Clock", "Event Producer"}
 	serviceTags := []string{"Service"}
 
 	fragment := map[string]struct{}{}

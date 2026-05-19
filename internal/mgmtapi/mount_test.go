@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -201,4 +202,60 @@ func TestIsRouteConflict(t *testing.T) {
 			assert.Equal(t, tc.want, isRouteConflict(tc.err))
 		})
 	}
+}
+
+func TestMount_SubscribeEvents_UsesEventsHandlerInsteadOfGeneric(t *testing.T) {
+	called := false
+	eventsH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+
+	r := chi.NewRouter()
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	require.NoError(t, Mount(MountOpts{
+		Router:        r,
+		Spec:          s,
+		Validator:     v,
+		Store:         matches.NewStore(),
+		Keys:          ks,
+		Log:           zerolog.Nop(),
+		EventsHandler: eventsH,
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/events", nil)
+	req.Header.Set("Authorization", "Bearer "+mintBearer(t, ks))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.True(t, called, "events handler should be invoked")
+}
+
+func TestMount_SubscribeEvents_Without_Bearer_Is_401(t *testing.T) {
+	eventsH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	r := chi.NewRouter()
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	require.NoError(t, Mount(MountOpts{
+		Router: r, Spec: s, Validator: v, Store: matches.NewStore(),
+		Keys: ks, Log: zerolog.Nop(), EventsHandler: eventsH,
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/events", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }

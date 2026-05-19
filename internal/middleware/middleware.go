@@ -97,6 +97,25 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush forwards to the wrapped writer if it supports flushing. The
+// SSE endpoint (and any future streaming handler) needs Flush to push
+// bytes to the client mid-response; without this passthrough the
+// outer middleware would silently swallow the Flusher interface.
+func (sr *statusRecorder) Flush() {
+	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap returns the wrapped writer so http.NewResponseController can
+// reach the underlying response for SetWriteDeadline and friends. The
+// SSE handler relies on this — without it ResponseController returns
+// ErrNotSupported and the http.Server's WriteTimeout silently kills
+// long-lived subscribers.
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
+}
+
 // MaxBodyBytes caps every incoming request body to limit bytes. Reads past
 // the limit return *http.MaxBytesError from the wrapped reader; downstream
 // handlers surface that to the client through their normal decode-error
@@ -416,6 +435,24 @@ func (d *debugRecorder) Write(b []byte) (int, error) {
 		}
 	}
 	return d.ResponseWriter.Write(b)
+}
+
+// Flush forwards to the wrapped writer if it supports flushing. The
+// SSE endpoint (and any future streaming handler) needs Flush to push
+// bytes to the client mid-response; without this passthrough DebugDump
+// would silently swallow the Flusher interface.
+func (d *debugRecorder) Flush() {
+	if f, ok := d.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap returns the wrapped writer so http.NewResponseController can
+// reach the underlying response. See statusRecorder.Unwrap for the
+// rationale — without this, SSE WriteTimeout bypass silently fails
+// in DEBUG mode.
+func (d *debugRecorder) Unwrap() http.ResponseWriter {
+	return d.ResponseWriter
 }
 
 func (d *debugRecorder) statusOrOK() int {

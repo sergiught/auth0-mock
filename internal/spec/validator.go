@@ -131,6 +131,31 @@ func (v *Validator) ValidateResponse(op Operation, status int, headers map[strin
 	return media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors())
 }
 
+// ValidateEventStreamPayload validates a single SSE event payload
+// against the text/event-stream schema declared for (op, status).
+// Mirrors ValidateResponse but selects text/event-stream instead of
+// application/json. Used by POST /admin0/events to reject misshapen
+// CloudEvent payloads at push time (defence-in-depth, same pattern as
+// ValidateRegistration).
+func (v *Validator) ValidateEventStreamPayload(op Operation, status int, body []byte) error {
+	resp := selectResponse(op.Op.Responses, status)
+	if resp == nil || resp.Value == nil {
+		return fmt.Errorf("status %d not declared", status)
+	}
+	if resp.Value.Content == nil {
+		return fmt.Errorf("status %d declares no content", status)
+	}
+	media := resp.Value.Content.Get("text/event-stream")
+	if media == nil || media.Schema == nil {
+		return fmt.Errorf("status %d has no text/event-stream schema", status)
+	}
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return fmt.Errorf("body json: %w", err)
+	}
+	return media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors())
+}
+
 // selectResponse returns op.Responses[status] or op.Responses["default"].
 func selectResponse(rs *openapi3.Responses, status int) *openapi3.ResponseRef {
 	if rs == nil {

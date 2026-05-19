@@ -1,12 +1,17 @@
 package scenario
 
 import (
+	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/cucumber/godog"
 	"github.com/kinbiko/jsonassert"
@@ -378,6 +383,166 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		}
 		return fmt.Errorf("claim %q array does not contain %q (got %s)", claim, item, got.Raw)
 	})
+
+	sc.Step(`^I subscribe to /api/v2/events$`, func() error {
+		return subscribeEvents(c, "", "", true, true)
+	})
+	sc.Step(`^I subscribe to /api/v2/events with query "([^"]+)"$`, func(query string) error {
+		return subscribeEvents(c, query, "", true, true)
+	})
+	sc.Step(`^I subscribe to /api/v2/events with header "([^"]+): ([^"]+)"$`, func(k, v string) error {
+		return subscribeEvents(c, "", k+": "+v, true, true)
+	})
+	sc.Step(`^I subscribe to /api/v2/events without a bearer$`, func() error {
+		return subscribeEvents(c, "", "", false, false)
+	})
+	sc.Step(`^I attempt to subscribe to /api/v2/events with query "([^"]+)"$`, func(query string) error {
+		return subscribeEvents(c, query, "", true, false)
+	})
+	sc.Step(`^I attempt to subscribe to /api/v2/events with header "([^"]+): ([^"]+)"$`, func(k, v string) error {
+		return subscribeEvents(c, "", k+": "+v, true, false)
+	})
+
+	sc.Step(`^I push an event:$`, func(body *godog.DocString) error {
+		return pushEvent(c, body.Content, true)
+	})
+	sc.Step(`^I attempt to push an event:$`, func(body *godog.DocString) error {
+		return pushEvent(c, body.Content, false)
+	})
+
+	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
+		func(wantID string, seconds int) error {
+			return streamDeliversID(c, wantID, time.Duration(seconds)*time.Second)
+		})
+	sc.Step(`^the SSE stream delivers no event within (\d+)s$`, func(seconds int) error {
+		return streamDeliversNothing(c, time.Duration(seconds)*time.Second)
+	})
+}
+
+// subscribeEvents opens a GET /api/v2/events subscription. query is
+// the raw query string including the leading "?" (or empty), header
+// is an extra "Key: Value" header (or empty), bearer controls whether
+// the test's bearer token is attached, expect2xx makes the step fail
+// when the response is non-200 (use false to assert on 401/410/400
+// via "I receive a N response").
+//
+// On 2xx the open response is stashed in c.SSEResp so the matching
+// "delivers" step reads frames from there — separate from c.LastResp,
+// which subsequent push / assert steps overwrite.
+// On non-2xx the response is drained into LastResp / LastBody for
+// "I receive a N response" + "the response body contains" assertions.
+func subscribeEvents(c *Context, query, header string, bearer, expect2xx bool) error {
+	req, err := http.NewRequestWithContext(context.Background(),
+		http.MethodGet, c.BaseURL+"/api/v2/events"+query, nil)
+	if err != nil {
+		return err
+	}
+	if bearer {
+		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
+	}
+	if header != "" {
+		if i := strings.Index(header, ": "); i > 0 {
+			req.Header.Set(header[:i], header[i+2:])
+		}
+	}
+	resp, err := nonFollowingClient.Do(req) //nolint:bodyclose // SSE body stays open on 200; closed on non-2xx below or by the matching "delivers" step.
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode/100 == 2 {
+		c.SSEResp = resp
+		return nil
+	}
+	c.LastResp = resp
+	c.LastBody, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if expect2xx {
+		return fmt.Errorf("subscribe: status %d body %s", resp.StatusCode, string(c.LastBody))
+	}
+	return nil
+}
+
+func pushEvent(c *Context, body string, expect202 bool) error {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		c.BaseURL+"/admin0/events", strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	c.LastResp = resp
+	c.LastBody, _ = io.ReadAll(resp.Body)
+	if expect202 && resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("push: status %d body %s", resp.StatusCode, string(c.LastBody))
+	}
+	return nil
+}
+
+func streamDeliversID(c *Context, wantID string, within time.Duration) error {
+	deadline := time.After(within)
+	r := bufio.NewReader(c.SSEResp.Body)
+	defer func() { _ = c.SSEResp.Body.Close() }()
+	lines := make(chan string, 64)
+	go func() {
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				close(lines)
+				return
+			}
+			lines <- line
+		}
+	}()
+	for {
+		select {
+		case <-deadline:
+			return fmt.Errorf("timeout waiting for id=%s", wantID)
+		case line, ok := <-lines:
+			if !ok {
+				return fmt.Errorf("stream closed before id=%s arrived", wantID)
+			}
+			if strings.TrimSpace(line) == "id: "+wantID {
+				return nil
+			}
+		}
+	}
+}
+
+func streamDeliversNothing(c *Context, within time.Duration) error {
+	deadline := time.After(within)
+	r := bufio.NewReader(c.SSEResp.Body)
+	defer func() { _ = c.SSEResp.Body.Close() }()
+	lines := make(chan string, 64)
+	go func() {
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				close(lines)
+				return
+			}
+			lines <- line
+		}
+	}()
+	for {
+		select {
+		case <-deadline:
+			return nil
+		case line, ok := <-lines:
+			if !ok {
+				return nil
+			}
+			// Comment frames (`:keep-alive`) are fine; only actual
+			// events (id:/event:/data:) would falsify the "no event"
+			// expectation.
+			if strings.HasPrefix(line, "id: ") {
+				return fmt.Errorf("unexpected event delivered: %s", strings.TrimSpace(line))
+			}
+		}
+	}
 }
 
 // codeFromLastLocation extracts the `code` query parameter from the Location

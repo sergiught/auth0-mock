@@ -10,6 +10,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sergiught/auth0-mock/api"
 )
 
 const minSpec = `{
@@ -254,4 +256,55 @@ func TestValidator_ValidateQueryMatcher(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidator_ValidateEventStreamPayload(t *testing.T) {
+	s, err := Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
+	op, err := v.Resolve("GET", "/api/v2/events")
+	require.NoError(t, err)
+
+	t.Run("valid_user_created", func(t *testing.T) {
+		body := []byte(`{
+		  "type":"user.created",
+		  "offset":"0",
+		  "event":{
+		    "specversion":"1.0",
+		    "type":"user.created",
+		    "source":"https://auth0.local/",
+		    "id":"evt_aaaaaaaaaaaaaaaa",
+		    "time":"2026-05-19T00:00:00Z",
+		    "a0tenant":"my-tenant",
+		    "a0stream":"est_aaaaaaaaaaaaaaaa",
+		    "data":{"object":{
+		      "user_id":"u-1",
+		      "email":"u@x.test",
+		      "created_at":"2026-05-19T00:00:00Z",
+		      "updated_at":"2026-05-19T00:00:00Z",
+		      "identities":[]
+		    }}
+		  }
+		}`)
+		err := v.ValidateEventStreamPayload(op, 200, body)
+		assert.NoError(t, err, "user.created event should match the oneOf: %v", err)
+	})
+
+	t.Run("missing_outer_type", func(t *testing.T) {
+		body := []byte(`{"offset":"0","event":{}}`)
+		err := v.ValidateEventStreamPayload(op, 200, body)
+		assert.Error(t, err)
+	})
+
+	t.Run("unknown_outer_type", func(t *testing.T) {
+		body := []byte(`{"type":"not.a.real.event","offset":"0","event":{}}`)
+		err := v.ValidateEventStreamPayload(op, 200, body)
+		assert.Error(t, err)
+	})
+
+	t.Run("non_json_body", func(t *testing.T) {
+		err := v.ValidateEventStreamPayload(op, 200, []byte("not json"))
+		assert.Error(t, err)
+	})
 }

@@ -3,10 +3,10 @@ package mgmtapi
 import (
 	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
+
+	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 // conciseValidationError trims kin-openapi's verbose validation output to
@@ -32,20 +32,9 @@ func conciseValidationError(err error) string {
 	// RequestError wraps the inner schema/parse error with locator info.
 	var reqErr *openapi3filter.RequestError
 	if errors.As(err, &reqErr) {
-		inner := conciseSchemaError(reqErr.Err)
+		inner := spec.ConciseSchemaError(reqErr.Err)
 		if inner == "" {
-			// Inner wasn't a SchemaError/MultiError shape we recognise
-			// — fall back to its own first line (NOT the outer wrapped
-			// err, which would repeat the locator info we're about to
-			// prepend ourselves).
-			switch {
-			case reqErr.Err != nil:
-				inner = firstLine(reqErr.Err.Error())
-			case reqErr.Reason != "":
-				inner = firstLine(reqErr.Reason)
-			default:
-				inner = firstLine(err.Error())
-			}
+			inner = spec.ConciseSchemaError(err)
 		}
 		switch {
 		case reqErr.Parameter != nil:
@@ -57,54 +46,5 @@ func conciseValidationError(err error) string {
 		}
 	}
 
-	if s := conciseSchemaError(err); s != "" {
-		return s
-	}
-	return firstLine(err.Error())
-}
-
-// conciseSchemaError walks an error chain extracting the SchemaError
-// leaves. Each leaf renders as `"/json/pointer": reason` (or just
-// `reason` when the pointer is empty, e.g. a top-level type mismatch).
-func conciseSchemaError(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	var multi openapi3.MultiError
-	if errors.As(err, &multi) {
-		parts := make([]string, 0, len(multi))
-		for _, e := range multi {
-			if s := conciseSchemaError(e); s != "" {
-				parts = append(parts, s)
-			}
-		}
-		return strings.Join(parts, "; ")
-	}
-
-	var schemaErr *openapi3.SchemaError
-	if errors.As(err, &schemaErr) {
-		reason := schemaErr.Reason
-		if reason == "" {
-			reason = firstLine(err.Error())
-		}
-		ptr := schemaErr.JSONPointer()
-		if len(ptr) == 0 {
-			return reason
-		}
-		return fmt.Sprintf("%q: %s", "/"+strings.Join(ptr, "/"), reason)
-	}
-
-	return ""
-}
-
-// firstLine returns the input up to (not including) the first newline,
-// or the whole input when there's no newline. Used to strip the
-// verbose Schema/Value blocks that kin-openapi appends after the
-// real reason.
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
+	return spec.ConciseSchemaError(err)
 }

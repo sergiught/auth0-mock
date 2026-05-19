@@ -35,12 +35,16 @@ import (
 
 // Context is the per-scenario state passed to step definitions.
 type Context struct {
-	t          *testing.T
-	BaseURL    string
-	BearerTok  string
-	MFAToken   string // captured from a 403 mfa_required response.
-	LastResp   *http.Response
-	LastBody   []byte
+	t         *testing.T
+	BaseURL   string
+	BearerTok string
+	MFAToken  string // captured from a 403 mfa_required response.
+	LastResp  *http.Response
+	LastBody  []byte
+	// SSEResp holds the response from a successful SSE subscription
+	// so subsequent steps (push, deliver) can read frames from its
+	// body without conflicting with assertions against LastResp.
+	SSEResp    *http.Response
 	cancelBoot context.CancelFunc
 }
 
@@ -95,6 +99,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		SpecValidationStrict: true,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
+		EventsReplayBuffer:   50, // small but functional in scenario tests
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)
