@@ -53953,6 +53953,69 @@
         ]
       }
     },
+    "/admin0/events": {
+      "post": {
+        "description": "Fan-out producer for the SSE hub. The mock validates the body\nagainst the Auth0 Management API's `text/event-stream` response\nschema (`EventStreamSubscribeEventsResponseContent`) before\nbroadcasting; misshapen payloads are rejected with `400\ninvalid_event` and a one-line `\"/json/pointer\": reason` per\nfailed field.\n\nSubscribers connected to `GET /api/v2/events` receive the event\nin real time. The buffer (default 100 events, configurable via\n`EVENTS_REPLAY_BUFFER`) lets reconnecting subscribers replay\nmissed events via `Last-Event-ID`, `?from=\u003cid\u003e`, or\n`?from_timestamp=\u003crfc3339\u003e`. Aged-out resume → `410\nevent_aged_out`.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "event": {
+                    "description": "The full CloudEvent. Required fields per the\nAuth0 schema include `id`, `specversion`, `type`,\n`source`, `time`, `a0tenant`, `a0stream`, `data`.\n`id` must match `evt_[a-zA-Z0-9]{16}`; use\n`auth0mock.NewEventID()` in Go tests.\n",
+                    "type": "object"
+                  },
+                  "offset": {
+                    "description": "Producer-defined offset string echoed back to\nsubscribers. Auth0's docs use this for resume\nbookkeeping; the mock accepts any string.\n",
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "CloudEvent discriminator, e.g. `user.created`.\nDrives `?event_type` filtering on the subscriber\nside and the SSE `event:` field on the wire.\n",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "offset",
+                  "event"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "Auth0 event-stream envelope: `{type, offset, event: { ... CloudEvent ... }}`.\nThe server validates the body against the Mgmt API's\n`EventStreamSubscribeEventsResponseContent` schema before\nfan-out. See that schema for the full shape — it is one of\nthe 23 CloudEvent variants gated by the outer `type`\ndiscriminator.\n",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "description": "The event's inner `event.id`, echoed for client\ncorrelation.\n",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Event accepted and broadcast."
+          },
+          "400": {
+            "description": "Body is not JSON (`errorCode: \"invalid_body\"`) or fails\nschema validation (`errorCode: \"invalid_event\"`). The\nresponse `message` lists every failing field as\n`\"/json/pointer\": reason; ...`.\n"
+          }
+        },
+        "summary": "Push an Auth0 event-stream envelope onto GET /api/v2/events.",
+        "tags": [
+          "Event Producer"
+        ]
+      }
+    },
     "/admin0/expectations": {
       "delete": {
         "description": "With an empty body, clears every registered expectation. With a\n`{ \"method\": ..., \"path\": ... }` body, clears every expectation\nregistered for that operation (the catch-all and every\nrequest-matched one).\n",
@@ -79625,6 +79688,10 @@
     {
       "description": "Runtime clock control. Lets tests freeze the mock's perception of\ntime, set an offset against wall-clock, or advance step-by-step\nthrough time — so token expiry, code TTLs, and refresh windows can\nbe exercised deterministically without sleeps. The same clock\ndrives JWT iat/exp on mint and the bearer middleware's expiry\ncheck on validate.\n",
       "name": "Clock"
+    },
+    {
+      "description": "Producer side of the SSE hub feeding `GET /api/v2/events`. Tests\nPOST Auth0 event-stream envelopes here and every connected\nsubscriber sees them in real time. The mock keeps a bounded\nreplay ring buffer (default 100 events; `EVENTS_REPLAY_BUFFER`)\nso reconnecting subscribers can resume via `Last-Event-ID`,\n`?from=\u003cid\u003e`, or `?from_timestamp=\u003crfc3339\u003e`.\n\nThe matching consumer-side endpoint `GET /api/v2/events` lives\nunder the Management API's `Events` tag.\n",
+      "name": "Event Producer"
     }
   ],
   "x-tagGroups": [
@@ -79695,7 +79762,8 @@
         "Permissions",
         "MFA",
         "Expectations",
-        "Clock"
+        "Clock",
+        "Event Producer"
       ]
     },
     {
