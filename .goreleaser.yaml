@@ -59,6 +59,32 @@ checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
 
+# Cosign keyless signing of the checksums file. Produces checksums.txt.sig
+# and checksums.txt.pem, attached to the GitHub release — signing the
+# checksums transitively covers every archive it lists. This is the artifact
+# surface OpenSSF Scorecard's Signed-Releases check inspects (docker_signs
+# below only covers the GHCR images). Reuses the workflow's OIDC token
+# (id-token: write), the same keyless flow as docker_signs — no managed key.
+#
+# Verify with:
+#   cosign verify-blob \
+#     --certificate checksums.txt.pem \
+#     --signature checksums.txt.sig \
+#     --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     checksums.txt
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    certificate: '${artifact}.pem'
+    args:
+      - 'sign-blob'
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - '--yes'
+    output: true
+
 # Software Bill of Materials per archive. syft must be on PATH (the release
 # workflow installs it via anchore/sbom-action). Output is SPDX-JSON so it
 # plays nicely with FOSSA / Snyk / Black Duck without a conversion step.
