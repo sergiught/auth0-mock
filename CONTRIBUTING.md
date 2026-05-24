@@ -109,7 +109,7 @@ make vuln            # govulncheck against the module graph
 make pre-commit      # install the pre-commit hooks (one-time)
 ```
 
-`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework, install it once and the hooks will run `gofmt`, `golangci-lint` on every `git commit`, `govulncheck` on every `git push`, plus `commitlint` on the commit message. CI runs the same lint and test checks on every PR, and additionally lints the PR title with `commitlint` (the title becomes the squash-merge subject; see `.github/workflows/ci.yml`).
+`make pre-commit` runs the [pre-commit](https://pre-commit.com) framework, install it once and the hooks will run `gofmt`, `golangci-lint` on every `git commit`, `govulncheck` on every `git push`, plus `commitlint` on the commit message. CI runs the same lint and test checks on every PR (`.github/workflows/ci.yml`), and a separate workflow lints the PR title with `commitlint` (`.github/workflows/pr-title.yml`; the title becomes the squash-merge subject).
 
 > [!NOTE]
 > **Prerequisite:** `make pre-commit` needs the `pre-commit` CLI on `PATH` first. Install with `pipx install pre-commit` (recommended), `brew install pre-commit`, or `pip install --user pre-commit`. The target's first line checks for it and tells you which install command to run if missing.
