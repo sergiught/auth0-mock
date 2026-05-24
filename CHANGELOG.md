@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.228.1](https://github.com/sergiught/auth0-mock/compare/v0.228.0...v0.228.1) (2026-05-24)
+
+
+### Bug fixes
+
+* **deps:** bump golang.org/x/sys to v0.45.0 ([#24](https://github.com/sergiught/auth0-mock/issues/24)) ([ae61ec9](https://github.com/sergiught/auth0-mock/commit/ae61ec92bc6d4c357583ae955c1dcfefc7fc1629))
+
 ## [0.228.0](https://github.com/sergiught/auth0-mock/compare/v0.227.0...v0.228.0) (2026-05-19)
 
 
