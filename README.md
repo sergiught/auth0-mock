@@ -18,6 +18,7 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 [![codecov](https://codecov.io/gh/sergiught/auth0-mock/branch/main/graph/badge.svg)](https://codecov.io/gh/sergiught/auth0-mock)
 [![Go Reference](https://pkg.go.dev/badge/github.com/sergiught/auth0-mock.svg)](https://pkg.go.dev/github.com/sergiught/auth0-mock)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sergiught/auth0-mock/badge)](https://securityscorecards.dev/viewer/?uri=github.com/sergiught/auth0-mock)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12966/badge)](https://www.bestpractices.dev/projects/12966)
 [![Signed releases](https://img.shields.io/badge/releases-cosign%20signed-0a7bbb)](#%EF%B8%8F-verifying-releases)
 [![govulncheck](https://img.shields.io/badge/govulncheck-passing-2ca02c)](https://github.com/sergiught/auth0-mock/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/sergiught/auth0-mock?sort=semver)](https://github.com/sergiught/auth0-mock/releases)
