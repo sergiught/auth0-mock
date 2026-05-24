@@ -67,6 +67,13 @@ func (v *Validator) ValidateRequest(r *http.Request, _ Operation) error {
 // handler, which receives method+path in a request body rather than from a
 // routed URL.
 func (v *Validator) Resolve(method, path string) (Operation, error) {
+	// The kin-openapi router's PathItem.GetOperation panics on any method
+	// outside the standard set. Resolve takes method straight from a
+	// user-supplied /admin0/expectations payload, so guard here and return an
+	// error rather than letting a bogus method ("0", "FOO", …) crash the server.
+	if !isSupportedMethod(method) {
+		return Operation{}, fmt.Errorf("no operation for %s %s: unsupported HTTP method", method, path)
+	}
 	req := &http.Request{Method: method, URL: &url.URL{Path: path}, Header: make(http.Header)}
 	route, _, err := v.router.FindRoute(req)
 	if err != nil {
@@ -77,6 +84,19 @@ func (v *Validator) Resolve(method, path string) (Operation, error) {
 		Template: v.spec.BasePath + route.Path,
 		Op:       route.Operation,
 	}, nil
+}
+
+// isSupportedMethod reports whether method is one of the HTTP methods the
+// kin-openapi router understands. Its PathItem.GetOperation panics on anything
+// else, so callers passing untrusted methods must gate on this first.
+func isSupportedMethod(method string) bool {
+	switch method {
+	case http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead,
+		http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
 }
 
 // ValidateRegistration checks a registered response payload against the
