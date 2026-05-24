@@ -147,3 +147,16 @@ jobs:
             echo "::endgroup::"
           done
           exit $fail
+      - name: lint PR title
+        # Squash-merge uses the PR title as the commit subject, which
+        # release-please parses for the changelog — hold it to the same
+        # Conventional Commits rules as the individual commits above.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -eo pipefail
+          printf '%s\n' "$PR_TITLE" > .git/COMMIT_EDITMSG
+          if ! make lint-commits; then
+            echo "::error::PR title \"$PR_TITLE\" violates commitlint.yaml"
+            exit 1
+          fi
