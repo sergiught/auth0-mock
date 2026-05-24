@@ -45,6 +45,12 @@ jobs:
           set -eo pipefail
           printf '%s\n' "$PR_TITLE" > .git/COMMIT_EDITMSG
           if ! make lint-commits; then
-            echo "::error::PR title \"$PR_TITLE\" violates commitlint.yaml"
+            # The title is attacker-controlled; escape it per GitHub's
+            # workflow-command guidance (% first, then CR/LF) so it can't
+            # inject additional ::commands:: into the annotation stream.
+            safe_title=${PR_TITLE//'%'/'%25'}
+            safe_title=${safe_title//$'\r'/'%0D'}
+            safe_title=${safe_title//$'\n'/'%0A'}
+            echo "::error::PR title \"$safe_title\" violates commitlint.yaml"
             exit 1
           fi
