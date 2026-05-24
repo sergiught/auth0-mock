@@ -196,3 +196,38 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestStore_GetByID(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	stored := s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{"x":1}`)})
+	assert.NotEmpty(t, stored.ID)
+
+	got := s.GetByID(stored.ID)
+	if assert.NotNil(t, got) {
+		assert.Equal(t, stored.ID, got.ID)
+		assert.Equal(t, "/api/v2/users/123", got.Path)
+		assert.Equal(t, int64(0), got.Hits)
+	}
+
+	// A served match bumps the hit counter, which GetByID reflects.
+	s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}", MatchableRequest{})
+	if got := s.GetByID(stored.ID); assert.NotNil(t, got) {
+		assert.Equal(t, int64(1), got.Hits)
+	}
+
+	assert.Nil(t, s.GetByID("nonexistent"))
+}
+
+func TestStore_DeleteByID(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	stored := s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{"x":1}`)})
+
+	assert.True(t, s.DeleteByID(stored.ID))
+	assert.Nil(t, s.GetByID(stored.ID))
+
+	// Idempotent: deleting again, or an unknown id, returns false.
+	assert.False(t, s.DeleteByID(stored.ID))
+	assert.False(t, s.DeleteByID("never-existed"))
+}

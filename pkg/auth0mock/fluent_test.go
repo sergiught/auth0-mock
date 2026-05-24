@@ -244,3 +244,26 @@ func TestFluent_BodyAcceptsPreEncoded(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.last(t).Body, &sent))
 	assert.JSONEq(t, `{"already":"encoded"}`, string(sent.Response.Body))
 }
+
+func TestFluent_WithBodyAndRegisteredMetadata(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	re, err := c.ExpectGet("/api/v2/users/abc").
+		WithBody(json.RawMessage(`{"active":true}`)).
+		Respond(200).
+		JSON(map[string]any{"id": "abc"}).
+		Apply(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, re)
+
+	// WithBody(raw) must materialise the request matcher with the raw body.
+	var sent auth0mock.Expectation
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &sent))
+	require.NotNil(t, sent.Request)
+	assert.JSONEq(t, `{"active":true}`, string(sent.Request.Body))
+
+	// Snapshotted handle metadata is exposed via the getters.
+	assert.Equal(t, "GET", re.Method())
+	assert.Equal(t, "/api/v2/users/abc", re.Path())
+	assert.NotEmpty(t, re.RegisteredAt())
+}
