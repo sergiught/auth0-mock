@@ -41,15 +41,15 @@ jobs:
       # of writing. Bump via Renovate / dependabot when a new query release
       # ships.
       - name: initialize codeql
-        uses: github/codeql-action/init@78ed0c7291d93e40c51b085850dc669a4c3ab73b
+        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57
         with:
           languages: go
           queries: security-and-quality
 
       - name: autobuild
-        uses: github/codeql-action/autobuild@78ed0c7291d93e40c51b085850dc669a4c3ab73b
+        uses: github/codeql-action/autobuild@03e4368ac7daa2bd82b3e85262f3bf87ee112f57
 
       - name: analyze
-        uses: github/codeql-action/analyze@78ed0c7291d93e40c51b085850dc669a4c3ab73b
+        uses: github/codeql-action/analyze@03e4368ac7daa2bd82b3e85262f3bf87ee112f57
         with:
           category: '/language:go'
