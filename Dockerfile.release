@@ -8,7 +8,7 @@
 # For local development and `docker compose up`, see the top-level Dockerfile,
 # which builds from source.
 
-FROM alpine:3.23
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
 
 LABEL org.opencontainers.image.title="auth0-mock"
 LABEL org.opencontainers.image.description="Drop-in mock of Auth0's Authentication and Management APIs."
