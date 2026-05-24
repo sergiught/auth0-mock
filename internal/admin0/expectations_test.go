@@ -244,3 +244,40 @@ func TestDeleteExpectations_NonexistentIsNoop(t *testing.T) {
 		`{"method":"GET","path":"/api/v2/widgets/never-registered"}`)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
+
+func TestGetExpectationByID(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	post := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
+	require.Equal(t, http.StatusCreated, post.Code, post.Body.String())
+	require.Len(t, store.List(), 1)
+	id := store.List()[0].ID
+	require.NotEmpty(t, id)
+
+	rec := do(t, r, http.MethodGet, "/admin0/expectations/"+id, "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, id, gjson.GetBytes(rec.Body.Bytes(), "id").String())
+	assert.Equal(t, "GET", gjson.GetBytes(rec.Body.Bytes(), "method").String())
+
+	// Unknown id -> 404 unknown_id.
+	rec = do(t, r, http.MethodGet, "/admin0/expectations/does-not-exist", "")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "unknown_id")
+}
+
+func TestDeleteExpectationByID(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	post := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
+	require.Equal(t, http.StatusCreated, post.Code, post.Body.String())
+	require.Len(t, store.List(), 1)
+	id := store.List()[0].ID
+
+	rec := do(t, r, http.MethodDelete, "/admin0/expectations/"+id, "")
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Nil(t, store.GetByID(id))
+
+	// Idempotent: deleting an unknown id is still 204.
+	rec = do(t, r, http.MethodDelete, "/admin0/expectations/already-gone", "")
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
