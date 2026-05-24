@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.228.3](https://github.com/sergiught/auth0-mock/compare/v0.228.2...v0.228.3) (2026-05-24)
+
+
+### Tests
+
+* fill coverage gaps and exclude the godog harness from coverage ([#31](https://github.com/sergiught/auth0-mock/issues/31)) ([f519dcf](https://github.com/sergiught/auth0-mock/commit/f519dcfa30fe9262a1806d5fb8d99547c1f61ebf))
+
+
+### Documentation
+
+* **readme:** add OpenSSF Best Practices passing badge ([#29](https://github.com/sergiught/auth0-mock/issues/29)) ([9317167](https://github.com/sergiught/auth0-mock/commit/9317167cd68d94a618716e758614928f78694a26))
+
 ## [0.228.2](https://github.com/sergiught/auth0-mock/compare/v0.228.1...v0.228.2) (2026-05-24)
 
 
