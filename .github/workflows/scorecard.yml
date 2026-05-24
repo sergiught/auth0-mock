@@ -38,6 +38,10 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+          # PAT with admin:read so the Branch-Protection check can read the
+          # rules on main (the default GITHUB_TOKEN can't, leaving it as an
+          # inconclusive -1). Falls back gracefully if the secret is unset.
+          repo_token: ${{ secrets.SCORECARD_TOKEN }}
       - name: upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
