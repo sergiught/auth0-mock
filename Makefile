@@ -5,6 +5,12 @@ BINARIES_DIR = $(CURDIR)/bin
 BINARY_NAME = auth0-mock
 COVERAGE_DIR = $(CURDIR)/coverage
 
+# Packages measured for coverage: everything except the godog acceptance-test
+# harness (features/scenario), which is test scaffolding, not production code.
+# Kept in sync with the `ignore` list in codecov.yml so local `make coverage`
+# totals match the Codecov report.
+COVERPKG = $(shell go list ./... | grep -v '/features/scenario' | paste -sd,)
+
 # Build metadata baked into the binary via -ldflags="-X ..." so that
 # `auth0-mock -version` reports something useful from local builds too
 # (goreleaser overrides these with its own template values in CI).
@@ -77,14 +83,14 @@ test-features: ## Run the godog acceptance suite
 test-cover: ## Run unit tests with coverage -> coverage/unit.out
 	@mkdir -p $(COVERAGE_DIR)
 	@echo "==> Running unit tests with coverage"
-	@go test -race -count=1 -coverpkg=./... -coverprofile=$(COVERAGE_DIR)/unit.out ./...
+	@go test -race -count=1 -coverpkg=$(COVERPKG) -coverprofile=$(COVERAGE_DIR)/unit.out ./...
 	@go tool cover -func=$(COVERAGE_DIR)/unit.out | tail -1
 
 .PHONY: test-features-cover
 test-features-cover: ## Run the godog suite with coverage -> coverage/features.out
 	@mkdir -p $(COVERAGE_DIR)
 	@echo "==> Running godog acceptance suite with coverage"
-	@go test -tags=features -count=1 -coverpkg=./... -coverprofile=$(COVERAGE_DIR)/features.out ./cmd/api/...
+	@go test -tags=features -count=1 -coverpkg=$(COVERPKG) -coverprofile=$(COVERAGE_DIR)/features.out ./cmd/api/...
 	@go tool cover -func=$(COVERAGE_DIR)/features.out | tail -1
 
 .PHONY: coverage

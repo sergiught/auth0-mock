@@ -1,0 +1,11 @@
+# Codecov configuration.
+#
+# The two CI coverage flags (unit, features) are uploaded by ci.yml and
+# merged here. `features/scenario` is the godog acceptance-test harness
+# (in-process boot + step bindings) — test scaffolding, not production
+# code — so its coverage isn't a meaningful signal and it sits at 0% in
+# the unit flag, deflating the number. Exclude it so coverage reflects
+# the code under test rather than the tests themselves. Production
+# entrypoints (cmd/*) are intentionally NOT excluded.
+ignore:
+  - "features/scenario"
