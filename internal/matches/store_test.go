@@ -211,9 +211,10 @@ func TestStore_GetByID(t *testing.T) {
 	}
 
 	// A served match bumps the hit counter, which GetByID reflects.
-	s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}", MatchableRequest{})
-	if got := s.GetByID(stored.ID); assert.NotNil(t, got) {
-		assert.Equal(t, int64(1), got.Hits)
+	if m := s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}", MatchableRequest{}); assert.NotNil(t, m, "Find should match the stored expectation") {
+		if got := s.GetByID(stored.ID); assert.NotNil(t, got) {
+			assert.Equal(t, int64(1), got.Hits)
+		}
 	}
 
 	assert.Nil(t, s.GetByID("nonexistent"))

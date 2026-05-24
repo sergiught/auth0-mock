@@ -247,8 +247,10 @@ func TestDeleteExpectations_NonexistentIsNoop(t *testing.T) {
 
 func TestGetExpectationByID(t *testing.T) {
 	r, store := newExpectationsRouter(t)
-	do(t, r, http.MethodPost, "/admin0/expectations",
+	post := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
+	require.Equal(t, http.StatusCreated, post.Code, post.Body.String())
+	require.Len(t, store.List(), 1)
 	id := store.List()[0].ID
 	require.NotEmpty(t, id)
 
@@ -265,8 +267,10 @@ func TestGetExpectationByID(t *testing.T) {
 
 func TestDeleteExpectationByID(t *testing.T) {
 	r, store := newExpectationsRouter(t)
-	do(t, r, http.MethodPost, "/admin0/expectations",
+	post := do(t, r, http.MethodPost, "/admin0/expectations",
 		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"abc"}}}`)
+	require.Equal(t, http.StatusCreated, post.Code, post.Body.String())
+	require.Len(t, store.List(), 1)
 	id := store.List()[0].ID
 
 	rec := do(t, r, http.MethodDelete, "/admin0/expectations/"+id, "")
