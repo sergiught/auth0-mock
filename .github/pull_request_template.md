@@ -1,42 +1,32 @@
 <!--
-Thanks for the PR! A few notes:
-  • One change per PR. Refactors and behavior changes go in separate PRs.
-  • Commits must follow Conventional Commits — CI lints them.
-  • CI runs lint + unit tests + features + govulncheck on every push.
+👋 Thanks for the PR! Quick conventions:
+  • One change per PR — split refactors from behavior changes.
+  • PR title follows Conventional Commits (it's the squash-merge subject; CI lints it).
   • See CONTRIBUTING.md for the full workflow.
 -->
 
-## Summary
+## 📝 Summary
 
-<!--
-One or two sentences explaining what changes and *why*. Focus on the why —
-the diff already shows the what.
--->
+<!-- One or two sentences on what changes and *why*. The diff shows the what. -->
 
-## Type of change
+## 🏷 Type of change
 
 <!-- Tick all that apply. -->
 
-- [ ] Bug fix (non-breaking change that fixes an issue)
-- [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would change existing behavior in a way that requires consumers to update)
-- [ ] Refactor (no functional change)
-- [ ] Documentation only
-- [ ] Build / CI / tooling
+- [ ] 🐛 Bug fix (non-breaking)
+- [ ] ✨ Feature (non-breaking)
+- [ ] 💥 Breaking change (consumers must update)
+- [ ] ♻️ Refactor (no functional change)
+- [ ] 📚 Docs only
+- [ ] 🛠 Build / CI / tooling
 
-## Related issues
+## 🔗 Related issues
 
-<!--
-e.g. `Closes #123`, `Refs #456`. If there's no issue and the change is more
-than a typo fix, mention briefly why you didn't open one first.
--->
+<!-- `Closes #123` / `Refs #456`. No issue? Say why in a line (typos excepted). -->
 
-## How to verify
+## ✅ How to verify
 
-<!--
-Concrete commands a reviewer can paste to reproduce your testing locally.
-Prefer curl/make targets over screenshots so the verification is automatable.
--->
+<!-- Commands a reviewer can paste to reproduce your testing. -->
 
 ```bash
 make lint
@@ -44,9 +34,9 @@ make test
 make test-features
 ```
 
-## Checklist
+## 📋 Checklist
 
-- [ ] Tests added or updated (unit and/or `features/*.feature` as appropriate)
-- [ ] Documentation updated (README, `docs/COOKBOOK.md`, `docs/ARCHITECTURE.md`, or per-package godoc)
-- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — CI's `commitlint` job will reject otherwise (release-please derives `CHANGELOG.md` from them; don't hand-edit it)
-- [ ] `make lint`, `make test`, and `make test-features` all pass locally
+- [ ] 🧪 Tests added or updated (unit and/or `features/*.feature`)
+- [ ] 📖 Docs updated (README, `docs/COOKBOOK.md`, `docs/ARCHITECTURE.md`, or godoc)
+- [ ] 🏷 PR title follows [Conventional Commits](https://www.conventionalcommits.org/) — CI rejects otherwise (release-please derives `CHANGELOG.md` from it; don't hand-edit the changelog)
+- [ ] 🟢 `make lint`, `make test`, `make test-features` pass locally

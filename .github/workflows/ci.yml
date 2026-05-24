@@ -67,6 +67,7 @@ jobs:
         # codecov/codecov-action v5.1.2
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/unit.out
           flags: unit
           fail_ci_if_error: false
@@ -99,6 +100,7 @@ jobs:
       - name: upload coverage to Codecov (features)
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/features.out
           flags: features
           fail_ci_if_error: false
@@ -114,34 +116,3 @@ jobs:
           cache: true
       - name: make vuln
         run: make vuln
-
-  commitlint:
-    name: commitlint (PR commits)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - name: lint PR commit messages
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -eo pipefail
-          fail=0
-          for sha in $(git log --format=%H "$BASE_SHA..$HEAD_SHA"); do
-            subject=$(git log -1 --format=%s "$sha")
-            echo "::group::Commit $sha — $subject"
-            git log -1 --format=%B "$sha" > .git/COMMIT_EDITMSG
-            if ! make lint-commits; then
-              echo "::error::commit $sha violates commitlint.yaml"
-              fail=1
-            fi
-            echo "::endgroup::"
-          done
-          exit $fail

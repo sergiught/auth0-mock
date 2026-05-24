@@ -1,0 +1,56 @@
+name: pr-title
+
+# Lints the PR title against Conventional Commits. The title becomes the
+# squash-merge commit subject, which release-please parses for CHANGELOG.md.
+#
+# `pull_request_target` (not `pull_request`) is used so the check re-runs when
+# the title is *edited* without a new push. That trigger runs with the base
+# repo's elevated token, so this workflow is written to be safe regardless:
+#   - it never checks out the PR head; the default checkout is the trusted
+#     base branch, so no code from the fork is ever executed;
+#   - the elevated token is dropped to `contents: read`;
+#   - the attacker-controlled title is passed via `env`, never interpolated
+#     into the shell, so it cannot inject commands.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.26'
+
+jobs:
+  lint-title:
+    name: commitlint (PR title)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: lint PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -eo pipefail
+          printf '%s\n' "$PR_TITLE" > .git/COMMIT_EDITMSG
+          if ! make lint-commits; then
+            # The title is attacker-controlled; escape it per GitHub's
+            # workflow-command guidance (% first, then CR/LF) so it can't
+            # inject additional ::commands:: into the annotation stream.
+            safe_title=${PR_TITLE//'%'/'%25'}
+            safe_title=${safe_title//$'\r'/'%0D'}
+            safe_title=${safe_title//$'\n'/'%0A'}
+            echo "::error::PR title \"$safe_title\" violates commitlint.yaml"
+            exit 1
+          fi

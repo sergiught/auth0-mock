@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🔐 auth0-mock
+<img src="docs/assets/banner.webp" alt="auth0-mock — a drop-in Auth0 HTTP API mock" width="100%">
+
+# auth0-mock
 
 A drop-in mock of Auth0's HTTP API (Authentication + Management) that you can point any Auth0-using service at, with no code changes.
 
@@ -10,6 +12,22 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 
 </div>
 
+[![CI](https://github.com/sergiught/auth0-mock/actions/workflows/ci.yml/badge.svg)](https://github.com/sergiught/auth0-mock/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/sergiught/auth0-mock/actions/workflows/codeql.yml/badge.svg)](https://github.com/sergiught/auth0-mock/actions/workflows/codeql.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/sergiught/auth0-mock)](https://goreportcard.com/report/github.com/sergiught/auth0-mock)
+[![codecov](https://codecov.io/gh/sergiught/auth0-mock/branch/main/graph/badge.svg)](https://codecov.io/gh/sergiught/auth0-mock)
+[![Go Reference](https://pkg.go.dev/badge/github.com/sergiught/auth0-mock.svg)](https://pkg.go.dev/github.com/sergiught/auth0-mock)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sergiught/auth0-mock/badge)](https://securityscorecards.dev/viewer/?uri=github.com/sergiught/auth0-mock)
+[![Signed releases](https://img.shields.io/badge/releases-cosign%20signed-0a7bbb)](#%EF%B8%8F-verifying-releases)
+[![govulncheck](https://img.shields.io/badge/govulncheck-passing-2ca02c)](https://github.com/sergiught/auth0-mock/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/sergiught/auth0-mock?sort=semver)](https://github.com/sergiught/auth0-mock/releases)
+[![Go version](https://img.shields.io/github/go-mod/go-version/sergiught/auth0-mock)](go.mod)
+[![GHCR](https://img.shields.io/badge/ghcr.io-auth0--mock-2496ed?logo=docker&logoColor=white)](https://github.com/sergiught/auth0-mock/pkgs/container/auth0-mock)
+[![Go module](https://img.shields.io/badge/go%20install-github.com%2Fsergiught%2Fauth0--mock-00ADD8?logo=go&logoColor=white)](https://pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fa6673.svg)](https://www.conventionalcommits.org)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 ---
 
 ## 📑 Table of contents
@@ -17,7 +35,7 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 - [✨ What is this?](#-what-is-this)
 - [🎯 Who is this for?](#-who-is-this-for)
 - [🚀 Quick start](#-quick-start)
-- [Calling the API from Postman or Insomnia](#calling-the-api-from-postman-or-insomnia)
+- [📮 Calling the API from Postman or Insomnia](#-calling-the-api-from-postman-or-insomnia)
 - [📋 What's mocked](#-whats-mocked)
 - [💡 Common recipes](#-common-recipes)
 - [🛠 Configuration](#-configuration)
@@ -138,7 +156,7 @@ Your code calls auth0-mock the same way it calls Auth0. No SDK shims, no monkey-
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
-## Calling the API from Postman or Insomnia
+## 📮 Calling the API from Postman or Insomnia
 
 > [!TIP]
 > **Prefer a browser?** Run the mock and open
@@ -568,6 +586,8 @@ PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code styl
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Contributors / curious users | How the service is structured internally |
 | [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Test authors | Recipes for common test scenarios |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Dev setup, conventions, PR workflow |
+| [`SECURITY.md`](SECURITY.md) | Everyone | How to report a vulnerability |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Everyone | Community standards and enforcement |
 | [`CHANGELOG.md`](CHANGELOG.md) | Everyone | What changed between versions |
 | [`examples/consumer/README.md`](examples/consumer/README.md) | Test authors | Worked end-to-end example |
 

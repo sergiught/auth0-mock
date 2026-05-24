@@ -15,9 +15,7 @@ on:
     - cron: '0 6 * * 1' # weekly Monday
 
 permissions:
-  actions: read
   contents: read
-  security-events: write
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
@@ -28,6 +26,10 @@ jobs:
     name: analyze (go)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      actions: read            # codeql needs to read workflow run data
+      contents: read
+      security-events: write   # upload code-scanning results
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
