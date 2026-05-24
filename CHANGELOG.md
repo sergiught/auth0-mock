@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.228.2](https://github.com/sergiught/auth0-mock/compare/v0.228.1...v0.228.2) (2026-05-24)
+
+
+### Tests
+
+* **fuzz:** add fuzz targets and fix a DoS they surfaced ([#27](https://github.com/sergiught/auth0-mock/issues/27)) ([d0c4348](https://github.com/sergiught/auth0-mock/commit/d0c4348815a2ef4e2fcbb14d78b0235c16070329))
+
 ## [0.228.1](https://github.com/sergiught/auth0-mock/compare/v0.228.0...v0.228.1) (2026-05-24)
 
 
