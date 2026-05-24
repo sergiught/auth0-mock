@@ -2,7 +2,7 @@ package events
 
 import "testing"
 
-// FuzzParseFromTimestamp exercises the SSE ?from= query-param parser with
+// FuzzParseFromTimestamp exercises the SSE ?from_timestamp= query-param parser with
 // arbitrary strings. The value is fully attacker-controlled, so the parser
 // must never panic; and per its contract a non-nil error must come with the
 // zero time, so callers can't act on a half-parsed instant.
