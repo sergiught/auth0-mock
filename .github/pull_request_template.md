@@ -1,7 +1,7 @@
 <!--
 Thanks for the PR! A few notes:
   • One change per PR. Refactors and behavior changes go in separate PRs.
-  • Commits must follow Conventional Commits — CI lints them.
+  • The PR title must follow Conventional Commits — CI lints it (it becomes the squash-merge subject). Local pre-commit also lints each commit message.
   • CI runs lint + unit tests + features + govulncheck on every push.
   • See CONTRIBUTING.md for the full workflow.
 -->
@@ -48,5 +48,5 @@ make test-features
 
 - [ ] Tests added or updated (unit and/or `features/*.feature` as appropriate)
 - [ ] Documentation updated (README, `docs/COOKBOOK.md`, `docs/ARCHITECTURE.md`, or per-package godoc)
-- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — CI's `commitlint` job will reject otherwise (release-please derives `CHANGELOG.md` from them; don't hand-edit it)
+- [ ] PR title follows [Conventional Commits](https://www.conventionalcommits.org/) — CI's `commitlint` job will reject otherwise (it becomes the squash-merge subject that release-please derives `CHANGELOG.md` from; don't hand-edit the changelog)
 - [ ] `make lint`, `make test`, and `make test-features` all pass locally
