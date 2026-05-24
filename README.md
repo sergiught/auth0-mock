@@ -2,6 +2,8 @@
 
 <img src="docs/assets/banner.webp" alt="auth0-mock — a drop-in Auth0 HTTP API mock" width="100%">
 
+# auth0-mock
+
 A drop-in mock of Auth0's HTTP API (Authentication + Management) that you can point any Auth0-using service at, with no code changes.
 
 Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission injection. MFA, PKCE, OIDC discovery. HTTP and HTTPS.
