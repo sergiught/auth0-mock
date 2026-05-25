@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.228.4](https://github.com/sergiught/auth0-mock/compare/v0.228.3...v0.228.4) (2026-05-25)
+
+
+### Bug fixes
+
+* **examples:** bump x/crypto to v0.52.0 to clear Scorecard vulns ([#32](https://github.com/sergiught/auth0-mock/issues/32)) ([a5ee029](https://github.com/sergiught/auth0-mock/commit/a5ee029d76f2184b3c56ed1117dfac8fa3363675))
+
 ## [0.228.3](https://github.com/sergiught/auth0-mock/compare/v0.228.2...v0.228.3) (2026-05-24)
 
 
