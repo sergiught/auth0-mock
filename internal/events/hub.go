@@ -88,8 +88,15 @@ type Hub struct {
 	// cancellation, which lets sse.Joe's subscribe loop unwind
 	// cleanly (no "provider is closed" error string in the wire body).
 	activeMu sync.Mutex
-	active   map[uint64]context.CancelFunc
-	nextSub  uint64
+	active   map[int]context.CancelFunc
+	// NextSub allocates active-map keys and is monotonic for the life
+	// of the Hub — it is NOT reset by Reset. Recycling keys would let a
+	// pre-Reset subscriber's deferred cleanup (which deletes by its
+	// captured id) evict a post-Reset subscriber that happened to reuse
+	// the id. The per-window lifetime count lives in totalSubs instead,
+	// which is what Reset zeroes.
+	nextSub   int
+	totalSubs int
 
 	// LifecycleMu serialises Reset / Shutdown so two concurrent
 	// callers don't both try to drain the same server. Without it
@@ -122,7 +129,7 @@ func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
 	h := &Hub{
 		bufferSize: bufferSize,
 		now:        now,
-		active:     make(map[uint64]context.CancelFunc),
+		active:     make(map[int]context.CancelFunc),
 		stop:       make(chan struct{}),
 	}
 	if err := h.build(); err != nil {
@@ -268,10 +275,10 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 }
 
 // takeActiveLocked returns the current active-subscriber cancel set
-// and clears the map. Caller must hold mu.Lock (or be otherwise sole
-// owner). The activeMu lock here is conservative — mu.Lock alone
-// already excludes Handler's register/unregister paths, but holding
-// activeMu keeps the invariant local to this method.
+// and clears the map. Caller must hold mu.Lock. The activeMu lock here
+// is required, not just conservative: the Handler register/unregister
+// paths synchronise on activeMu alone (never mu), so without it the
+// snapshot could race a concurrent registerSub or cleanup.
 func (h *Hub) takeActiveLocked() []context.CancelFunc {
 	h.activeMu.Lock()
 	defer h.activeMu.Unlock()
@@ -279,8 +286,34 @@ func (h *Hub) takeActiveLocked() []context.CancelFunc {
 	for _, c := range h.active {
 		out = append(out, c)
 	}
-	h.active = make(map[uint64]context.CancelFunc)
+	h.active = make(map[int]context.CancelFunc)
+	// Restart the lifetime counter so TotalSubscribers reports per
+	// window: each Reset (the /admin0/reset between-test hook) begins a
+	// fresh count. Deliberately do NOT reset nextSub — see its field
+	// comment: a drained subscriber's cleanup still deletes by its
+	// captured id after this returns, so recycled ids could evict a
+	// post-Reset subscriber.
+	h.totalSubs = 0
 	return out
+}
+
+// ActiveSubscribers reports how many subscribers are connected to
+// GET /events right now. A subscriber leaves the active set only when
+// the server's read loop notices its connection closed, so a reading
+// taken immediately after a client disconnects may briefly lag.
+func (h *Hub) ActiveSubscribers() int {
+	h.activeMu.Lock()
+	defer h.activeMu.Unlock()
+	return len(h.active)
+}
+
+// TotalSubscribers reports how many subscriptions have connected since
+// the hub was created or last Reset. It increments on every connect
+// and never decrements within a window; Reset zeroes it.
+func (h *Hub) TotalSubscribers() int {
+	h.activeMu.Lock()
+	defer h.activeMu.Unlock()
+	return h.totalSubs
 }
 
 // flattenShutdownErr collapses the benign cases of sse.Server.Shutdown

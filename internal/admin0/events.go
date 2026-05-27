@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/go-chi/render"
+
 	"github.com/sergiught/auth0-mock/internal/events"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -19,6 +21,33 @@ import (
 type EventsPublisher interface {
 	Publish(events.Event) error
 	Reset(context.Context) error
+	// ActiveSubscribers / TotalSubscribers back GET
+	// /admin0/events/subscribers so tests can observe the SSE
+	// connection lifecycle (e.g. assert a stream closed cleanly).
+	ActiveSubscribers() int
+	TotalSubscribers() int
+}
+
+// GetEventSubscribersHandler reports the SSE hub's live and
+// lifetime-within-window subscriber counts. Intended for tests that
+// assert on connection lifecycle — e.g. "after closing my stream,
+// active drops back to 0". Active is eventually-consistent: the hub
+// removes a subscriber when the server observes its connection close,
+// so poll until it settles rather than asserting immediately.
+type GetEventSubscribersHandler struct {
+	Events EventsPublisher
+}
+
+type eventSubscribersResponse struct {
+	Active int `json:"active"`
+	Total  int `json:"total"`
+}
+
+func (h *GetEventSubscribersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	render.JSON(w, r, eventSubscribersResponse{
+		Active: h.Events.ActiveSubscribers(),
+		Total:  h.Events.TotalSubscribers(),
+	})
 }
 
 // PostEventsHandler validates an incoming Auth0 event-stream envelope

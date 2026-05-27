@@ -54016,6 +54016,41 @@
         ]
       }
     },
+    "/admin0/events/subscribers": {
+      "get": {
+        "description": "Observability for `GET /api/v2/events`, for tests that set\nexpectations on or verify the SSE connection lifecycle — e.g.\nasserting a consumer's stream closed cleanly, or that a client\nreconnected the expected number of times.\n\n`active` is eventually-consistent: a subscriber leaves the\ncount only when the mock observes its connection close, which\ncan lag the client's disconnect by a few milliseconds. Poll\nuntil `active` settles rather than reading it immediately after\nclosing a stream. `total` counts every connection since the\nlast `/admin0/reset`, which zeroes it.\n",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "active": {
+                      "description": "Subscribers connected right now.",
+                      "type": "integer"
+                    },
+                    "total": {
+                      "description": "Subscriptions opened since the last\n`/admin0/reset`. Monotonic within that window.\n",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "active",
+                    "total"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current subscriber counts."
+          }
+        },
+        "summary": "Report active and lifetime subscriber counts for the SSE hub.",
+        "tags": [
+          "Event Producer"
+        ]
+      }
+    },
     "/admin0/expectations": {
       "delete": {
         "description": "With an empty body, clears every registered expectation. With a\n`{ \"method\": ..., \"path\": ... }` body, clears every expectation\nregistered for that operation (the catch-all and every\nrequest-matched one).\n",

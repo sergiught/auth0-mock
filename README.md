@@ -287,6 +287,15 @@ The subscriber receives `id: evt_aaaaaaaaaaaaaaaa / event: user.created / data: 
 
 Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
 
+To set expectations and verify connection lifecycle, `GET /admin0/events/subscribers` reports `{"active":N,"total":M}` — `active` is how many subscribers are connected right now, `total` how many have connected since the last `/admin0/reset` (handy for asserting reconnection behaviour). `active` is eventually-consistent: the mock removes a subscriber only when it observes the connection close, which can lag a client's disconnect by a few milliseconds. So to assert "my stream closed cleanly", poll until `active` settles rather than reading it immediately:
+
+```bash
+# After closing the consumer, wait for the count to drain to 0.
+until [ "$(curl -s http://localhost:8080/admin0/events/subscribers | jq .active)" = 0 ]; do sleep 0.05; done
+```
+
+From Go tests, skip the hand-rolled loop: `c.Events.Subscribers(ctx)` returns the typed `{Active, Total}` counts, and `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until `active` settles (or fatals on timeout).
+
 > [!NOTE]
 > The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. The mock has no CORS support — browser `EventSource` clients on a different origin will be blocked by the browser's same-origin policy; run the mock on the page's origin or front it with a CORS-enabling proxy.
 
@@ -305,6 +314,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 | `/admin0/clock` | GET / PUT / DELETE | Freeze the clock at an instant (`{"now":"..."}`), set an offset (`{"offset":"25h"}`), or restore real time. Drives JWT `iat`/`exp` and bearer validation. |
 | `/admin0/clock/advance` | POST | Step the held clock by a Go duration (`{"by":"25h"}`). Negative durations allowed. |
 | `/admin0/events` | POST | Push an Auth0 event-stream envelope onto `GET /api/v2/events` so consumer SDKs see it live. Body is the full envelope `{type, offset, event:{...CloudEvent}}` — validated against the OpenAPI `text/event-stream` schema before fan-out. See [Event streams](#-event-streams). |
+| `/admin0/events/subscribers` | GET | Observe the SSE endpoint: `{"active":N,"total":M}` — subscribers connected right now, and total connected since the last `/admin0/reset`. See [Event streams](#-event-streams). |
 
 > [!WARNING]
 > **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
@@ -547,6 +557,7 @@ What's covered:
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
+| `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | (top-level `Reset` drains subscribers + replay buffer) | — |
 | top-level | — | — | `Reset` — wipes every store (including the clock back to real mode) | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
 
 `Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.

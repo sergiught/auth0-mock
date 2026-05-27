@@ -37,6 +37,33 @@ func NewStreamID() string {
 // records it in the bounded replay buffer for reconnect.
 type EventsClient struct{ c *Client }
 
+// SubscriberCount mirrors GET /admin0/events/subscribers.
+//
+// Active is how many subscribers are connected to GET /events right
+// now; it is eventually-consistent — the hub drops a subscriber only
+// when the server observes its connection close, so a reading taken
+// immediately after a client disconnects may briefly lag. Total is how
+// many have connected since the last /admin0/reset and never decreases
+// within a window (handy for asserting reconnection behaviour). Active
+// and Total increment together on connect, so once Active has settled
+// after a connection event, Total has already counted it.
+type SubscriberCount struct {
+	Active int `json:"active"`
+	Total  int `json:"total"`
+}
+
+// Subscribers reports the SSE hub's live and lifetime-within-window
+// subscriber counts. Intended for tests that assert on connection
+// lifecycle — e.g. "after closing my stream, active drops back to 0".
+// Because Active is eventually-consistent, prefer
+// auth0mocktest.WaitForActiveSubscribers when asserting a count
+// settles rather than reading it once.
+func (e *EventsClient) Subscribers(ctx context.Context) (SubscriberCount, error) {
+	var sc SubscriberCount
+	err := e.c.do(ctx, http.MethodGet, "/admin0/events/subscribers", nil, &sc)
+	return sc, err
+}
+
 // Push POSTs an Auth0 event-stream envelope to /admin0/events.
 // Payload is the full envelope ({type, offset, event:{...}}); the
 // mock validates it against the OpenAPI

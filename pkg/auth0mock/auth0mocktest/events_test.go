@@ -1,8 +1,10 @@
 package auth0mocktest_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -144,6 +146,39 @@ func TestMustPush_HappyPath(t *testing.T) {
 	c, _ := auth0mock.NewClient(srv.URL)
 	// Doesn't fatal — uses the real *testing.T.
 	auth0mocktest.MustPush(t, c, `{}`)
+}
+
+func TestWaitForActiveSubscribers_ReturnsWhenCountSettles(t *testing.T) {
+	// Active starts at 1 and drains to 0 on the second poll — the
+	// helper must keep polling, not read once and fatal.
+	var polls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		active := 0
+		if polls.Add(1) == 1 {
+			active = 1
+		}
+		_, _ = fmt.Fprintf(w, `{"active":%d,"total":1}`, active)
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := auth0mock.NewClient(srv.URL)
+
+	// Uses the real *testing.T — must not fatal.
+	auth0mocktest.WaitForActiveSubscribers(t, c, 0, time.Second)
+	assert.Greater(t, polls.Load(), int64(1), "helper should poll until the count settles")
+}
+
+func TestWaitForActiveSubscribers_TimeoutFatals(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"active":1,"total":1}`))
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := auth0mock.NewClient(srv.URL)
+
+	ft := &fakeT{}
+	auth0mocktest.WaitForActiveSubscribers(ft, c, 0, 50*time.Millisecond)
+	assert.True(t, ft.fatalCalled.Load(), "active never reaching want must fatal")
 }
 
 func TestSSEStream_CloseIsIdempotent(t *testing.T) {

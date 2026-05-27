@@ -67,6 +67,9 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodPost, "/admin0/clock/advance", &AdvanceClockHandler{Clock: d.Clock})
 	r.Method(http.MethodDelete, "/admin0/clock", &DeleteClockHandler{Clock: d.Clock})
 
+	if d.Events != nil {
+		r.Method(http.MethodGet, "/admin0/events/subscribers", &GetEventSubscribersHandler{Events: d.Events})
+	}
 	if d.Events != nil && d.Validator != nil {
 		r.Method(http.MethodPost, "/admin0/events", &PostEventsHandler{
 			Events: d.Events, Validator: d.Validator,

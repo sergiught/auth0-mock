@@ -221,6 +221,7 @@ func registerSub(h *Hub, r *http.Request, dw *drainableWriter) (context.Context,
 	h.activeMu.Lock()
 	id := h.nextSub
 	h.nextSub++
+	h.totalSubs++
 	h.active[id] = cancelAndDrain
 	h.activeMu.Unlock()
 	return ctx, func() {

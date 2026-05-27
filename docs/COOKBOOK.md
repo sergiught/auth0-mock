@@ -389,7 +389,12 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
     // Open a subscription with an event-type filter. The helper
     // strips keep-alives and yields one SSEEvent per real frame.
     stream := auth0mocktest.SubscribeEvents(t, c, bearer, "event_type=user.created")
-    time.Sleep(50 * time.Millisecond) // let the subscription register
+
+    // Block until the subscription has registered server-side, rather
+    // than sleeping a fixed guess. active is eventually-consistent, so
+    // this is the deterministic way to know a pushed event will be
+    // fanned out to this stream.
+    auth0mocktest.WaitForActiveSubscribers(t, c, 1, time.Second)
 
     // Push an event. The mock validates the envelope against the
     // OpenAPI text/event-stream schema; misshapen bodies surface
@@ -428,6 +433,18 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
 `from_timestamp=<rfc3339>` as the query string. The mock keeps a
 bounded ring buffer (default 100 events, see
 `EVENTS_REPLAY_BUFFER`) and replays missed events on reconnect.
+
+**Assert a stream closed cleanly** by waiting for the active count to
+drain after you (or your consumer-under-test) disconnect:
+
+```go
+stream.Close() // or let your consumer shut down
+auth0mocktest.WaitForActiveSubscribers(t, c, 0, time.Second)
+```
+
+For lifetime counts — e.g. asserting a consumer reconnected — read
+`c.Events.Subscribers(ctx)` and check `.Total` (connections since the
+last reset; it never decreases within a window).
 
 **Reset between tests** via `auth0mocktest.ResetOnCleanup(t, c)` —
 this drains every open subscriber and clears the replay buffer
