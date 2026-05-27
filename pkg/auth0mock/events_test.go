@@ -69,6 +69,38 @@ func TestEventsClient_Push_RejectsEmptyPayload(t *testing.T) {
 	assert.Contains(t, err.Error(), "payload is required")
 }
 
+func TestEventsClient_Subscribers(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"active":2,"total":5}`))
+	}
+
+	got, err := c.Events.Subscribers(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 2, got.Active)
+	assert.Equal(t, 5, got.Total)
+
+	call := rec.last(t)
+	assert.Equal(t, http.MethodGet, call.Method)
+	assert.Equal(t, "/admin0/events/subscribers", call.Path)
+}
+
+func TestEventsClient_Subscribers_PropagatesServerError(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","errorCode":"boom","message":"x"}`))
+	}
+
+	_, err := c.Events.Subscribers(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
 func TestNewEventID_MatchesSchemaPattern(t *testing.T) {
 	// The OpenAPI schema requires `evt_[a-zA-Z0-9]{16}` exactly.
 	// NewEventID uses hex (lowercase a-f + 0-9), which is a subset

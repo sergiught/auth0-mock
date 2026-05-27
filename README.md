@@ -294,6 +294,8 @@ To set expectations and verify connection lifecycle, `GET /admin0/events/subscri
 until [ "$(curl -s http://localhost:8080/admin0/events/subscribers | jq .active)" = 0 ]; do sleep 0.05; done
 ```
 
+From Go tests, skip the hand-rolled loop: `c.Events.Subscribers(ctx)` returns the typed `{Active, Total}` counts, and `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until `active` settles (or fatals on timeout).
+
 > [!NOTE]
 > The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. The mock has no CORS support — browser `EventSource` clients on a different origin will be blocked by the browser's same-origin policy; run the mock on the page's origin or front it with a CORS-enabling proxy.
 
@@ -555,6 +557,7 @@ What's covered:
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
+| `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | (top-level `Reset` drains subscribers + replay buffer) | — |
 | top-level | — | — | `Reset` — wipes every store (including the clock back to real mode) | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
 
 `Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.

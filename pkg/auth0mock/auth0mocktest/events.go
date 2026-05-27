@@ -168,6 +168,36 @@ func (s *SSEStream) read(resp *http.Response) {
 	}
 }
 
+// WaitForActiveSubscribers polls GET /admin0/events/subscribers until
+// the active count equals want, then returns. Calls t.Fatalf if it
+// doesn't settle within timeout.
+//
+// Use it to anchor on the SSE connection lifecycle rather than sleeping
+// a fixed guess: WaitForActiveSubscribers(t, c, 1, …) after subscribing
+// blocks until the subscription has registered server-side, and
+// WaitForActiveSubscribers(t, c, 0, …) after closing a stream blocks
+// until the hub has observed the disconnect (active is
+// eventually-consistent, so a bare read can race the close).
+func WaitForActiveSubscribers(t testing.TB, c *auth0mock.Client, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		sc, err := c.Events.Subscribers(context.Background())
+		if err != nil {
+			t.Fatalf("auth0mocktest: WaitForActiveSubscribers: %v", err)
+			return
+		}
+		if sc.Active == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("auth0mocktest: WaitForActiveSubscribers: active = %d, want %d after %s", sc.Active, want, timeout)
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 // MustPush wraps Client.Events.Push with t.Fatalf on error. Pass an
 // auth0mock.Event-shaped payload (the Auth0 event-stream envelope) as
 // a JSON string for readability:
