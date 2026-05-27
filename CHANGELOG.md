@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.229.0](https://github.com/sergiught/auth0-mock/compare/v0.228.4...v0.229.0) (2026-05-27)
+
+
+### Features
+
+* **events:** expose active/total SSE subscriber counts via /admin0 ([#34](https://github.com/sergiught/auth0-mock/issues/34)) ([a6a10d7](https://github.com/sergiught/auth0-mock/commit/a6a10d702ea0964fa1aecd99f5d63633a103db7f))
+
 ## [0.228.4](https://github.com/sergiught/auth0-mock/compare/v0.228.3...v0.228.4) (2026-05-25)
 
 
