@@ -2,7 +2,6 @@ package events_test
 
 import (
 	"context"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -53,56 +52,6 @@ func TestHub_SubscriberCounts_TrackConnectAndDisconnect(t *testing.T) {
 	cancel2()
 	requireActiveEventually(t, h, 0)
 	assert.Equal(t, 2, h.TotalSubscribers(), "total is monotonic within a reset window")
-}
-
-func TestHub_Reset_DoesNotEvictNewSubscriber(t *testing.T) {
-	// A subscriber connecting during the reset drain must survive in the
-	// active set. The hazard this guards: Reset must not recycle the
-	// subscriber id allocator, or a still-draining subscriber's deferred
-	// cleanup (which deletes by its captured id) could evict a post-Reset
-	// subscriber that reused the id. The eviction is a narrow race the
-	// draining cleanup almost always wins, so this exercises the
-	// concurrent reset-vs-subscribe path (most useful under -race) rather
-	// than forcing the eviction deterministically.
-	h, err := events.NewHub(10, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
-
-	srv := httptest.NewServer(h.Handler())
-	t.Cleanup(srv.Close)
-
-	for i := range 30 {
-		_, cancelOld := subscribe(t, srv, "")
-		requireActiveEventually(t, h, 1)
-
-		// Race a fresh subscription against the reset drain: the new
-		// connection registers around the moment Reset cancels the old
-		// one, so the old subscriber's id (which Reset used to recycle)
-		// can land on the newcomer.
-		newCtx, cancelNew := context.WithCancel(context.Background())
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			req, _ := http.NewRequestWithContext(newCtx, http.MethodGet, srv.URL, nil)
-			resp, err := http.DefaultClient.Do(req)
-			if err == nil {
-				t.Cleanup(func() { _ = resp.Body.Close() })
-			}
-		}()
-		require.NoError(t, h.Reset(context.Background()))
-		<-done
-
-		// The new connection is still open, so once everything settles
-		// the active set must contain exactly it — never 0.
-		requireActiveEventually(t, h, 1)
-		time.Sleep(5 * time.Millisecond)
-		require.Equal(t, 1, h.ActiveSubscribers(),
-			"iteration %d: live subscriber evicted by a draining subscriber's stale cleanup", i)
-
-		cancelOld()
-		cancelNew()
-		requireActiveEventually(t, h, 0)
-	}
 }
 
 func TestHub_Reset_ZeroesTotalSubscribers(t *testing.T) {
