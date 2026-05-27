@@ -25,7 +25,12 @@ type captureHub struct {
 	mu         sync.Mutex
 	got        []events.Event
 	resetCalls int
+	active     int
+	total      int
 }
+
+func (h *captureHub) ActiveSubscribers() int { return h.active }
+func (h *captureHub) TotalSubscribers() int  { return h.total }
 
 func (h *captureHub) Publish(e events.Event) error {
 	h.mu.Lock()
@@ -117,6 +122,18 @@ func TestPostAdmin0Events_RejectsSchemaViolation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "invalid_event")
 	assert.Empty(t, hub.got)
+}
+
+func TestGetAdmin0EventsSubscribers_ReturnsCounts(t *testing.T) {
+	hub := &captureHub{active: 2, total: 5}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin0/events/subscribers", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"active":2,"total":5}`, rec.Body.String())
 }
 
 func TestReset_CallsEventsReset(t *testing.T) {

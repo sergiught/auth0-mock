@@ -88,8 +88,8 @@ type Hub struct {
 	// cancellation, which lets sse.Joe's subscribe loop unwind
 	// cleanly (no "provider is closed" error string in the wire body).
 	activeMu sync.Mutex
-	active   map[uint64]context.CancelFunc
-	nextSub  uint64
+	active   map[int]context.CancelFunc
+	nextSub  int
 
 	// LifecycleMu serialises Reset / Shutdown so two concurrent
 	// callers don't both try to drain the same server. Without it
@@ -122,7 +122,7 @@ func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
 	h := &Hub{
 		bufferSize: bufferSize,
 		now:        now,
-		active:     make(map[uint64]context.CancelFunc),
+		active:     make(map[int]context.CancelFunc),
 		stop:       make(chan struct{}),
 	}
 	if err := h.build(); err != nil {
@@ -279,8 +279,32 @@ func (h *Hub) takeActiveLocked() []context.CancelFunc {
 	for _, c := range h.active {
 		out = append(out, c)
 	}
-	h.active = make(map[uint64]context.CancelFunc)
+	h.active = make(map[int]context.CancelFunc)
+	// Restart the lifetime counter so TotalSubscribers reports per
+	// window: each Reset (the /admin0/reset between-test hook) begins
+	// a fresh count. Safe to reset the id allocator too — the map was
+	// just cleared, so ids restarting at 0 collide with nothing.
+	h.nextSub = 0
 	return out
+}
+
+// ActiveSubscribers reports how many subscribers are connected to
+// GET /events right now. A subscriber leaves the active set only when
+// the server's read loop notices its connection closed, so a reading
+// taken immediately after a client disconnects may briefly lag.
+func (h *Hub) ActiveSubscribers() int {
+	h.activeMu.Lock()
+	defer h.activeMu.Unlock()
+	return len(h.active)
+}
+
+// TotalSubscribers reports how many subscriptions have connected since
+// the hub was created or last Reset. It increments on every connect
+// and never decrements within a window; Reset zeroes it.
+func (h *Hub) TotalSubscribers() int {
+	h.activeMu.Lock()
+	defer h.activeMu.Unlock()
+	return h.nextSub
 }
 
 // flattenShutdownErr collapses the benign cases of sse.Server.Shutdown

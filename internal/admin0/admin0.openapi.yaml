@@ -384,6 +384,39 @@ paths:
             schema validation (`errorCode: "invalid_event"`). The
             response `message` lists every failing field as
             `"/json/pointer": reason; ...`.
+  /admin0/events/subscribers:
+    get:
+      tags: ["Event Producer"]
+      summary: Report active and lifetime subscriber counts for the SSE hub.
+      description: |
+        Observability for `GET /api/v2/events`, for tests that set
+        expectations on or verify the SSE connection lifecycle — e.g.
+        asserting a consumer's stream closed cleanly, or that a client
+        reconnected the expected number of times.
+
+        `active` is eventually-consistent: a subscriber leaves the
+        count only when the mock observes its connection close, which
+        can lag the client's disconnect by a few milliseconds. Poll
+        until `active` settles rather than reading it immediately after
+        closing a stream. `total` counts every connection since the
+        last `/admin0/reset`, which zeroes it.
+      responses:
+        "200":
+          description: Current subscriber counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active, total]
+                properties:
+                  active:
+                    type: integer
+                    description: Subscribers connected right now.
+                  total:
+                    type: integer
+                    description: |
+                      Subscriptions opened since the last
+                      `/admin0/reset`. Monotonic within that window.
 components:
   schemas:
     Expectation:
