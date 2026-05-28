@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,7 +95,7 @@ type Hub struct {
 	// the id. The per-window lifetime count lives in totalSubs instead,
 	// which is what Reset zeroes.
 	nextSub   int
-	totalSubs int
+	totalSubs atomic.Int64
 
 	// LifecycleMu serialises Reset / Shutdown so two concurrent
 	// callers don't both try to drain the same server. Without it
@@ -183,11 +182,10 @@ func (h *Hub) Publish(evt Event) error {
 	if len(evt.Payload) > 0 {
 		msg.AppendData(string(evt.Payload))
 	}
-	topics := []string{broadcastTopic}
 	if evt.Type != "" {
-		topics = append(topics, evt.Type)
+		return h.server.Publish(msg, broadcastTopic, evt.Type)
 	}
-	return h.server.Publish(msg, topics...)
+	return h.server.Publish(msg, broadcastTopic)
 }
 
 // Reset swaps in a fresh server + replay buffer (so any concurrent
@@ -293,7 +291,7 @@ func (h *Hub) takeActiveLocked() []context.CancelFunc {
 	// comment: a drained subscriber's cleanup still deletes by its
 	// captured id after this returns, so recycled ids could evict a
 	// post-Reset subscriber.
-	h.totalSubs = 0
+	h.totalSubs.Store(0)
 	return out
 }
 
@@ -311,9 +309,7 @@ func (h *Hub) ActiveSubscribers() int {
 // the hub was created or last Reset. It increments on every connect
 // and never decrements within a window; Reset zeroes it.
 func (h *Hub) TotalSubscribers() int {
-	h.activeMu.Lock()
-	defer h.activeMu.Unlock()
-	return h.totalSubs
+	return int(h.totalSubs.Load())
 }
 
 // flattenShutdownErr collapses the benign cases of sse.Server.Shutdown
@@ -326,7 +322,7 @@ func flattenShutdownErr(err error) error {
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}
-	if strings.Contains(err.Error(), "provider is closed") {
+	if errors.Is(err, sse.ErrProviderClosed) {
 		return nil
 	}
 	return err
