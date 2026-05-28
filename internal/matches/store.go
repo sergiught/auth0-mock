@@ -1,7 +1,8 @@
 package matches
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -144,7 +145,7 @@ func (s *Store) Find(method, concretePath, opTemplate string, req MatchableReque
 	defer s.mu.RUnlock()
 	exact := s.exact[key{Method: method, Path: concretePath}]
 	tmpl := s.template[key{Method: method, Path: opTemplate}]
-	matched := firstNonNil(
+	matched := cmp.Or(
 		newestMatch(exact, req, false),
 		newestMatch(exact, req, true),
 		newestMatch(tmpl, req, false),
@@ -156,18 +157,6 @@ func (s *Store) Find(method, concretePath, opTemplate string, req MatchableReque
 		}
 	}
 	return matched
-}
-
-// firstNonNil returns the first non-nil *Expectation in args, or nil
-// if all are nil. Keeps the precedence tiers readable in Find without
-// nesting four if-blocks.
-func firstNonNil(xs ...*Expectation) *Expectation {
-	for _, x := range xs {
-		if x != nil {
-			return x
-		}
-	}
-	return nil
 }
 
 // newestMatch scans list newest-first and returns the first entry that both
@@ -211,11 +200,8 @@ func (s *Store) List() []Expectation {
 			out[i].Hits = counter.Load()
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Method != out[j].Method {
-			return out[i].Method < out[j].Method
-		}
-		return out[i].Path < out[j].Path
+	slices.SortStableFunc(out, func(a, b Expectation) int {
+		return cmp.Or(cmp.Compare(a.Method, b.Method), cmp.Compare(a.Path, b.Path))
 	})
 	return out
 }
