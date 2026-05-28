@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"regexp"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -531,11 +532,7 @@ func interestingHeaders(h http.Header) string {
 // redacting bearer tokens and cookies. Sorting keeps the dump diffable
 // across runs.
 func flatHeaders(h http.Header) string {
-	keys := make([]string, 0, len(h))
-	for k := range h {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(h))
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		v := strings.Join(h[k], ",")
@@ -627,6 +624,14 @@ func scrubSensitiveQuery(q string) string {
 func Logging(log zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Nothing below is observable when info logging is filtered
+			// out, so skip the recorder allocation and clock reads
+			// entirely and hand the raw ResponseWriter straight through
+			// (preserving its Flusher / Unwrap). Mirrors DebugDump's guard.
+			if !log.Info().Enabled() {
+				next.ServeHTTP(w, r)
+				return
+			}
 			start := time.Now()
 			sr := &statusRecorder{ResponseWriter: w}
 			next.ServeHTTP(sr, r)
