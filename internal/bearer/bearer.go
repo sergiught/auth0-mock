@@ -30,12 +30,13 @@ func Middleware(ks *jwks.KeySet, requireAudience string) func(http.Handler) http
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
-			if !strings.HasPrefix(h, "Bearer ") {
+			token, ok := strings.CutPrefix(h, "Bearer ")
+			if !ok {
 				httperr.WriteMgmt(w, http.StatusUnauthorized, "Unauthorized",
 					"missing bearer token", "missing_bearer")
 				return
 			}
-			claims, err := ks.Verify(strings.TrimPrefix(h, "Bearer "), jwks.VerifyOpts{
+			claims, err := ks.Verify(token, jwks.VerifyOpts{
 				RequireAudience: requireAudience,
 			})
 			if err != nil {
