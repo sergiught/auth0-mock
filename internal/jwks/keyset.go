@@ -38,9 +38,10 @@ type Config struct {
 
 // KeySet owns the active RS256 signing key.
 type KeySet struct {
-	cfg   Config
-	priv  *rsa.PrivateKey
-	keyID string
+	cfg      Config
+	priv     *rsa.PrivateKey
+	keyID    string
+	jwksJSON []byte // Built once in NewKeySet; the key never rotates.
 }
 
 // NewKeySet either loads the key from cfg.KeyFile or generates a fresh one.
@@ -52,11 +53,13 @@ func NewKeySet(cfg Config) (*KeySet, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &KeySet{
+	ks := &KeySet{
 		cfg:   cfg,
 		priv:  priv,
 		keyID: keyIDFromKey(priv),
-	}, nil
+	}
+	ks.jwksJSON = ks.buildJWKSJSON()
+	return ks, nil
 }
 
 // PublicKey exposes the active RSA public key.
