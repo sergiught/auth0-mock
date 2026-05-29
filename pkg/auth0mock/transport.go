@@ -46,7 +46,12 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if err != nil {
 		return fmt.Errorf("auth0mock: %s %s: %w", method, path, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// Drain before closing so net/http can reuse the keep-alive
+	// connection: an unread body forces a fresh handshake next call.
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return decodeError(resp)
