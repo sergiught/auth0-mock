@@ -71,7 +71,7 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 		return nil, errors.New("unexpected claims type")
 	}
 
-	out := &Claims{Extra: map[string]any{}}
+	out := &Claims{}
 	if v, ok := mc["iss"].(string); ok {
 		out.Issuer = v
 	}
@@ -98,6 +98,9 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 		switch kk {
 		case "iss", "sub", "aud", "iat", "exp", "scope":
 			continue
+		}
+		if out.Extra == nil {
+			out.Extra = make(map[string]any, len(mc))
 		}
 		out.Extra[kk] = vv
 	}

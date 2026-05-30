@@ -12,11 +12,19 @@ import (
 	"github.com/sergiught/auth0-mock/api"
 )
 
-var openapiBytes struct {
-	once sync.Once
-	yaml []byte
-	err  error
-}
+// openapiYAML converts the embedded spec to YAML once, lazily, and caches the
+// result (value + error) for every subsequent /openapi.yaml request.
+var openapiYAML = sync.OnceValues(func() ([]byte, error) {
+	doc, err := openapi3.NewLoader().LoadFromData(api.MockOpenAPIJSON)
+	if err != nil {
+		return nil, fmt.Errorf("parse embedded spec: %w", err)
+	}
+	body, err := yaml.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("marshal yaml: %w", err)
+	}
+	return body, nil
+})
 
 // MountOpenAPI registers `GET /openapi.json`, `GET /openapi.yaml`, and the
 // `/docs` API reference page (with its static assets) on r. All endpoints are
@@ -34,23 +42,11 @@ func serveOpenAPIJSON(w http.ResponseWriter, _ *http.Request) {
 }
 
 func serveOpenAPIYAML(w http.ResponseWriter, _ *http.Request) {
-	openapiBytes.once.Do(func() {
-		doc, err := openapi3.NewLoader().LoadFromData(api.MockOpenAPIJSON)
-		if err != nil {
-			openapiBytes.err = fmt.Errorf("parse embedded spec: %w", err)
-			return
-		}
-		body, err := yaml.Marshal(doc)
-		if err != nil {
-			openapiBytes.err = fmt.Errorf("marshal yaml: %w", err)
-			return
-		}
-		openapiBytes.yaml = body
-	})
-	if openapiBytes.err != nil {
-		http.Error(w, openapiBytes.err.Error(), http.StatusInternalServerError)
+	body, err := openapiYAML()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/yaml")
-	_, _ = w.Write(openapiBytes.yaml)
+	_, _ = w.Write(body)
 }

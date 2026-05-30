@@ -134,6 +134,31 @@ func TestHub_Handler_FilterlessSubscriberSeesAllEvents(t *testing.T) {
 	assert.Contains(t, frame, `data: {"type":"user.created","id":"evt-1"}`)
 }
 
+func TestHub_Handler_TypelessEventBroadcastsToFilterlessSubscriber(t *testing.T) {
+	// An event with no Type is published to broadcastTopic only (it has
+	// no type topic to also target). A filterless subscriber still
+	// receives it, rendered as an id+data frame with no `event:` line.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	r, cancel := subscribe(t, srv, "")
+	defer cancel()
+	time.Sleep(50 * time.Millisecond)
+
+	require.NoError(t, h.Publish(events.Event{
+		ID:      "evt-typeless",
+		Payload: json.RawMessage(`{"id":"evt-typeless"}`),
+	}))
+
+	frame := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, frame, "id: evt-typeless")
+	assert.Contains(t, frame, `data: {"id":"evt-typeless"}`)
+}
+
 func TestHub_Handler_EventTypeFilterSelectsMatchingOnly(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)

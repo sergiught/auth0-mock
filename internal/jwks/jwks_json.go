@@ -19,8 +19,14 @@ type jwks struct {
 	Keys []jwk `json:"keys"`
 }
 
-// JWKSJSON returns the JWKS document for /.well-known/jwks.json.
-func (k *KeySet) JWKSJSON() []byte {
+// JWKSJSON returns the JWKS document for /.well-known/jwks.json. The document
+// is built once at KeySet construction (the signing key never rotates), so this
+// is a constant-time accessor — callers must treat the result as read-only.
+func (k *KeySet) JWKSJSON() []byte { return k.jwksJSON }
+
+// buildJWKSJSON marshals the JWKS document for the active public key. Called
+// once from NewKeySet; the result is cached on the KeySet.
+func (k *KeySet) buildJWKSJSON() []byte {
 	pub := k.PublicKey()
 	// RSA public exponents are tiny positive ints (typically 65537) — Go's
 	// crypto/rsa generates only odd primes with E in {3, 17, 65537}, so the

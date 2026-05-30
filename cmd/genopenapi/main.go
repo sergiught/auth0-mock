@@ -10,7 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -197,7 +197,7 @@ func applyTagGroups(base *openapi3.T) {
 		}
 		mgmtTags = append(mgmtTags, name)
 	}
-	sort.Strings(mgmtTags)
+	slices.Sort(mgmtTags)
 
 	type tagGroup struct {
 		Name string   `json:"name"`
