@@ -123,9 +123,10 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// concurrent Put that evicted the just-looked-up ID).
 	synthesised := false
 	if r.Header.Get("Last-Event-ID") == "" {
-		if id := r.URL.Query().Get("from"); id != "" {
+		q := r.URL.Query()
+		if id := q.Get("from"); id != "" {
 			r.Header.Set("Last-Event-ID", id)
-		} else if ts := r.URL.Query().Get("from_timestamp"); ts != "" {
+		} else if ts := q.Get("from_timestamp"); ts != "" {
 			t, err := parseFromTimestamp(ts)
 			if err != nil {
 				httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
@@ -221,7 +222,7 @@ func registerSub(h *Hub, r *http.Request, dw *drainableWriter) (context.Context,
 	h.activeMu.Lock()
 	id := h.nextSub
 	h.nextSub++
-	h.totalSubs++
+	h.totalSubs.Add(1)
 	h.active[id] = cancelAndDrain
 	h.activeMu.Unlock()
 	return ctx, func() {

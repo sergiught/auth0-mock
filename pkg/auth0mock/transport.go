@@ -10,6 +10,12 @@ import (
 	"net/http"
 )
 
+// maxDrainBytes caps how much of an unread response body do() discards to
+// salvage the keep-alive connection. It mirrors maxErrorBodyBytes: enough to
+// fully drain any realistic mock response, while bounding the work for a
+// runaway body.
+const maxDrainBytes = 1 << 20 // 1 MiB.
+
 // do is the shared HTTP plumbing every sub-client routes through.
 //
 //   - method, path: HTTP method and the full path under baseURL
@@ -46,7 +52,16 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if err != nil {
 		return fmt.Errorf("auth0mock: %s %s: %w", method, path, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// Drain before closing so net/http can reuse the keep-alive
+	// connection: an unread body forces a fresh handshake next call.
+	// Bounded so a pathological/misconfigured server returning a huge
+	// body can't stall the caller — typical small responses still drain
+	// fully (and reuse the connection); anything past the cap is left
+	// unread, so net/http simply discards that connection instead.
+	defer func() {
+		_, _ = io.CopyN(io.Discard, resp.Body, maxDrainBytes)
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return decodeError(resp)

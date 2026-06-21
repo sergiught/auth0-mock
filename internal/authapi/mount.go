@@ -48,7 +48,7 @@ func Mount(d Deps) {
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
 	})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys})
-	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", &DiscoveryHandler{Issuer: d.Issuer})
+	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", NewDiscoveryHandler(d.Issuer))
 	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{AllowedReturnURLs: d.LogoutAllowedURLs})
 	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/signup", &DBConnectionsSignupHandler{})
