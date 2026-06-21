@@ -234,9 +234,18 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("auth0mock: NewClient: baseURL %q must include a scheme and host (e.g. http://localhost:8080)", baseURL)
 	}
+	// The SDK only ever talks to a single host (the mock), so the default
+	// transport's MaxIdleConnsPerHost of 2 throttles keep-alive reuse under
+	// concurrent load (parallel test suites): every call past the first two
+	// in flight pays a fresh handshake. Clone the default transport (keeping
+	// its dialer/timeouts/HTTP2 settings) and widen the idle pool. Callers who
+	// supply their own client via WithHTTPClient override this entirely.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 100
+	tr.MaxIdleConnsPerHost = 100
 	c := &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: defaultTimeout},
+		http:    &http.Client{Timeout: defaultTimeout, Transport: tr},
 	}
 	for _, opt := range opts {
 		opt(c)

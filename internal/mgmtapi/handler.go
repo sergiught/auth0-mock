@@ -25,7 +25,7 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 0. Buffer the request body once: an HTTP body stream is read-once, and
 	//    both spec validation and request-matcher comparison need it.
 	var body []byte
-	if r.Body != nil {
+	if r.Body != nil && r.ContentLength != 0 {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "read body: "+err.Error(), "invalid_request")
