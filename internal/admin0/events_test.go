@@ -1,12 +1,15 @@
 package admin0_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -144,6 +147,75 @@ func TestPostAdmin0Events_ErrorPayloadAcceptedByReplayBuffer(t *testing.T) {
 
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	assert.JSONEq(t, `{"id":"42"}`, rec.Body.String())
+}
+
+// TestPostAdmin0Events_ErrorPayloadReachesSubscriber proves the issue's
+// end-to-end goal: an error message POSTed to /admin0/events reaches a live,
+// filterless GET /events subscriber carrying error.offset as its SSE id — so a
+// worker can read it and resume from that cursor. Without the offset fallback
+// the push 500s and the subscriber sees nothing.
+func TestPostAdmin0Events_ErrorPayloadReachesSubscriber(t *testing.T) {
+	hub, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
+
+	r := newEventsRouter(t, hub)
+	r.Get("/events", hub.Handler().ServeHTTP)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	subReq, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+	require.NoError(t, err)
+	subResp, err := http.DefaultClient.Do(subReq)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = subResp.Body.Close() })
+	require.Equal(t, http.StatusOK, subResp.StatusCode)
+	require.Contains(t, subResp.Header.Get("Content-Type"), "text/event-stream")
+	br := bufio.NewReader(subResp.Body)
+
+	// Give the subscription a moment to register before pushing.
+	time.Sleep(50 * time.Millisecond)
+
+	pushResp, err := http.Post(srv.URL+"/admin0/events", "application/json", bytes.NewReader([]byte(validErrorBody)))
+	require.NoError(t, err)
+	_ = pushResp.Body.Close()
+	require.Equal(t, http.StatusAccepted, pushResp.StatusCode)
+
+	frame := readSSEFrame(t, br, 2*time.Second)
+	assert.Contains(t, frame, "id: 42", "offset must surface as the SSE id")
+	assert.Contains(t, frame, "event: error")
+	assert.Contains(t, frame, `"code":"cursor_expired"`)
+}
+
+// readSSEFrame reads one SSE frame (up to the blank-line terminator) from r,
+// failing the test if none arrives within d.
+func readSSEFrame(t *testing.T, r *bufio.Reader, d time.Duration) string {
+	t.Helper()
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				done <- b.String()
+				return
+			}
+			b.WriteString(line)
+			if line == "\n" || line == "\r\n" {
+				done <- b.String()
+				return
+			}
+		}
+	}()
+	select {
+	case f := <-done:
+		return f
+	case <-time.After(d):
+		t.Fatalf("timeout waiting for SSE frame")
+		return ""
+	}
 }
 
 func TestPostAdmin0Events_RejectsInvalidJSON(t *testing.T) {
