@@ -62,14 +62,29 @@ type PostEventsHandler struct {
 
 // eventStreamEnvelope is a thin partial decode of the Auth0
 // event-stream envelope that extracts just the routing fields
-// (outer type + inner event.id). Other fields are validated via the
-// spec validator. Fields are exported so encoding/json populates them;
-// they aren't part of the public API.
+// (outer type + inner event.id, plus error.offset for error
+// messages). Other fields are validated via the spec validator. Fields
+// are exported so encoding/json populates them; they aren't part of the
+// public API.
 type eventStreamEnvelope struct {
 	Type  string `json:"type"`
 	Event struct {
 		ID string `json:"id"`
 	} `json:"event"`
+	Error struct {
+		Offset string `json:"offset"`
+	} `json:"error"`
+}
+
+// sseID returns the SSE message id for this envelope. Regular events
+// carry it in event.id; error messages have no event wrapper, so the
+// resume cursor (error.offset) stands in — without it the replay buffer
+// rejects the ID-less message ("message has no ID") and the push 500s.
+func (e eventStreamEnvelope) sseID() string {
+	if e.Event.ID != "" {
+		return e.Event.ID
+	}
+	return e.Error.Offset
 }
 
 func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -110,9 +125,10 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"decode envelope: "+err.Error(), "invalid_event_envelope")
 		return
 	}
+	id := env.sseID()
 	if err := h.Events.Publish(events.Event{
 		Type:    env.Type,
-		ID:      env.Event.ID,
+		ID:      id,
 		Payload: json.RawMessage(body),
 	}); err != nil {
 		httperr.WriteMgmt(w, http.StatusInternalServerError, "Internal Server Error",
@@ -123,5 +139,5 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(struct {
 		ID string `json:"id"`
-	}{ID: env.Event.ID})
+	}{ID: id})
 }

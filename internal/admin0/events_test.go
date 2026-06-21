@@ -81,6 +81,18 @@ const validUserCreatedBody = `{
   }
 }`
 
+// validErrorBody is the smallest error-message envelope that passes the
+// event-stream schema. It has no `event` wrapper (so no event.id), only an
+// `error` wrapper carrying the resume offset.
+const validErrorBody = `{
+  "type":"error",
+  "error":{
+    "code":"cursor_expired",
+    "message":"cursor expired; resync from the supplied offset",
+    "offset":"42"
+  }
+}`
+
 func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	hub := &captureHub{}
 	r := newEventsRouter(t, hub)
@@ -95,6 +107,43 @@ func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	assert.Equal(t, "user.created", hub.got[0].Type)
 	assert.Equal(t, "evt_aaaaaaaaaaaaaaaa", hub.got[0].ID)
 	assert.JSONEq(t, validUserCreatedBody, string(hub.got[0].Payload))
+}
+
+func TestPostAdmin0Events_ErrorPayloadUsesOffsetAsID(t *testing.T) {
+	hub := &captureHub{}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events", bytes.NewReader([]byte(validErrorBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	require.Len(t, hub.got, 1)
+	assert.Equal(t, "error", hub.got[0].Type)
+	// Error payloads carry no event.id; error.offset stands in as the SSE
+	// message ID so cursor semantics hold on resume.
+	assert.Equal(t, "42", hub.got[0].ID)
+	assert.JSONEq(t, validErrorBody, string(hub.got[0].Payload))
+	assert.JSONEq(t, `{"id":"42"}`, rec.Body.String())
+}
+
+// TestPostAdmin0Events_ErrorPayloadAcceptedByReplayBuffer drives the real hub
+// with the replay buffer enabled — the exact configuration where an ID-less
+// message is rejected by go-sse's FiniteReplayer and the push 500s.
+func TestPostAdmin0Events_ErrorPayloadAcceptedByReplayBuffer(t *testing.T) {
+	hub, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events", bytes.NewReader([]byte(validErrorBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"id":"42"}`, rec.Body.String())
 }
 
 func TestPostAdmin0Events_RejectsInvalidJSON(t *testing.T) {
