@@ -438,6 +438,18 @@ a prior event delivered in its SSE `id:` line. The mock keeps a bounded
 ring buffer (default 100 events, see `EVENTS_REPLAY_BUFFER`) and replays
 missed events on reconnect.
 
+**Simulate an in-band stream error** to exercise a consumer's reconnect
+or cursor-fallback path by pushing an error frame:
+
+```go
+auth0mocktest.MustPush(t, c, `{"type":"error","error":{"code":"cursor_expired","message":"cursor expired"}}`)
+```
+
+Matching Auth0, error frames are control signals, not events: every
+subscriber receives them regardless of `event_type` filter, they're
+never buffered/replayed (no offset), and the stream **closes** right
+after — which is what drives your consumer to reconnect.
+
 **Assert a stream closed cleanly** by waiting for the active count to
 drain after you (or your consumer-under-test) disconnect:
 

@@ -65,25 +65,14 @@ type PostEventsHandler struct {
 // type + the offset cursor). Other fields are validated via the spec
 // validator. Fields are exported so encoding/json populates them; they
 // aren't part of the public API.
+//
+// Auth0's Events API uses the offset as the SSE id, the resume cursor a
+// consumer echoes back via Last-Event-ID / ?from. Error messages carry
+// no offset: they're terminal control frames, not a resume point, so
+// they go out without an id and the hub never buffers them.
 type eventStreamEnvelope struct {
 	Type   string `json:"type"`
 	Offset string `json:"offset"`
-	Error  struct {
-		Offset string `json:"offset"`
-	} `json:"error"`
-}
-
-// sseID returns the SSE message id for this envelope. Auth0's Events API
-// uses the offset as the SSE id on every message — it's the resume
-// cursor a consumer echoes back via Last-Event-ID / ?from. Regular
-// events carry it top-level; error messages (no event wrapper) carry it
-// in error.offset. Without an id the replay buffer rejects the message
-// ("message has no ID") and the push 500s.
-func (e eventStreamEnvelope) sseID() string {
-	if e.Offset != "" {
-		return e.Offset
-	}
-	return e.Error.Offset
 }
 
 func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -124,10 +113,9 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"decode envelope: "+err.Error(), "invalid_event_envelope")
 		return
 	}
-	id := env.sseID()
 	if err := h.Events.Publish(events.Event{
 		Type:    env.Type,
-		ID:      id,
+		ID:      env.Offset,
 		Payload: json.RawMessage(body),
 	}); err != nil {
 		httperr.WriteMgmt(w, http.StatusInternalServerError, "Internal Server Error",
@@ -138,5 +126,5 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(struct {
 		ID string `json:"id"`
-	}{ID: id})
+	}{ID: env.Offset})
 }

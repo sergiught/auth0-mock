@@ -115,7 +115,9 @@ func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	assert.JSONEq(t, `{"id":"0"}`, rec.Body.String())
 }
 
-func TestPostAdmin0Events_ErrorPayloadUsesOffsetAsID(t *testing.T) {
+// Error frames are terminal control signals, not resumable events: they
+// carry no offset, so they go out with no SSE id.
+func TestPostAdmin0Events_ErrorPayloadHasNoCursorID(t *testing.T) {
 	hub := &captureHub{}
 	r := newEventsRouter(t, hub)
 
@@ -127,17 +129,16 @@ func TestPostAdmin0Events_ErrorPayloadUsesOffsetAsID(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	require.Len(t, hub.got, 1)
 	assert.Equal(t, "error", hub.got[0].Type)
-	// Error payloads carry no event.id; error.offset stands in as the SSE
-	// message ID so cursor semantics hold on resume.
-	assert.Equal(t, "42", hub.got[0].ID)
+	assert.Empty(t, hub.got[0].ID, "error frames are not a resume point — no SSE id")
 	assert.JSONEq(t, validErrorBody, string(hub.got[0].Payload))
-	assert.JSONEq(t, `{"id":"42"}`, rec.Body.String())
+	assert.JSONEq(t, `{"id":""}`, rec.Body.String())
 }
 
-// TestPostAdmin0Events_ErrorPayloadAcceptedByReplayBuffer drives the real hub
-// with the replay buffer enabled — the exact configuration where an ID-less
-// message is rejected by go-sse's FiniteReplayer and the push 500s.
-func TestPostAdmin0Events_ErrorPayloadAcceptedByReplayBuffer(t *testing.T) {
+// TestPostAdmin0Events_ErrorPayloadBypassesReplayBuffer drives the real hub
+// with the replay buffer enabled — the configuration where, before the fix, an
+// id-less message was rejected by go-sse's FiniteReplayer and the push 500'd.
+// The hub now delivers error frames live without buffering them.
+func TestPostAdmin0Events_ErrorPayloadBypassesReplayBuffer(t *testing.T) {
 	hub, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
@@ -149,14 +150,14 @@ func TestPostAdmin0Events_ErrorPayloadAcceptedByReplayBuffer(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
-	assert.JSONEq(t, `{"id":"42"}`, rec.Body.String())
+	assert.JSONEq(t, `{"id":""}`, rec.Body.String())
 }
 
 // TestPostAdmin0Events_ErrorPayloadReachesSubscriber proves the issue's
-// end-to-end goal: an error message POSTed to /admin0/events reaches a live,
-// filterless GET /events subscriber carrying error.offset as its SSE id — so a
-// worker can read it and resume from that cursor. Without the offset fallback
-// the push 500s and the subscriber sees nothing.
+// end-to-end goal: an error message POSTed to /admin0/events reaches a live
+// GET /events subscriber as an `event: error` control frame (no id, since it's
+// not a resume point). Before the fix the push 500'd and the subscriber saw
+// nothing.
 func TestPostAdmin0Events_ErrorPayloadReachesSubscriber(t *testing.T) {
 	hub, err := events.NewHub(10, nil)
 	require.NoError(t, err)
@@ -187,9 +188,9 @@ func TestPostAdmin0Events_ErrorPayloadReachesSubscriber(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, pushResp.StatusCode)
 
 	frame := readSSEFrame(t, br, 2*time.Second)
-	assert.Contains(t, frame, "id: 42", "offset must surface as the SSE id")
 	assert.Contains(t, frame, "event: error")
 	assert.Contains(t, frame, `"code":"cursor_expired"`)
+	assert.NotContains(t, frame, "id:", "error frames carry no resume id")
 }
 
 // readSSEFrame reads one SSE frame (up to the blank-line terminator) from r,

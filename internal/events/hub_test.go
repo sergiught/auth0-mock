@@ -159,6 +159,62 @@ func TestHub_Handler_TypelessEventBroadcastsToFilterlessSubscriber(t *testing.T)
 	assert.Contains(t, frame, `data: {"id":"evt-typeless"}`)
 }
 
+// TestHub_Handler_ErrorFrameReachesFilteredSubscriberAndCloses verifies an
+// error control frame reaches every subscriber regardless of event_type
+// filter, then the stream closes — matching Auth0's Events API.
+func TestHub_Handler_ErrorFrameReachesFilteredSubscriberAndCloses(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	// A filtered subscriber that would never match a "user.created" event
+	// still receives the error control frame.
+	r, cancel := subscribe(t, srv, "?event_type=user.created")
+	defer cancel()
+	time.Sleep(50 * time.Millisecond)
+
+	require.NoError(t, h.Publish(events.Event{
+		Type:    "error",
+		Payload: json.RawMessage(`{"type":"error","error":{"code":"cursor_expired","message":"boom"}}`),
+	}))
+
+	frame := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, frame, "event: error")
+	assert.Contains(t, frame, `"code":"cursor_expired"`)
+
+	// The stream closes after an error frame: the subscriber drains out
+	// of the active set.
+	require.Eventually(t, func() bool { return h.ActiveSubscribers() == 0 },
+		2*time.Second, 10*time.Millisecond, "stream should close after an error frame")
+}
+
+// TestHub_Handler_ErrorFrameIsNotReplayed verifies error frames are never
+// stored in the replay buffer: resuming past one replays only the real events.
+func TestHub_Handler_ErrorFrameIsNotReplayed(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	require.NoError(t, h.Publish(events.Event{Type: "user.created", ID: "0", Payload: json.RawMessage(`{"type":"user.created","offset":"0"}`)}))
+	require.NoError(t, h.Publish(events.Event{Type: "error", Payload: json.RawMessage(`{"type":"error","error":{"code":"timeout","message":"x"}}`)}))
+	require.NoError(t, h.Publish(events.Event{Type: "user.created", ID: "1", Payload: json.RawMessage(`{"type":"user.created","offset":"1"}`)}))
+
+	// Resume from offset "0" → only the real event at "1" replays; the
+	// error frame between them was never buffered.
+	r, cancel := subscribe(t, srv, "?from=0")
+	defer cancel()
+
+	frame := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, frame, "id: 1")
+	assert.NotContains(t, frame, "event: error")
+}
+
 func TestHub_Handler_EventTypeFilterSelectsMatchingOnly(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)

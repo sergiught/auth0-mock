@@ -285,6 +285,8 @@ curl -X POST http://localhost:8080/admin0/events \
 
 The subscriber receives `id: 0 / event: user.created / data: {...}` — the SSE `id:` is the event's `offset` (the resume cursor you echo back via `Last-Event-ID` / `?from`), matching Auth0's Events API, not the CloudEvent `event.id`. Comment frames (`:keep-alive`) arrive every 15s so reverse-proxy idle timeouts don't drop the connection.
 
+Push an **error frame** (`{"type":"error","error":{"code":"cursor_expired",...}}`) to simulate an in-band stream error — useful for testing a consumer's reconnect / cursor-fallback paths. Matching Auth0, error frames are control signals: delivered to **every** subscriber regardless of `event_type` filter, never stored in the replay buffer (they carry no offset id, so they're never replayed), and the stream **closes** right after, which triggers the consumer's reconnect.
+
 Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
 
 To set expectations and verify connection lifecycle, `GET /admin0/events/subscribers` reports `{"active":N,"total":M}` — `active` is how many subscribers are connected right now, `total` how many have connected since the last `/admin0/reset` (handy for asserting reconnection behaviour). `active` is eventually-consistent: the mock removes a subscriber only when it observes the connection close, which can lag a client's disconnect by a few milliseconds. So to assert "my stream closed cleanly", poll until `active` settles rather than reading it immediately:
