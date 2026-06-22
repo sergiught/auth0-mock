@@ -258,7 +258,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 ### 📡 Event streams
 
-`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<id>`, or `?from_timestamp=<rfc3339>` and the library's native replay path fills in what they missed.
+`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>` and the library's native replay path fills in what they missed.
 
 ```bash
 # In one terminal: subscribe (bearer required).
@@ -283,7 +283,7 @@ curl -X POST http://localhost:8080/admin0/events \
   }'
 ```
 
-The subscriber receives `id: evt_aaaaaaaaaaaaaaaa / event: user.created / data: {...}`. Comment frames (`:keep-alive`) arrive every 15s so reverse-proxy idle timeouts don't drop the connection.
+The subscriber receives `id: 0 / event: user.created / data: {...}` — the SSE `id:` is the event's `offset` (the resume cursor you echo back via `Last-Event-ID` / `?from`), matching Auth0's Events API, not the CloudEvent `event.id`. Comment frames (`:keep-alive`) arrive every 15s so reverse-proxy idle timeouts don't drop the connection.
 
 Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
 
@@ -387,7 +387,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `WRITE_TIMEOUT` | `30s` | http.Server's `WriteTimeout`. Bounds slow-write attacks. **Doesn't apply to `/api/v2/events`** — the SSE handler clears the deadline per-connection so long-lived subscribers aren't torn down. |
 | `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap. Anything larger is read up to this point and the handler surfaces a 400. Set to `0` to disable. |
-| `EVENTS_REPLAY_BUFFER` | `100` | Cap of the `/api/v2/events` SSE replay ring buffer. Reconnecting subscribers can resume from `Last-Event-ID`, `?from=<id>`, or `?from_timestamp=<rfc3339>` up to this many events back. `<= 0` disables replay (the endpoint still works; resume params become no-ops). |
+| `EVENTS_REPLAY_BUFFER` | `100` | Cap of the `/api/v2/events` SSE replay ring buffer. Reconnecting subscribers can resume from `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>` up to this many events back. `<= 0` disables replay (the endpoint still works; resume params become no-ops). |
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
 | `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
 | `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |

@@ -61,28 +61,27 @@ type PostEventsHandler struct {
 }
 
 // eventStreamEnvelope is a thin partial decode of the Auth0
-// event-stream envelope that extracts just the routing fields
-// (outer type + inner event.id, plus error.offset for error
-// messages). Other fields are validated via the spec validator. Fields
-// are exported so encoding/json populates them; they aren't part of the
-// public API.
+// event-stream envelope that extracts just the routing fields (outer
+// type + the offset cursor). Other fields are validated via the spec
+// validator. Fields are exported so encoding/json populates them; they
+// aren't part of the public API.
 type eventStreamEnvelope struct {
-	Type  string `json:"type"`
-	Event struct {
-		ID string `json:"id"`
-	} `json:"event"`
-	Error struct {
+	Type   string `json:"type"`
+	Offset string `json:"offset"`
+	Error  struct {
 		Offset string `json:"offset"`
 	} `json:"error"`
 }
 
-// sseID returns the SSE message id for this envelope. Regular events
-// carry it in event.id; error messages have no event wrapper, so the
-// resume cursor (error.offset) stands in — without it the replay buffer
-// rejects the ID-less message ("message has no ID") and the push 500s.
+// sseID returns the SSE message id for this envelope. Auth0's Events API
+// uses the offset as the SSE id on every message — it's the resume
+// cursor a consumer echoes back via Last-Event-ID / ?from. Regular
+// events carry it top-level; error messages (no event wrapper) carry it
+// in error.offset. Without an id the replay buffer rejects the message
+// ("message has no ID") and the push 500s.
 func (e eventStreamEnvelope) sseID() string {
-	if e.Event.ID != "" {
-		return e.Event.ID
+	if e.Offset != "" {
+		return e.Offset
 	}
 	return e.Error.Offset
 }

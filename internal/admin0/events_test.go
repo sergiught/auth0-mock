@@ -108,8 +108,11 @@ func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	require.Len(t, hub.got, 1)
 	assert.Equal(t, "user.created", hub.got[0].Type)
-	assert.Equal(t, "evt_aaaaaaaaaaaaaaaa", hub.got[0].ID)
+	// Faithful to Auth0's Events API: the SSE id is the offset (the resume
+	// cursor), not the CloudEvent event.id.
+	assert.Equal(t, "0", hub.got[0].ID)
 	assert.JSONEq(t, validUserCreatedBody, string(hub.got[0].Payload))
+	assert.JSONEq(t, `{"id":"0"}`, rec.Body.String())
 }
 
 func TestPostAdmin0Events_ErrorPayloadUsesOffsetAsID(t *testing.T) {

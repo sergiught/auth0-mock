@@ -404,8 +404,9 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
     // wrong length, and hand-counting is a common paste-and-go trap.
     eventID := auth0mock.NewEventID()
     streamID := auth0mock.NewStreamID()
+    const offset = "0" // the resume cursor; surfaces as the SSE id
     auth0mocktest.MustPush(t, c, fmt.Sprintf(`{
-        "type":"user.created","offset":"0",
+        "type":"user.created","offset":%q,
         "event":{
             "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
             "id":%q,"time":"2026-05-19T00:00:00Z",
@@ -417,22 +418,25 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
                 "identities":[]
             }}
         }
-    }`, eventID, streamID))
+    }`, offset, eventID, streamID))
 
     // Block until your consumer (downstream of the SSE stream)
-    // observes the event, then assert it reacted as expected.
+    // observes the event, then assert it reacted as expected. Matching
+    // Auth0's Events API, the SSE id is the offset (the resume cursor),
+    // not the CloudEvent event.id.
     evt := stream.NextEvent(t, 3*time.Second)
-    if evt.ID != eventID {
-        t.Fatalf("got id=%q want %s", evt.ID, eventID)
+    if evt.ID != offset {
+        t.Fatalf("got id=%q want offset %s", evt.ID, offset)
     }
     // ... drive your consumer's assertion here ...
 }
 ```
 
-**Resume from a known event ID** by passing `from=evt_xxx` or
-`from_timestamp=<rfc3339>` as the query string. The mock keeps a
-bounded ring buffer (default 100 events, see
-`EVENTS_REPLAY_BUFFER`) and replays missed events on reconnect.
+**Resume from a known offset** by passing `from=<offset>` or
+`from_timestamp=<rfc3339>` as the query string — the offset is the value
+a prior event delivered in its SSE `id:` line. The mock keeps a bounded
+ring buffer (default 100 events, see `EVENTS_REPLAY_BUFFER`) and replays
+missed events on reconnect.
 
 **Assert a stream closed cleanly** by waiting for the active count to
 drain after you (or your consumer-under-test) disconnect:
