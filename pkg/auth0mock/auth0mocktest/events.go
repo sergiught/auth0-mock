@@ -37,7 +37,7 @@ type SSEStream struct {
 
 // SubscribeEvents opens an SSE connection to /api/v2/events on the
 // mock with the given bearer and optional query string ("event_type=
-// user.created", "from=evt_xxx", etc. — pass the value without the
+// user.created", "from=<offset>", etc. — pass the value without the
 // leading `?`). The stream filters out keep-alive comment frames and
 // emits one SSEEvent per server frame.
 //

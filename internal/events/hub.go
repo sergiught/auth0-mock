@@ -174,10 +174,11 @@ func (h *Hub) build() error {
 }
 
 // Publish broadcasts evt to every subscriber whose topic set
-// intersects. The message is sent to broadcastTopic (reaches every
+// intersects. A regular event is sent to broadcastTopic (reaches every
 // filterless subscriber) and to evt.Type (reaches every filtered
-// subscriber that listed this type). Keep-alives use a separate
-// topic and never go through this path.
+// subscriber that listed this type). Error frames are control signals
+// and take a different path — see publishError. Keep-alives use a
+// separate topic and never go through this method.
 //
 // The RLock is held across server.Publish so a concurrent Reset
 // can't swap h.server underneath an in-flight publish and produce
