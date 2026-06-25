@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ func TestClock_Get(t *testing.T) {
 		_, _ = w.Write([]byte(`{"mode":"frozen","now":"2030-01-01T00:00:00Z"}`))
 	}
 
-	got, err := c.Clock.Get(context.Background())
+	got, err := c.Clock.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "frozen", got.Mode)
 	assert.True(t, got.Now.Equal(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)))
@@ -37,7 +36,7 @@ func TestClock_Get_OffsetIsParsed(t *testing.T) {
 		_, _ = w.Write([]byte(`{"mode":"offset","now":"2030-01-01T00:00:00Z","offset":"25h"}`))
 	}
 
-	got, err := c.Clock.Get(context.Background())
+	got, err := c.Clock.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "offset", got.Mode)
 	assert.Equal(t, 25*time.Hour, got.Offset)
@@ -51,7 +50,7 @@ func TestClock_Get_BadServerNow_ReturnsError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"mode":"real","now":"not-a-timestamp"}`))
 	}
 
-	_, err := c.Clock.Get(context.Background())
+	_, err := c.Clock.Get(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse server now")
 }
@@ -67,7 +66,7 @@ func TestClock_Get_BadServerOffset_ReturnsError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"mode":"offset","now":"2030-01-01T00:00:00Z","offset":"twenty-five hours"}`))
 	}
 
-	_, err := c.Clock.Get(context.Background())
+	_, err := c.Clock.Get(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse server offset")
 }
@@ -76,7 +75,7 @@ func TestClock_Freeze(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
 
-	require.NoError(t, c.Clock.Freeze(context.Background(),
+	require.NoError(t, c.Clock.Freeze(t.Context(),
 		time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 	call := rec.last(t)
@@ -90,7 +89,7 @@ func TestClock_Offset(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
 
-	require.NoError(t, c.Clock.Offset(context.Background(), 25*time.Hour))
+	require.NoError(t, c.Clock.Offset(t.Context(), 25*time.Hour))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodPut, call.Method)
@@ -101,7 +100,7 @@ func TestClock_Advance(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
 
-	require.NoError(t, c.Clock.Advance(context.Background(), time.Hour))
+	require.NoError(t, c.Clock.Advance(t.Context(), time.Hour))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodPost, call.Method)
@@ -113,7 +112,7 @@ func TestClock_Reset(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
 
-	require.NoError(t, c.Clock.Reset(context.Background()))
+	require.NoError(t, c.Clock.Reset(t.Context()))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)

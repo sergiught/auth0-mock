@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -18,7 +17,7 @@ func TestFluent_MinimalGet(t *testing.T) {
 	_, err := c.ExpectGet("/api/v2/users/auth0|123").
 		Respond(200).
 		JSON(map[string]any{"user_id": "auth0|123", "email": "alice@example.com"}).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 
 	call := rec.last(t)
@@ -46,7 +45,7 @@ func TestFluent_WithQueryAndBodyAndHeaders(t *testing.T) {
 		Respond(201).
 		Header("X-Auth0-Mock", "stub").
 		JSON(map[string]any{"id": "u_42"}).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 
 	var sent auth0mock.Expectation
@@ -77,7 +76,7 @@ func TestFluent_AllVerbs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rec, c := newStub(t)
-			_, err := tc.start(c).Respond(204).Apply(context.Background())
+			_, err := tc.start(c).Respond(204).Apply(t.Context())
 			require.NoError(t, err)
 			var sent auth0mock.Expectation
 			require.NoError(t, json.Unmarshal(rec.last(t).Body, &sent))
@@ -96,7 +95,7 @@ func TestFluent_QueryReplaceSemantics(t *testing.T) {
 		WithQuery("k", "second"). // Later wins.
 		WithQuery("other", "v").
 		Respond(200).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 
 	var sent auth0mock.Expectation
@@ -113,7 +112,7 @@ func TestFluent_HeaderReplaceSemantics(t *testing.T) {
 		Respond(200).
 		Header("X-Trace", "first").
 		Header("X-Trace", "second").
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 
 	var sent auth0mock.Expectation
@@ -158,7 +157,7 @@ func TestFluent_MarshalErrorDeferredToApply(t *testing.T) {
 			t.Parallel()
 			rec, c := newStub(t)
 			require.NotPanics(t, func() {
-				_, err := tc.build(c).Apply(context.Background())
+				_, err := tc.build(c).Apply(t.Context())
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantContains)
 				assert.Contains(t, err.Error(), "unsupported type")
@@ -182,7 +181,7 @@ func TestFluent_FirstErrorWinsInChain(t *testing.T) {
 		WithBodyJSON(map[string]any{"ok": true}). // Would otherwise overwrite.
 		Respond(200).
 		JSON(make(chan float64)). // Error #2 (suppressed).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "WithBodyJSON")
 	assert.NotContains(t, err.Error(), "Respond.JSON")
@@ -202,7 +201,7 @@ func TestFluent_WithHeader_WireShape(t *testing.T) {
 		WithHeader("X-Tenant", "acme").
 		Respond(201).
 		JSON(map[string]any{"id": "u_42"}).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 
 	var sent auth0mock.Expectation
@@ -223,7 +222,7 @@ func TestFluent_WithHeader_ReplaceSemantics(t *testing.T) {
 		WithHeader("X-Trace", "first").
 		WithHeader("X-Trace", "second").
 		Respond(200).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 	var sent auth0mock.Expectation
 	require.NoError(t, json.Unmarshal(rec.last(t).Body, &sent))
@@ -237,7 +236,7 @@ func TestFluent_BodyAcceptsPreEncoded(t *testing.T) {
 	_, err := c.ExpectGet("/p").
 		Respond(200).
 		Body(raw).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 
 	var sent auth0mock.Expectation
@@ -252,7 +251,7 @@ func TestFluent_WithBodyAndRegisteredMetadata(t *testing.T) {
 		WithBody(json.RawMessage(`{"active":true}`)).
 		Respond(200).
 		JSON(map[string]any{"id": "abc"}).
-		Apply(context.Background())
+		Apply(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, re)
 

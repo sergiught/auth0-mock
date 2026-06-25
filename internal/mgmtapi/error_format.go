@@ -30,8 +30,7 @@ func conciseValidationError(err error) string {
 	}
 
 	// RequestError wraps the inner schema/parse error with locator info.
-	var reqErr *openapi3filter.RequestError
-	if errors.As(err, &reqErr) {
+	if reqErr, ok := errors.AsType[*openapi3filter.RequestError](err); ok {
 		inner := spec.ConciseSchemaError(reqErr.Err)
 		if inner == "" {
 			inner = spec.ConciseSchemaError(err)

@@ -38,7 +38,6 @@ func (o *Orchestrator) Start(ctx context.Context) (err error) {
 
 	g, ctx := errgroup.WithContext(ctx)
 	for _, srv := range o.servers {
-		srv := srv
 		g.Go(func() error {
 			errCh := make(chan error, 1)
 			go func() {

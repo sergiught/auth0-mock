@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -27,7 +26,7 @@ func TestMFA_IsRequired(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}
 
-			got, err := c.MFA.Get(context.Background())
+			got, err := c.MFA.Get(t.Context())
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 
@@ -51,7 +50,7 @@ func TestMFA_SetRequired_WireShape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rec, c := newStub(t)
-			require.NoError(t, c.MFA.Set(context.Background(), tc.set))
+			require.NoError(t, c.MFA.Set(t.Context(), tc.set))
 
 			call := rec.last(t)
 			assert.Equal(t, http.MethodPut, call.Method)

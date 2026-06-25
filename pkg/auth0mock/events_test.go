@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -38,7 +37,7 @@ func TestEventsClient_Push_SendsPayloadVerbatim(t *testing.T) {
 	  "type":"user.created","offset":"0",
 	  "event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z","a0tenant":"t","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}
 	}`)
-	err = c.Events.Push(context.Background(), payload)
+	err = c.Events.Push(t.Context(), payload)
 	require.NoError(t, err)
 
 	assert.Equal(t, http.MethodPost, gotMethod)
@@ -56,7 +55,7 @@ func TestEventsClient_Push_PropagatesServerError(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c, _ := auth0mock.NewClient(srv.URL)
-	err := c.Events.Push(context.Background(), json.RawMessage(`{}`))
+	err := c.Events.Push(t.Context(), json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid_event")
 }
@@ -64,7 +63,7 @@ func TestEventsClient_Push_PropagatesServerError(t *testing.T) {
 func TestEventsClient_Push_RejectsEmptyPayload(t *testing.T) {
 	c, err := auth0mock.NewClient("http://localhost:1")
 	require.NoError(t, err)
-	err = c.Events.Push(context.Background(), nil)
+	err = c.Events.Push(t.Context(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "payload is required")
 }
@@ -77,7 +76,7 @@ func TestEventsClient_Subscribers(t *testing.T) {
 		_, _ = w.Write([]byte(`{"active":2,"total":5}`))
 	}
 
-	got, err := c.Events.Subscribers(context.Background())
+	got, err := c.Events.Subscribers(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.Active)
 	assert.Equal(t, 5, got.Total)
@@ -96,7 +95,7 @@ func TestEventsClient_Subscribers_PropagatesServerError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","errorCode":"boom","message":"x"}`))
 	}
 
-	_, err := c.Events.Subscribers(context.Background())
+	_, err := c.Events.Subscribers(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
 }
