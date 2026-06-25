@@ -194,7 +194,10 @@ func NewHub(bufferSize int, now func() time.Time, opts ...HubOption) (*Hub, erro
 // optional `retry:` reconnect hint. Both are non-events, so SSE readers
 // that skip comments and `retry:` ignore the frame.
 func buildConnectFrame(reconnectHint time.Duration) []byte {
-	if reconnectHint <= 0 {
+	// Anything under a millisecond rounds to `retry: 0` ("reconnect
+	// immediately"), which is a hot-loop footgun — worse than the intended
+	// "no hint, use your default". So omit the field for sub-ms values too.
+	if reconnectHint < time.Millisecond {
 		return []byte(":connected\n\n")
 	}
 	return []byte(":connected\nretry: " + strconv.FormatInt(reconnectHint.Milliseconds(), 10) + "\n\n")

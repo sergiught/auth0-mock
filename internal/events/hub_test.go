@@ -65,8 +65,9 @@ func subscribe(t *testing.T, srv *httptest.Server, query string) (*bufio.Reader,
 	require.Contains(t, resp.Header.Get("Content-Type"), "text/event-stream")
 	r := bufio.NewReader(resp.Body)
 	// Consume the connect announcement frame the handler sends, so callers
-	// read events directly.
-	readOneEvent(t, r, 2*time.Second)
+	// read events directly. Assert it really is that frame, so a future
+	// regression can't silently swallow the first real event here.
+	require.Contains(t, readOneEvent(t, r, 2*time.Second), ":connected")
 	return r, cancel
 }
 
@@ -156,6 +157,20 @@ func TestHub_Handler_ReconnectHintConfigurable(t *testing.T) {
 
 	t.Run("zero omits the hint", func(t *testing.T) {
 		h, err := events.NewHub(10, nil, events.WithReconnectHint(0))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+		srv := httptest.NewServer(h.Handler())
+		t.Cleanup(srv.Close)
+
+		frame := firstFrame(t, srv)
+		assert.Contains(t, frame, ":connected")
+		assert.NotContains(t, frame, "retry:")
+	})
+
+	// A sub-millisecond hint would round to `retry: 0` (reconnect
+	// immediately); it's omitted instead.
+	t.Run("sub-millisecond omits the hint", func(t *testing.T) {
+		h, err := events.NewHub(10, nil, events.WithReconnectHint(500*time.Microsecond))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
 		srv := httptest.NewServer(h.Handler())
