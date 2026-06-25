@@ -450,6 +450,18 @@ subscriber receives them regardless of `event_type` filter, they're
 never buffered/replayed (no offset), and the stream **closes** right
 after — which is what drives your consumer to reconnect.
 
+**Advance the cursor during idle** with an `offset-only` progress marker —
+exercise a consumer that persists offsets from non-event messages and
+resumes after a quiet period:
+
+```go
+auth0mocktest.MustPush(t, c, `{"type":"offset-only","offset":"42"}`)
+```
+
+Like error frames, markers reach every subscriber regardless of
+`event_type` filter. But they carry an offset, so (unlike errors) they
+**are** buffered and `from=42` is a valid resume point.
+
 **Assert a stream closed cleanly** by waiting for the active count to
 drain after you (or your consumer-under-test) disconnect:
 

@@ -50,6 +50,14 @@ Feature: GET /api/v2/events Server-Sent Events
       """
     Then the SSE stream delivers no event within 1s
 
+  Scenario: offset-only progress marker reaches a filtered subscriber
+    When I subscribe to /api/v2/events with query "?event_type=user.created"
+    And I push an event:
+      """
+      {"type":"offset-only","offset":"9"}
+      """
+    Then the SSE stream delivers an event with id "9" within 3s
+
   Scenario: Last-Event-ID header replays missed events
     When I push an event:
       """
