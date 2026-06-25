@@ -18,12 +18,25 @@ import (
 // event_types) see only matching events.
 const broadcastTopic = "__broadcast__"
 
-// keepAliveTopic is a separate fan-out topic used ONLY for keep-alive
-// comments. Every subscriber — filtered or not — subscribes to it so
-// that filtered subscribers behind idle-timeout proxies still receive
-// heartbeats. Publishers of real events never target this topic, so
-// keep-alives don't interfere with event filtering.
+// keepAliveTopic is the every-subscriber fan-out topic. Every
+// subscriber — filtered or not — subscribes to it, so it carries
+// messages that must reach all of them regardless of event_type filter:
+// keep-alive comments (so filtered subscribers behind idle-timeout
+// proxies still get heartbeats) and error control frames (which Auth0
+// delivers to every consumer). Regular events never target this topic,
+// so they don't bypass event filtering.
 const keepAliveTopic = "__keep_alive__"
+
+// errorEventType is the CloudEvent discriminator for an in-band error
+// message. Error frames are terminal control signals, not regular
+// events: delivered to every subscriber, never buffered for replay, and
+// followed by the stream closing — see Publish.
+const errorEventType = "error"
+
+// barrierTopic is an internal topic no subscriber ever joins. Publishing
+// to it is a no-op delivery whose only purpose is the serialisation
+// barrier in Publish's error path — see the comment there.
+const barrierTopic = "__barrier__"
 
 // DefaultKeepAliveInterval is the cadence at which a `:keep-alive`
 // comment is broadcast to every connected subscriber. 15s matches
@@ -161,10 +174,11 @@ func (h *Hub) build() error {
 }
 
 // Publish broadcasts evt to every subscriber whose topic set
-// intersects. The message is sent to broadcastTopic (reaches every
+// intersects. A regular event is sent to broadcastTopic (reaches every
 // filterless subscriber) and to evt.Type (reaches every filtered
-// subscriber that listed this type). Keep-alives use a separate
-// topic and never go through this path.
+// subscriber that listed this type). Error frames are control signals
+// and take a different path — see publishError. Keep-alives use a
+// separate topic and never go through this method.
 //
 // The RLock is held across server.Publish so a concurrent Reset
 // can't swap h.server underneath an in-flight publish and produce
@@ -182,10 +196,56 @@ func (h *Hub) Publish(evt Event) error {
 	if len(evt.Payload) > 0 {
 		msg.AppendData(string(evt.Payload))
 	}
+	if evt.Type == errorEventType {
+		return h.publishError(msg)
+	}
 	if evt.Type != "" {
 		return h.server.Publish(msg, broadcastTopic, evt.Type)
 	}
 	return h.server.Publish(msg, broadcastTopic)
+}
+
+// publishError delivers an in-band error control frame the way Auth0's
+// Events API does: to every connected subscriber regardless of
+// event_type filter, never stored for replay, and followed by the
+// stream closing. Caller holds mu.RLock.
+//
+//   - All subscribers join keepAliveTopic, so it's the fan-out topic
+//     that reaches filtered and filterless subscribers alike. The frame
+//     carries no id (errors aren't a resume point), so recordingReplayer
+//     skips buffering it.
+//   - go-sse's Joe runs a single goroutine and Publish returns once a
+//     message is queued, before its fan-out completes. Closing the
+//     subscribers immediately would race that fan-out and could truncate
+//     the error frame. A throwaway publish to a topic no one subscribes
+//     to acts as a barrier: because Joe processes messages in order on
+//     one goroutine, the barrier's Publish only returns after the error
+//     frame's fan-out has finished — so the close below is safe.
+func (h *Hub) publishError(msg *sse.Message) error {
+	if err := h.server.Publish(msg, keepAliveTopic); err != nil {
+		return err
+	}
+	barrier := &sse.Message{}
+	barrier.AppendComment("barrier")
+	_ = h.server.Publish(barrier, barrierTopic)
+	h.closeActiveSubscribers()
+	return nil
+}
+
+// closeActiveSubscribers cancels every active subscriber, closing their
+// SSE connections. Unlike takeActiveLocked (Reset/Shutdown) it leaves
+// the hub serving: each subscriber's own cleanup removes it from the
+// active set as it tears down.
+func (h *Hub) closeActiveSubscribers() {
+	h.activeMu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(h.active))
+	for _, c := range h.active {
+		cancels = append(cancels, c)
+	}
+	h.activeMu.Unlock()
+	for _, c := range cancels {
+		c()
+	}
 }
 
 // Reset swaps in a fresh server + replay buffer (so any concurrent

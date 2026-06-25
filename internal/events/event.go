@@ -15,13 +15,13 @@ import "encoding/json"
 
 // Event is the wire shape the control plane pushes into the hub.
 // Type is the CloudEvent discriminator (e.g. "user.created") and
-// drives the SSE `event:` field. ID is the SSE `id:` field; the hub
-// auto-generates one when this is empty. Payload is the raw JSON body
-// streamed in the SSE `data:` field — it MUST include the same
-// `type` value (the OpenAPI schema requires it as the oneOf
-// discriminator), but this type doesn't enforce that; the
-// /admin0/events handler validates against the schema before calling
-// Hub.Publish.
+// drives the SSE `event:` field. ID is the SSE `id:` field — the offset
+// cursor a consumer resumes from; when empty the message is delivered
+// live but never stored for replay (error control frames). Payload is
+// the raw JSON body streamed in the SSE `data:` field — it MUST include
+// the same `type` value (the OpenAPI schema requires it as the oneOf
+// discriminator), but this type doesn't enforce that; the /admin0/events
+// handler validates against the schema before calling Hub.Publish.
 type Event struct {
 	Type    string
 	ID      string

@@ -120,9 +120,9 @@ func TestSubscribeEvents_QueryStringForwarded(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c, _ := auth0mock.NewClient(srv.URL)
-	stream := auth0mocktest.SubscribeEvents(t, c, "bearer", "event_type=user.created&from=evt_xxx")
+	stream := auth0mocktest.SubscribeEvents(t, c, "bearer", "event_type=user.created&from=MTIzNA==")
 	_ = stream.NextEvent(t, time.Second)
-	assert.Equal(t, "event_type=user.created&from=evt_xxx", gotQuery)
+	assert.Equal(t, "event_type=user.created&from=MTIzNA==", gotQuery)
 }
 
 func TestMustPush_FatalsOnError(t *testing.T) {

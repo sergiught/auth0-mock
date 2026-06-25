@@ -1,12 +1,15 @@
 package admin0_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -81,6 +84,18 @@ const validUserCreatedBody = `{
   }
 }`
 
+// validErrorBody is the smallest error-message envelope that passes the
+// event-stream schema. It has no `event` wrapper (so no event.id), only an
+// `error` wrapper carrying the resume offset.
+const validErrorBody = `{
+  "type":"error",
+  "error":{
+    "code":"cursor_expired",
+    "message":"cursor expired; resync from the supplied offset",
+    "offset":"42"
+  }
+}`
+
 func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	hub := &captureHub{}
 	r := newEventsRouter(t, hub)
@@ -93,8 +108,118 @@ func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	require.Len(t, hub.got, 1)
 	assert.Equal(t, "user.created", hub.got[0].Type)
-	assert.Equal(t, "evt_aaaaaaaaaaaaaaaa", hub.got[0].ID)
+	// Faithful to Auth0's Events API: the SSE id is the offset (the resume
+	// cursor), not the CloudEvent event.id.
+	assert.Equal(t, "0", hub.got[0].ID)
 	assert.JSONEq(t, validUserCreatedBody, string(hub.got[0].Payload))
+	assert.JSONEq(t, `{"id":"0"}`, rec.Body.String())
+}
+
+// Error frames are terminal control signals, not resumable events: they
+// carry no offset, so they go out with no SSE id.
+func TestPostAdmin0Events_ErrorPayloadHasNoCursorID(t *testing.T) {
+	hub := &captureHub{}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events", bytes.NewReader([]byte(validErrorBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	require.Len(t, hub.got, 1)
+	assert.Equal(t, "error", hub.got[0].Type)
+	assert.Empty(t, hub.got[0].ID, "error frames are not a resume point — no SSE id")
+	assert.JSONEq(t, validErrorBody, string(hub.got[0].Payload))
+	assert.JSONEq(t, `{"id":""}`, rec.Body.String())
+}
+
+// TestPostAdmin0Events_ErrorPayloadBypassesReplayBuffer drives the real hub
+// with the replay buffer enabled — the configuration where, before the fix, an
+// id-less message was rejected by go-sse's FiniteReplayer and the push 500'd.
+// The hub now delivers error frames live without buffering them.
+func TestPostAdmin0Events_ErrorPayloadBypassesReplayBuffer(t *testing.T) {
+	hub, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events", bytes.NewReader([]byte(validErrorBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"id":""}`, rec.Body.String())
+}
+
+// TestPostAdmin0Events_ErrorPayloadReachesSubscriber proves the issue's
+// end-to-end goal: an error message POSTed to /admin0/events reaches a live
+// GET /events subscriber as an `event: error` control frame (no id, since it's
+// not a resume point). Before the fix the push 500'd and the subscriber saw
+// nothing.
+func TestPostAdmin0Events_ErrorPayloadReachesSubscriber(t *testing.T) {
+	hub, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
+
+	r := newEventsRouter(t, hub)
+	r.Get("/events", hub.Handler().ServeHTTP)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	subReq, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+	require.NoError(t, err)
+	subResp, err := http.DefaultClient.Do(subReq)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = subResp.Body.Close() })
+	require.Equal(t, http.StatusOK, subResp.StatusCode)
+	require.Contains(t, subResp.Header.Get("Content-Type"), "text/event-stream")
+	br := bufio.NewReader(subResp.Body)
+
+	// Give the subscription a moment to register before pushing.
+	time.Sleep(50 * time.Millisecond)
+
+	pushResp, err := http.Post(srv.URL+"/admin0/events", "application/json", bytes.NewReader([]byte(validErrorBody)))
+	require.NoError(t, err)
+	_ = pushResp.Body.Close()
+	require.Equal(t, http.StatusAccepted, pushResp.StatusCode)
+
+	frame := readSSEFrame(t, br, 2*time.Second)
+	assert.Contains(t, frame, "event: error")
+	assert.Contains(t, frame, `"code":"cursor_expired"`)
+	assert.NotContains(t, frame, "id:", "error frames carry no resume id")
+}
+
+// readSSEFrame reads one SSE frame (up to the blank-line terminator) from r,
+// failing the test if none arrives within d.
+func readSSEFrame(t *testing.T, r *bufio.Reader, d time.Duration) string {
+	t.Helper()
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				done <- b.String()
+				return
+			}
+			b.WriteString(line)
+			if line == "\n" || line == "\r\n" {
+				done <- b.String()
+				return
+			}
+		}
+	}()
+	select {
+	case f := <-done:
+		return f
+	case <-time.After(d):
+		t.Fatalf("timeout waiting for SSE frame")
+		return ""
+	}
 }
 
 func TestPostAdmin0Events_RejectsInvalidJSON(t *testing.T) {

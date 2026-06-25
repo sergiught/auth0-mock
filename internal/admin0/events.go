@@ -61,15 +61,18 @@ type PostEventsHandler struct {
 }
 
 // eventStreamEnvelope is a thin partial decode of the Auth0
-// event-stream envelope that extracts just the routing fields
-// (outer type + inner event.id). Other fields are validated via the
-// spec validator. Fields are exported so encoding/json populates them;
-// they aren't part of the public API.
+// event-stream envelope that extracts just the routing fields (outer
+// type + the offset cursor). Other fields are validated via the spec
+// validator. Fields are exported so encoding/json populates them; they
+// aren't part of the public API.
+//
+// Auth0's Events API uses the offset as the SSE id, the resume cursor a
+// consumer echoes back via Last-Event-ID / ?from. Error messages carry
+// no offset: they're terminal control frames, not a resume point, so
+// they go out without an id and the hub never buffers them.
 type eventStreamEnvelope struct {
-	Type  string `json:"type"`
-	Event struct {
-		ID string `json:"id"`
-	} `json:"event"`
+	Type   string `json:"type"`
+	Offset string `json:"offset"`
 }
 
 func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +115,7 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.Events.Publish(events.Event{
 		Type:    env.Type,
-		ID:      env.Event.ID,
+		ID:      env.Offset,
 		Payload: json.RawMessage(body),
 	}); err != nil {
 		httperr.WriteMgmt(w, http.StatusInternalServerError, "Internal Server Error",
@@ -123,5 +126,5 @@ func (h *PostEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(struct {
 		ID string `json:"id"`
-	}{ID: env.Event.ID})
+	}{ID: env.Offset})
 }

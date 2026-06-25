@@ -28,7 +28,7 @@ Feature: GET /api/v2/events Server-Sent Events
         }
       }
       """
-    Then the SSE stream delivers an event with id "evt_happypath0000000" within 3s
+    Then the SSE stream delivers an event with id "0" within 3s
 
   Scenario: event_type filter delivers only matching events
     When I subscribe to /api/v2/events with query "?event_type=user.created"
@@ -40,7 +40,7 @@ Feature: GET /api/v2/events Server-Sent Events
       """
       {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_keepcreated00000","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
-    Then the SSE stream delivers an event with id "evt_keepcreated00000" within 3s
+    Then the SSE stream delivers an event with id "1" within 3s
 
   Scenario: event_type filter excludes non-matching events
     When I subscribe to /api/v2/events with query "?event_type=user.created"
@@ -59,8 +59,8 @@ Feature: GET /api/v2/events Server-Sent Events
       """
       {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_resume0000000002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
-    And I subscribe to /api/v2/events with header "Last-Event-ID: evt_resume0000000001"
-    Then the SSE stream delivers an event with id "evt_resume0000000002" within 3s
+    And I subscribe to /api/v2/events with header "Last-Event-ID: 0"
+    Then the SSE stream delivers an event with id "1" within 3s
 
   Scenario: ?from query promotes to Last-Event-ID and replays
     When I push an event:
@@ -71,11 +71,11 @@ Feature: GET /api/v2/events Server-Sent Events
       """
       {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_fromquery0000002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
-    And I subscribe to /api/v2/events with query "?from=evt_fromquery0000001"
-    Then the SSE stream delivers an event with id "evt_fromquery0000002" within 3s
+    And I subscribe to /api/v2/events with query "?from=0"
+    Then the SSE stream delivers an event with id "1" within 3s
 
   Scenario: Last-Event-ID for an unknown event returns 410 event_aged_out
-    When I attempt to subscribe to /api/v2/events with header "Last-Event-ID: evt_doesnotexist0000"
+    When I attempt to subscribe to /api/v2/events with header "Last-Event-ID: 999"
     Then I receive a 410 response
     And the response body contains "event_aged_out"
 
@@ -102,7 +102,7 @@ Feature: GET /api/v2/events Server-Sent Events
       {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_beforereset00000","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
     And I reset all mock state
-    And I attempt to subscribe to /api/v2/events with header "Last-Event-ID: evt_beforereset00000"
+    And I attempt to subscribe to /api/v2/events with header "Last-Event-ID: 0"
     Then I receive a 410 response
     And the response body contains "event_aged_out"
 
@@ -113,4 +113,4 @@ Feature: GET /api/v2/events Server-Sent Events
       """
       {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_postreset0000000","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
-    Then the SSE stream delivers an event with id "evt_postreset0000000" within 3s
+    Then the SSE stream delivers an event with id "0" within 3s

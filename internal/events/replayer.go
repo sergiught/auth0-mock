@@ -110,7 +110,16 @@ func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplaye
 
 // Put records the event in the index and forwards to the inner
 // replayer.
+//
+// Messages without an id are live-only: error control frames and
+// keep-alive comments carry no resume cursor, so they're delivered to
+// current subscribers but never stored for replay. Skip the inner
+// FiniteReplayer for them — it requires an id (autoIDs is off) and would
+// otherwise reject them with "message has no ID".
 func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message, error) {
+	if !msg.ID.IsSet() {
+		return msg, nil
+	}
 	out, err := r.inner.Put(msg, topics)
 	if err != nil {
 		return nil, err
