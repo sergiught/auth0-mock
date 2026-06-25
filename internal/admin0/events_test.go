@@ -200,6 +200,7 @@ func TestPostAdmin0Events_ErrorPayloadReachesSubscriber(t *testing.T) {
 	require.Equal(t, http.StatusOK, subResp.StatusCode)
 	require.Contains(t, subResp.Header.Get("Content-Type"), "text/event-stream")
 	br := bufio.NewReader(subResp.Body)
+	readSSEFrame(t, br, 2*time.Second) // Consume the connect announcement frame.
 
 	// Give the subscription a moment to register before pushing.
 	time.Sleep(50 * time.Millisecond)

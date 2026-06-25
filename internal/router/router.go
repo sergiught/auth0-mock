@@ -69,6 +69,10 @@ type Deps struct {
 	// disables replay (the endpoint still works; resume params become
 	// no-ops). Zero value is the test-friendly default.
 	EventsReplayBuffer int
+	// EventsReconnectHint is the SSE `retry:` reconnect-delay hint sent on
+	// connect (EVENTS_RECONNECT_HINT in production); <= 0 omits it. Zero
+	// value omits the hint, which is fine for tests.
+	EventsReconnectHint time.Duration
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -95,7 +99,7 @@ func New(d Deps) (http.Handler, error) {
 	if d.Clock != nil {
 		clockNow = d.Clock.Now
 	}
-	hub, err := events.NewHub(d.EventsReplayBuffer, clockNow)
+	hub, err := events.NewHub(d.EventsReplayBuffer, clockNow, events.WithReconnectHint(d.EventsReconnectHint))
 	if err != nil {
 		return nil, fmt.Errorf("events hub: %w", err)
 	}

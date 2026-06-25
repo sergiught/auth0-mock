@@ -40,6 +40,12 @@ type Specification struct {
 	// (the endpoint still works; resume params become no-ops).
 	EventsReplayBuffer int `env:"EVENTS_REPLAY_BUFFER" envDefault:"100"`
 
+	// EventsReconnectHint is the SSE `retry:` reconnect-delay hint sent to
+	// GET /events subscribers on connect (Auth0's Events API sends one
+	// too). 0 omits the hint, so clients fall back to their built-in
+	// default (EventSource ≈ 3s).
+	EventsReconnectHint time.Duration `env:"EVENTS_RECONNECT_HINT" envDefault:"3s"`
+
 	// LogoutAllowedURLs is the comma-separated allow-list of absolute
 	// returnTo URLs that /v2/logout will redirect to. Relative URLs are
 	// always allowed (they can't escape the mock's origin). Mirrors

@@ -107,6 +107,7 @@ func run() error {
 		BearerRequireAudience:        cfg.BearerRequireAudience,
 		Debug:                        cfg.Debug,
 		EventsReplayBuffer:           cfg.EventsReplayBuffer,
+		EventsReconnectHint:          cfg.EventsReconnectHint,
 	})
 	if err != nil {
 		return fmt.Errorf("router init: %w", err)
