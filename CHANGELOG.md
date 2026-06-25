@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.230.0](https://github.com/sergiught/auth0-mock/compare/v0.229.0...v0.230.0) (2026-06-25)
+
+
+### Features
+
+* **events:** faithful Auth0 event stream — offset cursor + error control frames ([#43](https://github.com/sergiught/auth0-mock/issues/43)) ([76c2e79](https://github.com/sergiught/auth0-mock/commit/76c2e79b57c707de9089eccb15c7972a49215c56))
+* **events:** offset-only progress markers reach every subscriber ([#46](https://github.com/sergiught/auth0-mock/issues/46)) ([0e0bc26](https://github.com/sergiught/auth0-mock/commit/0e0bc268ac5f4e5c941e041c5dd0407d99e32576))
+* **events:** send :connected and retry hints on SSE connect ([#47](https://github.com/sergiught/auth0-mock/issues/47)) ([3823926](https://github.com/sergiught/auth0-mock/commit/3823926d817a7b86a49bf5a100679f0483ae0c0a))
+
+
+### Performance
+
+* trim hot-path allocations and modernize stdlib idioms ([#37](https://github.com/sergiught/auth0-mock/issues/37)) ([6c43061](https://github.com/sergiught/auth0-mock/commit/6c43061229f94047786d047124609085f40ded0d))
+
+
+### Refactors
+
+* adopt t.Context() in tests and apply modernize fixes ([#49](https://github.com/sergiught/auth0-mock/issues/49)) ([43ba52f](https://github.com/sergiught/auth0-mock/commit/43ba52fbff72ceeca6bb0e641c16b99626166b4d))
+
 ## [0.229.0](https://github.com/sergiught/auth0-mock/compare/v0.228.4...v0.229.0) (2026-05-27)
 
 
