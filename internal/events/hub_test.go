@@ -551,10 +551,8 @@ func TestHub_KeepAlive_FanOutsOncePerSubscriber(t *testing.T) {
 
 	counts := make([]int, 2)
 	var wg sync.WaitGroup
-	wg.Add(2)
 	for i := range 2 {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			r, cancel := subscribe(t, srv, "")
 			defer cancel()
 			// Read for 175ms: 3 ticks at 50ms intervals.
@@ -584,7 +582,7 @@ func TestHub_KeepAlive_FanOutsOncePerSubscriber(t *testing.T) {
 					}
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	require.Greater(t, counts[0], 0, "subscriber 0 should have seen at least one keep-alive")
@@ -614,18 +612,16 @@ func TestHub_Handler_MultipleSubscribersEachReceiveOnce(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
 	received := make([]string, 2)
 
 	openAndRead := func(idx int, query string) {
-		defer wg.Done()
 		r, cancel := subscribe(t, srv, query)
 		defer cancel()
 		received[idx] = readOneEvent(t, r, 2*time.Second)
 	}
 
-	go openAndRead(0, "")
-	go openAndRead(1, "?event_type=user.created")
+	wg.Go(func() { openAndRead(0, "") })
+	wg.Go(func() { openAndRead(1, "?event_type=user.created") })
 	time.Sleep(100 * time.Millisecond)
 
 	require.NoError(t, h.Publish(events.Event{
@@ -661,7 +657,7 @@ func TestHub_Reset_RebuildsHub(t *testing.T) {
 	cancel1()
 
 	// Reset and verify the hub is still functional.
-	require.NoError(t, h.Reset(context.Background()))
+	require.NoError(t, h.Reset(t.Context()))
 
 	r2, cancel2 := subscribe(t, srv, "")
 	defer cancel2()
@@ -703,7 +699,7 @@ func TestHub_Reset_DoesNotLeakErrorTextToWire(t *testing.T) {
 		}
 	}()
 
-	require.NoError(t, h.Reset(context.Background()))
+	require.NoError(t, h.Reset(t.Context()))
 
 	// Collect for 150ms then inspect.
 	collected := []string{}
@@ -846,10 +842,7 @@ func TestHub_ConcurrentPushAndReset(t *testing.T) {
 
 	// 4 publisher goroutines.
 	for i := range 4 {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for n := 0; ; n++ {
 				select {
 				case <-stop:
@@ -867,13 +860,11 @@ func TestHub_ConcurrentPushAndReset(t *testing.T) {
 					publishOK.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	// 1 reset goroutine.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			select {
 			case <-stop:
@@ -885,7 +876,7 @@ func TestHub_ConcurrentPushAndReset(t *testing.T) {
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
-	}()
+	})
 
 	time.Sleep(500 * time.Millisecond)
 	close(stop)

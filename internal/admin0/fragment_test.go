@@ -1,7 +1,6 @@
 package admin0_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -14,7 +13,7 @@ import (
 func TestAdmin0FragmentDescribesEveryMountedRoute(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromData(admin0.Fragment)
 	require.NoError(t, err)
-	require.NoError(t, doc.Validate(context.Background()))
+	require.NoError(t, doc.Validate(t.Context()))
 	// {method, path, expected tag} — admin0 is split into Claims / Permissions
 	// / MFA / Expectations so the docs sidebar group→tag nesting is meaningful.
 	want := [][3]string{

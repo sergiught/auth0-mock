@@ -1,10 +1,10 @@
 package auth0mocktest_test
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -207,7 +207,7 @@ func TestBracket_CatchesUnmetConstraint(t *testing.T) {
 
 	// Register a stub with Times(1) — but never let anything "hit" it
 	// (List returns hits=0 above). Verify should fail.
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p",
 		Response: auth0mock.ResponseDef{Status: 200},
 	})
@@ -216,8 +216,8 @@ func TestBracket_CatchesUnmetConstraint(t *testing.T) {
 
 	// Fire cleanups in real LIFO order: last-registered first.
 	require.Len(t, ft.cleanups, 2)
-	for i := len(ft.cleanups) - 1; i >= 0; i-- {
-		ft.cleanups[i]()
+	for _, cleanup := range slices.Backward(ft.cleanups) {
+		cleanup()
 	}
 
 	assert.True(t, ft.fatalCalled.Load(),
@@ -237,8 +237,8 @@ func TestBracket_HappyPath(t *testing.T) {
 	// No constraints set → both cleanups succeed.
 
 	require.Len(t, ft.cleanups, 2)
-	for i := len(ft.cleanups) - 1; i >= 0; i-- {
-		ft.cleanups[i]()
+	for _, cleanup := range slices.Backward(ft.cleanups) {
+		cleanup()
 	}
 	assert.False(t, ft.fatalCalled.Load())
 }

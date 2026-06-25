@@ -35,7 +35,7 @@ func TestReset_Success(t *testing.T) {
 
 	c, err := auth0mock.NewClient(srv.URL)
 	require.NoError(t, err)
-	require.NoError(t, c.Reset(context.Background()))
+	require.NoError(t, c.Reset(t.Context()))
 	assert.Equal(t, int32(1), hits.Load())
 	assert.Equal(t, http.MethodPost, gotMethod)
 	assert.Equal(t, "/admin0/reset", gotPath)
@@ -55,7 +55,7 @@ func TestReset_APIError(t *testing.T) {
 
 	c, err := auth0mock.NewClient(srv.URL)
 	require.NoError(t, err)
-	err = c.Reset(context.Background())
+	err = c.Reset(t.Context())
 	require.Error(t, err)
 
 	var apiErr *auth0mock.APIError
@@ -83,7 +83,7 @@ func TestReset_NonJSONErrorBody(t *testing.T) {
 
 	c, err := auth0mock.NewClient(srv.URL)
 	require.NoError(t, err)
-	err = c.Reset(context.Background())
+	err = c.Reset(t.Context())
 	var apiErr *auth0mock.APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)

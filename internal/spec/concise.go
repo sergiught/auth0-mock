@@ -21,8 +21,7 @@ func ConciseSchemaError(err error) string {
 		return ""
 	}
 
-	var multi openapi3.MultiError
-	if errors.As(err, &multi) {
+	if multi, ok := errors.AsType[openapi3.MultiError](err); ok {
 		parts := make([]string, 0, len(multi))
 		for _, e := range multi {
 			if s := ConciseSchemaError(e); s != "" {
@@ -32,8 +31,7 @@ func ConciseSchemaError(err error) string {
 		return strings.Join(parts, "; ")
 	}
 
-	var schemaErr *openapi3.SchemaError
-	if errors.As(err, &schemaErr) {
+	if schemaErr, ok := errors.AsType[*openapi3.SchemaError](err); ok {
 		reason := schemaErr.Reason
 		if reason == "" {
 			reason = firstLine(err.Error())
@@ -53,8 +51,6 @@ func ConciseSchemaError(err error) string {
 // verbose Schema/Value blocks that kin-openapi appends after the
 // real reason.
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
+	before, _, _ := strings.Cut(s, "\n")
+	return before
 }

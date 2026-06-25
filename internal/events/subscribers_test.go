@@ -67,7 +67,7 @@ func TestHub_Reset_ZeroesTotalSubscribers(t *testing.T) {
 	require.Equal(t, 1, h.TotalSubscribers())
 	cancel()
 
-	require.NoError(t, h.Reset(context.Background()))
+	require.NoError(t, h.Reset(t.Context()))
 	requireActiveEventually(t, h, 0)
 	assert.Equal(t, 0, h.TotalSubscribers(), "reset starts a fresh counting window")
 

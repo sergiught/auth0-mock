@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -18,7 +17,7 @@ func TestClaims_Get_PopulatedMap(t *testing.T) {
 		_, _ = w.Write([]byte(`{"https://example.com/role":"admin","tenant":"acme"}`))
 	}
 
-	got, err := c.Claims.Get(context.Background())
+	got, err := c.Claims.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "admin", got["https://example.com/role"])
 	assert.Equal(t, "acme", got["tenant"])
@@ -36,7 +35,7 @@ func TestClaims_Get_EmptyMap(t *testing.T) {
 		_, _ = w.Write([]byte(`null`))
 	}
 
-	got, err := c.Claims.Get(context.Background())
+	got, err := c.Claims.Get(t.Context())
 	require.NoError(t, err)
 	// Nil → empty map per the SDK contract; callers shouldn't have to
 	// nil-check before iterating.
@@ -47,7 +46,7 @@ func TestClaims_Get_EmptyMap(t *testing.T) {
 func TestClaims_Set_WireShape(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Claims.Set(context.Background(), map[string]any{
+	require.NoError(t, c.Claims.Set(t.Context(), map[string]any{
 		"https://example.com/role": "admin",
 		"tenant":                   "acme",
 	}))
@@ -66,7 +65,7 @@ func TestClaims_Set_WireShape(t *testing.T) {
 func TestClaims_Set_NilSendsEmptyObject(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Claims.Set(context.Background(), nil))
+	require.NoError(t, c.Claims.Set(t.Context(), nil))
 
 	// A nil map would JSON-encode to `null` — but the server's PUT
 	// handler decodes into `map[string]any` and would silently no-op.
@@ -78,7 +77,7 @@ func TestClaims_Set_NilSendsEmptyObject(t *testing.T) {
 func TestClaims_Clear(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Claims.Clear(context.Background()))
+	require.NoError(t, c.Claims.Clear(t.Context()))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)

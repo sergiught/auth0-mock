@@ -1,7 +1,6 @@
 package authapi_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 func TestAuthAPIFragmentDescribesEveryMountedRoute(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromData(authapi.Fragment)
 	require.NoError(t, err)
-	require.NoError(t, doc.Validate(context.Background()))
+	require.NoError(t, doc.Validate(t.Context()))
 	want := map[string]string{
 		"POST /oauth/token":                     "OAuth & OIDC",
 		"GET /authorize":                        "OAuth & OIDC",

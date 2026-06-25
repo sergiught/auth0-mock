@@ -163,8 +163,7 @@ func (s *Store) Find(method, concretePath, opTemplate string, req MatchableReque
 // matches req and has the requested catch-all-ness (catchAll == (Request is
 // nil)). Returns nil if none qualify.
 func newestMatch(list []Expectation, req MatchableRequest, catchAll bool) *Expectation {
-	for i := len(list) - 1; i >= 0; i-- {
-		e := list[i]
+	for _, e := range slices.Backward(list) {
 		if (e.Request == nil) != catchAll {
 			continue
 		}

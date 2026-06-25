@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -21,7 +20,7 @@ func TestPermissions_All(t *testing.T) {
         }`))
 	}
 
-	got, err := c.Permissions.All(context.Background())
+	got, err := c.Permissions.All(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"read:users", "write:users"}, got["myapi"])
 	assert.Equal(t, []string{"admin"}, got["https://api.example.com/"])
@@ -39,7 +38,7 @@ func TestPermissions_All_NilNormalisedToEmpty(t *testing.T) {
 		_, _ = w.Write([]byte(`null`))
 	}
 
-	got, err := c.Permissions.All(context.Background())
+	got, err := c.Permissions.All(t.Context())
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Empty(t, got)
@@ -53,7 +52,7 @@ func TestPermissions_Get_SimpleAudience(t *testing.T) {
 		_, _ = w.Write([]byte(`["read:users","write:users"]`))
 	}
 
-	got, err := c.Permissions.Get(context.Background(), "myapi")
+	got, err := c.Permissions.Get(t.Context(), "myapi")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"read:users", "write:users"}, got)
 
@@ -77,7 +76,7 @@ func TestPermissions_Get_URLFormAudience(t *testing.T) {
 		_, _ = w.Write([]byte(`["admin"]`))
 	}
 
-	got, err := c.Permissions.Get(context.Background(), "https://api.example.com/")
+	got, err := c.Permissions.Get(t.Context(), "https://api.example.com/")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"admin"}, got)
 
@@ -103,7 +102,7 @@ func TestPermissions_Get_AudienceWithSpecialChars(t *testing.T) {
 		_, _ = w.Write([]byte(`["read"]`))
 	}
 
-	_, err := c.Permissions.Get(context.Background(), "weird?one#two")
+	_, err := c.Permissions.Get(t.Context(), "weird?one#two")
 	require.NoError(t, err)
 	assert.Equal(t, "/admin0/permissions/weird%3Fone%23two", rec.last(t).RawPath)
 	// Decoded path is what chi sees server-side.
@@ -118,7 +117,7 @@ func TestPermissions_Get_NilNormalisedToEmpty(t *testing.T) {
 		_, _ = w.Write([]byte(`null`))
 	}
 
-	got, err := c.Permissions.Get(context.Background(), "ghost")
+	got, err := c.Permissions.Get(t.Context(), "ghost")
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Empty(t, got)
@@ -127,7 +126,7 @@ func TestPermissions_Get_NilNormalisedToEmpty(t *testing.T) {
 func TestPermissions_Set_WireShape(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Permissions.Set(context.Background(), "myapi", []string{"read:users", "write:users"}))
+	require.NoError(t, c.Permissions.Set(t.Context(), "myapi", []string{"read:users", "write:users"}))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodPut, call.Method)
@@ -142,7 +141,7 @@ func TestPermissions_Set_WireShape(t *testing.T) {
 func TestPermissions_Set_NilSendsEmptyArray(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Permissions.Set(context.Background(), "myapi", nil))
+	require.NoError(t, c.Permissions.Set(t.Context(), "myapi", nil))
 
 	// A nil slice would marshal to `null`, which decodes into a nil
 	// []string and silently no-ops in the server's PUT handler. Send
@@ -154,7 +153,7 @@ func TestPermissions_Set_NilSendsEmptyArray(t *testing.T) {
 func TestPermissions_Delete(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Permissions.Delete(context.Background(), "myapi"))
+	require.NoError(t, c.Permissions.Delete(t.Context(), "myapi"))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)
@@ -164,7 +163,7 @@ func TestPermissions_Delete(t *testing.T) {
 func TestPermissions_Clear(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Permissions.Clear(context.Background()))
+	require.NoError(t, c.Permissions.Clear(t.Context()))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)

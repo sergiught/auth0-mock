@@ -1,7 +1,6 @@
 package auth0mock_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,7 +114,7 @@ func TestExpectations_Add_WireShape(t *testing.T) {
 			Body:   auth0mock.MustJSON(map[string]any{"user_id": "auth0|123", "email": "alice@example.com"}),
 		},
 	}
-	_, err := c.Expectations.Add(context.Background(), exp)
+	_, err := c.Expectations.Add(t.Context(), exp)
 	require.NoError(t, err)
 
 	call := rec.last(t)
@@ -146,7 +145,7 @@ func TestExpectations_Add_WithRequestMatcher(t *testing.T) {
 			Body:   auth0mock.MustJSON(map[string]any{"id": "u_42"}),
 		},
 	}
-	_, err := c.Expectations.Add(context.Background(), exp)
+	_, err := c.Expectations.Add(t.Context(), exp)
 	require.NoError(t, err)
 
 	call := rec.last(t)
@@ -165,7 +164,7 @@ func TestExpectations_Add_OmitsNilRequest(t *testing.T) {
 		Path:     "/api/v2/users",
 		Response: auth0mock.ResponseDef{Status: 200, Body: auth0mock.MustJSON([]any{})},
 	}
-	_, err := c.Expectations.Add(context.Background(), exp)
+	_, err := c.Expectations.Add(t.Context(), exp)
 	require.NoError(t, err)
 
 	// A nil RequestMatcher must not appear on the wire — the
@@ -183,7 +182,7 @@ func TestExpectations_Add_PropagatesAPIError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"statusCode":400,"error":"Bad Request","message":"response.status is required","errorCode":"invalid_body"}`))
 	}
 
-	_, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	_, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/api/v2/users", Response: auth0mock.ResponseDef{},
 	})
 	var apiErr *auth0mock.APIError
@@ -202,7 +201,7 @@ func TestExpectations_List(t *testing.T) {
         ]}`))
 	}
 
-	got, err := c.Expectations.List(context.Background())
+	got, err := c.Expectations.List(t.Context())
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Equal(t, "GET", got[0].Method)
@@ -221,7 +220,7 @@ func TestExpectations_List(t *testing.T) {
 func TestExpectations_Clear(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Expectations.Clear(context.Background()))
+	require.NoError(t, c.Expectations.Clear(t.Context()))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)
@@ -242,7 +241,7 @@ func TestExpectations_Add_ReturnsHandle(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"server-assigned-uuid"}`))
 	}
 
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p",
 		Response: auth0mock.ResponseDef{Status: 200},
 	})
@@ -268,7 +267,7 @@ func TestRegisteredExpectation_Clear(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":"` + reg.ID + `"}`))
 	}
-	stored, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	stored, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p",
 		Response: auth0mock.ResponseDef{Status: 200},
 	})
@@ -278,7 +277,7 @@ func TestRegisteredExpectation_Clear(t *testing.T) {
 	// Now Clear — assert the second recorded call hits the per-ID
 	// DELETE endpoint with no body.
 	rec.respond = nil // Back to 204 default.
-	require.NoError(t, stored.Clear(context.Background()))
+	require.NoError(t, stored.Clear(t.Context()))
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)
 	assert.Equal(t, "/admin0/expectations/abc-123", call.Path)
@@ -288,7 +287,7 @@ func TestRegisteredExpectation_Clear(t *testing.T) {
 func TestExpectations_ClearOp(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)
-	require.NoError(t, c.Expectations.ClearOp(context.Background(), "GET", "/api/v2/users/123"))
+	require.NoError(t, c.Expectations.ClearOp(t.Context(), "GET", "/api/v2/users/123"))
 
 	call := rec.last(t)
 	assert.Equal(t, http.MethodDelete, call.Method)
@@ -306,23 +305,23 @@ func TestVerify_DetectsResetBeforeVerify(t *testing.T) {
 	rec, c := newStub(t)
 	rec.respond = listOrAddRespond(t, "abc", nil)
 
-	_, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	_, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
 
 	// Reset wipes the ledger while pendingAdds > 0 → safety-net flag fires.
-	require.NoError(t, c.Reset(context.Background()))
+	require.NoError(t, c.Reset(t.Context()))
 
 	// Verify must NOT silently pass — it should return the cleanup-ordering error.
-	err = c.Expectations.Verify(context.Background())
+	err = c.Expectations.Verify(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Reset() ran before Verify()")
 	assert.Contains(t, err.Error(), "auth0mocktest.Bracket")
 
 	// The flag is single-shot — a subsequent Verify (with no fresh
 	// unverified adds) is clean.
-	require.NoError(t, c.Expectations.Verify(context.Background()))
+	require.NoError(t, c.Expectations.Verify(t.Context()))
 }
 
 // TestVerify_AddResetAddVerify_LegitimatePatternSucceeds locks the
@@ -346,13 +345,13 @@ func TestVerify_AddResetAddVerify_LegitimatePatternSucceeds(t *testing.T) {
 
 	// First Add (default setup), then Reset (clean slate before the test
 	// body), then Add again (test-specific stub with constraint).
-	_, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	_, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
-	require.NoError(t, c.Reset(context.Background()))
+	require.NoError(t, c.Reset(t.Context()))
 
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
@@ -360,7 +359,7 @@ func TestVerify_AddResetAddVerify_LegitimatePatternSucceeds(t *testing.T) {
 
 	// Verify must check the SECOND Add's constraint, NOT fire the
 	// safety net for the FIRST Reset.
-	assert.NoError(t, c.Expectations.Verify(context.Background()))
+	assert.NoError(t, c.Expectations.Verify(t.Context()))
 }
 
 // TestVerify_AddClearReset_NoSafetyNetMisfire locks the fix for the
@@ -383,17 +382,17 @@ func TestVerify_AddClearReset_NoSafetyNetMisfire(t *testing.T) {
 		}
 	}
 
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
 	reg.Times(1) // Would be unmet, but we Clear before Reset.
 
-	require.NoError(t, reg.Clear(context.Background()))
-	require.NoError(t, c.Reset(context.Background()))
+	require.NoError(t, reg.Clear(t.Context()))
+	require.NoError(t, c.Reset(t.Context()))
 
 	// Safety net must not fire — the constraint was intentionally retracted.
-	assert.NoError(t, c.Expectations.Verify(context.Background()))
+	assert.NoError(t, c.Expectations.Verify(t.Context()))
 }
 
 // TestVerify_FlagClearedOnSuccess locks the contract that a happy
@@ -408,18 +407,18 @@ func TestVerify_FlagClearedOnSuccess(t *testing.T) {
 		Hits:     1,
 	}})
 
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
 	reg.Times(1)
 
 	// Successful Verify consumes the pending-adds counter.
-	require.NoError(t, c.Expectations.Verify(context.Background()))
+	require.NoError(t, c.Expectations.Verify(t.Context()))
 
 	// Subsequent Reset must not flag the safety net (counter was zeroed by Verify).
-	require.NoError(t, c.Reset(context.Background()))
-	require.NoError(t, c.Expectations.Verify(context.Background()))
+	require.NoError(t, c.Reset(t.Context()))
+	require.NoError(t, c.Expectations.Verify(t.Context()))
 }
 
 // TestRegisteredExpectation_Hits_ClearedStubReturns404 locks the
@@ -444,12 +443,12 @@ func TestRegisteredExpectation_Hits_ClearedStubReturns404(t *testing.T) {
 		}
 	}
 
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
 
-	hits, err := reg.Hits(context.Background())
+	hits, err := reg.Hits(t.Context())
 	require.Error(t, err)
 	assert.Equal(t, int64(0), hits, "cleared stub returns zero hits alongside the error")
 
@@ -470,17 +469,17 @@ func TestVerify_DoubleResetWithInterleavedAdd(t *testing.T) {
 	rec, c := newStub(t)
 	rec.respond = listOrAddRespond(t, "abc", nil)
 
-	for cycle := 0; cycle < 2; cycle++ {
-		_, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	for range 2 {
+		_, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 			Method: "GET", Path: "/p", Response: auth0mock.ResponseDef{Status: 200},
 		})
 		require.NoError(t, err)
-		require.NoError(t, c.Reset(context.Background()))
+		require.NoError(t, c.Reset(t.Context()))
 	}
 
 	// Both unverified adds were silently dropped by the two Resets —
 	// safety net fires.
-	err := c.Expectations.Verify(context.Background())
+	err := c.Expectations.Verify(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Reset() ran before Verify()")
 }
@@ -507,13 +506,13 @@ func TestRegisteredExpectation_Hits(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"abc","method":"GET","path":"/p","response":{"status":200},"hits":3}`))
 	}
 
-	reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+	reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 		Method: "GET", Path: "/p",
 		Response: auth0mock.ResponseDef{Status: 200},
 	})
 	require.NoError(t, err)
 
-	hits, err := reg.Hits(context.Background())
+	hits, err := reg.Hits(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), hits)
 	// And the wire shape — GET /admin0/expectations/abc.
@@ -531,14 +530,14 @@ func TestVerify_HappyAndViolations(t *testing.T) {
 		t.Parallel()
 		_, c := newStub(t)
 		// Add a stub without setting any constraint.
-		_, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+		_, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 			Method: "GET", Path: "/p",
 			Response: auth0mock.ResponseDef{Status: 200},
 		})
 		require.NoError(t, err)
 		// Verify must succeed even though the stub was never matched —
 		// without a constraint, the SDK doesn't care.
-		assert.NoError(t, c.Expectations.Verify(context.Background()))
+		assert.NoError(t, c.Expectations.Verify(t.Context()))
 	})
 
 	t.Run("Times — happy + violation", func(t *testing.T) {
@@ -561,14 +560,14 @@ func TestVerify_HappyAndViolations(t *testing.T) {
 					Response: auth0mock.ResponseDef{Status: 200},
 					Hits:     tc.actual,
 				}})
-				reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+				reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 					Method: "GET", Path: "/p",
 					Response: auth0mock.ResponseDef{Status: 200},
 				})
 				require.NoError(t, err)
 				reg.Times(tc.want)
 
-				err = c.Expectations.Verify(context.Background())
+				err = c.Expectations.Verify(t.Context())
 				if tc.expectErr {
 					require.Error(t, err)
 					assert.Contains(t, err.Error(), fmt.Sprintf("expected exactly %d, got %d", tc.want, tc.actual))
@@ -587,13 +586,13 @@ func TestVerify_HappyAndViolations(t *testing.T) {
 			Response: auth0mock.ResponseDef{Status: 200},
 			Hits:     1,
 		}})
-		reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+		reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 			Method: "GET", Path: "/p",
 			Response: auth0mock.ResponseDef{Status: 200},
 		})
 		require.NoError(t, err)
 		reg.AtLeast(2)
-		err = c.Expectations.Verify(context.Background())
+		err = c.Expectations.Verify(t.Context())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "expected at least 2, got 1")
 	})
@@ -606,13 +605,13 @@ func TestVerify_HappyAndViolations(t *testing.T) {
 			Response: auth0mock.ResponseDef{Status: 200},
 			Hits:     5,
 		}})
-		reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+		reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 			Method: "GET", Path: "/p",
 			Response: auth0mock.ResponseDef{Status: 200},
 		})
 		require.NoError(t, err)
 		reg.AtMost(2)
-		err = c.Expectations.Verify(context.Background())
+		err = c.Expectations.Verify(t.Context())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "expected at most 2, got 5")
 	})
@@ -625,13 +624,13 @@ func TestVerify_HappyAndViolations(t *testing.T) {
 			Response: auth0mock.ResponseDef{Status: 200},
 			Hits:     0,
 		}})
-		reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+		reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 			Method: "GET", Path: "/p",
 			Response: auth0mock.ResponseDef{Status: 200},
 		})
 		require.NoError(t, err)
 		reg.Times(5).AnyTimes()
-		assert.NoError(t, c.Expectations.Verify(context.Background()))
+		assert.NoError(t, c.Expectations.Verify(t.Context()))
 	})
 
 	t.Run("cleared stub with constraint → violation", func(t *testing.T) {
@@ -640,13 +639,13 @@ func TestVerify_HappyAndViolations(t *testing.T) {
 		// List returns NO entries — the stub has been cleared
 		// server-side, but the local handle still expects exact:1.
 		rec.respond = listOrAddRespond(t, "ghost", nil)
-		reg, err := c.Expectations.Add(context.Background(), auth0mock.Expectation{
+		reg, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
 			Method: "GET", Path: "/p",
 			Response: auth0mock.ResponseDef{Status: 200},
 		})
 		require.NoError(t, err)
 		reg.Times(1)
-		err = c.Expectations.Verify(context.Background())
+		err = c.Expectations.Verify(t.Context())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cleared")
 		assert.Contains(t, err.Error(), "expected exactly 1")
