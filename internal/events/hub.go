@@ -22,9 +22,10 @@ const broadcastTopic = "__broadcast__"
 // subscriber — filtered or not — subscribes to it, so it carries
 // messages that must reach all of them regardless of event_type filter:
 // keep-alive comments (so filtered subscribers behind idle-timeout
-// proxies still get heartbeats) and error control frames (which Auth0
-// delivers to every consumer). Regular events never target this topic,
-// so they don't bypass event filtering.
+// proxies still get heartbeats), error control frames (which Auth0
+// delivers to every consumer), and offset-only progress markers (which
+// advance the whole stream's cursor). Regular events never target this
+// topic, so they don't bypass event filtering.
 const keepAliveTopic = "__keep_alive__"
 
 // errorEventType is the CloudEvent discriminator for an in-band error
@@ -32,6 +33,13 @@ const keepAliveTopic = "__keep_alive__"
 // events: delivered to every subscriber, never buffered for replay, and
 // followed by the stream closing — see Publish.
 const errorEventType = "error"
+
+// offsetOnlyEventType is the CloudEvent discriminator for a progress
+// marker that advances the cursor without carrying event data. Like
+// error frames it reaches every subscriber regardless of filter, but it
+// carries an offset, so it IS buffered and is a valid resume point — see
+// Publish.
+const offsetOnlyEventType = "offset-only"
 
 // barrierTopic is an internal topic no subscriber ever joins. Publishing
 // to it is a no-op delivery whose only purpose is the serialisation
@@ -176,8 +184,9 @@ func (h *Hub) build() error {
 // Publish broadcasts evt to every subscriber whose topic set
 // intersects. A regular event is sent to broadcastTopic (reaches every
 // filterless subscriber) and to evt.Type (reaches every filtered
-// subscriber that listed this type). Error frames are control signals
-// and take a different path — see publishError. Keep-alives use a
+// subscriber that listed this type). Error frames and offset-only
+// progress markers are stream-wide control signals routed to the
+// every-subscriber topic — see the branches below. Keep-alives use a
 // separate topic and never go through this method.
 //
 // The RLock is held across server.Publish so a concurrent Reset
@@ -198,6 +207,14 @@ func (h *Hub) Publish(evt Event) error {
 	}
 	if evt.Type == errorEventType {
 		return h.publishError(msg)
+	}
+	if evt.Type == offsetOnlyEventType {
+		// A progress marker advances the whole stream's cursor, so it
+		// reaches every subscriber regardless of event_type filter (via
+		// the every-subscriber topic). It carries an offset id, so the
+		// replayer buffers it like a real event and a consumer can resume
+		// from its offset.
+		return h.server.Publish(msg, keepAliveTopic)
 	}
 	if evt.Type != "" {
 		return h.server.Publish(msg, broadcastTopic, evt.Type)

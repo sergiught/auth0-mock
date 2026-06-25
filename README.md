@@ -287,6 +287,8 @@ The subscriber receives `id: 0 / event: user.created / data: {...}` — the SSE 
 
 Push an **error frame** (`{"type":"error","error":{"code":"cursor_expired",...}}`) to simulate an in-band stream error — useful for testing a consumer's reconnect / cursor-fallback paths. Matching Auth0, error frames are control signals: delivered to **every** subscriber regardless of `event_type` filter, never stored in the replay buffer (they carry no offset id, so they're never replayed), and the stream **closes** right after, which triggers the consumer's reconnect.
 
+Push an **offset-only marker** (`{"type":"offset-only","offset":"42"}`) to advance the cursor during idle without delivering an event. Also a control frame (reaches every subscriber regardless of filter), but unlike an error it carries an offset, so it **is** buffered and `from=42` is a valid resume point.
+
 Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
 
 To set expectations and verify connection lifecycle, `GET /admin0/events/subscribers` reports `{"active":N,"total":M}` — `active` is how many subscribers are connected right now, `total` how many have connected since the last `/admin0/reset` (handy for asserting reconnection behaviour). `active` is eventually-consistent: the mock removes a subscriber only when it observes the connection close, which can lag a client's disconnect by a few milliseconds. So to assert "my stream closed cleanly", poll until `active` settles rather than reading it immediately:

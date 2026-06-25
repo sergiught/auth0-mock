@@ -55,7 +55,7 @@ func readOneEvent(t *testing.T, r *bufio.Reader, d time.Duration) string {
 // (bufio.Reader, cancel) pair. The caller is responsible for cancel().
 func subscribe(t *testing.T, srv *httptest.Server, query string) (*bufio.Reader, context.CancelFunc) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+query, nil)
 	require.NoError(t, err)
 	resp, err := http.DefaultClient.Do(req)
@@ -213,6 +213,64 @@ func TestHub_Handler_ErrorFrameIsNotReplayed(t *testing.T) {
 	frame := readOneEvent(t, r, 2*time.Second)
 	assert.Contains(t, frame, "id: 1")
 	assert.NotContains(t, frame, "event: error")
+}
+
+// TestHub_Handler_OffsetOnlyReachesFilteredSubscriber verifies an offset-only
+// progress marker reaches every subscriber regardless of event_type filter
+// (it advances the whole stream's cursor), without closing the stream.
+func TestHub_Handler_OffsetOnlyReachesFilteredSubscriber(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	// Filtered on user.created — would never match an offset-only marker by
+	// type, yet must still receive it.
+	r, cancel := subscribe(t, srv, "?event_type=user.created")
+	t.Cleanup(cancel)
+	time.Sleep(50 * time.Millisecond)
+
+	require.NoError(t, h.Publish(events.Event{
+		Type:    "offset-only",
+		ID:      "5",
+		Payload: json.RawMessage(`{"type":"offset-only","offset":"5"}`),
+	}))
+
+	frame := readOneEvent(t, r, 2*time.Second)
+	assert.Contains(t, frame, "event: offset-only")
+	assert.Contains(t, frame, "id: 5")
+
+	// Unlike an error frame, the stream stays open.
+	assert.Equal(t, 1, h.ActiveSubscribers(), "offset-only must not close the stream")
+}
+
+// TestHub_Handler_OffsetOnlyIsBufferedAndReplayable verifies a marker's offset
+// is a valid resume cursor: resuming from before it replays the marker, and
+// resuming from it replays only what follows.
+func TestHub_Handler_OffsetOnlyIsBufferedAndReplayable(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	require.NoError(t, h.Publish(events.Event{Type: "user.created", ID: "4", Payload: json.RawMessage(`{"type":"user.created","offset":"4"}`)}))
+	require.NoError(t, h.Publish(events.Event{Type: "offset-only", ID: "5", Payload: json.RawMessage(`{"type":"offset-only","offset":"5"}`)}))
+	require.NoError(t, h.Publish(events.Event{Type: "user.created", ID: "6", Payload: json.RawMessage(`{"type":"user.created","offset":"6"}`)}))
+
+	// Resume from "4" → the marker at "5" replays (it's buffered).
+	r1, cancel1 := subscribe(t, srv, "?from=4")
+	t.Cleanup(cancel1)
+	assert.Contains(t, readOneEvent(t, r1, 2*time.Second), "event: offset-only")
+
+	// Resume from the marker's own offset "5" → only the event at "6"
+	// follows (the marker is a valid cursor, no 410).
+	r2, cancel2 := subscribe(t, srv, "?from=5")
+	t.Cleanup(cancel2)
+	assert.Contains(t, readOneEvent(t, r2, 2*time.Second), "id: 6")
 }
 
 func TestHub_Handler_EventTypeFilterSelectsMatchingOnly(t *testing.T) {

@@ -96,6 +96,10 @@ const validErrorBody = `{
   }
 }`
 
+// validOffsetOnlyBody is a progress marker: it advances the cursor without
+// carrying event data.
+const validOffsetOnlyBody = `{"type":"offset-only","offset":"7"}`
+
 func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	hub := &captureHub{}
 	r := newEventsRouter(t, hub)
@@ -113,6 +117,24 @@ func TestPostAdmin0Events_AcceptsValidPayload(t *testing.T) {
 	assert.Equal(t, "0", hub.got[0].ID)
 	assert.JSONEq(t, validUserCreatedBody, string(hub.got[0].Payload))
 	assert.JSONEq(t, `{"id":"0"}`, rec.Body.String())
+}
+
+// An offset-only progress marker validates and publishes with its offset as
+// the SSE id (it's a cursor-bearing message, unlike an error frame).
+func TestPostAdmin0Events_OffsetOnlyMarker(t *testing.T) {
+	hub := &captureHub{}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events", bytes.NewReader([]byte(validOffsetOnlyBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	require.Len(t, hub.got, 1)
+	assert.Equal(t, "offset-only", hub.got[0].Type)
+	assert.Equal(t, "7", hub.got[0].ID)
+	assert.JSONEq(t, `{"id":"7"}`, rec.Body.String())
 }
 
 // Error frames are terminal control signals, not resumable events: they
