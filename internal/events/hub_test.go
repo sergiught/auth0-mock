@@ -63,7 +63,12 @@ func subscribe(t *testing.T, srv *httptest.Server, query string) (*bufio.Reader,
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Content-Type"), "text/event-stream")
-	return bufio.NewReader(resp.Body), cancel
+	r := bufio.NewReader(resp.Body)
+	// Consume the connect announcement frame the handler sends, so callers
+	// read events directly. Assert it really is that frame, so a future
+	// regression can't silently swallow the first real event here.
+	require.Contains(t, readOneEvent(t, r, 2*time.Second), ":connected")
+	return r, cancel
 }
 
 func TestHub_NewHub_ZeroBufferDisablesReplayer(t *testing.T) {
@@ -106,6 +111,75 @@ func TestHub_Shutdown_IsIdempotent(t *testing.T) {
 	// error". Sse.Server.Shutdown may return an error on a closed
 	// server; we accept either nil or a non-panicking error.
 	_ = h.Shutdown(ctx)
+}
+
+// firstFrame opens a raw subscription (bypassing the subscribe helper, which
+// consumes the connect frame) and returns the first SSE frame.
+func firstFrame(t *testing.T, srv *httptest.Server) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	return readOneEvent(t, bufio.NewReader(resp.Body), 2*time.Second)
+}
+
+// TestHub_Handler_SendsConnectedAndRetryOnConnect verifies the first frame on
+// a fresh stream is the connect announcement Auth0's Events API sends: a
+// :connected readiness comment plus a retry: reconnect hint.
+func TestHub_Handler_SendsConnectedAndRetryOnConnect(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	frame := firstFrame(t, srv)
+	assert.Contains(t, frame, ":connected")
+	assert.Contains(t, frame, "retry: 3000")
+}
+
+// TestHub_Handler_ReconnectHintConfigurable verifies WithReconnectHint controls
+// the retry: value, and that a non-positive value omits the hint entirely.
+func TestHub_Handler_ReconnectHintConfigurable(t *testing.T) {
+	t.Run("custom value", func(t *testing.T) {
+		h, err := events.NewHub(10, nil, events.WithReconnectHint(5*time.Second))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+		srv := httptest.NewServer(h.Handler())
+		t.Cleanup(srv.Close)
+
+		assert.Contains(t, firstFrame(t, srv), "retry: 5000")
+	})
+
+	t.Run("zero omits the hint", func(t *testing.T) {
+		h, err := events.NewHub(10, nil, events.WithReconnectHint(0))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+		srv := httptest.NewServer(h.Handler())
+		t.Cleanup(srv.Close)
+
+		frame := firstFrame(t, srv)
+		assert.Contains(t, frame, ":connected")
+		assert.NotContains(t, frame, "retry:")
+	})
+
+	// A sub-millisecond hint would round to `retry: 0` (reconnect
+	// immediately); it's omitted instead.
+	t.Run("sub-millisecond omits the hint", func(t *testing.T) {
+		h, err := events.NewHub(10, nil, events.WithReconnectHint(500*time.Microsecond))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+		srv := httptest.NewServer(h.Handler())
+		t.Cleanup(srv.Close)
+
+		frame := firstFrame(t, srv)
+		assert.Contains(t, frame, ":connected")
+		assert.NotContains(t, frame, "retry:")
+	})
 }
 
 func TestHub_Handler_FilterlessSubscriberSeesAllEvents(t *testing.T) {
@@ -315,9 +389,7 @@ func TestHub_Handler_LastEventIDHeaderReplays(t *testing.T) {
 	}
 
 	// Subscribe with Last-Event-ID: evt-1 → should replay evt-2, evt-3.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
 	req.Header.Set("Last-Event-ID", "evt-1")
 	resp, err := http.DefaultClient.Do(req)
@@ -326,6 +398,7 @@ func TestHub_Handler_LastEventIDHeaderReplays(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	r := bufio.NewReader(resp.Body)
+	readOneEvent(t, r, 2*time.Second) // Consume the connect announcement frame.
 	f1 := readOneEvent(t, r, 2*time.Second)
 	f2 := readOneEvent(t, r, 2*time.Second)
 	assert.Contains(t, f1, "id: evt-2")

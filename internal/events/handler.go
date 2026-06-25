@@ -205,6 +205,12 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		// also try to write into the wire body; just return.
 		return
 	}
+	// Announce the connection the way Auth0's Events API does: a
+	// :connected readiness comment plus a retry: reconnect hint, before
+	// the library streams events. Both are non-events, so SSE readers
+	// that skip comments / retry: ignore the frame.
+	_, _ = dw.Write(h.connectFrame)
+	dw.Flush()
 	server.ServeHTTP(dw, r)
 }
 

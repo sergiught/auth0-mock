@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +68,7 @@ func clearEnv(t *testing.T) {
 		"TLS_CACHE_DIR", "TLS_HOSTNAMES", "SIGNING_KEY_FILE", "ISSUER_URL",
 		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
-		"EVENTS_REPLAY_BUFFER",
+		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT",
 	} {
 		_ = os.Unsetenv(k)
 	}
@@ -86,4 +87,19 @@ func TestLoad_EventsReplayBuffer_HonoursOverride(t *testing.T) {
 	spec, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, 500, spec.EventsReplayBuffer)
+}
+
+func TestLoad_EventsReconnectHint_DefaultsTo3s(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 3*time.Second, spec.EventsReconnectHint)
+}
+
+func TestLoad_EventsReconnectHint_HonoursOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("EVENTS_RECONNECT_HINT", "10s")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, spec.EventsReconnectHint)
 }

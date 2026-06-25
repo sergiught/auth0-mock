@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,6 +52,22 @@ const barrierTopic = "__barrier__"
 // what most SSE deployments use; the library doesn't auto-emit.
 const DefaultKeepAliveInterval = 15 * time.Second
 
+// DefaultReconnectHint is the value sent in the SSE `retry:` field on
+// connect, telling clients how long to wait before reconnecting after a
+// disconnect (Auth0's Events API sends one too). A value <= 0 omits the
+// hint, so clients fall back to their built-in default.
+const DefaultReconnectHint = 3 * time.Second
+
+// HubOption customises a Hub at construction.
+type HubOption func(*Hub)
+
+// WithReconnectHint sets the SSE `retry:` reconnect-delay hint sent on
+// connect; <= 0 omits it. Wire it to the EVENTS_RECONNECT_HINT config.
+// Defaults to DefaultReconnectHint when unset.
+func WithReconnectHint(d time.Duration) HubOption {
+	return func(h *Hub) { h.reconnectHint = d }
+}
+
 // keepAliveIntervalNS is the live cadence (in nanoseconds) used by
 // runKeepAlive when it constructs its ticker. Atomic so tests that
 // run in parallel can't race on the override.
@@ -96,6 +113,12 @@ type Hub struct {
 	bufferSize int
 	now        func() time.Time
 
+	// ReconnectHint is the SSE `retry:` value sent on connect; <= 0
+	// omits it. ConnectFrame is the precomputed first frame (a
+	// :connected comment plus the retry hint), built once in NewHub.
+	reconnectHint time.Duration
+	connectFrame  []byte
+
 	// Mu protects server / replayer swap. Read-locked by Publish and
 	// Handler; write-locked by Reset and Shutdown.
 	mu       sync.RWMutex
@@ -138,8 +161,9 @@ type Hub struct {
 // timestamp index uses; nil falls back to time.Now. The caller should
 // wire this to internal/clock.Clock.Now when a controllable clock is
 // present so ?from_timestamp behaves deterministically in
-// clock-controlled tests.
-func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
+// clock-controlled tests. Opts customise the hub — e.g.
+// WithReconnectHint sets the SSE retry: value sent on connect.
+func NewHub(bufferSize int, now func() time.Time, opts ...HubOption) (*Hub, error) {
 	if bufferSize == 1 {
 		// The library's NewFiniteReplayer enforces count >= 2;
 		// clamp to that minimum rather than crashing the process
@@ -147,17 +171,36 @@ func NewHub(bufferSize int, now func() time.Time) (*Hub, error) {
 		bufferSize = 2
 	}
 	h := &Hub{
-		bufferSize: bufferSize,
-		now:        now,
-		active:     make(map[int]context.CancelFunc),
-		stop:       make(chan struct{}),
+		bufferSize:    bufferSize,
+		now:           now,
+		reconnectHint: DefaultReconnectHint,
+		active:        make(map[int]context.CancelFunc),
+		stop:          make(chan struct{}),
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	h.connectFrame = buildConnectFrame(h.reconnectHint)
 	if err := h.build(); err != nil {
 		return nil, err
 	}
 	h.keepalive.Add(1)
 	go h.runKeepAlive()
 	return h, nil
+}
+
+// buildConnectFrame is the first SSE frame sent to a new subscriber,
+// matching Auth0's Events API: a `:connected` readiness comment plus an
+// optional `retry:` reconnect hint. Both are non-events, so SSE readers
+// that skip comments and `retry:` ignore the frame.
+func buildConnectFrame(reconnectHint time.Duration) []byte {
+	// Anything under a millisecond rounds to `retry: 0` ("reconnect
+	// immediately"), which is a hot-loop footgun — worse than the intended
+	// "no hint, use your default". So omit the field for sub-ms values too.
+	if reconnectHint < time.Millisecond {
+		return []byte(":connected\n\n")
+	}
+	return []byte(":connected\nretry: " + strconv.FormatInt(reconnectHint.Milliseconds(), 10) + "\n\n")
 }
 
 // build creates a fresh *sse.Server + optional recordingReplayer.
