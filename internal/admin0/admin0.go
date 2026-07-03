@@ -38,6 +38,17 @@ type Deps struct {
 
 // Mount registers every /admin0/* route on r.
 func Mount(r chi.Router, d Deps) {
+	// Same off-by-default safety net as router.New: direct Mount callers
+	// (tests commonly pass partial Deps) get working, empty mapping routes
+	// instead of handlers over a nil store that panic when hit. The
+	// composition root (router.New) defaults the store *before* Mount so
+	// the token endpoint shares the same instance; one defaulted here is
+	// reachable only from the admin surface, which is exactly what an
+	// admin0-only mount needs.
+	if d.ClaimMappings == nil {
+		d.ClaimMappings = claims.NewMappingStore()
+	}
+
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})

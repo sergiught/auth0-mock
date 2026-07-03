@@ -463,6 +463,30 @@ func TestClaimMappings_Put_InvalidBody_400(t *testing.T) {
 	assert.Equal(t, 400, w.Code)
 }
 
+// TestClaimMappings_MountWithoutStore_DefaultsEmpty pins Mount's
+// off-by-default safety net: partial-Deps mounts (the norm in tests —
+// see events_test.go, expectations_test.go) must serve the mapping
+// routes as "feature off" instead of panicking on a nil store.
+func TestClaimMappings_MountWithoutStore_DefaultsEmpty(t *testing.T) {
+	r := newRouter(Deps{}) // No stores wired at all.
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/claims/mappings", nil))
+	require.Equal(t, 200, w.Code)
+	assert.JSONEq(t, `{}`, w.Body.String())
+
+	// The defaulted store is fully functional, not just non-panicking.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims/mappings",
+		strings.NewReader(`{"resource":"https://example.com/resource"}`)))
+	require.Equal(t, 204, w.Code)
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/claims/mappings", nil))
+	require.Equal(t, 200, w.Code)
+	assert.JSONEq(t, `{"resource":"https://example.com/resource"}`, w.Body.String())
+}
+
 func TestPermissions_PutGetDeletePerAudience(t *testing.T) {
 	d := newDeps()
 	r := newRouter(d)
