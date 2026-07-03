@@ -56,7 +56,7 @@ paths:
   /admin0/reset:
     post:
       tags: [Expectations]
-      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required).
+      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events).
       responses:
         "204": { description: Reset complete. }
   /admin0/expectations:
@@ -175,6 +175,9 @@ paths:
         deterministic: parameters apply in lexicographic order, so the one
         that sorts last wins. A repeated form parameter projects its first
         value; a repeated JSON key keeps the last (standard JSON decoding).
+        A form parameter sent without a value is treated as omitted
+        (RFC 6749 §3.2) and does not project; a JSON `""` or `null` is an
+        explicit value and does.
       requestBody:
         required: true
         content:

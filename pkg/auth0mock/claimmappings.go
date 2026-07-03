@@ -36,8 +36,7 @@ func (cl *ClaimMappingsClient) Get(ctx context.Context) (map[string]string, erro
 
 // Set replaces the entire mapping. Keys are token-request body
 // parameters, values are the claim names their values mint under. Pass
-// an empty map to clear without using Clear (semantically identical,
-// one fewer round-trip if you already have the map).
+// an empty map to clear (semantically identical to Clear).
 func (cl *ClaimMappingsClient) Set(ctx context.Context, mappings map[string]string) error {
 	if mappings == nil {
 		mappings = map[string]string{}

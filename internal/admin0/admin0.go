@@ -83,7 +83,9 @@ func Mount(r chi.Router, d Deps) {
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
-// claims, claim mappings, and per-audience permissions.
+// claims, claim mappings, per-audience permissions, and the MFA flag; it
+// also restores the clock to real mode and resets the SSE events hub
+// (drains subscribers, clears the replay buffer, zeroes counters).
 type ResetHandler struct {
 	Deps Deps
 }

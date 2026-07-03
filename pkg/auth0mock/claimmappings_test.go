@@ -64,9 +64,10 @@ func TestClaimMappings_Set_NilSendsEmptyObject(t *testing.T) {
 	rec, c := newStub(t)
 	require.NoError(t, c.Claims.Mappings.Set(t.Context(), nil))
 
-	// A nil map would JSON-encode to `null` — but the server's PUT
-	// handler decodes into `map[string]string` and would silently no-op.
-	// Sending `{}` makes the wipe explicit and matches Clear's semantics.
+	// A nil map would JSON-encode to `null`, which the server happens to
+	// treat as a wipe today (Decode leaves the map nil; Set(nil) installs
+	// a fresh empty map). Sending `{}` doesn't rely on that coincidence:
+	// it makes the wipe explicit on the wire and matches Clear's semantics.
 	assert.JSONEq(t, `{}`, string(rec.last(t).Body))
 }
 

@@ -363,6 +363,89 @@ func TestToken_ClaimMappings_CanTargetReservedClaims(t *testing.T) {
 	assert.Equal(t, "totally-custom", c.Extra["gty"])
 }
 
+// TestToken_ClaimMappings_EmptyFormParam_TreatedAsOmitted pins RFC 6749
+// §3.2: a form parameter sent without a value must behave as if omitted —
+// it must not project, and must not clobber a seeded global default.
+func TestToken_ClaimMappings_EmptyFormParam_TreatedAsOmitted(t *testing.T) {
+	r, ks, mappings, claimsStore := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+	claimsStore.Set(map[string]any{"https://example.com/resource": "global-default"})
+
+	c := mintClientCredentials(t, r, ks, url.Values{"resource": []string{""}})
+	assert.Equal(t, "global-default", c.Extra["https://example.com/resource"],
+		"empty-valued form parameter must be treated as omitted (RFC 6749 §3.2)")
+}
+
+// TestToken_ClaimMappings_DuplicateJSONKey_LastWins pins the documented
+// JSON-body twin of the repeated-form-param rule: a duplicate key in a
+// JSON token request keeps the last value (standard encoding/json map
+// decoding). Guards the OpenAPI description against a stricter-decoder
+// refactor.
+func TestToken_ClaimMappings_DuplicateJSONKey_LastWins(t *testing.T) {
+	r, ks, mappings, _ := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+
+	body := `{"grant_type":"client_credentials","client_id":"abc","client_secret":"x",` +
+		`"audience":"https://api/","resource":"urn:api:first","resource":"urn:api:last"}`
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	c, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "urn:api:last", c.Extra["https://example.com/resource"])
+}
+
+// TestToken_ClaimMappings_MFAGrant_ProjectsParams pins the params
+// threading through mintFromMFA: the three mfa-* grants cross a file and
+// a signature change to reach augmentExtra, so a refactor passing nil
+// would compile and pass every other test while silently disabling
+// projection for step-up tokens.
+func TestToken_ClaimMappings_MFAGrant_ProjectsParams(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	mappings := claims.NewMappingStore()
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+	mfaStore := mfa.NewStore()
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:           zerolog.Nop(),
+		ClaimMappings: mappings,
+		MFA:           mfaStore,
+	})
+	tok := mfaStore.Issue(mfa.Context{
+		ClientID: "abc", Audience: "https://api/", Scope: "openid", Subject: "alice",
+	})
+
+	form := url.Values{
+		"grant_type": []string{"http://auth0.com/oauth/grant-type/mfa-otp"},
+		"client_id":  []string{"abc"},
+		"mfa_token":  []string{tok},
+		"otp":        []string{mfa.AcceptedOTP},
+		"resource":   []string{"urn:api:orders"},
+	}
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	c, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "mfa-otp", c.Extra["gty"])
+	assert.Equal(t, "urn:api:orders", c.Extra["https://example.com/resource"])
+}
+
 // newAuthRouterWithMFA wires a router that has an MFA store attached, so
 // the password / password-realm grants can issue mfa_tokens and the
 // mfa-* grants have a Consume target.

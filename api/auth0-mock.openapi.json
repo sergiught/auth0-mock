@@ -53861,7 +53861,7 @@
         ]
       },
       "put": {
-        "description": "Keys are token-request body parameters (form or JSON), values are the\nclaim names their values mint under. Only mapped parameters are\nprojected — the map is an allowlist, everything else in the request\nbody is ignored as before. A projected value overrides the global\n`/admin0/claims` overlay for that claim, so scenarios can keep a\nglobal default and still mint differently-scoped tokens per request.\n\nPUT replaces the whole map (no merge). If two parameters map to the\nsame claim and both appear in one token request, projection is\ndeterministic: parameters apply in lexicographic order, so the one\nthat sorts last wins. A repeated form parameter projects its first\nvalue; a repeated JSON key keeps the last (standard JSON decoding).\n",
+        "description": "Keys are token-request body parameters (form or JSON), values are the\nclaim names their values mint under. Only mapped parameters are\nprojected — the map is an allowlist, everything else in the request\nbody is ignored as before. A projected value overrides the global\n`/admin0/claims` overlay for that claim, so scenarios can keep a\nglobal default and still mint differently-scoped tokens per request.\n\nPUT replaces the whole map (no merge). If two parameters map to the\nsame claim and both appear in one token request, projection is\ndeterministic: parameters apply in lexicographic order, so the one\nthat sorts last wins. A repeated form parameter projects its first\nvalue; a repeated JSON key keeps the last (standard JSON decoding).\nA form parameter sent without a value is treated as omitted\n(RFC 6749 §3.2) and does not project; a JSON `\"\"` or `null` is an\nexplicit value and does.\n",
         "requestBody": {
           "content": {
             "application/json": {
@@ -54378,7 +54378,7 @@
             "description": "Reset complete."
           }
         },
-        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required).",
+        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events).",
         "tags": [
           "Expectations"
         ]

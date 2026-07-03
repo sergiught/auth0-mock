@@ -88,8 +88,8 @@ Feature: Request-parameter to claim projection
       resource=urn:api:orders
       """
     Then I receive a 200 response
-    And the access_token claim "resource" equals ""
-    And the access_token claim "https://example\.com/resource" equals ""
+    And the access_token claim "resource" is absent
+    And the access_token claim "https://example\.com/resource" is absent
 
   Scenario: GET /admin0/claims/mappings returns the current map
     When I PUT "/admin0/claims/mappings" with body:

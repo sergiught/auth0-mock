@@ -218,7 +218,11 @@ func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
 	}
 	params := make(map[string]any, len(r.PostForm))
 	for k, vs := range r.PostForm {
-		if len(vs) > 0 {
+		// RFC 6749 §3.2: parameters sent without a value MUST be treated
+		// as if they were omitted, so `&resource=` must not project (or
+		// clobber a global claim default). JSON bodies differ on purpose:
+		// an explicit "" or null there is a present value and projects.
+		if len(vs) > 0 && vs[0] != "" {
 			params[k] = vs[0]
 		}
 	}
