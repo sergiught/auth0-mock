@@ -24,6 +24,7 @@ type Deps struct {
 	DefaultAudience              string
 	Log                          zerolog.Logger
 	Claims                       *claims.Store
+	ClaimMappings                *claims.MappingStore
 	Permissions                  *permissions.Store
 	PKCE                         *pkce.Store
 	MFA                          *mfa.Store
@@ -39,6 +40,7 @@ func Mount(d Deps) {
 		DefaultAudience: d.DefaultAudience,
 		Log:             d.Log,
 		Claims:          d.Claims,
+		ClaimMappings:   d.ClaimMappings,
 		Permissions:     d.Permissions,
 		PKCE:            d.PKCE,
 		MFA:             d.MFA,

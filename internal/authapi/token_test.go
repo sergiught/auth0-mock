@@ -223,6 +223,146 @@ func TestToken_CustomClaims_OverrideReserved(t *testing.T) {
 	assert.Equal(t, "admin", c.Extra["role"], "brand-new claims pass through")
 }
 
+// newAuthRouterWithMappings wires a router with a claim-mapping store (and a
+// claims store, so precedence between the two is testable).
+func newAuthRouterWithMappings(t *testing.T) (chi.Router, *jwks.KeySet, *claims.MappingStore, *claims.Store) {
+	t.Helper()
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	mappings := claims.NewMappingStore()
+	claimsStore := claims.NewStore()
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:           zerolog.Nop(),
+		Claims:        claimsStore,
+		ClaimMappings: mappings,
+	})
+	return r, ks, mappings, claimsStore
+}
+
+// mintClientCredentials posts a client_credentials form request with the
+// given extra params and returns the verified access-token claims.
+func mintClientCredentials(t *testing.T, r chi.Router, ks *jwks.KeySet, extra url.Values) *jwks.Claims {
+	t.Helper()
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_id", "abc")
+	form.Set("client_secret", "x")
+	form.Set("audience", "https://api/")
+	maps.Copy(form, extra)
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	c, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	return c
+}
+
+// TestToken_ClaimMappings_ProjectsRequestParam covers the core acceptance
+// criteria of the claim-mapping feature: with a mapping registered, the
+// mapped request parameter lands in the minted token under the claim name —
+// per request, without touching /admin0/claims — and two sequential requests
+// with different values mint tokens with the respective values.
+func TestToken_ClaimMappings_ProjectsRequestParam(t *testing.T) {
+	r, ks, mappings, _ := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+
+	c1 := mintClientCredentials(t, r, ks, url.Values{"resource": []string{"urn:api:orders"}})
+	assert.Equal(t, "urn:api:orders", c1.Extra["https://example.com/resource"])
+
+	// Second mint with a different value — no global-state race.
+	c2 := mintClientCredentials(t, r, ks, url.Values{"resource": []string{"urn:api:billing"}})
+	assert.Equal(t, "urn:api:billing", c2.Extra["https://example.com/resource"])
+
+	// Param omitted → claim absent, exactly as today.
+	c3 := mintClientCredentials(t, r, ks, nil)
+	assert.NotContains(t, c3.Extra, "https://example.com/resource")
+
+	// Params outside the allowlist never reach the token.
+	c4 := mintClientCredentials(t, r, ks, url.Values{"rogue": []string{"nope"}})
+	assert.NotContains(t, c4.Extra, "rogue")
+}
+
+// TestToken_ClaimMappings_JSONBody_PrivateKeyJWT covers the private_key_jwt
+// client-credentials variant: a JSON body carrying client_assertion instead
+// of client_secret. The mock doesn't validate client auth, so the variant
+// reduces to "params must be captured from JSON bodies too".
+func TestToken_ClaimMappings_JSONBody_PrivateKeyJWT(t *testing.T) {
+	r, ks, mappings, _ := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+
+	body := `{
+		"grant_type": "client_credentials",
+		"client_id": "abc",
+		"client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+		"client_assertion": "eyJ.fake.jwt",
+		"audience": "https://api/",
+		"resource": "urn:api:orders"
+	}`
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	c, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "urn:api:orders", c.Extra["https://example.com/resource"])
+}
+
+// TestToken_ClaimMappings_OverrideGlobalClaims nails down precedence: a
+// per-request value beats the global claims store for the same claim, and
+// the global value still applies when the parameter is omitted.
+func TestToken_ClaimMappings_OverrideGlobalClaims(t *testing.T) {
+	r, ks, mappings, claimsStore := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+	claimsStore.Set(map[string]any{"https://example.com/resource": "global-default"})
+
+	c := mintClientCredentials(t, r, ks, url.Values{"resource": []string{"urn:api:orders"}})
+	assert.Equal(t, "urn:api:orders", c.Extra["https://example.com/resource"],
+		"per-request parameter must beat the global claims store")
+
+	c = mintClientCredentials(t, r, ks, nil)
+	assert.Equal(t, "global-default", c.Extra["https://example.com/resource"],
+		"global claims still apply when the parameter is omitted")
+}
+
+// TestToken_ClaimMappings_RepeatedFormParam_FirstWins pins the duplicate-
+// parameter edge for form bodies: `resource=a&resource=b` projects the
+// FIRST value (parseTokenRequest takes PostForm's vs[0], matching
+// url.Values.Get semantics used for every other token-request field).
+func TestToken_ClaimMappings_RepeatedFormParam_FirstWins(t *testing.T) {
+	r, ks, mappings, _ := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"resource": "https://example.com/resource"})
+
+	c := mintClientCredentials(t, r, ks, url.Values{
+		"resource": []string{"urn:api:first", "urn:api:second"},
+	})
+	assert.Equal(t, "urn:api:first", c.Extra["https://example.com/resource"])
+}
+
+// TestToken_ClaimMappings_CanTargetReservedClaims pins that projection is
+// the final layer: a mapping targeting a reserved claim (gty here) beats
+// the grant handler's value, mirroring the documented claims-store
+// philosophy that tests can override anything.
+func TestToken_ClaimMappings_CanTargetReservedClaims(t *testing.T) {
+	r, ks, mappings, _ := newAuthRouterWithMappings(t)
+	mappings.Set(map[string]string{"custom_gty": "gty"})
+
+	c := mintClientCredentials(t, r, ks, url.Values{"custom_gty": []string{"totally-custom"}})
+	assert.Equal(t, "totally-custom", c.Extra["gty"])
+}
+
 // newAuthRouterWithMFA wires a router that has an MFA store attached, so
 // the password / password-realm grants can issue mfa_tokens and the
 // mfa-* grants have a Consume target.

@@ -309,9 +309,10 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, permissions, MFA flag, clock |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, clock |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
+| `/admin0/claims/mappings` | GET / PUT / DELETE | Request-parameter → claim projection: map a token-request body parameter (form or JSON) to a claim name and `/oauth/token` stamps that parameter's value into the minted JWT — per request, overriding `/admin0/claims` for that key. Allowlist semantics; empty map (default) = off. Independent store: `DELETE /admin0/claims` doesn't touch it |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
@@ -341,6 +342,13 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 curl -X PUT http://localhost:8080/admin0/claims \
   -H 'Content-Type: application/json' \
   -d '{"role":"admin","org_id":"o-42"}'
+
+# Project a token-request parameter into the minted claims (per request,
+# no global-state race): map it once, then every /oauth/token call that
+# carries `resource` mints it under the namespaced claim
+curl -X PUT http://localhost:8080/admin0/claims/mappings \
+  -H 'Content-Type: application/json' \
+  -d '{"resource":"https://example.com/resource"}'
 
 # Set RBAC for an audience (URL-form audience works thanks to chi wildcard)
 curl -X PUT http://localhost:8080/admin0/permissions/https://api.example.com/ \
@@ -486,7 +494,7 @@ chi router
   ├── /healthz                               liveness
   ├── /openapi.json /openapi.yaml            merged OpenAPI 3.1 spec
   ├── /docs                                  Scalar-rendered API reference
-  ├── /admin0/{reset, expectations, claims, permissions/*, mfa-required}
+  ├── /admin0/{reset, expectations, claims, claims/mappings, permissions/*, mfa-required}
   │                                          control plane (no auth)
   ├── /.well-known/{jwks.json, openid-configuration}
   ├── /oauth/* /authorize /userinfo /v2/logout

@@ -22,12 +22,13 @@ import (
 
 // Deps groups the in-memory stores admin0 controls.
 type Deps struct {
-	Matches     *matches.Store
-	Claims      *claims.Store
-	Permissions *permissions.Store
-	MFA         *mfa.Store
-	Validator   *spec.Validator
-	Clock       *clock.Controlled
+	Matches       *matches.Store
+	Claims        *claims.Store
+	ClaimMappings *claims.MappingStore
+	Permissions   *permissions.Store
+	MFA           *mfa.Store
+	Validator     *spec.Validator
+	Clock         *clock.Controlled
 	// Events is the SSE hub for POST /admin0/events. Nil is fine for
 	// admin0 tests that don't exercise the events surface — the route
 	// only registers when both Events and Validator are non-nil, and
@@ -49,6 +50,10 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodGet, "/admin0/claims", &GetClaimsHandler{Store: d.Claims})
 	r.Method(http.MethodPut, "/admin0/claims", &PutClaimsHandler{Store: d.Claims})
 	r.Method(http.MethodDelete, "/admin0/claims", &DeleteClaimsHandler{Store: d.Claims})
+
+	r.Method(http.MethodGet, "/admin0/claims/mappings", &GetClaimMappingsHandler{Store: d.ClaimMappings})
+	r.Method(http.MethodPut, "/admin0/claims/mappings", &PutClaimMappingsHandler{Store: d.ClaimMappings})
+	r.Method(http.MethodDelete, "/admin0/claims/mappings", &DeleteClaimMappingsHandler{Store: d.ClaimMappings})
 
 	r.Method(http.MethodGet, "/admin0/permissions", &GetAllPermissionsHandler{Store: d.Permissions})
 	r.Method(http.MethodDelete, "/admin0/permissions", &DeleteAllPermissionsHandler{Store: d.Permissions})
@@ -78,7 +83,7 @@ func Mount(r chi.Router, d Deps) {
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
-// claims, and per-audience permissions.
+// claims, claim mappings, and per-audience permissions.
 type ResetHandler struct {
 	Deps Deps
 }
@@ -89,6 +94,9 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Deps.Claims != nil {
 		h.Deps.Claims.Clear()
+	}
+	if h.Deps.ClaimMappings != nil {
+		h.Deps.ClaimMappings.Clear()
 	}
 	if h.Deps.Permissions != nil {
 		h.Deps.Permissions.Clear()
@@ -175,6 +183,45 @@ type DeleteClaimsHandler struct {
 }
 
 func (h *DeleteClaimsHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	h.Store.Clear()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- claim mappings ----------------------------------------------------------.
+
+// GetClaimMappingsHandler returns the request-parameter → claim-name map that
+// /oauth/token projects into minted tokens.
+type GetClaimMappingsHandler struct {
+	Store *claims.MappingStore
+}
+
+func (h *GetClaimMappingsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	render.JSON(w, r, h.Store.Get())
+}
+
+// PutClaimMappingsHandler replaces the mapping with the JSON object in the
+// request body ({"<request parameter>": "<claim name>", ...}). An empty
+// object turns the projection off.
+type PutClaimMappingsHandler struct {
+	Store *claims.MappingStore
+}
+
+func (h *PutClaimMappingsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "decode body: "+err.Error(), "invalid_body")
+		return
+	}
+	h.Store.Set(body)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteClaimMappingsHandler clears every mapping.
+type DeleteClaimMappingsHandler struct {
+	Store *claims.MappingStore
+}
+
+func (h *DeleteClaimMappingsHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	h.Store.Clear()
 	w.WriteHeader(http.StatusNoContent)
 }

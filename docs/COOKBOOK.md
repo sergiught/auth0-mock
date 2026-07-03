@@ -9,6 +9,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Different responses for different requests](#different-responses-for-different-requests)
 - [Test a code path that reads a specific `permissions` claim](#test-a-code-path-that-reads-a-specific-permissions-claim)
 - [Inject a custom claim into every minted token](#inject-a-custom-claim-into-every-minted-token)
+- [Mint per-request claims from token-request parameters](#mint-per-request-claims-from-token-request-parameters)
 - [Test a PKCE flow end-to-end](#test-a-pkce-flow-end-to-end)
 - [Test an MFA challenge flow](#test-an-mfa-challenge-flow)
 - [Test token expiry without sleeps](#test-token-expiry-without-sleeps)
@@ -139,6 +140,37 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.role, .org_id'
 ```
 
 **Custom claims overwrite reserved claims** (`gty`, `azp`, `permissions`, etc.) on purpose, so tests can override anything they need.
+
+## Mint per-request claims from token-request parameters
+
+The global claims map stamps **one** value into every token. When the system
+under test fetches several tokens with **different** values for the same claim
+— and the test has no safe point to swap the global claim in between — map the
+request parameter to a claim name instead. `/oauth/token` then copies whatever
+value the client sends (form or JSON body, any grant) into the minted token,
+overriding the global map for that key.
+
+```bash
+curl -X PUT http://localhost:8080/admin0/claims/mappings \
+  -H 'Content-Type: application/json' \
+  -d '{"resource":"https://example.com/resource"}'
+
+mint() {
+  curl -s -X POST http://localhost:8080/oauth/token \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "grant_type=client_credentials&client_id=demo&client_secret=x&audience=http://api/&resource=$1" \
+    | jq -r .access_token | cut -d. -f2 | base64 -d 2>/dev/null \
+    | jq '."https://example.com/resource"'
+}
+
+mint urn:api:orders   # => "urn:api:orders"
+mint urn:api:billing  # => "urn:api:billing" — no /admin0/claims race in between
+```
+
+Only mapped parameters are projected (the map is an allowlist); requests that
+omit the parameter, and mocks with no mapping configured, behave exactly as
+before. Works for the `private_key_jwt` client-credentials variant too — its
+JSON body is captured the same way.
 
 ## Test a PKCE flow end-to-end
 
