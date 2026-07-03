@@ -42,6 +42,19 @@ func TestClaimMappings_Get_EmptyMap(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+func TestClaimMappings_Get_ServerError(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}
+
+	got, err := c.Claims.Mappings.Get(t.Context())
+	require.Error(t, err)
+	assert.Nil(t, got)
+}
+
 func TestClaimMappings_Set_WireShape(t *testing.T) {
 	t.Parallel()
 	rec, c := newStub(t)

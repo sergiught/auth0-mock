@@ -21,8 +21,10 @@ type ClaimMappingsClient struct {
 }
 
 // Get returns the current mapping. An empty map (not nil) is returned
-// when no mappings are registered, matching the server's render.JSON
-// behaviour on an empty store.
+// when no mappings are registered. The server always renders an empty
+// store as {} (MappingStore.Get hands render.JSON a non-nil map); the
+// nil check below is a defensive normalization for any other body a
+// transport or proxy might hand back, so callers never nil-check.
 func (cl *ClaimMappingsClient) Get(ctx context.Context) (map[string]string, error) {
 	var resp map[string]string
 	if err := cl.c.do(ctx, http.MethodGet, "/admin0/claims/mappings", nil, &resp); err != nil {

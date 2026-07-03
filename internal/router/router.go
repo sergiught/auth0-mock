@@ -105,6 +105,14 @@ func New(d Deps) (http.Handler, error) {
 		return nil, fmt.Errorf("events hub: %w", err)
 	}
 
+	// Claim mappings are off-by-default (empty map = feature off), so a
+	// caller that never heard of the store shouldn't have to wire one for
+	// the /admin0/claims/mappings routes to be safe to hit. Default it
+	// here rather than nil-guarding in the handlers.
+	if d.ClaimMappings == nil {
+		d.ClaimMappings = claims.NewMappingStore()
+	}
+
 	admin0.Mount(r, admin0.Deps{
 		Matches:       d.Store,
 		Claims:        d.Claims,
