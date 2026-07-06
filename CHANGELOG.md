@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.231.0](https://github.com/sergiught/auth0-mock/compare/v0.230.0...v0.231.0) (2026-07-06)
+
+
+### Features
+
+* **token:** project allowlisted request parameters into minted claims ([#51](https://github.com/sergiught/auth0-mock/issues/51)) ([9ef0669](https://github.com/sergiught/auth0-mock/commit/9ef0669d2d17f7b8526c7e168ebd4ad3a33000ea))
+
 ## [0.230.0](https://github.com/sergiught/auth0-mock/compare/v0.229.0...v0.230.0) (2026-06-25)
 
 
