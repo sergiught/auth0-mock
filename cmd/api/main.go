@@ -84,6 +84,7 @@ func run() error {
 
 	store := matches.NewStore()
 	claimsStore := claims.NewStore()
+	claimMappings := claims.NewMappingStore()
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore(pkce.WithNow(clk.Now))
 	mfaStore := mfa.NewStore(mfa.WithNow(clk.Now))
@@ -91,6 +92,7 @@ func run() error {
 		Log:                          log,
 		Store:                        store,
 		Claims:                       claimsStore,
+		ClaimMappings:                claimMappings,
 		Permissions:                  permsStore,
 		PKCE:                         pkceStore,
 		MFA:                          mfaStore,

@@ -22,7 +22,7 @@ func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong otp")
 		return
 	}
-	h.mintFromMFA(w, r, ctx, "mfa-otp")
+	h.mintFromMFA(w, r, ctx, "mfa-otp", req.Params)
 }
 
 // respondMFAOOB handles grant_type=http://auth0.com/oauth/grant-type/mfa-oob
@@ -42,7 +42,7 @@ func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong binding code")
 		return
 	}
-	h.mintFromMFA(w, r, ctx, "mfa-oob")
+	h.mintFromMFA(w, r, ctx, "mfa-oob", req.Params)
 }
 
 // respondMFARecoveryCode handles
@@ -56,7 +56,7 @@ func (h *TokenHandler) respondMFARecoveryCode(w http.ResponseWriter, r *http.Req
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong recovery code")
 		return
 	}
-	h.mintFromMFA(w, r, ctx, "mfa-recovery-code")
+	h.mintFromMFA(w, r, ctx, "mfa-recovery-code", req.Params)
 }
 
 // consumeMFAToken validates and consumes an mfa_token. On failure, writes the
@@ -82,7 +82,7 @@ func (h *TokenHandler) consumeMFAToken(w http.ResponseWriter, token string) (mfa
 // successful MFA step-up. The gty claim reflects the specific MFA grant
 // (mfa-otp / mfa-oob / mfa-recovery-code) so downstream services can tell
 // MFA-stepped-up tokens apart from regular ones.
-func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx mfa.Context, gty string) {
+func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx mfa.Context, gty string, params map[string]any) {
 	extra := map[string]any{"gty": gty, "azp": ctx.ClientID}
 	if ctx.Realm != "" {
 		extra["connection"] = ctx.Realm
@@ -92,7 +92,7 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		Audience: []string{ctx.Audience},
 		Scope:    ctx.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(extra, ctx.Audience),
+		Extra:    h.augmentExtra(extra, ctx.Audience, params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())

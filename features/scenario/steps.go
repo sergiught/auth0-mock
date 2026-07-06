@@ -297,6 +297,19 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	// True absence check — `equals ""` can't tell absent from empty/null
+	// (gjson's Result.String() returns "" for all three).
+	sc.Step(`^the access_token claim "([^"]+)" is absent$`, func(claim string) error {
+		got, err := claimValueFromAccessToken(c.LastBody, claim)
+		if err != nil {
+			return err
+		}
+		if got.Exists() {
+			return fmt.Errorf("claim %q: expected absent, found %q", claim, got.String())
+		}
+		return nil
+	})
+
 	// PKCE: capture the `code` from the last /authorize redirect and POST it
 	// through /oauth/token with the supplied verifier. The challenge is the
 	// S256 hash of the verifier.

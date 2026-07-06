@@ -76,6 +76,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	}
 	store := matches.NewStore()
 	claimsStore := claims.NewStore()
+	claimMappings := claims.NewMappingStore()
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore(pkce.WithNow(clk.Now))
 	mfaStore := mfa.NewStore(mfa.WithNow(clk.Now))
@@ -87,6 +88,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		Log:                  zerolog.Nop(),
 		Store:                store,
 		Claims:               claimsStore,
+		ClaimMappings:        claimMappings,
 		Permissions:          permsStore,
 		PKCE:                 pkceStore,
 		MFA:                  mfaStore,

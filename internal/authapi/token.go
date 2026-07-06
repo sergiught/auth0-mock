@@ -26,7 +26,12 @@ type TokenHandler struct {
 	DefaultAudience string
 	Log             zerolog.Logger
 	Claims          *claims.Store
-	Permissions     *permissions.Store
+	// ClaimMappings may be nil. When a request-parameter → claim-name
+	// mapping is registered (via /admin0/claims/mappings), the value of that
+	// body parameter is projected into every minted access token, taking
+	// precedence over the global claims store. Empty store = feature off.
+	ClaimMappings *claims.MappingStore
+	Permissions   *permissions.Store
 	// PKCE may be nil. When set and the authorization_code grant supplies a
 	// code that was stashed at /authorize with a code_challenge, the matching
 	// code_verifier is required and verified.
@@ -61,10 +66,13 @@ func (h *TokenHandler) requireMFA(w http.ResponseWriter, r *http.Request, ctx mf
 	return true
 }
 
-// augmentExtra layers per-audience permissions and per-process custom claims
-// onto the Extra map passed to jwks.Mint. Custom claims take final precedence,
-// allowing tests to override anything (gty, azp, even permissions).
-func (h *TokenHandler) augmentExtra(extra map[string]any, audience string) map[string]any {
+// augmentExtra layers per-audience permissions, per-process custom claims,
+// and mapped request parameters onto the Extra map passed to jwks.Mint.
+// Custom claims overwrite anything the grant set (gty, azp, even
+// permissions); mapped request parameters take final precedence, so a
+// single token request can carry a differently-scoped claim than the
+// global claims store holds — without racing /admin0/claims between mints.
+func (h *TokenHandler) augmentExtra(extra map[string]any, audience string, params map[string]any) map[string]any {
 	if extra == nil {
 		extra = make(map[string]any)
 	}
@@ -75,6 +83,9 @@ func (h *TokenHandler) augmentExtra(extra map[string]any, audience string) map[s
 	}
 	if h.Claims != nil {
 		h.Claims.MergeInto(extra)
+	}
+	if h.ClaimMappings != nil {
+		h.ClaimMappings.Project(params, extra)
 	}
 	return extra
 }
@@ -146,7 +157,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 			"azp":                     req.ClientID,
 			"connection":              req.Realm,
 			"https://auth0.com/realm": req.Realm,
-		}, aud),
+		}, aud, req.Params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -191,6 +202,11 @@ func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
 			if err := json.Unmarshal(body, &req); err != nil {
 				return nil, err
 			}
+			// Second decode captures every raw key (including ones outside
+			// the fixed field set) so claim mappings can project them.
+			if err := json.Unmarshal(body, &req.Params); err != nil {
+				return nil, err
+			}
 		}
 		return &req, nil
 	}
@@ -200,7 +216,18 @@ func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
 	if r.PostForm == nil {
 		return nil, errors.New("no form body")
 	}
+	params := make(map[string]any, len(r.PostForm))
+	for k, vs := range r.PostForm {
+		// RFC 6749 §3.2: parameters sent without a value MUST be treated
+		// as if they were omitted, so `&resource=` must not project (or
+		// clobber a global claim default). JSON bodies differ on purpose:
+		// an explicit "" or null there is a present value and projects.
+		if len(vs) > 0 && vs[0] != "" {
+			params[k] = vs[0]
+		}
+	}
 	return &tokenRequest{
+		Params:       params,
 		GrantType:    r.PostForm.Get("grant_type"),
 		ClientID:     r.PostForm.Get("client_id"),
 		ClientSecret: r.PostForm.Get("client_secret"),
@@ -227,7 +254,7 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "client-credentials", "azp": req.ClientID}, aud),
+		Extra:    h.augmentExtra(map[string]any{"gty": "client-credentials", "azp": req.ClientID}, aud, req.Params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -256,7 +283,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "password", "azp": req.ClientID}, aud),
+		Extra:    h.augmentExtra(map[string]any{"gty": "password", "azp": req.ClientID}, aud, req.Params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -291,7 +318,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": req.ClientID}, aud),
+		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": req.ClientID}, aud, req.Params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -336,7 +363,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud),
+		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud, req.Params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())

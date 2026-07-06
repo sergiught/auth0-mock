@@ -53780,7 +53780,7 @@
             "description": "Claims cleared."
           }
         },
-        "summary": "Clear the global custom claim overlay.",
+        "summary": "Clear the global custom claim overlay (leaves /admin0/claims/mappings untouched).",
         "tags": [
           "Claims"
         ]
@@ -53824,6 +53824,71 @@
         "summary": "Replace the global custom claim overlay.",
         "tags": [
           "Claims"
+        ]
+      }
+    },
+    "/admin0/claims/mappings": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Mapping cleared."
+          }
+        },
+        "summary": "Clear the projection map (turns the feature off).",
+        "tags": [
+          "Claim Mappings"
+        ]
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current mapping."
+          }
+        },
+        "summary": "Read the request-parameter → claim-name projection map.",
+        "tags": [
+          "Claim Mappings"
+        ]
+      },
+      "put": {
+        "description": "Keys are token-request body parameters (form or JSON), values are the\nclaim names their values mint under. Only mapped parameters are\nprojected — the map is an allowlist, everything else in the request\nbody is ignored as before. A projected value overrides the global\n`/admin0/claims` overlay for that claim, so scenarios can keep a\nglobal default and still mint differently-scoped tokens per request.\n\nPUT replaces the whole map (no merge). If two parameters map to the\nsame claim and both appear in one token request, projection is\ndeterministic: parameters apply in lexicographic order, so the one\nthat sorts last wins. A repeated form parameter projects its first\nvalue; a repeated JSON key keeps the last (standard JSON decoding).\nA form parameter sent without a value is treated as omitted\n(RFC 6749 §3.2) and does not project; a JSON `\"\"` or `null` is an\nexplicit value and does.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "resource": "https://example.com/resource"
+              },
+              "schema": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Mapping updated."
+          },
+          "400": {
+            "description": "Body could not be parsed as a string-to-string object."
+          }
+        },
+        "summary": "Replace the request-parameter → claim-name projection map.",
+        "tags": [
+          "Claim Mappings"
         ]
       }
     },
@@ -54313,7 +54378,7 @@
             "description": "Reset complete."
           }
         },
-        "summary": "Wipe every store admin0 governs (expectations, claims, permissions, mfa-required).",
+        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events).",
         "tags": [
           "Expectations"
         ]
@@ -79709,6 +79774,10 @@
       "name": "Claims"
     },
     {
+      "description": "Request-parameter → claim-name projection. When a mapping is registered,\n`/oauth/token` copies the value of the named request-body parameter into\nthe minted access token under the mapped claim name — per request, with\nprecedence over the global claims overlay. Emulates Authorization\nServers that issue request-scoped tokens (e.g. an RFC 8707-style\n`resource` parameter stamped into a namespaced claim). Empty map\n(the default) turns the projection off.\n\nDespite living under the `/admin0/claims` path, this is an\nindependent store: `DELETE /admin0/claims` leaves the mappings in\nplace (and vice versa). `POST /admin0/reset` clears both.\n",
+      "name": "Claim Mappings"
+    },
+    {
       "description": "Per-audience RBAC permission overlays. Lets tests pre-seed the\npermissions a token carries for a given API identifier.\n",
       "name": "Permissions"
     },
@@ -79745,6 +79814,7 @@
         "Anomaly",
         "Attack Protection",
         "Branding",
+        "Claim Mappings",
         "Client Grants",
         "Clients",
         "Connection Profiles",

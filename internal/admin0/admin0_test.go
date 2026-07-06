@@ -26,11 +26,12 @@ func newRouter(d Deps) chi.Router {
 
 func newDeps() Deps {
 	return Deps{
-		Matches:     matches.NewStore(),
-		Claims:      claims.NewStore(),
-		Permissions: permissions.NewStore(),
-		MFA:         mfa.NewStore(),
-		Clock:       clock.NewControlled(),
+		Matches:       matches.NewStore(),
+		Claims:        claims.NewStore(),
+		ClaimMappings: claims.NewMappingStore(),
+		Permissions:   permissions.NewStore(),
+		MFA:           mfa.NewStore(),
+		Clock:         clock.NewControlled(),
 	}
 }
 
@@ -38,6 +39,7 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	d := newDeps()
 	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate, Response: matches.ResponseDef{Status: 200}})
 	d.Claims.Set(map[string]any{"role": "admin"})
+	d.ClaimMappings.Set(map[string]string{"resource": "https://example.com/resource"})
 	d.Permissions.Set("api", []string{"read:users"})
 	d.MFA.SetRequired(true)
 	d.Clock.Freeze(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -49,6 +51,7 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	assert.Equal(t, 204, w.Code)
 	assert.Empty(t, d.Matches.List())
 	assert.Empty(t, d.Claims.Get())
+	assert.Empty(t, d.ClaimMappings.Get())
 	assert.Empty(t, d.Permissions.All())
 	assert.False(t, d.MFA.IsRequired())
 	mode, _ := d.Clock.State()
@@ -390,6 +393,98 @@ func TestClaims_Put_InvalidJSON_400(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims", strings.NewReader(`not json`)))
 	assert.Equal(t, 400, w.Code)
+}
+
+func TestClaimMappings_PutGetDelete(t *testing.T) {
+	d := newDeps()
+	r := newRouter(d)
+
+	// PUT.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims/mappings", strings.NewReader(`{"resource":"https://example.com/resource"}`)))
+	require.Equal(t, 204, w.Code)
+	assert.Equal(t, "https://example.com/resource", d.ClaimMappings.Get()["resource"])
+
+	// GET.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/claims/mappings", nil))
+	require.Equal(t, 200, w.Code)
+	var got map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, map[string]string{"resource": "https://example.com/resource"}, got)
+
+	// DELETE.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("DELETE", "/admin0/claims/mappings", nil))
+	require.Equal(t, 204, w.Code)
+	assert.Empty(t, d.ClaimMappings.Get())
+}
+
+// TestClaimMappings_IndependentOfClaims pins the containment caveat the
+// nested path invites: /admin0/claims and /admin0/claims/mappings are
+// separate stores. Deleting one must leave the other intact; only
+// /admin0/reset clears both (covered by TestReset_WipesAllMatches).
+func TestClaimMappings_IndependentOfClaims(t *testing.T) {
+	d := newDeps()
+	d.Claims.Set(map[string]any{"role": "admin"})
+	d.ClaimMappings.Set(map[string]string{"resource": "https://example.com/resource"})
+	r := newRouter(d)
+
+	// DELETE /admin0/claims → mappings survive.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("DELETE", "/admin0/claims", nil))
+	require.Equal(t, 204, w.Code)
+	assert.Empty(t, d.Claims.Get())
+	assert.Equal(t, "https://example.com/resource", d.ClaimMappings.Get()["resource"],
+		"deleting the claims overlay must not clear the mappings underneath the path")
+
+	// Re-seed claims; DELETE /admin0/claims/mappings → claims survive.
+	d.Claims.Set(map[string]any{"role": "admin"})
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("DELETE", "/admin0/claims/mappings", nil))
+	require.Equal(t, 204, w.Code)
+	assert.Empty(t, d.ClaimMappings.Get())
+	assert.Equal(t, "admin", d.Claims.Get()["role"],
+		"deleting the mappings must not clear the claims overlay")
+}
+
+func TestClaimMappings_Put_InvalidBody_400(t *testing.T) {
+	d := newDeps()
+	r := newRouter(d)
+
+	// Not JSON at all.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims/mappings", strings.NewReader(`not json`)))
+	assert.Equal(t, 400, w.Code)
+
+	// Valid JSON but not string-to-string.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims/mappings", strings.NewReader(`{"resource":42}`)))
+	assert.Equal(t, 400, w.Code)
+}
+
+// TestClaimMappings_MountWithoutStore_DefaultsEmpty pins Mount's
+// off-by-default safety net: partial-Deps mounts (the norm in tests —
+// see events_test.go, expectations_test.go) must serve the mapping
+// routes as "feature off" instead of panicking on a nil store.
+func TestClaimMappings_MountWithoutStore_DefaultsEmpty(t *testing.T) {
+	r := newRouter(Deps{}) // No stores wired at all.
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/claims/mappings", nil))
+	require.Equal(t, 200, w.Code)
+	assert.JSONEq(t, `{}`, w.Body.String())
+
+	// The defaulted store is fully functional, not just non-panicking.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("PUT", "/admin0/claims/mappings",
+		strings.NewReader(`{"resource":"https://example.com/resource"}`)))
+	require.Equal(t, 204, w.Code)
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/admin0/claims/mappings", nil))
+	require.Equal(t, 200, w.Code)
+	assert.JSONEq(t, `{"resource":"https://example.com/resource"}`, w.Body.String())
 }
 
 func TestPermissions_PutGetDeletePerAudience(t *testing.T) {

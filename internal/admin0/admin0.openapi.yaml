@@ -7,6 +7,19 @@ tags:
     description: |
       Global custom-claim overlay. Claims set here are merged into every token
       the mock mints, so tests can assert on claims without a real rule/action.
+  - name: Claim Mappings
+    description: |
+      Request-parameter → claim-name projection. When a mapping is registered,
+      `/oauth/token` copies the value of the named request-body parameter into
+      the minted access token under the mapped claim name — per request, with
+      precedence over the global claims overlay. Emulates Authorization
+      Servers that issue request-scoped tokens (e.g. an RFC 8707-style
+      `resource` parameter stamped into a namespaced claim). Empty map
+      (the default) turns the projection off.
+
+      Despite living under the `/admin0/claims` path, this is an
+      independent store: `DELETE /admin0/claims` leaves the mappings in
+      place (and vice versa). `POST /admin0/reset` clears both.
   - name: Permissions
     description: |
       Per-audience RBAC permission overlays. Lets tests pre-seed the
@@ -43,7 +56,7 @@ paths:
   /admin0/reset:
     post:
       tags: [Expectations]
-      summary: Wipe every store admin0 governs (expectations, claims, permissions, mfa-required).
+      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events).
       responses:
         "204": { description: Reset complete. }
   /admin0/expectations:
@@ -131,9 +144,57 @@ paths:
         "204": { description: Claims updated. }
     delete:
       tags: [Claims]
-      summary: Clear the global custom claim overlay.
+      summary: Clear the global custom claim overlay (leaves /admin0/claims/mappings untouched).
       responses:
         "204": { description: Claims cleared. }
+  /admin0/claims/mappings:
+    get:
+      tags: ["Claim Mappings"]
+      summary: Read the request-parameter → claim-name projection map.
+      responses:
+        "200":
+          description: Current mapping.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: string }
+    put:
+      tags: ["Claim Mappings"]
+      summary: Replace the request-parameter → claim-name projection map.
+      description: |
+        Keys are token-request body parameters (form or JSON), values are the
+        claim names their values mint under. Only mapped parameters are
+        projected — the map is an allowlist, everything else in the request
+        body is ignored as before. A projected value overrides the global
+        `/admin0/claims` overlay for that claim, so scenarios can keep a
+        global default and still mint differently-scoped tokens per request.
+
+        PUT replaces the whole map (no merge). If two parameters map to the
+        same claim and both appear in one token request, projection is
+        deterministic: parameters apply in lexicographic order, so the one
+        that sorts last wins. A repeated form parameter projects its first
+        value; a repeated JSON key keeps the last (standard JSON decoding).
+        A form parameter sent without a value is treated as omitted
+        (RFC 6749 §3.2) and does not project; a JSON `""` or `null` is an
+        explicit value and does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: { type: string }
+            example:
+              resource: https://example.com/resource
+      responses:
+        "204": { description: Mapping updated. }
+        "400": { description: Body could not be parsed as a string-to-string object. }
+    delete:
+      tags: ["Claim Mappings"]
+      summary: Clear the projection map (turns the feature off).
+      responses:
+        "204": { description: Mapping cleared. }
   /admin0/permissions:
     get:
       tags: [Permissions]

@@ -24,8 +24,9 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │   /readyz                                   readiness (same as /healthz) │
 │                                                                          │
 │   /admin0/{reset, expectations, claims,      control plane (no bearer)    │
-│            permissions[/{audience}],        - wipes / inspects / shapes  │
-│            mfa-required}                    runtime state                │
+│            claims/mappings,                 - wipes / inspects / shapes  │
+│            permissions[/{audience}],        runtime state                │
+│            mfa-required}                                                 │
 │                                                                          │
 │   /.well-known/jwks.json                    JWKS publication             │
 │   /.well-known/openid-configuration         OIDC discovery               │
@@ -133,7 +134,7 @@ The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.
 | Store | Owns | Mutated by | Consulted by |
 |---|---|---|---|
 | [`internal/matches/`](../internal/matches/) | Ordered list of `Expectation` records per `(method, path)` key; each `Expectation` is an optional `RequestMatcher` (subset-matched `query` + `body`) plus a `ResponseDef` (`status`, `headers`, `body`). `Find` applies a 4-tier precedence: exact-path + matcher, exact-path + catch-all, template-path + matcher, template-path + catch-all — newest-wins within each tier. | `POST /admin0/expectations`, `DELETE /admin0/expectations`, `POST /admin0/reset` | `GenericHandler` |
-| [`internal/claims/`](../internal/claims/) | Per-process map of custom JWT claims | `PUT/DELETE /admin0/claims`, `POST /admin0/reset` | `TokenHandler.augmentExtra`, `PasswordlessVerifyHandler` |
+| [`internal/claims/`](../internal/claims/) | Per-process map of custom JWT claims (`Store`), plus the request-parameter → claim-name projection map (`MappingStore`) | `PUT/DELETE /admin0/claims`, `PUT/DELETE /admin0/claims/mappings`, `POST /admin0/reset` | `TokenHandler.augmentExtra`, `PasswordlessVerifyHandler` (Store only) |
 | [`internal/permissions/`](../internal/permissions/) | `map[audience] → []permission` for RBAC claim injection | `PUT/DELETE /admin0/permissions[/{audience}]`, `POST /admin0/reset` | `TokenHandler.augmentExtra` (looks up by audience), `PasswordlessVerifyHandler` |
 | [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | (none) |
 | [`internal/mfa/`](../internal/mfa/) | `mfa_token → Context` with 10-min TTL + atomic "required" flag | `PUT /admin0/mfa-required`, `POST /admin0/reset`, `TokenHandler.requireMFA` | `respondPassword`, `respondPasswordRealm`, `respondMFA*` |
@@ -160,12 +161,13 @@ When `/oauth/token` mints a token, the payload is built in this order, **last wr
    - `azp` (client_id)
    - `gty` (grant type, e.g. `client-credentials`, `password-realm`, `mfa-otp`)
 2. **`permissions` claim**: added if `permissions.Store.Get(audience)` returns a non-empty slice. Skipped silently otherwise.
-3. **Custom claims** from `claims.Store`: merged in. **These overwrite everything above.** Tests can override `gty`, `azp`, `permissions`, anything.
+3. **Custom claims** from `claims.Store`: merged in. These overwrite everything above. Tests can override `gty`, `azp`, `permissions`, anything.
+4. **Mapped request parameters** from `claims.MappingStore` (`PUT /admin0/claims/mappings`): each allowlisted token-request body parameter present in the request is projected under its mapped claim name. **These take final precedence** — a per-request value beats even the custom-claim overlay, so one scenario can hold a global default and still mint differently-scoped tokens per request. Parameters apply in lexicographic order, keeping same-claim collisions deterministic.
 
 All of this is encapsulated in `TokenHandler.augmentExtra`:
 
 ```go
-func (h *TokenHandler) augmentExtra(extra map[string]any, audience string) map[string]any {
+func (h *TokenHandler) augmentExtra(extra map[string]any, audience string, params map[string]any) map[string]any {
     if extra == nil {
         extra = make(map[string]any)
     }
@@ -176,6 +178,9 @@ func (h *TokenHandler) augmentExtra(extra map[string]any, audience string) map[s
     }
     if h.Claims != nil {
         h.Claims.MergeInto(extra)
+    }
+    if h.ClaimMappings != nil {
+        h.ClaimMappings.Project(params, extra)
     }
     return extra
 }

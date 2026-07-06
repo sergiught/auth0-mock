@@ -15,6 +15,14 @@ import (
 // t.Cleanup.
 type ClaimsClient struct {
 	c *Client
+
+	// Mappings is the typed entry point for /admin0/claims/mappings —
+	// the request-parameter → claim-name map /oauth/token projects into
+	// minted tokens, per request, with precedence over the global claim
+	// map this client owns. The two stores are independent: Clear (or
+	// DELETE /admin0/claims) leaves mappings in place; Client.Reset
+	// wipes both.
+	Mappings *ClaimMappingsClient
 }
 
 // Get returns the current custom-claim map. An empty map (not nil) is

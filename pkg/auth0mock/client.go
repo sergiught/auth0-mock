@@ -33,6 +33,7 @@ type Client struct {
 
 	// Claims is the typed entry point for /admin0/claims — the
 	// per-process custom-claim map merged into every minted token.
+	// Claims.Mappings reaches the /admin0/claims/mappings projection map.
 	Claims *ClaimsClient
 
 	// Permissions is the typed entry point for /admin0/permissions —
@@ -251,7 +252,7 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 		opt(c)
 	}
 	c.Expectations = &ExpectationsClient{c: c}
-	c.Claims = &ClaimsClient{c: c}
+	c.Claims = &ClaimsClient{c: c, Mappings: &ClaimMappingsClient{c: c}}
 	c.Permissions = &PermissionsClient{c: c}
 	c.MFA = &MFAClient{c: c}
 	c.Clock = &ClockClient{c: c}

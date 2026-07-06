@@ -30,6 +30,7 @@ type Deps struct {
 	Log                  zerolog.Logger
 	Store                *matches.Store
 	Claims               *claims.Store
+	ClaimMappings        *claims.MappingStore
 	Permissions          *permissions.Store
 	PKCE                 *pkce.Store
 	MFA                  *mfa.Store
@@ -104,14 +105,23 @@ func New(d Deps) (http.Handler, error) {
 		return nil, fmt.Errorf("events hub: %w", err)
 	}
 
+	// Claim mappings are off-by-default (empty map = feature off), so a
+	// caller that never heard of the store shouldn't have to wire one for
+	// the /admin0/claims/mappings routes to be safe to hit. Default it
+	// here rather than nil-guarding in the handlers.
+	if d.ClaimMappings == nil {
+		d.ClaimMappings = claims.NewMappingStore()
+	}
+
 	admin0.Mount(r, admin0.Deps{
-		Matches:     d.Store,
-		Claims:      d.Claims,
-		Permissions: d.Permissions,
-		MFA:         d.MFA,
-		Validator:   d.Validator,
-		Clock:       d.Clock,
-		Events:      hub,
+		Matches:       d.Store,
+		Claims:        d.Claims,
+		ClaimMappings: d.ClaimMappings,
+		Permissions:   d.Permissions,
+		MFA:           d.MFA,
+		Validator:     d.Validator,
+		Clock:         d.Clock,
+		Events:        hub,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {
@@ -125,6 +135,7 @@ func New(d Deps) (http.Handler, error) {
 		DefaultAudience:              d.DefaultAudience,
 		Log:                          d.Log,
 		Claims:                       d.Claims,
+		ClaimMappings:                d.ClaimMappings,
 		Permissions:                  d.Permissions,
 		PKCE:                         d.PKCE,
 		MFA:                          d.MFA,
