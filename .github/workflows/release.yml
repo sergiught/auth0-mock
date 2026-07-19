@@ -34,7 +34,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name:        ${{ steps.release.outputs.tag_name }}
     steps:
-      # googleapis/release-please-action v4.1.3
+      # googleapis/release-please-action v5.0.0
       #
       # Uses RELEASE_PLEASE_TOKEN (a fine-grained PAT with Contents +
       # Pull-requests write) rather than the default GITHUB_TOKEN. GitHub
@@ -43,7 +43,7 @@ jobs:
       # PR opened with the default token gets no CI checks. Using a PAT
       # makes the PR look like it came from a real user, so ci.yml fires
       # normally.
-      - uses: googleapis/release-please-action@cc61a07e2da466bebbc19b3a7dd01d6aecb20d1e
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7
         id: release
         with:
           token:         ${{ secrets.RELEASE_PLEASE_TOKEN }}
@@ -89,18 +89,20 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      # docker/setup-qemu-action v3.2.0 — enables arm64 build on amd64 runner
-      - uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf
+      # docker/setup-qemu-action v4.2.0 — enables arm64 build on amd64 runner
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8
         with:
           platforms: linux/amd64,linux/arm64
 
-      # docker/setup-buildx-action v3.7.1
-      - uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
+      # docker/setup-buildx-action v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
 
-      # sigstore/cosign-installer v3.7.0 — keyless Docker image signing via the
+      # sigstore/cosign-installer v4.1.2 — keyless Docker image signing via the
       # workflow's OIDC token. Goreleaser invokes `cosign sign` per the
-      # docker_signs block in .goreleaser.yaml.
-      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da
+      # docker_signs block in .goreleaser.yaml. Installer v4 is required for
+      # Cosign v3+, but still installs the pinned v2.x below; the cosign v3
+      # signing-CLI migration is intentionally left for a separate change.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
         with:
           cosign-release: 'v2.4.1'
 
@@ -111,7 +113,7 @@ jobs:
         with:
           syft-version: 'v1.18.1'
 
-      # docker/login-action v3.3.0
+      # docker/login-action v4.4.0
       # Gated on DOCKERHUB_USERNAME so first-release / fork runs without
       # Docker Hub creds publish to GHCR only instead of aborting the
       # whole workflow when docker-login fails fast on empty creds.
@@ -119,21 +121,21 @@ jobs:
       # the login was skipped — acceptable for a GHCR-only release.
       - name: log in to Docker Hub
         if: ${{ env.DOCKERHUB_USERNAME != '' }}
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
 
       - name: log in to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # goreleaser/goreleaser-action v6.1.0
+      # goreleaser/goreleaser-action v7.2.3
       - name: run goreleaser
-        uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
         with:
           distribution: goreleaser
           version: ${{ env.GORELEASER_VERSION }}
