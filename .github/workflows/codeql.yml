@@ -31,25 +31,24 @@ jobs:
       contents: read
       security-events: write   # upload code-scanning results
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
           cache: true
 
-      # github/codeql-action v3 — pinned to the v3 tag head SHA at the time
-      # of writing. Bump via Renovate / dependabot when a new query release
-      # ships.
+      # github/codeql-action v4.37.1 — pinned to the tag's commit SHA. Bump
+      # via Renovate / dependabot when a new query release ships.
       - name: initialize codeql
-        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57
+        uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a
         with:
           languages: go
           queries: security-and-quality
 
       - name: autobuild
-        uses: github/codeql-action/autobuild@03e4368ac7daa2bd82b3e85262f3bf87ee112f57
+        uses: github/codeql-action/autobuild@7188fc363630916deb702c7fdcf4e481b751f97a
 
       - name: analyze
-        uses: github/codeql-action/analyze@03e4368ac7daa2bd82b3e85262f3bf87ee112f57
+        uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a
         with:
           category: '/language:go'
