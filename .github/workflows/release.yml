@@ -74,7 +74,7 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           fetch-depth: 0   # full history so goreleaser can compute ldflag values
@@ -84,7 +84,7 @@ jobs:
           # token explicitly via env.
           persist-credentials: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -104,10 +104,10 @@ jobs:
         with:
           cosign-release: 'v2.4.1'
 
-      # anchore/sbom-action/download-syft v0.17.7 — syft is required on PATH so
+      # anchore/sbom-action/download-syft v0.24.0 — syft is required on PATH so
       # the sboms block in .goreleaser.yaml can generate SPDX-JSON SBOMs for
       # each release archive.
-      - uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610
         with:
           syft-version: 'v1.18.1'
 
