@@ -9,6 +9,11 @@ permissions:
   contents: read
 
 env:
+  # Minor-level pin: every setup-go step below pairs this with `check-latest:
+  # true` so the newest 1.26.x is resolved fresh. Without check-latest, setup-go
+  # reuses whatever 1.26.x the runner image happens to have cached, which lags
+  # the current patch release — that is how CI ended up building on a Go with
+  # known stdlib CVEs while govulncheck (correctly) failed every PR.
   GO_VERSION: '1.26'
   GOLANGCI_LINT_VERSION: 'v2.12.2'
 
@@ -25,6 +30,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
       # golangci/golangci-lint-action v9.3.0
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
@@ -58,6 +64,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
           cache: true
       - name: make test-cover
         run: make test-cover
@@ -80,6 +87,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
       - name: make test-features-cover
         # GODOG_FORMAT lets the suite emit pretty (for log readability)
@@ -113,6 +121,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
       - name: make vuln
         run: make vuln
