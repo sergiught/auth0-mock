@@ -1,11 +1,11 @@
-# syntax=docker/dockerfile:1.25
+# syntax=docker/dockerfile:1.26
 #
 # Local-dev Dockerfile for auth0-mock — builds from source with the Go
 # toolchain so `docker compose up --build` is fast on every source edit.
 # For published images the release pipeline uses the slimmer
 # `Dockerfile.release`, which is fed a pre-built binary by goreleaser.
 
-FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
+FROM golang:1.26-alpine@sha256:70b46548e42db77e0966aaf3619fd068734dc6c77584d526b91126504fd95816 AS build
 WORKDIR /src
 
 # Cache deps separately from source so a code-only change doesn't re-download.
