@@ -18,6 +18,12 @@
   },
   "packageRules": [
     {
+      "description": "Never bump the go directive in go.mod. It is the minimum Go a consumer needs to import this module, so it stays at the .0 of the floor minor (go 1.26.0) to keep the library importable on any 1.26.x. Raise it by hand only when adopting a language or stdlib feature that requires it. CI still builds on the newest patch via check-latest in the workflows.",
+      "matchManagers": ["gomod"],
+      "matchDatasources": ["golang-version"],
+      "enabled": false
+    },
+    {
       "description": "Group all Go minor + patch updates into one PR",
       "matchManagers": ["gomod"],
       "matchUpdateTypes": ["minor", "patch"],

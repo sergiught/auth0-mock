@@ -1,6 +1,6 @@
 module github.com/sergiught/auth0-mock/examples/consumer
 
-go 1.26.5
+go 1.26.0
 
 require (
 	github.com/MicahParks/jwkset v0.11.0

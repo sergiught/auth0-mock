@@ -1,6 +1,6 @@
 module github.com/sergiught/auth0-mock
 
-go 1.26.6
+go 1.26.0
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.1

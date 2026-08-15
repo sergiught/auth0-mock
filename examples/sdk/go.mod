@@ -1,6 +1,6 @@
 module github.com/sergiught/auth0-mock/examples/sdk
 
-go 1.26.5
+go 1.26.0
 
 require github.com/sergiught/auth0-mock v0.231.0
 
