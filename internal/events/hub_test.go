@@ -949,7 +949,9 @@ func TestHub_Expire_BeforeKeepsCursorAndNewer(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
-	assert.Equal(t, 1, h.ExpireBefore("evt-2"))
+	dropped, found := h.ExpireBefore("evt-2")
+	assert.Equal(t, 1, dropped)
+	assert.True(t, found)
 
 	status, body := resumeStatus(t, srv, "evt-1")
 	assert.Equal(t, http.StatusGone, status)
@@ -977,7 +979,9 @@ func TestHub_Expire_UnknownCursorIsNoOp(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2")
-	assert.Equal(t, 0, h.ExpireBefore("never-seen"))
+	dropped, found := h.ExpireBefore("never-seen")
+	assert.Equal(t, 0, dropped)
+	assert.False(t, found, "the handler needs this to answer 404 rather than a 0-drop success")
 
 	status, _ := resumeStatus(t, srv, "evt-1")
 	assert.Equal(t, http.StatusOK, status, "an unknown cursor must not age out the buffer")
@@ -1036,8 +1040,14 @@ func TestHub_Expire_DisabledBufferReportsZero(t *testing.T) {
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
 
 	assert.Equal(t, 0, h.ExpireAll())
-	assert.Equal(t, 0, h.ExpireBefore("evt-1"))
-	assert.Equal(t, 0, h.ExpireBefore(""), "an empty cursor is never expire-everything")
+
+	dropped, found := h.ExpireBefore("evt-1")
+	assert.Equal(t, 0, dropped)
+	assert.False(t, found, "with no buffer at all, no cursor is in it")
+
+	dropped, found = h.ExpireBefore("")
+	assert.Equal(t, 0, dropped, "an empty cursor is never expire-everything")
+	assert.False(t, found)
 }
 
 // The delicate part of the expiry feature is lock scope: neither Replay
@@ -1093,7 +1103,7 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 				if (n+i)%2 == 0 {
 					h.ExpireAll()
 				} else {
-					h.ExpireBefore(fmt.Sprintf("evt_%016x", n))
+					_, _ = h.ExpireBefore(fmt.Sprintf("evt_%016x", n))
 				}
 				expires.Add(1)
 				time.Sleep(time.Millisecond)
@@ -1171,7 +1181,10 @@ func TestHub_Expire_ClosedHubReportsZero(t *testing.T) {
 	require.NoError(t, h.Shutdown(context.Background()))
 
 	assert.Equal(t, 0, h.ExpireAll())
-	assert.Equal(t, 0, h.ExpireBefore("evt-2"))
+
+	dropped, found := h.ExpireBefore("evt-2")
+	assert.Equal(t, 0, dropped)
+	assert.False(t, found, "a torn-down replayer holds nothing, cursors included")
 }
 
 // EVENTS_REPLAY_BUFFER=1 means one event retained. It used to be
@@ -1209,7 +1222,9 @@ func TestHub_Expire_BeforeThenFromTimestampResumesSurvivingWindow(t *testing.T) 
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
-	require.Equal(t, 1, h.ExpireBefore("evt-2"))
+	dropped, found := h.ExpireBefore("evt-2")
+	require.Equal(t, 1, dropped)
+	require.True(t, found)
 
 	// Every surviving event postdates this instant, so IDBefore finds
 	// nothing and the handler falls back to the oldest survivor.

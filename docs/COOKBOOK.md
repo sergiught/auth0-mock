@@ -516,8 +516,13 @@ unrecoverable-cursor-loss path. `ExpireEvents` expires every buffered
 cursor, so the next reconnect presenting one gets `410 event_aged_out`;
 `ExpireEventsBefore` expires only what is older than the cursor you
 name, leaving that cursor and everything after it replayable. Both
-report how many cursors they dropped, and both are idempotent — a
-cursor the buffer no longer holds expires nothing.
+report how many cursors they dropped.
+
+Calling `ExpireEventsBefore` twice with the same cursor is safe — the
+boundary survives its own expiry, so the second call drops 0. A cursor
+the buffer doesn't hold at all is an error (`404 cursor_not_found`), so
+a mistyped offset fails at the expire call rather than at the reconnect
+several steps later.
 
 ```go
 auth0mocktest.MustPush(t, c, `{"type":"user.created","offset":"1", ...}`)
@@ -543,6 +548,7 @@ are already streaming keep receiving events.
 | 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339. |
 | 400 | `invalid_before` | `POST /admin0/events/expire?before=` was present but empty. Omit the parameter to expire the whole buffer — an empty value is refused rather than treated as expire-everything. |
 | 400 | `invalid_query` | `POST /admin0/events/expire` got an unparseable query string, a parameter other than `before`, or a repeated `before`. Omitting `before` means "expire everything", so a typo can't be allowed to look like omission. |
+| 404 | `cursor_not_found` | `POST /admin0/events/expire?before=` named a cursor the replay buffer doesn't hold — mistyped, already evicted, or the mock runs with `EVENTS_REPLAY_BUFFER=0`. Reported rather than folded into a `200` with `expired: 0`, which couldn't say whether nothing was older or the cursor was never there. |
 | 410 | `event_aged_out` | `Last-Event-ID` / `?from` references an event the ring buffer no longer holds — through natural eviction or `POST /admin0/events/expire`. A `?from_timestamp` resolves against the buffer instead, so it joins live rather than 410-ing. |
 | 401 | _bearer envelope_ | No / invalid bearer on `/api/v2/events`. |
 

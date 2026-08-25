@@ -166,13 +166,18 @@ Feature: GET /api/v2/events Server-Sent Events
     Then I receive a 410 response
     And the response body contains "event_aged_out"
 
-  Scenario: Expiring an unknown cursor is a no-op
+  # A mistyped cursor must fail here rather than be reported as a
+  # successful expiry that dropped nothing — otherwise the scenario
+  # carries on and fails several steps later, on a reconnect that came
+  # back 200 where it asserted 410.
+  Scenario: Expiring an unknown cursor is rejected and leaves the buffer intact
     When I push an event:
       """
       {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireunknown001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
-    And I expire the events replay buffer before "999"
-    Then the response JSON path "expired" equals "0"
+    And I attempt to expire the events replay buffer before "999"
+    Then I receive a 404 response
+    And the response body contains "cursor_not_found"
     When I push an event:
       """
       {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireunknown002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}

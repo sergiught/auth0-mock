@@ -503,8 +503,12 @@ paths:
         alone, and no other mock state is touched. Only future resumes
         are affected.
 
-        Idempotent — expiring a cursor the buffer no longer holds (or
-        never held) drops nothing and reports `0`.
+        Repeating a `?before=` call is safe: the boundary cursor
+        survives its own expiry, so the second call finds it and reports
+        `0`. A cursor the buffer does not hold is `404
+        cursor_not_found` rather than a `200` that expired nothing — a
+        mistyped offset should fail here, not several steps later on the
+        reconnect that came back `200` where the test asserted `410`.
       parameters:
         - name: before
           in: query
@@ -531,12 +535,12 @@ paths:
                   expired:
                     type: integer
                     description: |
-                      How many cursors this call dropped. `0` means
-                      nothing matched: the buffer held nothing older
-                      than `before`, `before` was never in it, or
-                      replay is disabled entirely
-                      (`EVENTS_REPLAY_BUFFER=0`, where no cursor is
-                      resumable in the first place).
+                      How many cursors this call dropped. With `before`,
+                      `0` means the buffer held nothing older than it —
+                      a `before` the buffer does not hold is a `404`
+                      instead. Without `before`, `0` means the buffer
+                      was already empty, which includes a mock started
+                      with `EVENTS_REPLAY_BUFFER=0`.
         "400":
           description: |
             The request named a cursor but the mock could not act on it
@@ -551,6 +555,17 @@ paths:
             otherwise be indistinguishable from omission and silently
             expire the whole buffer. Anything ambiguous is refused
             rather than guessed at.
+        "404":
+          description: |
+            `errorCode: "cursor_not_found"` — `?before=` named a cursor
+            the replay buffer does not hold. It was mistyped, it has
+            already been evicted or expired, or the mock runs with
+            `EVENTS_REPLAY_BUFFER=0` and holds no cursors at all.
+
+            Reported rather than folded into a `200` with `expired: 0`,
+            which cannot say whether nothing was older than the cursor
+            or the cursor was never there. Expiring the whole buffer
+            (no `?before=`) has no cursor to look up and never 404s.
 components:
   schemas:
     Expectation:

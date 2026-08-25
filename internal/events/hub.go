@@ -375,7 +375,10 @@ func (h *Hub) Reset(ctx context.Context) error {
 //
 // Both report 0 on a closed hub rather than erroring as Publish does:
 // nothing was expired, and the hub only reaches that state during
-// shutdown.
+// shutdown. ExpireBefore additionally reports the cursor as not found
+// there and when replay is disabled, which is literally true — there is
+// no buffer holding it — and gives the endpoint a 404 to answer with
+// instead of a success that expired nothing.
 func (h *Hub) ExpireAll() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -386,19 +389,24 @@ func (h *Hub) ExpireAll() int {
 }
 
 // ExpireBefore ages out every cursor older than cursor, leaving cursor
-// itself — and everything after it — resumable, and reports how many it
-// dropped. A cursor the buffer doesn't hold drops nothing, so repeat
-// calls are idempotent. Returns 0 when replay is disabled.
+// itself — and everything after it — resumable. It reports how many it
+// dropped and whether the buffer held cursor at all; a cursor it
+// doesn't hold drops nothing. Found is false when replay is disabled.
+//
+// Repeating the call is therefore safe but not silent: the second one
+// drops 0 and reports found, because cursor is still buffered — it is
+// the boundary, not one of the casualties. It only stops being found
+// once something else evicts it.
 //
 // An empty cursor drops nothing rather than falling through to
 // expire-everything: ExpireAll is how you say that, all the way down to
 // the buffer, so no caller can widen the blast radius by passing
 // through an unset value.
-func (h *Hub) ExpireBefore(cursor string) int {
+func (h *Hub) ExpireBefore(cursor string) (dropped int, found bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.closed || h.replayer == nil {
-		return 0
+		return 0, false
 	}
 	return h.replayer.ExpireBefore(cursor)
 }

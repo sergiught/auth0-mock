@@ -35,8 +35,11 @@ type EventsPublisher interface {
 	// narrow counterpart to Reset: they age out replay cursors and
 	// nothing else. Two methods rather than one with an empty-string
 	// sentinel, so "expire everything" can only ever be said on purpose.
+	// ExpireBefore's second return says whether the buffer held the
+	// cursor; the handler turns a false into 404 rather than a success
+	// that expired nothing.
 	ExpireAll() int
-	ExpireBefore(cursor string) int
+	ExpireBefore(cursor string) (dropped int, found bool)
 }
 
 // GetEventSubscribersHandler reports the SSE hub's live and
@@ -69,15 +72,21 @@ func (h *GetEventSubscribersHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 //
 // `?before=<cursor>` expires everything older than that cursor and
 // keeps the cursor itself resumable; without it the whole buffer goes.
-// A cursor the buffer doesn't hold expires nothing, so the endpoint is
-// idempotent. Subscribers that are already streaming are untouched —
-// expiry only affects future resumes.
+// Subscribers that are already streaming are untouched — expiry only
+// affects future resumes.
 //
 // Responds 200 with {"expired": <count>}: the number of cursors
-// dropped. Note it does NOT distinguish "nothing was older than that
-// cursor" from "that cursor was never in the buffer" — the buffer
-// reports 0 for both, and for a mock started with replay disabled. The
-// count says how much went, not why nothing did.
+// dropped. Repeating a `?before` call is safe and still answers 200 —
+// the boundary cursor survives its own expiry, so the second call finds
+// it and drops 0.
+//
+// A cursor the buffer doesn't hold is 404 / cursor_not_found rather
+// than a 200 that expired nothing, because {"expired": 0} cannot say
+// which of the two it meant. A test that mistypes an offset would
+// otherwise be told its expiry worked and fail several steps later, on
+// the reconnect that got 200 where it asserted 410. The same 404
+// answers when the mock was started with replay disabled: there is no
+// buffer holding that cursor either.
 type ExpireEventsHandler struct {
 	Events EventsPublisher
 }
@@ -140,7 +149,14 @@ func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			"invalid_before")
 		return
 	}
-	render.JSON(w, r, expireEventsResponse{Expired: h.Events.ExpireBefore(before)})
+	dropped, found := h.Events.ExpireBefore(before)
+	if !found {
+		httperr.WriteMgmt(w, http.StatusNotFound, "Not Found",
+			"before is not a cursor in the replay buffer: "+strconv.Quote(before),
+			"cursor_not_found")
+		return
+	}
+	render.JSON(w, r, expireEventsResponse{Expired: dropped})
 }
 
 // PostEventsHandler validates an incoming Auth0 event-stream envelope

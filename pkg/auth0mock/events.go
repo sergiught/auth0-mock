@@ -136,17 +136,23 @@ func (e *EventsClient) ExpireEvents(ctx context.Context) (int, error) {
 // replays the events that followed. Returns how many cursors it
 // dropped.
 //
-// Forgiving in the same way as ExpectationsClient.ClearOp: a cursor the
-// buffer no longer holds (or never held) expires nothing and reports 0
-// rather than erroring, so repeat calls are safe. That also means the
-// count cannot tell "nothing was older" from "never seen".
+// A cursor the buffer doesn't hold — mistyped, already evicted, or from
+// a mock started with replay disabled — returns *APIError with
+// StatusCode 404 and ErrorCode "cursor_not_found". The alternative, a 0
+// count, would report a mistyped offset as a successful expiry and let
+// the test fail somewhere unrelated: at the reconnect that came back 200
+// where it asserted 410.
+//
+// Repeating the call is still safe. The boundary cursor survives its own
+// expiry, so a second call with the same cursor finds it and drops 0.
 //
 // Cursor is resolved to its first copy in the buffer, the same entry a
 // resume from it would start at. Push unique offsets: with a duplicated
 // one, "older than cursor" means older than the earliest copy, so this
-// trims less than a caller holding the later copy expects. An empty cursor is
-// rejected — expiring the whole buffer is ExpireEvents' job, and it
-// should be spelled out rather than fallen into.
+// trims less than a caller holding the later copy expects. An empty
+// cursor is rejected client-side — expiring the whole buffer is
+// ExpireEvents' job, and it should be spelled out rather than fallen
+// into.
 func (e *EventsClient) ExpireEventsBefore(ctx context.Context, cursor string) (int, error) {
 	if cursor == "" {
 		return 0, errors.New("auth0mock: events: ExpireEventsBefore: cursor is required (use ExpireEvents to expire the whole buffer)")

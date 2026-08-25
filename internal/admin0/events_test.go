@@ -34,6 +34,10 @@ type captureHub struct {
 	// call; expireResult is what those calls report back.
 	expired      []string
 	expireResult int
+	// ExpireNotFound makes ExpireBefore report the cursor as absent, the
+	// input to the handler's 404. Negative so the zero value is the
+	// ordinary found case that most tests want.
+	expireNotFound bool
 }
 
 func (h *captureHub) ActiveSubscribers() int { return h.active }
@@ -62,7 +66,9 @@ const expireAllMarker = "\x00all"
 
 func (h *captureHub) ExpireAll() int { return h.record(expireAllMarker) }
 
-func (h *captureHub) ExpireBefore(cursor string) int { return h.record(cursor) }
+func (h *captureHub) ExpireBefore(cursor string) (int, bool) {
+	return h.record(cursor), !h.expireNotFound
+}
 
 func (h *captureHub) record(before string) int {
 	h.mu.Lock()
@@ -346,19 +352,41 @@ func TestPostAdmin0EventsExpire_BeforeCursor(t *testing.T) {
 	assert.Equal(t, []string{"8"}, hub.expired)
 }
 
-// Expiring a cursor the buffer never held is a no-op, reported as a
-// zero count rather than an error — that keeps the endpoint idempotent
-// for tests that call it from cleanup.
-func TestPostAdmin0EventsExpire_UnknownCursorReportsZero(t *testing.T) {
-	hub := &captureHub{expireResult: 0}
+// A cursor the buffer never held is 404, not a 200 that expired
+// nothing: {"expired":0} would read as success to a test that mistyped
+// an offset, which then fails much later on the reconnect it expected
+// to see 410.
+func TestPostAdmin0EventsExpire_UnknownCursorIsNotFound(t *testing.T) {
+	hub := &captureHub{expireNotFound: true}
 	r := newEventsRouter(t, hub)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?before=nope", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.JSONEq(t, `{"expired":0}`, rec.Body.String())
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"errorCode":"cursor_not_found"`)
+	assert.Contains(t, rec.Body.String(), `\"nope\"`,
+		"the rejected cursor is quoted back so a stray space or newline is visible")
+	assert.Equal(t, []string{"nope"}, hub.expired,
+		"the 404 comes from the hub's answer, not from a guess made before asking it")
+}
+
+// The boundary cursor survives its own expiry, so calling again with
+// the same cursor still finds it and drops 0. Cleanup paths that expire
+// twice must not start failing on the second call.
+func TestPostAdmin0EventsExpire_RepeatBeforeStillSucceeds(t *testing.T) {
+	hub := &captureHub{expireResult: 0}
+	r := newEventsRouter(t, hub)
+
+	for range 2 {
+		req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?before=8", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.JSONEq(t, `{"expired":0}`, rec.Body.String())
+	}
 }
 
 // Expiry is scoped to the replay buffer: it must not reach for the

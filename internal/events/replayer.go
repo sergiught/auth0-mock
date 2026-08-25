@@ -175,8 +175,7 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 // variable that happens to be empty must not be able to destroy the
 // buffer and report it as a success.
 //
-// Repeat calls are idempotent, and 0 does not distinguish "nothing was
-// older" from "never seen".
+// Repeat calls are idempotent: 0 means the buffer was already empty.
 //
 // The entries are really removed, messages included, so an id may be
 // reused afterwards: a test that expires the buffer and then renumbers
@@ -186,7 +185,10 @@ func (r *ringIndex) expireAll() int {
 }
 
 // expireBefore drops everything older than before, keeping before itself
-// resumable, and reports how many it dropped.
+// resumable. It reports how many it dropped and whether the buffer held
+// before at all. Both are needed: dropping 0 means either that nothing
+// was older than the cursor or that the cursor was never buffered, and
+// only found tells those apart.
 //
 // Before is resolved to its first copy, the same entry a resume from
 // that cursor would start at. If an offset is duplicated inside the
@@ -202,11 +204,15 @@ func (r *ringIndex) expireAll() int {
 // SET event id, so an entry could in principle be buffered under it,
 // and the whole point of splitting expireAll out is that no threaded-
 // through empty value can ever mean "expire everything".
-func (r *ringIndex) expireBefore(before string) int {
+func (r *ringIndex) expireBefore(before string) (dropped int, found bool) {
 	if before == "" {
-		return 0
+		return 0, false
 	}
-	return r.dropFront(r.firstIndex(before))
+	i := r.firstIndex(before)
+	if i < 0 {
+		return 0, false
+	}
+	return r.dropFront(i), true
 }
 
 // dropFront removes the first n entries and reports how many went. A
@@ -392,8 +398,9 @@ func (r *recordingReplayer) ExpireAll() int {
 }
 
 // ExpireBefore ages out cursors older than before, keeping before itself
-// resumable, and reports how many it dropped. See ringIndex.expireBefore.
-func (r *recordingReplayer) ExpireBefore(before string) int {
+// resumable. It reports how many it dropped and whether before was in
+// the buffer to begin with. See ringIndex.expireBefore.
+func (r *recordingReplayer) ExpireBefore(before string) (dropped int, found bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.idx.expireBefore(before)

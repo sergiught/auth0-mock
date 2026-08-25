@@ -436,6 +436,13 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		attemptExpireEventsRaw(c, "?before=")
 		return nil
 	})
+	// The "I expire" steps insist on a 200, which is what makes them
+	// useful as Given-style setup. Rejections need the attempt form so
+	// the scenario can assert on the status itself.
+	sc.Step(`^I attempt to expire the events replay buffer before "([^"]+)"$`, func(cursor string) error {
+		attemptExpireEventsRaw(c, "?before="+url.QueryEscape(cursor))
+		return nil
+	})
 
 	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
 		func(wantID string, seconds int) error {
