@@ -96,11 +96,16 @@ type expireEventsResponse struct {
 }
 
 // ExpireEvents ages out every cursor in the mock's replay buffer and
-// reports how many it dropped. Any subscriber that later resumes from
-// one of those cursors — via Last-Event-ID, ?from, or a ?from_timestamp
-// that resolves to one — gets 410 Gone with errorCode "event_aged_out",
-// exactly as real Auth0 does when a consumer's cursor falls out of the
-// retention window.
+// reports how many it dropped. A subscriber that later resumes from one
+// of those cursors — by Last-Event-ID or ?from — gets 410 Gone with
+// errorCode "event_aged_out", exactly as real Auth0 does when a
+// consumer's cursor falls out of the retention window.
+//
+// ?from_timestamp behaves differently, and deliberately so: it names an
+// instant rather than a cursor, so the mock resolves it against the
+// same index this call truncates. Once expired there is nothing left to
+// resolve against, and the subscriber joins live instead of getting a
+// 410 — it never presented a cursor of its own to reject.
 //
 // This is the deterministic way to test a consumer's cursor-loss
 // handling. The alternatives are worse: pushing past the buffer's

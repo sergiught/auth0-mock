@@ -53,6 +53,13 @@ func (h *captureHub) Reset(_ context.Context) error {
 	return nil
 }
 
+func (h *captureHub) ExpireBuffer(before string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.expired = append(h.expired, before)
+	return h.expireResult
+}
+
 func newEventsRouter(t *testing.T, pub admin0.EventsPublisher) chi.Router {
 	t.Helper()
 	s, err := spec.Load(api.ManagementOpenAPIJSON)
@@ -301,13 +308,6 @@ func TestReset_CallsEventsReset(t *testing.T) {
 	assert.Equal(t, 1, hub.resetCalls, "reset must drain SSE subscribers without destroying the hub")
 }
 
-func (h *captureHub) ExpireBuffer(before string) int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.expired = append(h.expired, before)
-	return h.expireResult
-}
-
 func TestPostAdmin0EventsExpire_ExpiresWholeBuffer(t *testing.T) {
 	hub := &captureHub{expireResult: 10}
 	r := newEventsRouter(t, hub)
@@ -361,4 +361,22 @@ func TestPostAdmin0EventsExpire_DoesNotReset(t *testing.T) {
 
 	assert.Zero(t, hub.resetCalls)
 	assert.Empty(t, hub.got)
+}
+
+// `?before=` with an empty value is not the same request as omitting
+// the parameter: a caller interpolating an unset shell variable means
+// to name a cursor, not to expire everything. Treating it as
+// expire-all is the footgun the SDK refuses at
+// ExpireEventsBefore; the HTTP surface has to refuse it too.
+func TestPostAdmin0EventsExpire_RejectsEmptyBefore(t *testing.T) {
+	hub := &captureHub{expireResult: 10}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?before=", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid_before")
+	assert.Empty(t, hub.expired, "nothing should have been expired")
 }

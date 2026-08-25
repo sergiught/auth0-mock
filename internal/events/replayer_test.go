@@ -202,3 +202,54 @@ func TestRecordingReplayer_Expire(t *testing.T) {
 	assert.Equal(t, 1, r.Expire(""))
 	assert.Empty(t, r.OldestID(), "an expired buffer has no oldest cursor to fall back to")
 }
+
+// captureWriter records every message a Replay call emits.
+type captureWriter struct{ sent []string }
+
+func (c *captureWriter) Send(m *sse.Message) error {
+	c.sent = append(c.sent, m.ID.String())
+	return nil
+}
+func (c *captureWriter) Flush() error { return nil }
+
+// Expiry truncates the index but leaves the messages in the inner
+// FiniteReplayer, so Replay has to consult the index itself. Without
+// that check, a subscribe racing a concurrent Expire (the gate in
+// Hub.Handler runs before Replay, not atomically with it) would be
+// served events the API has just declared aged out.
+func TestRecordingReplayer_Replay_RefusesExpiredCursor(t *testing.T) {
+	r, err := newRecordingReplayer(5, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"a", "b", "c"} {
+		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
+		require.NoError(t, err)
+	}
+	require.Equal(t, 3, r.Expire(""))
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("a"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Empty(t, w.sent, "an expired cursor must not replay, even though the inner buffer still holds the messages")
+}
+
+// The guard must not disturb the ordinary resume path.
+func TestRecordingReplayer_Replay_LiveCursorStillReplays(t *testing.T) {
+	r, err := newRecordingReplayer(5, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"a", "b", "c"} {
+		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
+		require.NoError(t, err)
+	}
+	require.Equal(t, 1, r.Expire("b"))
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("b"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Equal(t, []string{"c"}, w.sent)
+}

@@ -541,7 +541,7 @@ are already streaming keep receiving events.
 |---|---|---|
 | 400 | `invalid_event` | Schema violation. The `message` field lists each failed `/json/pointer: reason` on a single line. |
 | 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339. |
-| 410 | `event_aged_out` | `Last-Event-ID` / `?from` / resolved `?from_timestamp` references an event the ring buffer no longer holds — through natural eviction or `POST /admin0/events/expire`. |
+| 410 | `event_aged_out` | `Last-Event-ID` / `?from` references an event the ring buffer no longer holds — through natural eviction or `POST /admin0/events/expire`. A `?from_timestamp` resolves against the buffer instead, so it joins live rather than 410-ing. |
 | 401 | _bearer envelope_ | No / invalid bearer on `/api/v2/events`. |
 
 ## Use a Go test that boots the mock in-process

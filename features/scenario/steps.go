@@ -429,6 +429,12 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	sc.Step(`^I expire the events replay buffer before "([^"]+)"$`, func(cursor string) error {
 		return expireEvents(c, cursor)
 	})
+	// An empty ?before= can't be spelled through the step above — its
+	// regex needs a non-empty capture — and it is exactly the case the
+	// endpoint rejects, so it gets its own phrase.
+	sc.Step(`^I attempt to expire the events replay buffer with an empty before$`, func() error {
+		return attemptExpireEventsRaw(c, "?before=")
+	})
 
 	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
 		func(wantID string, seconds int) error {
@@ -485,12 +491,28 @@ func subscribeEvents(c *Context, query, header string, bearer, expect2xx bool) e
 // expireEvents POSTs /admin0/events/expire, optionally scoped to a
 // cursor via ?before=. The response is stashed in LastResp / LastBody
 // so a scenario can assert on the {"expired": N} count with the
-// standard "the response body contains" step.
+// `the response JSON path "expired" equals "N"` step. Don't reach for
+// "the response body contains" here — its regex can't hold the quotes
+// a JSON field needs, and a bare number matches any digit in the body.
 func expireEvents(c *Context, before string) error {
-	path := c.BaseURL + "/admin0/events/expire"
+	query := ""
 	if before != "" {
-		path += "?before=" + url.QueryEscape(before)
+		query = "?before=" + url.QueryEscape(before)
 	}
+	if err := attemptExpireEventsRaw(c, query); err != nil {
+		return err
+	}
+	if c.LastResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expire: status %d body %s", c.LastResp.StatusCode, string(c.LastBody))
+	}
+	return nil
+}
+
+// attemptExpireEventsRaw POSTs /admin0/events/expire with the query
+// string verbatim and records the response without asserting on the
+// status, so negative scenarios can check the 4xx themselves.
+func attemptExpireEventsRaw(c *Context, query string) error {
+	path := c.BaseURL + "/admin0/events/expire" + query
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, path, nil)
 	if err != nil {
 		return err
@@ -502,9 +524,6 @@ func expireEvents(c *Context, before string) error {
 	defer func() { _ = resp.Body.Close() }()
 	c.LastResp = resp
 	c.LastBody, _ = io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("expire: status %d body %s", resp.StatusCode, string(c.LastBody))
-	}
 	return nil
 }
 

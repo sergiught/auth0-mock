@@ -188,3 +188,14 @@ Feature: GET /api/v2/events Server-Sent Events
       {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirelive000001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
     Then the SSE stream delivers an event with id "0" within 3s
+
+  Scenario: An empty before parameter is rejected rather than expiring everything
+    When I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_emptybefore00001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I attempt to expire the events replay buffer with an empty before
+    Then I receive a 400 response
+    And the response body contains "invalid_before"
+    When I subscribe to /api/v2/events with query "?from=0"
+    Then the SSE stream delivers no event within 1s

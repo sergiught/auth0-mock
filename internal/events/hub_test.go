@@ -889,8 +889,8 @@ func TestHub_ConcurrentPushAndReset(t *testing.T) {
 	assert.Greater(t, resets.Load(), int64(0))
 }
 
-// publishSeq pushes n events with sequential ids ("evt-1"…) so expiry
-// tests have a buffer to age out.
+// publishSeq publishes one event per id, in order, so expiry tests have
+// a buffer to age out. The payload carries the position as "seq".
 func publishSeq(t *testing.T, h *events.Hub, ids ...string) {
 	t.Helper()
 	for i, id := range ids {
@@ -988,6 +988,10 @@ func TestHub_ExpireBuffer_LeavesConnectedSubscribersStreaming(t *testing.T) {
 
 	r, cancel := subscribe(t, srv, "")
 	defer cancel()
+	// Give the subscription a moment to register with Joe: subscribe()
+	// returns once the :connected frame lands, which the handler writes
+	// before it delegates to the server.
+	time.Sleep(50 * time.Millisecond)
 
 	publishSeq(t, h, "evt-1")
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
@@ -1014,6 +1018,7 @@ func TestHub_ExpireBuffer_FromTimestampJoinsLive(t *testing.T) {
 
 	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
 	defer cancel()
+	time.Sleep(50 * time.Millisecond) // Let the subscription register; see above.
 
 	publishSeq(t, h, "evt-3")
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")

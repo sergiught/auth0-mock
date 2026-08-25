@@ -77,7 +77,19 @@ type expireEventsResponse struct {
 }
 
 func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	before := r.URL.Query().Get("before")
+	q := r.URL.Query()
+	before := q.Get("before")
+	// `?before=` present but empty is a different request from omitting
+	// it: a caller interpolating an unset variable meant to name a
+	// cursor, not to expire the whole buffer. Reject it rather than
+	// silently widening the blast radius — the same guard the SDK's
+	// ExpireEventsBefore applies.
+	if q.Has("before") && before == "" {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"before must not be empty; omit the parameter to expire the whole buffer",
+			"invalid_before")
+		return
+	}
 	render.JSON(w, r, expireEventsResponse{Expired: h.Events.ExpireBuffer(before)})
 }
 

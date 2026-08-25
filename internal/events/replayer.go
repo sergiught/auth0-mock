@@ -179,6 +179,21 @@ func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message
 // joins live, which is observationally indistinguishable from a
 // legitimate "buffer was empty for this ID" outcome.
 func (r *recordingReplayer) Replay(sub sse.Subscription) error {
+	// Expire truncates the index but cannot reach into the inner
+	// FiniteReplayer, which still holds the messages — so an expired
+	// ID that gets this far would be replayed. Hub.Handler's 410 gate
+	// runs before Subscribe, not atomically with it, so a subscribe
+	// racing a concurrent Expire lands exactly here. Re-check against
+	// the index and replay nothing, which is the same outcome the
+	// caller already gets for an ID the buffer never held.
+	if sub.LastEventID.IsSet() {
+		r.mu.RLock()
+		known := r.idx.has(sub.LastEventID.String())
+		r.mu.RUnlock()
+		if !known {
+			return nil
+		}
+	}
 	return r.inner.Replay(sub)
 }
 
