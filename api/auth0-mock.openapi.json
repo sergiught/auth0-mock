@@ -54115,7 +54115,7 @@
             "description": "Cursors expired."
           },
           "400": {
-            "description": "`?before=` was present but empty (`errorCode:\n\"invalid_before\"`). Omit the parameter to expire the whole\nbuffer; an empty value is rejected rather than silently\ntreated as expire-everything.\n"
+            "description": "`?before=` was present but empty (`errorCode:\n\"invalid_before\"`), or the query string could not be parsed\n(`errorCode: \"invalid_query\"`). Omit the parameter to expire\nthe whole buffer; an empty or unparseable value is rejected\nrather than silently treated as expire-everything.\n"
           }
         },
         "summary": "Age out replay cursors so a resume returns 410 Gone.",

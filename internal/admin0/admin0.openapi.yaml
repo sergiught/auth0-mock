@@ -505,7 +505,6 @@ paths:
         - name: before
           in: query
           required: false
-          allowEmptyValue: false
           description: |
             Expire only cursors older than this one, keeping it and
             everything after it resumable — the partial-loss case.
@@ -515,9 +514,10 @@ paths:
         "400":
           description: |
             `?before=` was present but empty (`errorCode:
-            "invalid_before"`). Omit the parameter to expire the whole
-            buffer; an empty value is rejected rather than silently
-            treated as expire-everything.
+            "invalid_before"`), or the query string could not be parsed
+            (`errorCode: "invalid_query"`). Omit the parameter to expire
+            the whole buffer; an empty or unparseable value is rejected
+            rather than silently treated as expire-everything.
         "200":
           description: Cursors expired.
           content:

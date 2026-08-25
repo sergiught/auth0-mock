@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/render"
 
@@ -66,8 +67,10 @@ func (h *GetEventSubscribersHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 // expiry only affects future resumes.
 //
 // Responds 200 with {"expired": <count>}: the number of cursors
-// dropped, which is how a caller tells "nothing was older than that
-// cursor" apart from "that cursor was never in the buffer".
+// dropped. Note it does NOT distinguish "nothing was older than that
+// cursor" from "that cursor was never in the buffer" — ringIndex.expire
+// reports 0 for both, and for a mock started with replay disabled. The
+// count says how much went, not why nothing did.
 type ExpireEventsHandler struct {
 	Events EventsPublisher
 }
@@ -77,7 +80,17 @@ type expireEventsResponse struct {
 }
 
 func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
+	// Parse explicitly rather than via r.URL.Query(), which throws the
+	// error away along with every pair it couldn't parse. A cursor
+	// carrying a stray `%` or `;` would then disappear entirely, land on
+	// the "no ?before at all" branch below, and expire the whole buffer
+	// the caller meant to trim.
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"query string could not be parsed: "+err.Error(), "invalid_query")
+		return
+	}
 	before := q.Get("before")
 	// `?before=` present but empty is a different request from omitting
 	// it: a caller interpolating an unset variable meant to name a

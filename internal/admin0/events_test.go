@@ -380,3 +380,22 @@ func TestPostAdmin0EventsExpire_RejectsEmptyBefore(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "invalid_before")
 	assert.Empty(t, hub.expired, "nothing should have been expired")
 }
+
+// r.URL.Query() discards pairs it cannot parse along with the error, so
+// a cursor carrying a stray `%` or `;` would vanish and take the
+// empty-value guard with it — landing on the "no ?before at all"
+// branch and wiping the buffer the caller meant to trim.
+func TestPostAdmin0EventsExpire_RejectsMalformedQuery(t *testing.T) {
+	hub := &captureHub{expireResult: 10}
+	r := newEventsRouter(t, hub)
+
+	for _, raw := range []string{"before=a%2", "before=x;y"} {
+		req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?"+raw, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		assert.Equalf(t, http.StatusBadRequest, rec.Code, "query %q", raw)
+		assert.Contains(t, rec.Body.String(), "invalid_query")
+	}
+	assert.Empty(t, hub.expired, "a query that failed to parse must not expire anything")
+}

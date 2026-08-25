@@ -82,11 +82,13 @@ func (r *ringIndex) has(id string) bool {
 // evicted, or never seen — drops nothing, which makes repeat calls
 // idempotent.
 //
-// Only the index is truncated, never the inner FiniteReplayer: the
-// hub's 410 gate reads has(), so a dropped id stops being resumable
-// even though its message lingers in the library's buffer. The index
-// stays a suffix of that buffer, so it never names an id the inner
-// replayer has already evicted.
+// Only the index is truncated, never the inner FiniteReplayer, whose
+// queue the library keeps unexported. The dropped messages therefore
+// linger there until cap more events overwrite them; what makes them
+// unresumable is that both readers of "is this cursor live" — the hub's
+// 410 gate via Has, and recordingReplayer.Replay — consult this index.
+// The index stays a suffix of the inner buffer, so it never names an id
+// the inner replayer has already evicted.
 func (r *ringIndex) expire(before string) int {
 	drop := len(r.entries)
 	if before != "" {
@@ -106,8 +108,12 @@ func (r *ringIndex) expire(before string) int {
 	}
 	// Shift the survivors down in place rather than re-slicing, so the
 	// index keeps its original backing array (and capacity) the way put
-	// does when it evicts.
-	r.entries = r.entries[:copy(r.entries, r.entries[drop:])]
+	// does when it evicts. Zero the vacated tail so the expired entries
+	// aren't left reachable through the slice's capacity — expire should
+	// actually drop what it reports dropping.
+	kept := copy(r.entries, r.entries[drop:])
+	clear(r.entries[kept:len(r.entries)])
+	r.entries = r.entries[:kept]
 	return drop
 }
 
@@ -168,31 +174,52 @@ func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message
 	return out, nil
 }
 
-// Replay delegates to the inner FiniteReplayer. The aged-out check
-// (Last-Event-ID no longer in the buffer → HTTP 410) is performed
-// up-front in Hub.Handler via Has, BEFORE the SSE response is
-// committed; that's the source of truth. Returning a non-nil error
-// from this path would let go-sse propagate it via http.Error into
-// the SSE wire body — invisible to the user but ugly when it lands.
-// In the rare race where Has returned true but a concurrent Put
-// evicted the ID before Subscribe ran Replay, the subscriber simply
-// joins live, which is observationally indistinguishable from a
-// legitimate "buffer was empty for this ID" outcome.
+// Replay serves the resume, subject to the index still holding the
+// cursor. Hub.Handler runs the same membership check up-front via Has,
+// but that one exists to produce the 410 status BEFORE the SSE response
+// is committed — it cannot be the only check, because it is not atomic
+// with this call. Returning a non-nil error from this path would let
+// go-sse propagate it via http.Error into the SSE wire body — invisible
+// to the user but ugly when it lands — so an unresumable cursor here
+// replays nothing instead. In the rare race where Has returned true but
+// a concurrent Put evicted the ID (or a concurrent Expire dropped it)
+// before Subscribe ran Replay, the subscriber simply joins live, which
+// is observationally indistinguishable from a legitimate "buffer was
+// empty for this ID" outcome.
 func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 	// Expire truncates the index but cannot reach into the inner
-	// FiniteReplayer, which still holds the messages — so an expired
-	// ID that gets this far would be replayed. Hub.Handler's 410 gate
-	// runs before Subscribe, not atomically with it, so a subscribe
-	// racing a concurrent Expire lands exactly here. Re-check against
-	// the index and replay nothing, which is the same outcome the
-	// caller already gets for an ID the buffer never held.
-	if sub.LastEventID.IsSet() {
-		r.mu.RLock()
-		known := r.idx.has(sub.LastEventID.String())
-		r.mu.RUnlock()
-		if !known {
-			return nil
-		}
+	// FiniteReplayer, which still holds the messages — so an expired ID
+	// that gets this far would be replayed. Hub.Handler's 410 gate runs
+	// before Subscribe, not atomically with it, so a subscribe racing a
+	// concurrent Expire lands exactly here; this check, not that gate, is
+	// what actually enforces "an expired cursor is not resumable".
+	//
+	// It cannot turn into a 410: by the time Joe calls Replay the handler
+	// has already committed a 200 and flushed the SSE headers. Such a
+	// subscriber therefore joins live with nothing replayed. That window
+	// is inherent to checking before committing a response, and it is the
+	// same outcome the existing eviction race produces.
+	if !sub.LastEventID.IsSet() {
+		return r.inner.Replay(sub)
+	}
+	// Hold the read lock ACROSS the delegate. Checking membership and
+	// then releasing would leave the same window open: Expire could land
+	// between the check and the emit and the subscriber would still be
+	// served aged-out events. Holding it makes the pair atomic against
+	// Expire, so a concurrent expiry either fully precedes this replay or
+	// fully follows it.
+	//
+	// No deadlock: Put and Replay are both driven by sse.Joe's single
+	// goroutine, so they never nest, and the other readers (Has,
+	// OldestID, IDBefore) take the same shared lock. Expire is the only
+	// writer and simply waits out the replay. The cost is that Expire
+	// blocks for as long as an in-flight replay takes to write to its
+	// subscriber — acceptable because a subscriber slow enough to matter
+	// has already stalled Joe itself, which blocks every publish too.
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.idx.has(sub.LastEventID.String()) {
+		return nil
 	}
 	return r.inner.Replay(sub)
 }
