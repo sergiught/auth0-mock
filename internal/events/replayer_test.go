@@ -201,14 +201,22 @@ func TestRecordingReplayer_Expire(t *testing.T) {
 	assert.Empty(t, r.OldestID(), "an expired buffer has no oldest cursor to fall back to")
 }
 
-// captureWriter records every message a Replay call emits.
-type captureWriter struct{ sent []string }
+// captureWriter records every message a Replay call emits, and how many
+// times it was flushed.
+type captureWriter struct {
+	sent    []string
+	flushes int
+}
 
 func (c *captureWriter) Send(m *sse.Message) error {
 	c.sent = append(c.sent, m.ID.String())
 	return nil
 }
-func (c *captureWriter) Flush() error { return nil }
+
+func (c *captureWriter) Flush() error {
+	c.flushes++
+	return nil
+}
 
 // The gate in Hub.Handler runs before Replay, not atomically with it,
 // so a subscribe racing a concurrent Expire arrives here with a cursor
@@ -331,4 +339,78 @@ func TestRecordingReplayer_ReusedIDsAfterExpireAreResumable(t *testing.T) {
 		Topics:      []string{"t1"},
 	}))
 	assert.Equal(t, []string{"2"}, w.sent)
+}
+
+// newTestMessageOn builds a message and returns it with the topics to
+// publish it under, so topic-filtered replay can be exercised.
+func putOn(t *testing.T, r *recordingReplayer, id string, topics ...string) {
+	t.Helper()
+	_, err := r.Put(newTestMessage(t, id), topics)
+	require.NoError(t, err)
+}
+
+// Topic filtering on the replay path is this package's own code now
+// (it used to be go-sse's), and a filtered subscriber resuming with
+// ?from must not be handed events of other types.
+func TestRecordingReplayer_Replay_RespectsTopicFilter(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	putOn(t, r, "1", "user.created")
+	putOn(t, r, "2", "user.deleted")
+	putOn(t, r, "3", "user.created")
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"user.created"},
+	}))
+	assert.Equal(t, []string{"3"}, w.sent, "the user.deleted event must not reach a filtered subscriber")
+}
+
+// A subscriber already at the newest cursor has nothing to replay. Match
+// go-sse's FiniteReplayer, which returns without touching the client at
+// all in that case: flushing anyway would surface a client-side flush
+// error from a resume that sent nothing, and go-sse turns a Replay error
+// into http.Error text inside the SSE body.
+func TestRecordingReplayer_Replay_NewestCursorDoesNotTouchClient(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	putOn(t, r, "1", "t1")
+	putOn(t, r, "2", "t1")
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("2"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Empty(t, w.sent)
+	assert.Zero(t, w.flushes, "nothing was replayed, so the client should not be flushed")
+}
+
+// An unset or unknown cursor likewise must not flush.
+func TestRecordingReplayer_Replay_UnknownCursorDoesNotTouchClient(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	putOn(t, r, "1", "t1")
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("nope"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Zero(t, w.flushes)
+}
+
+// Put must answer ErrNoTopic before anything else, per the sse.Replayer
+// contract — including for the id-less control frames this replayer
+// otherwise passes straight through.
+func TestRecordingReplayer_Put_NoTopicBeatsMissingID(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+
+	_, err = r.Put(&sse.Message{}, nil)
+	assert.ErrorIs(t, err, sse.ErrNoTopic)
 }

@@ -78,6 +78,13 @@ func (r *ringIndex) firstIndex(id string) int {
 // t — the caller should drop any Last-Event-ID hint so the subscriber
 // joins live. When every buffered event predates t, returns the newest
 // (so Replay sends nothing from the buffer; subscriber joins live).
+//
+// Scans every entry rather than stopping at the first one that doesn't
+// predate t. Timestamps are usually non-decreasing, but the mock's clock
+// is controllable and /admin0/clock/advance accepts negative durations,
+// so an earlier entry can carry a later time; stopping early would then
+// miss events that genuinely predate t. Latest is by insertion order,
+// which is what a resume cursor has to follow.
 func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 	var (
 		bestID string
@@ -87,9 +94,7 @@ func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 		if e.at.Before(t) {
 			bestID = e.id
 			found = true
-			continue
 		}
-		break
 	}
 	return bestID, found
 }
@@ -111,7 +116,11 @@ func (r *ringIndex) has(id string) bool {
 // unrelated requests.
 func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 	i := r.firstIndex(id)
-	if i < 0 {
+	// Ok=false for the newest entry too, not just an unknown id: go-sse's
+	// findIDInQueue reports not-found when the match is the queue tail, so
+	// its Replay returns without touching the client. Matching that keeps
+	// a resume-from-newest from flushing a subscriber it sent nothing to.
+	if i < 0 || i == len(r.entries)-1 {
 		return nil, false
 	}
 	var out []*sse.Message
@@ -202,11 +211,14 @@ func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplaye
 // current subscribers but never stored. They're returned untouched so
 // Joe still fans them out.
 func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message, error) {
-	if !msg.ID.IsSet() {
-		return msg, nil
-	}
+	// Topics first: the sse.Replayer contract says a Put with no topics
+	// is ErrNoTopic, and answering that only for id-carrying messages
+	// would make the deviation silent.
 	if len(topics) == 0 {
 		return nil, sse.ErrNoTopic
+	}
+	if !msg.ID.IsSet() {
+		return msg, nil
 	}
 	r.mu.Lock()
 	// Clone the topics: the slice belongs to the caller, who may reuse it.

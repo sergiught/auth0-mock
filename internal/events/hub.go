@@ -156,8 +156,7 @@ type Hub struct {
 // NewHub constructs a Hub. BufferSize is the cap of the replay buffer
 // (used for resume via Last-Event-ID / ?from / ?from_timestamp);
 // values <= 0 disable replay entirely (sse.Joe accepts a nil
-// Replayer); values of 1 are clamped to 2 because the library
-// requires a count of at least 2. Now is the clock the replayer's
+// Replayer); values of 1 are clamped to 2, the buffer's minimum. Now is the clock the replayer's
 // timestamp index uses; nil falls back to time.Now. The caller should
 // wire this to internal/clock.Clock.Now when a controllable clock is
 // present so ?from_timestamp behaves deterministically in
