@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 // NewEventID returns a fresh event ID conforming to Auth0's
@@ -86,4 +87,58 @@ func (e *EventsClient) Push(ctx context.Context, payload json.RawMessage) error 
 	// Json.RawMessage marshals to itself — do() sends the bytes
 	// verbatim without a re-encode round-trip.
 	return e.c.do(ctx, http.MethodPost, "/admin0/events", payload, nil)
+}
+
+// expireEventsResponse is the reply from POST /admin0/events/expire:
+// how many replay cursors the call dropped.
+type expireEventsResponse struct {
+	Expired int `json:"expired"`
+}
+
+// ExpireEvents ages out every cursor in the mock's replay buffer and
+// reports how many it dropped. Any subscriber that later resumes from
+// one of those cursors — via Last-Event-ID, ?from, or a ?from_timestamp
+// that resolves to one — gets 410 Gone with errorCode "event_aged_out",
+// exactly as real Auth0 does when a consumer's cursor falls out of the
+// retention window.
+//
+// This is the deterministic way to test a consumer's cursor-loss
+// handling. The alternatives are worse: pushing past the buffer's
+// capacity is slow and couples the test to EVENTS_REPLAY_BUFFER, and
+// Client.Reset is far blunter — it wipes every other store and
+// disconnects subscribers too.
+//
+// Idempotent, and scoped to the replay buffer: subscribers that are
+// already streaming keep receiving events, and events pushed after the
+// call are buffered and resumable as usual.
+func (e *EventsClient) ExpireEvents(ctx context.Context) (int, error) {
+	var resp expireEventsResponse
+	if err := e.c.do(ctx, http.MethodPost, "/admin0/events/expire", nil, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Expired, nil
+}
+
+// ExpireEventsBefore ages out every replay cursor older than cursor,
+// leaving cursor itself — and everything after it — resumable. Use it
+// to model partial cursor loss: a consumer resuming from an older
+// offset gets 410 event_aged_out, while one resuming from cursor still
+// replays the events that followed. Returns how many cursors it
+// dropped.
+//
+// Forgiving in the same way as ExpectationsClient.ClearOp: a cursor the
+// buffer no longer holds (or never held) expires nothing and reports 0
+// rather than erroring, so repeat calls are safe. An empty cursor is
+// rejected — expiring the whole buffer is ExpireEvents' job, and it
+// should be spelled out rather than fallen into.
+func (e *EventsClient) ExpireEventsBefore(ctx context.Context, cursor string) (int, error) {
+	if cursor == "" {
+		return 0, fmt.Errorf("auth0mock: events: ExpireEventsBefore: cursor is required (use ExpireEvents to expire the whole buffer)")
+	}
+	var resp expireEventsResponse
+	path := "/admin0/events/expire?before=" + url.QueryEscape(cursor)
+	if err := e.c.do(ctx, http.MethodPost, path, nil, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Expired, nil
 }

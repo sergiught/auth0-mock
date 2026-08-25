@@ -54081,6 +54081,46 @@
         ]
       }
     },
+    "/admin0/events/expire": {
+      "post": {
+        "description": "Expires cursors in the SSE replay buffer, so a consumer that\nlater resumes from one — via `Last-Event-ID`, `?from`, or a\n`?from_timestamp` that resolves to one — gets\n`410 event_aged_out`. This is the deterministic way to exercise\na consumer's unrecoverable-cursor-loss path, instead of pushing\npast `EVENTS_REPLAY_BUFFER` to force natural eviction.\n\nNarrower than `/admin0/reset`: subscribers that are already\nstreaming keep receiving events, subscriber counts are left\nalone, and no other mock state is touched. Only future resumes\nare affected.\n\nIdempotent — expiring a cursor the buffer no longer holds (or\nnever held) drops nothing and reports `0`.\n",
+        "parameters": [
+          {
+            "description": "Expire only cursors older than this one, keeping it and\neverything after it resumable — the partial-loss case.\nOmit to expire the whole buffer.\n",
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "expired": {
+                      "description": "How many cursors this call dropped. `0` means\nnothing matched — either the buffer held nothing\nolder than `before`, or `before` was never in it.\n",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "expired"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Cursors expired."
+          }
+        },
+        "summary": "Age out replay cursors so a resume returns 410 Gone.",
+        "tags": [
+          "Event Producer"
+        ]
+      }
+    },
     "/admin0/events/subscribers": {
       "get": {
         "description": "Observability for `GET /api/v2/events`, for tests that set\nexpectations on or verify the SSE connection lifecycle — e.g.\nasserting a consumer's stream closed cleanly, or that a client\nreconnected the expected number of times.\n\n`active` is eventually-consistent: a subscriber leaves the\ncount only when the mock observes its connection close, which\ncan lag the client's disconnect by a few milliseconds. Poll\nuntil `active` settles rather than reading it immediately after\nclosing a stream. `total` counts every connection since the\nlast `/admin0/reset`, which zeroes it.\n",

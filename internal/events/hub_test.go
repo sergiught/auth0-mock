@@ -888,3 +888,142 @@ func TestHub_ConcurrentPushAndReset(t *testing.T) {
 	assert.Greater(t, publishOK.Load(), int64(0))
 	assert.Greater(t, resets.Load(), int64(0))
 }
+
+// publishSeq pushes n events with sequential ids ("evt-1"…) so expiry
+// tests have a buffer to age out.
+func publishSeq(t *testing.T, h *events.Hub, ids ...string) {
+	t.Helper()
+	for i, id := range ids {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "user.created", ID: id,
+			Payload: json.RawMessage(`{"type":"user.created","id":"` + id + `","seq":` + strconv.Itoa(i) + `}`),
+		}))
+	}
+}
+
+// resumeStatus subscribes with Last-Event-ID: id and reports the status
+// code plus body, without consuming the stream.
+func resumeStatus(t *testing.T, srv *httptest.Server, id string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", id)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+	return resp.StatusCode, ""
+}
+
+func TestHub_ExpireBuffer_AllAgesOutEveryCursor(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
+	assert.Equal(t, 3, h.ExpireBuffer(""))
+
+	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
+		status, body := resumeStatus(t, srv, id)
+		assert.Equalf(t, http.StatusGone, status, "resume from %q should be aged out", id)
+		assert.Contains(t, body, "event_aged_out")
+	}
+}
+
+func TestHub_ExpireBuffer_BeforeKeepsCursorAndNewer(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
+	assert.Equal(t, 1, h.ExpireBuffer("evt-2"))
+
+	status, body := resumeStatus(t, srv, "evt-1")
+	assert.Equal(t, http.StatusGone, status)
+	assert.Contains(t, body, "event_aged_out")
+
+	// The boundary cursor survives, so resuming from it still replays
+	// what came after.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "evt-2")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	r := bufio.NewReader(resp.Body)
+	readOneEvent(t, r, 2*time.Second) // Consume the connect announcement frame.
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
+}
+
+func TestHub_ExpireBuffer_UnknownCursorIsNoOp(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2")
+	assert.Equal(t, 0, h.ExpireBuffer("never-seen"))
+
+	status, _ := resumeStatus(t, srv, "evt-1")
+	assert.Equal(t, http.StatusOK, status, "an unknown cursor must not age out the buffer")
+}
+
+// Expiry is a control-plane operation over the resume index only: it
+// must not disturb subscribers that are already streaming.
+func TestHub_ExpireBuffer_LeavesConnectedSubscribersStreaming(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	r, cancel := subscribe(t, srv, "")
+	defer cancel()
+
+	publishSeq(t, h, "evt-1")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
+
+	require.Equal(t, 1, h.ExpireBuffer(""))
+
+	publishSeq(t, h, "evt-2")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-2",
+		"the live stream should be untouched by an expiry")
+}
+
+// ?from_timestamp resolves through the same index, so an expired
+// buffer has nothing to resolve against and the subscriber joins live
+// rather than 410-ing (it never named a cursor of its own).
+func TestHub_ExpireBuffer_FromTimestampJoinsLive(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2")
+	require.Equal(t, 2, h.ExpireBuffer(""))
+
+	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
+	defer cancel()
+
+	publishSeq(t, h, "evt-3")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
+}
+
+func TestHub_ExpireBuffer_DisabledBufferReportsZero(t *testing.T) {
+	h, err := events.NewHub(0, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	assert.Equal(t, 0, h.ExpireBuffer(""))
+	assert.Equal(t, 0, h.ExpireBuffer("evt-1"))
+}

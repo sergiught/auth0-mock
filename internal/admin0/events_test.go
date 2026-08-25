@@ -30,6 +30,10 @@ type captureHub struct {
 	resetCalls int
 	active     int
 	total      int
+	// Expired records the `before` cursor of every ExpireBuffer call;
+	// expireResult is what those calls report back.
+	expired      []string
+	expireResult int
 }
 
 func (h *captureHub) ActiveSubscribers() int { return h.active }
@@ -295,4 +299,66 @@ func TestReset_CallsEventsReset(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Equal(t, 1, hub.resetCalls, "reset must drain SSE subscribers without destroying the hub")
+}
+
+func (h *captureHub) ExpireBuffer(before string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.expired = append(h.expired, before)
+	return h.expireResult
+}
+
+func TestPostAdmin0EventsExpire_ExpiresWholeBuffer(t *testing.T) {
+	hub := &captureHub{expireResult: 10}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"expired":10}`, rec.Body.String())
+	assert.Equal(t, []string{""}, hub.expired, "no ?before means expire everything")
+}
+
+func TestPostAdmin0EventsExpire_BeforeCursor(t *testing.T) {
+	hub := &captureHub{expireResult: 7}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?before=8", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"expired":7}`, rec.Body.String())
+	assert.Equal(t, []string{"8"}, hub.expired)
+}
+
+// Expiring a cursor the buffer never held is a no-op, reported as a
+// zero count rather than an error — that keeps the endpoint idempotent
+// for tests that call it from cleanup.
+func TestPostAdmin0EventsExpire_UnknownCursorReportsZero(t *testing.T) {
+	hub := &captureHub{expireResult: 0}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?before=nope", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"expired":0}`, rec.Body.String())
+}
+
+// Expiry is scoped to the replay buffer: it must not reach for the
+// blunt Reset hook that drains subscribers and wipes the rest of the
+// mock's state.
+func TestPostAdmin0EventsExpire_DoesNotReset(t *testing.T) {
+	hub := &captureHub{}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Zero(t, hub.resetCalls)
+	assert.Empty(t, hub.got)
 }

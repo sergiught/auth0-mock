@@ -75,6 +75,42 @@ func (r *ringIndex) has(id string) bool {
 	return false
 }
 
+// expire drops entries from the front of the index and reports how
+// many it dropped. An empty before clears the index; otherwise
+// everything older than before goes and before itself stays, so it
+// remains a valid resume point. A before that isn't indexed — already
+// evicted, or never seen — drops nothing, which makes repeat calls
+// idempotent.
+//
+// Only the index is truncated, never the inner FiniteReplayer: the
+// hub's 410 gate reads has(), so a dropped id stops being resumable
+// even though its message lingers in the library's buffer. The index
+// stays a suffix of that buffer, so it never names an id the inner
+// replayer has already evicted.
+func (r *ringIndex) expire(before string) int {
+	drop := len(r.entries)
+	if before != "" {
+		drop = -1
+		for i, e := range r.entries {
+			if e.id == before {
+				drop = i
+				break
+			}
+		}
+		if drop < 0 {
+			return 0
+		}
+	}
+	if drop == 0 {
+		return 0
+	}
+	// Shift the survivors down in place rather than re-slicing, so the
+	// index keeps its original backing array (and capacity) the way put
+	// does when it evicts.
+	r.entries = r.entries[:copy(r.entries, r.entries[drop:])]
+	return drop
+}
+
 // recordingReplayer wraps sse.FiniteReplayer with a same-capacity
 // ringIndex so the hub can translate ?from_timestamp into a
 // Last-Event-ID before delegating resume to the inner replayer. All
@@ -180,4 +216,15 @@ func (r *recordingReplayer) Has(id string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.idx.has(id)
+}
+
+// Expire ages out buffered cursors on demand and reports how many it
+// dropped. See ringIndex.expire for the before semantics. Backs
+// POST /admin0/events/expire so a test can provoke the 410 aged-out
+// path without pushing past the buffer's capacity or resetting the
+// whole mock.
+func (r *recordingReplayer) Expire(before string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.idx.expire(before)
 }

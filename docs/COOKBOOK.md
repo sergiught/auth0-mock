@@ -511,13 +511,37 @@ this drains every open subscriber and clears the replay buffer
 without permanently breaking the hub, so the next test starts from a
 known-empty state.
 
+**Force a cursor to age out** when you need to exercise a consumer's
+unrecoverable-cursor-loss path. `ExpireEvents` expires every buffered
+cursor, so the next reconnect presenting one gets `410 event_aged_out`;
+`ExpireEventsBefore` expires only what is older than the cursor you
+name, leaving that cursor and everything after it replayable. Both
+report how many cursors they dropped, and both are idempotent — a
+cursor the buffer no longer holds expires nothing.
+
+```go
+auth0mocktest.MustPush(t, c, `{"type":"user.created","offset":"1", ...}`)
+auth0mocktest.MustPush(t, c, `{"type":"user.created","offset":"2", ...}`)
+
+// Offset 1 is now unresumable; offset 2 still replays what follows it.
+expired, err := c.Events.ExpireEventsBefore(ctx, "2")
+require.NoError(t, err)
+require.Equal(t, 1, expired)
+```
+
+Prefer this over pushing past `EVENTS_REPLAY_BUFFER` to force natural
+eviction (slow, and couples the test to the buffer's capacity) or over
+a full reset (which drops every other store and disconnects
+subscribers). Expiry touches the replay buffer only: subscribers that
+are already streaming keep receiving events.
+
 **Common errors** the mock returns:
 
 | Status | `errorCode` | Cause |
 |---|---|---|
 | 400 | `invalid_event` | Schema violation. The `message` field lists each failed `/json/pointer: reason` on a single line. |
 | 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339. |
-| 410 | `event_aged_out` | `Last-Event-ID` / `?from` / resolved `?from_timestamp` references an event the ring buffer no longer holds. |
+| 410 | `event_aged_out` | `Last-Event-ID` / `?from` / resolved `?from_timestamp` references an event the ring buffer no longer holds — through natural eviction or `POST /admin0/events/expire`. |
 | 401 | _bearer envelope_ | No / invalid bearer on `/api/v2/events`. |
 
 ## Use a Go test that boots the mock in-process

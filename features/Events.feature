@@ -122,3 +122,69 @@ Feature: GET /api/v2/events Server-Sent Events
       {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_postreset0000000","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
     Then the SSE stream delivers an event with id "0" within 3s
+
+  Scenario: Expiring the replay buffer ages out a resume cursor
+    When I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireall0000001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I expire the events replay buffer
+    Then the response JSON path "expired" equals "1"
+    When I attempt to subscribe to /api/v2/events with header "Last-Event-ID: 0"
+    Then I receive a 410 response
+    And the response body contains "event_aged_out"
+
+  Scenario: Expiring before a cursor keeps that cursor replayable
+    When I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirebefore0001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I push an event:
+      """
+      {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirebefore0002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I push an event:
+      """
+      {"type":"user.created","offset":"2","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirebefore0003","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-3","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I expire the events replay buffer before "1"
+    Then the response JSON path "expired" equals "1"
+    When I subscribe to /api/v2/events with query "?from=1"
+    Then the SSE stream delivers an event with id "2" within 3s
+
+  Scenario: Expiring before a cursor ages out everything older
+    When I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireolder00001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I push an event:
+      """
+      {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireolder00002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I expire the events replay buffer before "1"
+    And I attempt to subscribe to /api/v2/events with header "Last-Event-ID: 0"
+    Then I receive a 410 response
+    And the response body contains "event_aged_out"
+
+  Scenario: Expiring an unknown cursor is a no-op
+    When I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireunknown001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I expire the events replay buffer before "999"
+    Then the response JSON path "expired" equals "0"
+    When I push an event:
+      """
+      {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expireunknown002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    And I subscribe to /api/v2/events with query "?from=0"
+    Then the SSE stream delivers an event with id "1" within 3s
+
+  Scenario: Expiring the buffer leaves a connected subscriber streaming
+    When I subscribe to /api/v2/events
+    And I expire the events replay buffer
+    And I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirelive000001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    Then the SSE stream delivers an event with id "0" within 3s

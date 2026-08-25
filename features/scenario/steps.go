@@ -423,6 +423,13 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return pushEvent(c, body.Content, false)
 	})
 
+	sc.Step(`^I expire the events replay buffer$`, func() error {
+		return expireEvents(c, "")
+	})
+	sc.Step(`^I expire the events replay buffer before "([^"]+)"$`, func(cursor string) error {
+		return expireEvents(c, cursor)
+	})
+
 	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
 		func(wantID string, seconds int) error {
 			return streamDeliversID(c, wantID, time.Duration(seconds)*time.Second)
@@ -471,6 +478,32 @@ func subscribeEvents(c *Context, query, header string, bearer, expect2xx bool) e
 	_ = resp.Body.Close()
 	if expect2xx {
 		return fmt.Errorf("subscribe: status %d body %s", resp.StatusCode, string(c.LastBody))
+	}
+	return nil
+}
+
+// expireEvents POSTs /admin0/events/expire, optionally scoped to a
+// cursor via ?before=. The response is stashed in LastResp / LastBody
+// so a scenario can assert on the {"expired": N} count with the
+// standard "the response body contains" step.
+func expireEvents(c *Context, before string) error {
+	path := c.BaseURL + "/admin0/events/expire"
+	if before != "" {
+		path += "?before=" + url.QueryEscape(before)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	c.LastResp = resp
+	c.LastBody, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expire: status %d body %s", resp.StatusCode, string(c.LastBody))
 	}
 	return nil
 }

@@ -356,6 +356,32 @@ func (h *Hub) Reset(ctx context.Context) error {
 	return nil
 }
 
+// ExpireBuffer ages out buffered resume cursors and reports how many
+// it dropped. An empty before expires the whole buffer; otherwise
+// everything older than before is expired and before itself stays
+// resumable. A before the buffer doesn't hold drops nothing, so repeat
+// calls are idempotent. Returns 0 when replay is disabled.
+//
+// This is the deterministic way to provoke the aged-out path: a
+// subscriber that later resumes from an expired cursor gets 410 Gone /
+// event_aged_out, without having to push past the buffer's capacity or
+// reset the whole mock. Unlike Reset it touches nothing else — live
+// subscribers keep streaming, the server is not rebuilt, and counters
+// are left alone.
+//
+// Takes mu.RLock rather than mu.Lock because it mutates the replayer's
+// own index (which has its own lock) rather than swapping the
+// server/replayer pointers that mu guards — the same reason Publish
+// read-locks.
+func (h *Hub) ExpireBuffer(before string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.replayer == nil {
+		return 0
+	}
+	return h.replayer.Expire(before)
+}
+
 // Shutdown drains every subscriber, stops the keep-alive goroutine,
 // and marks the hub closed permanently. Intended for process
 // shutdown. Idempotent — extra calls are no-ops.

@@ -26,6 +26,9 @@ type EventsPublisher interface {
 	// connection lifecycle (e.g. assert a stream closed cleanly).
 	ActiveSubscribers() int
 	TotalSubscribers() int
+	// ExpireBuffer backs POST /admin0/events/expire, the narrow
+	// counterpart to Reset: it ages out replay cursors and nothing else.
+	ExpireBuffer(before string) int
 }
 
 // GetEventSubscribersHandler reports the SSE hub's live and
@@ -48,6 +51,34 @@ func (h *GetEventSubscribersHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 		Active: h.Events.ActiveSubscribers(),
 		Total:  h.Events.TotalSubscribers(),
 	})
+}
+
+// ExpireEventsHandler ages out cursors in the SSE replay buffer so a
+// test can provoke the 410 Gone / event_aged_out path on demand,
+// instead of pushing past the buffer's capacity to force natural
+// eviction or reaching for /admin0/reset (which also drops every other
+// store and disconnects subscribers).
+//
+// `?before=<cursor>` expires everything older than that cursor and
+// keeps the cursor itself resumable; without it the whole buffer goes.
+// A cursor the buffer doesn't hold expires nothing, so the endpoint is
+// idempotent. Subscribers that are already streaming are untouched —
+// expiry only affects future resumes.
+//
+// Responds 200 with {"expired": <count>}: the number of cursors
+// dropped, which is how a caller tells "nothing was older than that
+// cursor" apart from "that cursor was never in the buffer".
+type ExpireEventsHandler struct {
+	Events EventsPublisher
+}
+
+type expireEventsResponse struct {
+	Expired int `json:"expired"`
+}
+
+func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	before := r.URL.Query().Get("before")
+	render.JSON(w, r, expireEventsResponse{Expired: h.Events.ExpireBuffer(before)})
 }
 
 // PostEventsHandler validates an incoming Auth0 event-stream envelope

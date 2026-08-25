@@ -478,6 +478,49 @@ paths:
                     description: |
                       Subscriptions opened since the last
                       `/admin0/reset`. Monotonic within that window.
+  /admin0/events/expire:
+    post:
+      tags: ["Event Producer"]
+      summary: Age out replay cursors so a resume returns 410 Gone.
+      description: |
+        Expires cursors in the SSE replay buffer, so a consumer that
+        later resumes from one — via `Last-Event-ID`, `?from`, or a
+        `?from_timestamp` that resolves to one — gets
+        `410 event_aged_out`. This is the deterministic way to exercise
+        a consumer's unrecoverable-cursor-loss path, instead of pushing
+        past `EVENTS_REPLAY_BUFFER` to force natural eviction.
+
+        Narrower than `/admin0/reset`: subscribers that are already
+        streaming keep receiving events, subscriber counts are left
+        alone, and no other mock state is touched. Only future resumes
+        are affected.
+
+        Idempotent — expiring a cursor the buffer no longer holds (or
+        never held) drops nothing and reports `0`.
+      parameters:
+        - name: before
+          in: query
+          required: false
+          description: |
+            Expire only cursors older than this one, keeping it and
+            everything after it resumable — the partial-loss case.
+            Omit to expire the whole buffer.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cursors expired.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [expired]
+                properties:
+                  expired:
+                    type: integer
+                    description: |
+                      How many cursors this call dropped. `0` means
+                      nothing matched — either the buffer held nothing
+                      older than `before`, or `before` was never in it.
 components:
   schemas:
     Expectation:

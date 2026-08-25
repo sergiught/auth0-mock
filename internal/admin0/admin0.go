@@ -85,6 +85,7 @@ func Mount(r chi.Router, d Deps) {
 
 	if d.Events != nil {
 		r.Method(http.MethodGet, "/admin0/events/subscribers", &GetEventSubscribersHandler{Events: d.Events})
+		r.Method(http.MethodPost, "/admin0/events/expire", &ExpireEventsHandler{Events: d.Events})
 	}
 	if d.Events != nil && d.Validator != nil {
 		r.Method(http.MethodPost, "/admin0/events", &PostEventsHandler{
