@@ -812,9 +812,11 @@ func TestHub_KeepAlive_ReachesFilteredSubscribers(t *testing.T) {
 		"filtered subscriber must receive keep-alive comments; got %q", frame)
 }
 
-func TestNewHub_BufferSizeOneClampedToTwo(t *testing.T) {
-	// Library requires count >= 2; we used to crash at startup
-	// instead of clamping.
+func TestNewHub_BufferSizeOneIsAccepted(t *testing.T) {
+	// One is a valid buffer size. It used to be widened to 2 because
+	// sse.FiniteReplayer refused anything smaller; the hub owns its
+	// buffer now, so the size is taken at face value — see
+	// TestHub_BufferSizeOne_RetainsExactlyOneEvent for the behaviour.
 	h, err := events.NewHub(1, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -1156,4 +1158,39 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 		"too few subscribe attempts completed to have exercised the race")
 	assert.Greater(t, subscribes.Load(), int64(0),
 		"every subscribe failed (errs=%d); the race was never exercised", subErrs.Load())
+}
+
+// Hub.expire documents that it refuses a closed hub the way Publish
+// does. The two conditions share a line, so without this a future edit
+// dropping the closed half would leave the whole suite green while
+// expiry ran against a replayer Shutdown had torn down.
+func TestHub_Expire_ClosedHubReportsZero(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	publishSeq(t, h, "evt-1", "evt-2")
+	require.NoError(t, h.Shutdown(context.Background()))
+
+	assert.Equal(t, 0, h.ExpireAll())
+	assert.Equal(t, 0, h.ExpireBefore("evt-2"))
+}
+
+// EVENTS_REPLAY_BUFFER=1 means one event retained. It used to be
+// silently widened to 2 — a floor sse.FiniteReplayer imposed, which the
+// hub no longer uses — so a resume from the second-oldest cursor
+// succeeded where the operator expected 410.
+func TestHub_BufferSizeOne_RetainsExactlyOneEvent(t *testing.T) {
+	h, err := events.NewHub(1, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2")
+
+	status, body := resumeStatus(t, srv, "evt-1")
+	assert.Equal(t, http.StatusGone, status, "only one event is retained, so evt-1 has aged out")
+	assert.Contains(t, body, "event_aged_out")
+
+	status, _ = resumeStatus(t, srv, "evt-2")
+	assert.Equal(t, http.StatusOK, status)
 }

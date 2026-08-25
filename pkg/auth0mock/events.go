@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -142,7 +143,7 @@ func (e *EventsClient) ExpireEvents(ctx context.Context) (int, error) {
 // should be spelled out rather than fallen into.
 func (e *EventsClient) ExpireEventsBefore(ctx context.Context, cursor string) (int, error) {
 	if cursor == "" {
-		return 0, fmt.Errorf("auth0mock: events: ExpireEventsBefore: cursor is required (use ExpireEvents to expire the whole buffer)")
+		return 0, errors.New("auth0mock: events: ExpireEventsBefore: cursor is required (use ExpireEvents to expire the whole buffer)")
 	}
 	var resp expireEventsResponse
 	path := "/admin0/events/expire?before=" + url.QueryEscape(cursor)

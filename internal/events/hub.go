@@ -156,19 +156,13 @@ type Hub struct {
 // NewHub constructs a Hub. BufferSize is the cap of the replay buffer
 // (used for resume via Last-Event-ID / ?from / ?from_timestamp);
 // values <= 0 disable replay entirely (sse.Joe accepts a nil
-// Replayer); values of 1 are clamped to 2, the buffer's minimum. Now is the clock the replayer's
+// Replayer). Now is the clock the replayer's
 // timestamp index uses; nil falls back to time.Now. The caller should
 // wire this to internal/clock.Clock.Now when a controllable clock is
 // present so ?from_timestamp behaves deterministically in
 // clock-controlled tests. Opts customise the hub — e.g.
 // WithReconnectHint sets the SSE retry: value sent on connect.
 func NewHub(bufferSize int, now func() time.Time, opts ...HubOption) (*Hub, error) {
-	if bufferSize == 1 {
-		// The replay buffer requires a count of at least 2;
-		// clamp to that minimum rather than crashing the process
-		// at startup over a one-off configuration choice.
-		bufferSize = 2
-	}
 	h := &Hub{
 		bufferSize:    bufferSize,
 		now:           now,
@@ -385,24 +379,25 @@ func (h *Hub) ExpireBefore(cursor string) int {
 	return h.expire(cursor)
 }
 
-// expire snapshots the replayer and releases mu BEFORE expiring, the
-// same pattern Handler uses. Holding mu across the call would chain two
-// locks — the hub's and the replayer's — and park every reader of the
-// hub behind whatever the replayer's writer is waiting on. Replay is
-// careful never to hold the replayer's lock across a subscriber write
-// for the same reason.
+// expire holds mu across the call, the way Publish does. That keeps it
+// atomic against Reset: snapshotting the replayer and releasing first
+// would let Reset install a new buffer in between, so the expiry would
+// truncate the discarded one and still report a non-zero count for a
+// buffer nobody can resume from — a success the caller would act on.
+//
+// Safe to hold because the replayer's own write lock is only ever held
+// for the truncation itself: Replay snapshots its messages and writes
+// to the subscriber with no lock, so no consumer can park an expiry
+// here and starve the hub's readers.
 //
 // Reports 0 on a closed hub, matching Publish's refusal to act on one.
-// A snapshot concurrent with Reset can still expire the outgoing
-// replayer: harmless, since Reset is discarding that buffer anyway.
 func (h *Hub) expire(before string) int {
 	h.mu.RLock()
-	replayer, closed := h.replayer, h.closed
-	h.mu.RUnlock()
-	if closed || replayer == nil {
+	defer h.mu.RUnlock()
+	if h.closed || h.replayer == nil {
 		return 0
 	}
-	return replayer.Expire(before)
+	return h.replayer.Expire(before)
 }
 
 // Shutdown drains every subscriber, stops the keep-alive goroutine,

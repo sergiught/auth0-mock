@@ -85,16 +85,25 @@ func (r *ringIndex) firstIndex(id string) int {
 // so an earlier entry can carry a later time; stopping early would then
 // miss events that genuinely predate t. Latest is by insertion order,
 // which is what a resume cursor has to follow.
+//
+// Only first copies are eligible. The answer is handed back as an id,
+// and a resume resolves an id to its first copy — so offering the
+// trailing half of a duplicated offset would send the subscriber back to
+// the earlier one and replay events older than the instant it asked for.
 func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 	var (
 		bestID string
 		found  bool
+		seen   = make(map[string]struct{}, len(r.entries))
 	)
 	for _, e := range r.entries {
-		if e.at.Before(t) {
-			bestID = e.id
-			found = true
+		_, dup := seen[e.id]
+		seen[e.id] = struct{}{}
+		if dup || !e.at.Before(t) {
+			continue
 		}
+		bestID = e.id
+		found = true
 	}
 	return bestID, found
 }
@@ -102,6 +111,15 @@ func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 // has reports whether id is currently in the buffer.
 func (r *ringIndex) has(id string) bool {
 	return r.firstIndex(id) >= 0
+}
+
+// oldestID returns the id of the oldest buffered event, or "" when the
+// buffer is empty.
+func (r *ringIndex) oldestID() string {
+	if len(r.entries) == 0 {
+		return ""
+	}
+	return r.entries[0].id
 }
 
 // after returns the messages to replay to a subscriber resuming from
@@ -123,7 +141,7 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 	if i < 0 || i == len(r.entries)-1 {
 		return nil, false
 	}
-	var out []*sse.Message
+	out := make([]*sse.Message, 0, len(r.entries)-i-1)
 	for _, e := range r.entries[i+1:] {
 		if topicsIntersect(topics, e.topics) {
 			out = append(out, e.msg)
@@ -193,10 +211,13 @@ type recordingReplayer struct {
 // newRecordingReplayer constructs a recordingReplayer of the given
 // capacity. Now defaults to time.Now when nil.
 func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplayer, error) {
-	// Same minimum sse.NewFiniteReplayer enforced when this type wrapped
-	// it, so NewHub's clamping contract is unchanged.
-	if capacity < 2 {
-		return nil, errors.New("events: replay buffer capacity must be at least 2")
+	// One is a legitimate buffer size: a caller setting
+	// EVENTS_REPLAY_BUFFER=1 wants exactly one event retained, and
+	// silently giving them two would make a resume succeed where they
+	// expected 410. The old floor of 2 was sse.FiniteReplayer's
+	// constraint, and that dependency is gone.
+	if capacity < 1 {
+		return nil, errors.New("events: replay buffer capacity must be at least 1")
 	}
 	if now == nil {
 		now = time.Now
@@ -211,9 +232,11 @@ func newRecordingReplayer(capacity int, now func() time.Time) (*recordingReplaye
 // current subscribers but never stored. They're returned untouched so
 // Joe still fans them out.
 func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message, error) {
-	// Topics first: the sse.Replayer contract says a Put with no topics
-	// is ErrNoTopic, and answering that only for id-carrying messages
-	// would make the deviation silent.
+	// Topics first, per the sse.Replayer contract. Unreachable through
+	// sse.Joe, which rejects an empty topic set before consulting the
+	// replayer — kept because this type implements a published interface
+	// and answering ErrNoTopic only for id-carrying messages would make
+	// the deviation silent to anyone who does drive it directly.
 	if len(topics) == 0 {
 		return nil, sse.ErrNoTopic
 	}
@@ -265,17 +288,16 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 // buffer is empty. Used by Hub.Handler to translate a ?from_timestamp
 // that predates everything into a Last-Event-ID hint — injecting the
 // oldest ID makes the buffer replay everything strictly after it. The
-// trade-off: the oldest stored event itself is skipped. In practice the
-// buffer's default cap is 100 and the typical from_timestamp-before-all
-// case is "subscriber wants the whole session", so a single missed
-// event at the oldest edge is acceptable.
+// trade-off: the oldest stored event itself is skipped, because the
+// resume protocol only expresses "everything strictly after this
+// cursor" and there is no cursor meaning "before the oldest". In
+// practice the buffer's default cap is 100 and the typical
+// from_timestamp-before-all case is "subscriber wants the whole
+// session", so a single missed event at the oldest edge is acceptable.
 func (r *recordingReplayer) OldestID() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if len(r.idx.entries) == 0 {
-		return ""
-	}
-	return r.idx.entries[0].id
+	return r.idx.oldestID()
 }
 
 // IDBefore is the timestamp→ID lookup the hub uses to translate

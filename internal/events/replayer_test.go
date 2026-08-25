@@ -414,3 +414,54 @@ func TestRecordingReplayer_Put_NoTopicBeatsMissingID(t *testing.T) {
 	_, err = r.Put(&sse.Message{}, nil)
 	assert.ErrorIs(t, err, sse.ErrNoTopic)
 }
+
+// idBefore hands its answer back as an id, and Replay resolves an id to
+// its FIRST copy. With a reused offset the two disagreed: idBefore
+// picked the newest copy, Replay then started from the oldest one and
+// delivered events older than the requested instant.
+func TestRingIndex_IDBefore_DuplicateResolvesConsistently(t *testing.T) {
+	idx := newRingIndex(10)
+	base := time.Unix(1_700_000_000, 0).UTC()
+	idx.put("0", base, nil, nil)
+	idx.put("1", base.Add(10*time.Second), nil, nil)
+	idx.put("0", base.Add(20*time.Second), nil, nil)
+
+	// Everything predates this, so the hint must be a cursor that
+	// resolves to a position with nothing after it worth replaying.
+	got, ok := idx.idBefore(base.Add(time.Hour))
+	require.True(t, ok)
+	assert.Equal(t, "1", got,
+		"the trailing duplicate is not usable as a cursor: resuming from it would start at the first copy")
+}
+
+// The trailing copy of a duplicated offset has no cursor of its own —
+// any id naming it resolves to the earlier copy — so a ?from_timestamp
+// landing there cannot be expressed exactly, and one event may still be
+// re-sent. What must not happen is a restart from the first copy, which
+// replays the whole span between them.
+func TestRecordingReplayer_IDBefore_DuplicateDoesNotRestartFromFirstCopy(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0).UTC()
+	n := 0
+	now := func() time.Time {
+		n++
+		return base.Add(time.Duration(n) * time.Second)
+	}
+	r, err := newRecordingReplayer(10, now)
+	require.NoError(t, err)
+	putOn(t, r, "0", "t1")
+	putOn(t, r, "1", "t1")
+	putOn(t, r, "0", "t1")
+
+	id, ok := r.IDBefore(base.Add(time.Hour))
+	require.True(t, ok)
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID(id),
+		Topics:      []string{"t1"},
+	}))
+	assert.NotContains(t, w.sent, "1",
+		"resuming must not restart from the first copy of the reused offset")
+	assert.Equal(t, []string{"0"}, w.sent)
+}
