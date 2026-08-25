@@ -30,8 +30,8 @@ type captureHub struct {
 	resetCalls int
 	active     int
 	total      int
-	// Expired records the `before` cursor of every ExpireBuffer call;
-	// expireResult is what those calls report back.
+	// Expired records the cursor of every ExpireAll ("") / ExpireBefore
+	// call; expireResult is what those calls report back.
 	expired      []string
 	expireResult int
 }
@@ -53,7 +53,11 @@ func (h *captureHub) Reset(_ context.Context) error {
 	return nil
 }
 
-func (h *captureHub) ExpireBuffer(before string) int {
+func (h *captureHub) ExpireAll() int { return h.record("") }
+
+func (h *captureHub) ExpireBefore(cursor string) int { return h.record(cursor) }
+
+func (h *captureHub) record(before string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.expired = append(h.expired, before)
@@ -398,4 +402,40 @@ func TestPostAdmin0EventsExpire_RejectsMalformedQuery(t *testing.T) {
 		assert.Contains(t, rec.Body.String(), "invalid_query")
 	}
 	assert.Empty(t, hub.expired, "a query that failed to parse must not expire anything")
+}
+
+// A misspelled or wrong-case key is not "no ?before at all" — it is a
+// caller who meant to name a cursor and typo'd. Falling through to
+// expire-everything is the same silent blast-radius widening the empty
+// and unparseable cases already reject.
+func TestPostAdmin0EventsExpire_RejectsUnknownQueryKeys(t *testing.T) {
+	for _, raw := range []string{"BEFORE=8", "befor=8", "before2=8", "before=8&extra=1"} {
+		hub := &captureHub{expireResult: 42}
+		r := newEventsRouter(t, hub)
+
+		req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?"+raw, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		assert.Equalf(t, http.StatusBadRequest, rec.Code, "query %q", raw)
+		assert.Containsf(t, rec.Body.String(), "invalid_query", "query %q", raw)
+		assert.Emptyf(t, hub.expired, "query %q must not expire anything", raw)
+	}
+}
+
+// `?before=8&before=` is ambiguous — q.Get takes the first, so it would
+// trim from 8, while `?before=&before=8` would 400. Reject repeats
+// rather than letting the outcome depend on ordering.
+func TestPostAdmin0EventsExpire_RejectsRepeatedBefore(t *testing.T) {
+	for _, raw := range []string{"before=8&before=", "before=&before=8", "before=8&before=9"} {
+		hub := &captureHub{expireResult: 42}
+		r := newEventsRouter(t, hub)
+
+		req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?"+raw, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		assert.Equalf(t, http.StatusBadRequest, rec.Code, "query %q", raw)
+		assert.Emptyf(t, hub.expired, "query %q must not expire anything", raw)
+	}
 }

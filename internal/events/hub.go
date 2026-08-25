@@ -356,11 +356,8 @@ func (h *Hub) Reset(ctx context.Context) error {
 	return nil
 }
 
-// ExpireBuffer ages out buffered resume cursors and reports how many
-// it dropped. An empty before expires the whole buffer; otherwise
-// everything older than before is expired and before itself stays
-// resumable. A before the buffer doesn't hold drops nothing, so repeat
-// calls are idempotent. Returns 0 when replay is disabled.
+// ExpireAll ages out every buffered resume cursor and reports how many
+// it dropped. Returns 0 when replay is disabled.
 //
 // This is the deterministic way to provoke the aged-out path: a
 // subscriber that later resumes from an expired cursor gets 410 Gone /
@@ -368,18 +365,45 @@ func (h *Hub) Reset(ctx context.Context) error {
 // reset the whole mock. Unlike Reset it touches nothing else — live
 // subscribers keep streaming, the server is not rebuilt, and counters
 // are left alone.
+func (h *Hub) ExpireAll() int {
+	return h.expire("")
+}
+
+// ExpireBefore ages out every cursor older than cursor, leaving cursor
+// itself — and everything after it — resumable, and reports how many it
+// dropped. A cursor the buffer doesn't hold drops nothing, so repeat
+// calls are idempotent. Returns 0 when replay is disabled.
 //
-// Takes mu.RLock rather than mu.Lock because it mutates the replayer's
-// own index (which has its own lock) rather than swapping the
-// server/replayer pointers that mu guards — the same reason Publish
-// read-locks.
-func (h *Hub) ExpireBuffer(before string) int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.replayer == nil {
+// An empty cursor drops nothing rather than falling through to
+// expire-everything: ExpireAll is how you say that. Keeping the two
+// apart means no caller can widen the blast radius by passing through
+// an unset value — the failure the HTTP and SDK layers each had to
+// grow a guard against.
+func (h *Hub) ExpireBefore(cursor string) int {
+	if cursor == "" {
 		return 0
 	}
-	return h.replayer.Expire(before)
+	return h.expire(cursor)
+}
+
+// expire snapshots the replayer and releases mu BEFORE truncating, the
+// same pattern Handler uses. Holding mu across the call would chain two
+// locks: recordingReplayer.Expire waits on the replayer's own write
+// lock, which an in-flight Replay holds for as long as its subscriber
+// takes to read. A stalled subscriber would then park this call while
+// it holds mu.RLock, Reset's mu.Lock would queue behind it, and Go's
+// RWMutex writer preference would block every later RLock — wedging
+// Publish, new subscribers and the keep-alive, with /admin0/reset (the
+// only way to drain the stuck subscriber) blocked too. Snapshotting
+// keeps the blast radius to this one request.
+func (h *Hub) expire(before string) int {
+	h.mu.RLock()
+	replayer := h.replayer
+	h.mu.RUnlock()
+	if replayer == nil {
+		return 0
+	}
+	return replayer.Expire(before)
 }
 
 // Shutdown drains every subscriber, stops the keep-alive goroutine,

@@ -512,18 +512,7 @@ func expireEvents(c *Context, before string) error {
 // string verbatim and records the response without asserting on the
 // status, so negative scenarios can check the 4xx themselves.
 func attemptExpireEventsRaw(c *Context, query string) error {
-	path := c.BaseURL + "/admin0/events/expire" + query
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, path, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	c.LastResp = resp
-	c.LastBody, _ = io.ReadAll(resp.Body)
+	c.Do("POST", "/admin0/events/expire"+query, "", false)
 	return nil
 }
 

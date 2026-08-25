@@ -489,10 +489,14 @@ paths:
         a consumer's unrecoverable-cursor-loss path, instead of pushing
         past `EVENTS_REPLAY_BUFFER` to force natural eviction.
 
-        `?from_timestamp` is resolved against the same index this
-        expires, so a subscriber using it joins live rather than
-        receiving a `410` — it named an instant, not a cursor, so there
-        is no cursor to reject.
+        `?from_timestamp` never yields a `410`: it names an instant, not
+        a cursor, so it is resolved against the same index this expires
+        and there is no client-supplied cursor to reject. After a full
+        expire such a subscriber joins live. After a `?before=` expire
+        it resumes from the oldest surviving cursor, and because replay
+        starts strictly after the resolved id, the boundary event named
+        by `before` is itself skipped — it stays resumable by
+        `Last-Event-ID` / `?from`, which is how to assert on it.
 
         Narrower than `/admin0/reset`: subscribers that are already
         streaming keep receiving events, subscriber counts are left
@@ -511,13 +515,6 @@ paths:
             Omit to expire the whole buffer.
           schema: { type: string }
       responses:
-        "400":
-          description: |
-            `?before=` was present but empty (`errorCode:
-            "invalid_before"`), or the query string could not be parsed
-            (`errorCode: "invalid_query"`). Omit the parameter to expire
-            the whole buffer; an empty or unparseable value is rejected
-            rather than silently treated as expire-everything.
         "200":
           description: Cursors expired.
           content:
@@ -535,6 +532,13 @@ paths:
                       replay is disabled entirely
                       (`EVENTS_REPLAY_BUFFER=0`, where no cursor is
                       resumable in the first place).
+        "400":
+          description: |
+            `?before=` was present but empty (`errorCode:
+            "invalid_before"`), or the query string could not be parsed
+            (`errorCode: "invalid_query"`). Omit the parameter to expire
+            the whole buffer; an empty or unparseable value is rejected
+            rather than silently treated as expire-everything.
 components:
   schemas:
     Expectation:

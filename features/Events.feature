@@ -180,14 +180,23 @@ Feature: GET /api/v2/events Server-Sent Events
     And I subscribe to /api/v2/events with query "?from=0"
     Then the SSE stream delivers an event with id "1" within 3s
 
+  # Seed a cursor BEFORE subscribing so the expire has something real to
+  # drop — expiring an empty buffer would pass even if expiry were a
+  # no-op. Only one "delivers" assertion: that step closes the stream
+  # when it returns, so it can't be used twice on one subscription.
   Scenario: Expiring the buffer leaves a connected subscriber streaming
-    When I subscribe to /api/v2/events
-    And I expire the events replay buffer
-    And I push an event:
+    When I push an event:
       """
       {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirelive000001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
-    Then the SSE stream delivers an event with id "0" within 3s
+    And I subscribe to /api/v2/events
+    And I expire the events replay buffer
+    Then the response JSON path "expired" equals "1"
+    When I push an event:
+      """
+      {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_expirelive000002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    Then the SSE stream delivers an event with id "1" within 3s
 
   Scenario: An empty before parameter is rejected rather than expiring everything
     When I push an event:

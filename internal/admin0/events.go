@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/go-chi/render"
 
@@ -27,9 +28,12 @@ type EventsPublisher interface {
 	// connection lifecycle (e.g. assert a stream closed cleanly).
 	ActiveSubscribers() int
 	TotalSubscribers() int
-	// ExpireBuffer backs POST /admin0/events/expire, the narrow
-	// counterpart to Reset: it ages out replay cursors and nothing else.
-	ExpireBuffer(before string) int
+	// ExpireAll / ExpireBefore back POST /admin0/events/expire, the
+	// narrow counterpart to Reset: they age out replay cursors and
+	// nothing else. Two methods rather than one with an empty-string
+	// sentinel, so "expire everything" can only ever be said on purpose.
+	ExpireAll() int
+	ExpireBefore(cursor string) int
 }
 
 // GetEventSubscribersHandler reports the SSE hub's live and
@@ -91,19 +95,44 @@ func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			"query string could not be parsed: "+err.Error(), "invalid_query")
 		return
 	}
+	// Only `before` is meaningful here, and every other spelling of it —
+	// `?BEFORE=`, `?befor=`, a stray extra param — would otherwise land
+	// on the "no ?before at all" branch and expire the whole buffer. A
+	// typo must not be indistinguishable from omission when the two mean
+	// opposite things.
+	for key := range q {
+		if key != "before" {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				"unknown query parameter "+strconv.Quote(key)+"; only \"before\" is accepted",
+				"invalid_query")
+			return
+		}
+	}
+	// Repeats are ambiguous: q.Get takes the first, so `?before=8&before=`
+	// would trim from 8 while `?before=&before=8` would be rejected.
+	// Refuse rather than let the outcome hinge on ordering.
+	if len(q["before"]) > 1 {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"before must be given at most once", "invalid_query")
+		return
+	}
+	if !q.Has("before") {
+		render.JSON(w, r, expireEventsResponse{Expired: h.Events.ExpireAll()})
+		return
+	}
 	before := q.Get("before")
 	// `?before=` present but empty is a different request from omitting
 	// it: a caller interpolating an unset variable meant to name a
 	// cursor, not to expire the whole buffer. Reject it rather than
 	// silently widening the blast radius — the same guard the SDK's
 	// ExpireEventsBefore applies.
-	if q.Has("before") && before == "" {
+	if before == "" {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"before must not be empty; omit the parameter to expire the whole buffer",
 			"invalid_before")
 		return
 	}
-	render.JSON(w, r, expireEventsResponse{Expired: h.Events.ExpireBuffer(before)})
+	render.JSON(w, r, expireEventsResponse{Expired: h.Events.ExpireBefore(before)})
 }
 
 // PostEventsHandler validates an incoming Auth0 event-stream envelope

@@ -918,7 +918,7 @@ func resumeStatus(t *testing.T, srv *httptest.Server, id string) (int, string) {
 	return resp.StatusCode, ""
 }
 
-func TestHub_ExpireBuffer_AllAgesOutEveryCursor(t *testing.T) {
+func TestHub_Expire_AllAgesOutEveryCursor(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -926,7 +926,7 @@ func TestHub_ExpireBuffer_AllAgesOutEveryCursor(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
-	assert.Equal(t, 3, h.ExpireBuffer(""))
+	assert.Equal(t, 3, h.ExpireAll())
 
 	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
 		status, body := resumeStatus(t, srv, id)
@@ -935,7 +935,7 @@ func TestHub_ExpireBuffer_AllAgesOutEveryCursor(t *testing.T) {
 	}
 }
 
-func TestHub_ExpireBuffer_BeforeKeepsCursorAndNewer(t *testing.T) {
+func TestHub_Expire_BeforeKeepsCursorAndNewer(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -943,7 +943,7 @@ func TestHub_ExpireBuffer_BeforeKeepsCursorAndNewer(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
-	assert.Equal(t, 1, h.ExpireBuffer("evt-2"))
+	assert.Equal(t, 1, h.ExpireBefore("evt-2"))
 
 	status, body := resumeStatus(t, srv, "evt-1")
 	assert.Equal(t, http.StatusGone, status)
@@ -963,7 +963,7 @@ func TestHub_ExpireBuffer_BeforeKeepsCursorAndNewer(t *testing.T) {
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
 }
 
-func TestHub_ExpireBuffer_UnknownCursorIsNoOp(t *testing.T) {
+func TestHub_Expire_UnknownCursorIsNoOp(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -971,7 +971,7 @@ func TestHub_ExpireBuffer_UnknownCursorIsNoOp(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2")
-	assert.Equal(t, 0, h.ExpireBuffer("never-seen"))
+	assert.Equal(t, 0, h.ExpireBefore("never-seen"))
 
 	status, _ := resumeStatus(t, srv, "evt-1")
 	assert.Equal(t, http.StatusOK, status, "an unknown cursor must not age out the buffer")
@@ -979,7 +979,7 @@ func TestHub_ExpireBuffer_UnknownCursorIsNoOp(t *testing.T) {
 
 // Expiry is a control-plane operation over the resume index only: it
 // must not disturb subscribers that are already streaming.
-func TestHub_ExpireBuffer_LeavesConnectedSubscribersStreaming(t *testing.T) {
+func TestHub_Expire_LeavesConnectedSubscribersStreaming(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -996,7 +996,7 @@ func TestHub_ExpireBuffer_LeavesConnectedSubscribersStreaming(t *testing.T) {
 	publishSeq(t, h, "evt-1")
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
 
-	require.Equal(t, 1, h.ExpireBuffer(""))
+	require.Equal(t, 1, h.ExpireAll())
 
 	publishSeq(t, h, "evt-2")
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-2",
@@ -1006,7 +1006,7 @@ func TestHub_ExpireBuffer_LeavesConnectedSubscribersStreaming(t *testing.T) {
 // ?from_timestamp resolves through the same index, so an expired
 // buffer has nothing to resolve against and the subscriber joins live
 // rather than 410-ing (it never named a cursor of its own).
-func TestHub_ExpireBuffer_FromTimestampJoinsLive(t *testing.T) {
+func TestHub_Expire_FromTimestampJoinsLive(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -1014,7 +1014,7 @@ func TestHub_ExpireBuffer_FromTimestampJoinsLive(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	publishSeq(t, h, "evt-1", "evt-2")
-	require.Equal(t, 2, h.ExpireBuffer(""))
+	require.Equal(t, 2, h.ExpireAll())
 
 	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
 	defer cancel()
@@ -1024,11 +1024,115 @@ func TestHub_ExpireBuffer_FromTimestampJoinsLive(t *testing.T) {
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
 }
 
-func TestHub_ExpireBuffer_DisabledBufferReportsZero(t *testing.T) {
+func TestHub_Expire_DisabledBufferReportsZero(t *testing.T) {
 	h, err := events.NewHub(0, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
 
-	assert.Equal(t, 0, h.ExpireBuffer(""))
-	assert.Equal(t, 0, h.ExpireBuffer("evt-1"))
+	assert.Equal(t, 0, h.ExpireAll())
+	assert.Equal(t, 0, h.ExpireBefore("evt-1"))
+	assert.Equal(t, 0, h.ExpireBefore(""), "an empty cursor is never expire-everything")
+}
+
+// The two most delicate parts of the expiry feature are lock-scope
+// choices: Replay holds the replayer's read lock across its delegate,
+// and Hub.expire deliberately does NOT hold the hub lock across that
+// call. Both are justified by concurrency reasoning that no
+// single-threaded test can observe, so drive expiry against publishes,
+// subscribes and resets at once and let -race and the deadlock detector
+// judge. The assertions are liveness ones: nothing wedges, and every
+// publish still finds a live server.
+func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var publishErrs, publishOK, expires, subscribes atomic.Int64
+
+	for i := range 3 {
+		wg.Go(func() {
+			for n := 0; ; n++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				id := fmt.Sprintf("evt_%016x", n*10+i)
+				if err := h.Publish(events.Event{
+					Type: "x.y", ID: id,
+					Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+				}); err != nil {
+					publishErrs.Add(1)
+				} else {
+					publishOK.Add(1)
+				}
+			}
+		})
+	}
+
+	// Expirers alternate between the whole buffer and a partial trim.
+	for i := range 2 {
+		wg.Go(func() {
+			for n := 0; ; n++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if (n+i)%2 == 0 {
+					h.ExpireAll()
+				} else {
+					h.ExpireBefore(fmt.Sprintf("evt_%016x", n))
+				}
+				expires.Add(1)
+			}
+		})
+	}
+
+	// Subscribers connect and disconnect, some presenting a resume
+	// cursor so they exercise the Replay path against a live expirer.
+	wg.Go(func() {
+		for n := 0; ; n++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			query := ""
+			if n%2 == 0 {
+				query = fmt.Sprintf("?from=evt_%016x", n)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+query, nil)
+			if reqErr != nil {
+				cancel()
+				continue
+			}
+			resp, doErr := http.DefaultClient.Do(req) //nolint:bodyclose // Closed below; the 410 path returns a short body.
+			if doErr == nil {
+				// Read one frame, then drop the connection — the point is
+				// churning subscribe/unsubscribe under a live expirer, not
+				// consuming the stream.
+				_, _ = io.CopyN(io.Discard, resp.Body, 32)
+				_ = resp.Body.Close()
+				subscribes.Add(1)
+			}
+			cancel()
+		}
+	})
+
+	time.Sleep(500 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	assert.Equal(t, int64(0), publishErrs.Load(),
+		"no Publish should fail while expiry runs; ok=%d expires=%d subs=%d",
+		publishOK.Load(), expires.Load(), subscribes.Load())
+	assert.Greater(t, publishOK.Load(), int64(0))
+	assert.Greater(t, expires.Load(), int64(0))
+	assert.Greater(t, subscribes.Load(), int64(0))
 }

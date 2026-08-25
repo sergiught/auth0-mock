@@ -103,9 +103,13 @@ type expireEventsResponse struct {
 //
 // ?from_timestamp behaves differently, and deliberately so: it names an
 // instant rather than a cursor, so the mock resolves it against the
-// same index this call truncates. Once expired there is nothing left to
-// resolve against, and the subscriber joins live instead of getting a
-// 410 — it never presented a cursor of its own to reject.
+// same index this call truncates and never has a client cursor to
+// reject with a 410. After ExpireEvents there is nothing left to
+// resolve against and such a subscriber joins live. After
+// ExpireEventsBefore it resumes from the oldest surviving cursor
+// instead, which — since replay starts strictly after the resolved id —
+// skips the boundary event itself; assert on that one through
+// Last-Event-ID or ?from.
 //
 // This is the deterministic way to test a consumer's cursor-loss
 // handling. The alternatives are worse: pushing past the buffer's

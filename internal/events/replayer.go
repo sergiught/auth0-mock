@@ -82,6 +82,16 @@ func (r *ringIndex) has(id string) bool {
 // evicted, or never seen — drops nothing, which makes repeat calls
 // idempotent.
 //
+// Matching is by exact id against the FIRST occurrence, which is what
+// go-sse's own findIDInQueue does, so the index and the inner buffer
+// agree on where a cursor sits. Nothing upstream enforces unique
+// offsets, and expiry is ill-defined against a duplicated one: with
+// entries [0, 1, 0], expire("0") matches at position 0 and drops
+// nothing, and expire("1") leaves the trailing "0" resumable. Matching
+// the last occurrence instead would only move the divergence into the
+// inner replayer, which would still resume from the first. Push unique
+// offsets.
+//
 // Only the index is truncated, never the inner FiniteReplayer, whose
 // queue the library keeps unexported. The dropped messages therefore
 // linger there until cap more events overwrite them; what makes them
@@ -108,9 +118,11 @@ func (r *ringIndex) expire(before string) int {
 	}
 	// Shift the survivors down in place rather than re-slicing, so the
 	// index keeps its original backing array (and capacity) the way put
-	// does when it evicts. Zero the vacated tail so the expired entries
-	// aren't left reachable through the slice's capacity — expire should
-	// actually drop what it reports dropping.
+	// does when it evicts. Zero the vacated tail so the expired ids
+	// aren't left reachable through the slice's capacity. This reclaims
+	// the index entries only — the *sse.Message payloads stay referenced
+	// by the inner FiniteReplayer's fixed-size queue until cap more
+	// events overwrite them, so expiry is about resumability, not memory.
 	kept := copy(r.entries, r.entries[drop:])
 	clear(r.entries[kept:len(r.entries)])
 	r.entries = r.entries[:kept]
