@@ -513,6 +513,11 @@ paths:
             Expire only cursors older than this one, keeping it and
             everything after it resumable — the partial-loss case.
             Omit to expire the whole buffer.
+
+            Resolved to its first copy in the buffer, the same entry a
+            resume from this cursor would start at. Push unique offsets:
+            with a duplicated one, "older than" is measured from the
+            earliest copy.
           schema: { type: string }
       responses:
         "200":

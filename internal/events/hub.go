@@ -526,8 +526,8 @@ func (h *Hub) runKeepAlive() {
 //     is long-lived; the server default would tear down healthy
 //     subscribers after the configured timeout).
 //  2. Promotes Auth0's ?from and ?from_timestamp query parameters to
-//     the SSE-spec Last-Event-ID header so the library's native
-//     replay path picks them up. ?from wins over ?from_timestamp.
+//     the SSE-spec Last-Event-ID header so the replay buffer resolves
+//     them on the normal resume path. ?from wins over ?from_timestamp.
 //     ?from_timestamp accepts RFC 3339; clients that send the
 //     timezone `+` unencoded (which URL-decodes to space) are
 //     tolerated by retrying with the space restored.

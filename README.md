@@ -258,7 +258,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 ### 📡 Event streams
 
-`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>` and the library's native replay path fills in what they missed.
+`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>`, and the buffer fills in what they missed.
 
 ```bash
 # In one terminal: subscribe (bearer required).

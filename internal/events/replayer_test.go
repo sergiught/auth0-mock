@@ -341,8 +341,8 @@ func TestRecordingReplayer_ReusedIDsAfterExpireAreResumable(t *testing.T) {
 	assert.Equal(t, []string{"2"}, w.sent)
 }
 
-// newTestMessageOn builds a message and returns it with the topics to
-// publish it under, so topic-filtered replay can be exercised.
+// putOn publishes one message under the given topics, so topic-filtered
+// replay can be exercised.
 func putOn(t *testing.T, r *recordingReplayer, id string, topics ...string) {
 	t.Helper()
 	_, err := r.Put(newTestMessage(t, id), topics)
@@ -464,4 +464,26 @@ func TestRecordingReplayer_IDBefore_DuplicateDoesNotRestartFromFirstCopy(t *test
 	assert.NotContains(t, w.sent, "1",
 		"resuming must not restart from the first copy of the reused offset")
 	assert.Equal(t, []string{"0"}, w.sent)
+}
+
+// The mock's clock is controllable and /admin0/clock/advance takes
+// negative durations, so buffered timestamps need not be
+// non-decreasing. Position order and time order then disagree, and no
+// single cursor can express "exactly the events at or after t" — a
+// cursor names a suffix by position. The rule that matters for a resume
+// is never to LOSE an event at or after t; re-sending an older one is
+// benign, since SSE consumers already tolerate replays.
+func TestRingIndex_IDBefore_NonMonotonicNeverSkipsNewerEvents(t *testing.T) {
+	idx := newRingIndex(10)
+	base := time.Unix(1_700_000_000, 0).UTC()
+	idx.put("A", base, nil, nil)
+	idx.put("B", base.Add(600*time.Second), nil, nil)
+	// Clock stepped backwards before C was published.
+	idx.put("C", base.Add(120*time.Second), nil, nil)
+
+	got, ok := idx.idBefore(base.Add(300 * time.Second))
+	require.True(t, ok)
+	assert.Equal(t, "A", got,
+		"resuming after A still delivers B, which postdates the requested instant; "+
+			"picking C would silently drop it")
 }

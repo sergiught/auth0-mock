@@ -39,10 +39,10 @@ type indexEntry struct {
 	topics []string
 }
 
+// newRingIndex builds a buffer of the given capacity. The caller
+// validates it — newRecordingReplayer rejects anything below 1 — so
+// there is deliberately no clamp here to disagree with that.
 func newRingIndex(capacity int) *ringIndex {
-	if capacity < 1 {
-		capacity = 1
-	}
 	return &ringIndex{cap: capacity, entries: make([]indexEntry, 0, capacity)}
 }
 
@@ -79,12 +79,19 @@ func (r *ringIndex) firstIndex(id string) int {
 // joins live. When every buffered event predates t, returns the newest
 // (so Replay sends nothing from the buffer; subscriber joins live).
 //
-// Scans every entry rather than stopping at the first one that doesn't
-// predate t. Timestamps are usually non-decreasing, but the mock's clock
-// is controllable and /admin0/clock/advance accepts negative durations,
-// so an earlier entry can carry a later time; stopping early would then
-// miss events that genuinely predate t. Latest is by insertion order,
-// which is what a resume cursor has to follow.
+// Stops at the first entry that doesn't predate t, which selects the
+// longest strictly-predating PREFIX rather than the latest predating
+// entry anywhere in the buffer. That distinction only shows up when
+// timestamps aren't monotonic — the mock's clock is controllable and
+// /admin0/clock/advance takes negative durations — and the prefix is
+// the safe choice. A cursor names a suffix by position, so when
+// position order and time order disagree no cursor can express
+// "exactly the events at or after t"; stopping at the first entry that
+// doesn't predate t guarantees the suffix still contains every such
+// event. Scanning past it would pick a later cursor and silently drop
+// the ones in between, which is the failure a resume exists to prevent.
+// Re-sending an older event instead is benign; SSE consumers already
+// tolerate replays.
 //
 // Only first copies are eligible. The answer is handed back as an id,
 // and a resume resolves an id to its first copy — so offering the
@@ -94,12 +101,12 @@ func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 	var (
 		bestID string
 		found  bool
-		seen   = make(map[string]struct{}, len(r.entries))
 	)
-	for _, e := range r.entries {
-		_, dup := seen[e.id]
-		seen[e.id] = struct{}{}
-		if dup || !e.at.Before(t) {
+	for i, e := range r.entries {
+		if !e.at.Before(t) {
+			break
+		}
+		if r.firstIndex(e.id) != i {
 			continue
 		}
 		bestID = e.id
@@ -160,6 +167,14 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 // The entries are really removed, messages included, so an id may be
 // reused afterwards: a test that expires the buffer and then renumbers
 // its offsets from zero gets a clean buffer, not a shadowed one.
+//
+// Before is resolved to its first copy, the same entry a resume from
+// that cursor would start at. If an offset is duplicated inside the
+// buffer, "older than before" therefore means older than the FIRST
+// copy, and expiring by that offset trims less than a caller holding
+// the later copy expects. Resolving to the last copy instead would put
+// expiry and resume back in disagreement, which is the class of bug
+// this buffer is shaped to avoid; push unique offsets.
 func (r *ringIndex) expire(before string) int {
 	drop := len(r.entries)
 	if before != "" {

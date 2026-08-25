@@ -1194,3 +1194,29 @@ func TestHub_BufferSizeOne_RetainsExactlyOneEvent(t *testing.T) {
 	status, _ = resumeStatus(t, srv, "evt-2")
 	assert.Equal(t, http.StatusOK, status)
 }
+
+// The partial-expire case is described in the OpenAPI fragment, the
+// README, the cookbook and the SDK godoc, and it runs through the
+// IDBefore-fails → OldestID-fallback branch in the handler. Without
+// this, deleting that fallback would leave the suite green while every
+// ?from_timestamp subscriber after a partial expire silently joined
+// live instead of replaying the surviving window.
+func TestHub_Expire_BeforeThenFromTimestampResumesSurvivingWindow(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
+	require.Equal(t, 1, h.ExpireBefore("evt-2"))
+
+	// Every surviving event postdates this instant, so IDBefore finds
+	// nothing and the handler falls back to the oldest survivor.
+	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
+	defer cancel()
+
+	// The resolved cursor is evt-2, and replay starts strictly after it,
+	// so the surviving window delivers evt-3 — the documented trade-off.
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
+}

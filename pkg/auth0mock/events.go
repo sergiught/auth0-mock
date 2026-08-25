@@ -138,7 +138,13 @@ func (e *EventsClient) ExpireEvents(ctx context.Context) (int, error) {
 //
 // Forgiving in the same way as ExpectationsClient.ClearOp: a cursor the
 // buffer no longer holds (or never held) expires nothing and reports 0
-// rather than erroring, so repeat calls are safe. An empty cursor is
+// rather than erroring, so repeat calls are safe. That also means the
+// count cannot tell "nothing was older" from "never seen".
+//
+// Cursor is resolved to its first copy in the buffer, the same entry a
+// resume from it would start at. Push unique offsets: with a duplicated
+// one, "older than cursor" means older than the earliest copy, so this
+// trims less than a caller holding the later copy expects. An empty cursor is
 // rejected — expiring the whole buffer is ExpireEvents' job, and it
 // should be spelled out rather than fallen into.
 func (e *EventsClient) ExpireEventsBefore(ctx context.Context, cursor string) (int, error) {
