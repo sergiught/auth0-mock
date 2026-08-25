@@ -359,7 +359,12 @@ func (h *Hub) Reset(ctx context.Context) error {
 // subscribers keep streaming, the server is not rebuilt, and counters
 // are left alone.
 func (h *Hub) ExpireAll() int {
-	return h.expire("")
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.closed || h.replayer == nil {
+		return 0
+	}
+	return h.replayer.ExpireAll()
 }
 
 // ExpireBefore ages out every cursor older than cursor, leaving cursor
@@ -368,37 +373,32 @@ func (h *Hub) ExpireAll() int {
 // calls are idempotent. Returns 0 when replay is disabled.
 //
 // An empty cursor drops nothing rather than falling through to
-// expire-everything: ExpireAll is how you say that. Keeping the two
-// apart means no caller can widen the blast radius by passing through
-// an unset value — the failure the HTTP and SDK layers each had to
-// grow a guard against.
+// expire-everything: ExpireAll is how you say that, all the way down to
+// the buffer, so no caller can widen the blast radius by passing
+// through an unset value.
 func (h *Hub) ExpireBefore(cursor string) int {
-	if cursor == "" {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.closed || h.replayer == nil {
 		return 0
 	}
-	return h.expire(cursor)
+	return h.replayer.ExpireBefore(cursor)
 }
 
-// expire holds mu across the call, the way Publish does. That keeps it
-// atomic against Reset: snapshotting the replayer and releasing first
-// would let Reset install a new buffer in between, so the expiry would
-// truncate the discarded one and still report a non-zero count for a
-// buffer nobody can resume from — a success the caller would act on.
+// Both hold mu across the call, the way Publish does, so the expiry and
+// the replayer it reads are not torn apart by a concurrent Reset
+// swapping the buffer in between. Neither can stop a Reset that lands
+// immediately afterwards from discarding what was just expired; the
+// count is only ever true as of the moment it was taken.
 //
 // Safe to hold because the replayer's own write lock is only ever held
 // for the truncation itself: Replay snapshots its messages and writes
 // to the subscriber with no lock, so no consumer can park an expiry
 // here and starve the hub's readers.
 //
-// Reports 0 on a closed hub, matching Publish's refusal to act on one.
-func (h *Hub) expire(before string) int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.closed || h.replayer == nil {
-		return 0
-	}
-	return h.replayer.Expire(before)
-}
+// Both report 0 on a closed hub, matching Publish's refusal to act on
+// one — a 200 with {"expired":0} rather than an error, because nothing
+// was expired and the hub only reaches that state during shutdown.
 
 // Shutdown drains every subscriber, stops the keep-alive goroutine,
 // and marks the hub closed permanently. Intended for process

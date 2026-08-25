@@ -111,7 +111,7 @@ func TestRingIndex_Expire_All(t *testing.T) {
 	idx.put("b", base.Add(10*time.Second), nil, nil)
 	idx.put("c", base.Add(20*time.Second), nil, nil)
 
-	assert.Equal(t, 3, idx.expire(""), "empty cursor expires the whole index")
+	assert.Equal(t, 3, idx.expireAll(), "empty cursor expires the whole index")
 	for _, id := range []string{"a", "b", "c"} {
 		assert.Falsef(t, idx.has(id), "%q should be aged out", id)
 	}
@@ -126,7 +126,7 @@ func TestRingIndex_Expire_Before(t *testing.T) {
 		idx.put(id, base.Add(time.Duration(i)*10*time.Second), nil, nil)
 	}
 
-	assert.Equal(t, 2, idx.expire("c"), "everything older than c is dropped")
+	assert.Equal(t, 2, idx.expireBefore("c"), "everything older than c is dropped")
 	assert.False(t, idx.has("a"))
 	assert.False(t, idx.has("b"))
 	assert.True(t, idx.has("c"), "the boundary cursor itself stays resumable")
@@ -139,7 +139,7 @@ func TestRingIndex_Expire_UnknownCursorIsNoOp(t *testing.T) {
 	idx.put("a", base, nil, nil)
 	idx.put("b", base.Add(10*time.Second), nil, nil)
 
-	assert.Equal(t, 0, idx.expire("nope"))
+	assert.Equal(t, 0, idx.expireBefore("nope"))
 	assert.True(t, idx.has("a"))
 	assert.True(t, idx.has("b"))
 }
@@ -151,9 +151,9 @@ func TestRingIndex_Expire_Idempotent(t *testing.T) {
 		idx.put(id, base.Add(time.Duration(i)*10*time.Second), nil, nil)
 	}
 
-	assert.Equal(t, 2, idx.expire("c"))
-	assert.Equal(t, 0, idx.expire("c"), "re-expiring the same cursor drops nothing")
-	assert.Equal(t, 0, newRingIndex(3).expire(""), "expiring an empty index drops nothing")
+	assert.Equal(t, 2, idx.expireBefore("c"))
+	assert.Equal(t, 0, idx.expireBefore("c"), "re-expiring the same cursor drops nothing")
+	assert.Equal(t, 0, newRingIndex(3).expireAll(), "expiring an empty index drops nothing")
 }
 
 // Expiry removes entries outright, so it frees slots as well as
@@ -165,7 +165,7 @@ func TestRingIndex_Expire_KeepsCapacityAndEvicts(t *testing.T) {
 	for i, id := range []string{"a", "b", "c"} {
 		idx.put(id, base.Add(time.Duration(i)*10*time.Second), nil, nil)
 	}
-	require.Equal(t, 3, idx.expire(""))
+	require.Equal(t, 3, idx.expireAll())
 
 	for i, id := range []string{"d", "e", "f", "g"} {
 		idx.put(id, base.Add(time.Duration(30+i*10)*time.Second), nil, nil)
@@ -192,12 +192,12 @@ func TestRecordingReplayer_Expire(t *testing.T) {
 	}
 	require.Equal(t, "a", r.OldestID())
 
-	assert.Equal(t, 2, r.Expire("c"))
+	assert.Equal(t, 2, r.ExpireBefore("c"))
 	assert.False(t, r.Has("a"), "an expired cursor is what the 410 gate keys on")
 	assert.True(t, r.Has("c"))
 	assert.Equal(t, "c", r.OldestID(), "?from_timestamp now resolves to the surviving window")
 
-	assert.Equal(t, 1, r.Expire(""))
+	assert.Equal(t, 1, r.ExpireAll())
 	assert.Empty(t, r.OldestID(), "an expired buffer has no oldest cursor to fall back to")
 }
 
@@ -229,7 +229,7 @@ func TestRecordingReplayer_Replay_RefusesExpiredCursor(t *testing.T) {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
 	}
-	require.Equal(t, 3, r.Expire(""))
+	require.Equal(t, 3, r.ExpireAll())
 
 	w := &captureWriter{}
 	require.NoError(t, r.Replay(sse.Subscription{
@@ -248,7 +248,7 @@ func TestRecordingReplayer_Replay_LiveCursorStillReplays(t *testing.T) {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
 	}
-	require.Equal(t, 1, r.Expire("b"))
+	require.Equal(t, 1, r.ExpireBefore("b"))
 
 	w := &captureWriter{}
 	require.NoError(t, r.Replay(sse.Subscription{
@@ -269,7 +269,7 @@ func TestRecordingReplayer_ReusedIDAfterExpire(t *testing.T) {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
 	}
-	require.Equal(t, 3, r.Expire(""))
+	require.Equal(t, 3, r.ExpireAll())
 
 	// The test starts numbering again from 0.
 	_, err = r.Put(newTestMessage(t, "0"), []string{"t1"})
@@ -295,7 +295,7 @@ func TestRecordingReplayer_DuplicateIDSpanningExpiry(t *testing.T) {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
 	}
-	require.Equal(t, 2, r.Expire("b"), "a and x are older than b")
+	require.Equal(t, 2, r.ExpireBefore("b"), "a and x are older than b")
 
 	assert.False(t, r.Has("x"), "x was expired")
 	assert.True(t, r.Has("a"), "a's surviving copy is newer than the boundary")
@@ -322,7 +322,7 @@ func TestRecordingReplayer_ReusedIDsAfterExpireAreResumable(t *testing.T) {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
 	}
-	require.Equal(t, 3, r.Expire(""))
+	require.Equal(t, 3, r.ExpireAll())
 
 	for _, id := range []string{"0", "1", "2"} {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})

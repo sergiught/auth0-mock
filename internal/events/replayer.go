@@ -39,10 +39,17 @@ type indexEntry struct {
 	topics []string
 }
 
-// newRingIndex builds a buffer of the given capacity. The caller
-// validates it — newRecordingReplayer rejects anything below 1 — so
-// there is deliberately no clamp here to disagree with that.
+// newRingIndex builds a buffer of the given capacity, floored at 1.
+// The constructor already rejects anything smaller, so the floor is
+// belt-and-braces — but the failure it prevents is not local: a cap of 0
+// makes the first put take the eviction branch and slice entries[1:] out
+// of range, and go-sse answers a panic from a Replayer by setting the
+// replayer to nil, which disables replay for every subscriber on the
+// server rather than failing the one call.
 func newRingIndex(capacity int) *ringIndex {
+	if capacity < 1 {
+		capacity = 1
+	}
 	return &ringIndex{cap: capacity, entries: make([]indexEntry, 0, capacity)}
 }
 
@@ -157,12 +164,14 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 	return out, true
 }
 
-// expire drops entries from the front of the buffer and reports how
-// many it dropped. An empty before expires everything; otherwise
-// everything older than before is dropped and before itself stays, so
-// it remains a valid resume point. A before the buffer doesn't hold
-// drops nothing, which makes repeat calls idempotent — and means 0 does
-// not distinguish "nothing was older" from "never seen".
+// expireAll drops every buffered cursor and reports how many it
+// dropped. Kept separate from expireBefore rather than folded into one
+// method with an empty-string sentinel: an id threaded through from a
+// variable that happens to be empty must not be able to destroy the
+// buffer and report it as a success.
+//
+// Repeat calls are idempotent, and 0 does not distinguish "nothing was
+// older" from "never seen".
 //
 // The entries are really removed, messages included, so an id may be
 // reused afterwards: a test that expires the buffer and then renumbers
@@ -175,15 +184,23 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 // the later copy expects. Resolving to the last copy instead would put
 // expiry and resume back in disagreement, which is the class of bug
 // this buffer is shaped to avoid; push unique offsets.
-func (r *ringIndex) expire(before string) int {
-	drop := len(r.entries)
-	if before != "" {
-		drop = r.firstIndex(before)
-		if drop < 0 {
-			return 0
-		}
-	}
-	if drop == 0 {
+func (r *ringIndex) expireAll() int {
+	return r.dropFront(len(r.entries))
+}
+
+// expireBefore drops everything older than before, keeping before itself
+// resumable, and reports how many it dropped. See expire's notes on
+// resolution and on reused offsets. An id the buffer doesn't hold — the
+// empty string included — drops nothing, so there is no value that turns
+// this into expire-everything by accident.
+func (r *ringIndex) expireBefore(before string) int {
+	return r.dropFront(r.firstIndex(before))
+}
+
+// dropFront removes the first n entries and reports how many went. A
+// negative n (an id that isn't buffered) or zero drops nothing.
+func (r *ringIndex) dropFront(drop int) int {
+	if drop <= 0 {
 		return 0
 	}
 	// Shift the survivors down in place rather than re-slicing, so the
@@ -273,7 +290,10 @@ func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message
 // this call. Returning a non-nil error from here would let go-sse
 // propagate it via http.Error into the SSE wire body — invisible to the
 // user but ugly when it lands — so an unknown or expired cursor replays
-// nothing instead.
+// nothing instead of erroring. That is the only case this suppresses: a
+// Send or Flush that fails partway through a replay still returns its
+// error, exactly as the FiniteReplayer this replaced did, because at
+// that point the subscriber's connection is already broken.
 //
 // A subscriber whose cursor is expired between the gate and here
 // therefore joins live with nothing replayed, rather than getting a
@@ -333,13 +353,20 @@ func (r *recordingReplayer) Has(id string) bool {
 	return r.idx.has(id)
 }
 
-// Expire ages out buffered cursors on demand and reports how many it
-// dropped. See ringIndex.expire for the before semantics. Backs
-// POST /admin0/events/expire so a test can provoke the 410 aged-out
-// path without pushing past the buffer's capacity or resetting the
-// whole mock.
-func (r *recordingReplayer) Expire(before string) int {
+// ExpireAll ages out every buffered cursor and reports how many it
+// dropped. Backs POST /admin0/events/expire so a test can provoke the
+// 410 aged-out path without pushing past the buffer's capacity or
+// resetting the whole mock.
+func (r *recordingReplayer) ExpireAll() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.idx.expire(before)
+	return r.idx.expireAll()
+}
+
+// ExpireBefore ages out cursors older than before, keeping before itself
+// resumable, and reports how many it dropped. See ringIndex.expireBefore.
+func (r *recordingReplayer) ExpireBefore(before string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.idx.expireBefore(before)
 }
