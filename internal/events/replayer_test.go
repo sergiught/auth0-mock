@@ -487,3 +487,43 @@ func TestRingIndex_IDBefore_NonMonotonicNeverSkipsNewerEvents(t *testing.T) {
 		"resuming after A still delivers B, which postdates the requested instant; "+
 			"picking C would silently drop it")
 }
+
+// An expiry that lands mid-replay must stop the rest of the buffer
+// going out: otherwise the endpoint answers {"expired":N} while the
+// events it just aged out are still being written to a subscriber.
+func TestRecordingReplayer_Replay_StopsWhenExpiredMidFlight(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"1", "2", "3", "4"} {
+		putOn(t, r, id, "t1")
+	}
+
+	// Expire from inside the first Send, i.e. between the snapshot and
+	// the writes — the exact window the re-check covers.
+	w := &expiringWriter{r: r, after: 1}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Equal(t, []string{"2"}, w.sent,
+		"only the write already in flight goes out; the rest were expired")
+}
+
+// expiringWriter expires the whole buffer once it has accepted `after`
+// messages, simulating a concurrent POST /admin0/events/expire.
+type expiringWriter struct {
+	r     *recordingReplayer
+	after int
+	sent  []string
+}
+
+func (e *expiringWriter) Send(m *sse.Message) error {
+	e.sent = append(e.sent, m.ID.String())
+	if len(e.sent) == e.after {
+		e.r.ExpireAll()
+	}
+	return nil
+}
+
+func (e *expiringWriter) Flush() error { return nil }

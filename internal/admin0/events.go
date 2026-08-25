@@ -75,7 +75,7 @@ func (h *GetEventSubscribersHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 //
 // Responds 200 with {"expired": <count>}: the number of cursors
 // dropped. Note it does NOT distinguish "nothing was older than that
-// cursor" from "that cursor was never in the buffer" — ringIndex.expire
+// cursor" from "that cursor was never in the buffer" — the buffer
 // reports 0 for both, and for a mock started with replay disabled. The
 // count says how much went, not why nothing did.
 type ExpireEventsHandler struct {

@@ -358,6 +358,24 @@ func (h *Hub) Reset(ctx context.Context) error {
 // reset the whole mock. Unlike Reset it touches nothing else — live
 // subscribers keep streaming, the server is not rebuilt, and counters
 // are left alone.
+//
+// Both this and ExpireBefore hold mu across the call, the way Publish
+// does, so the expiry and the replayer it reads are not torn apart by a
+// concurrent Reset swapping the buffer in between. Neither can stop a
+// Reset that lands immediately afterwards from discarding what was just
+// expired; the count is only ever true as of the moment it was taken.
+//
+// Holding mu costs nothing extra: the replayer's own write lock is held
+// only for the truncation, because Replay writes to its subscriber
+// unlocked. It is NOT a guarantee that an expiry can never block — a
+// subscriber that stops reading stalls Joe, which leaves Publish
+// holding mu.RLock, and a Reset queued behind it then blocks every
+// later RLock including this one. That hazard predates expiry and is
+// shared with the keep-alive and the handler's aged-out lookup.
+//
+// Both report 0 on a closed hub rather than erroring as Publish does:
+// nothing was expired, and the hub only reaches that state during
+// shutdown.
 func (h *Hub) ExpireAll() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -384,21 +402,6 @@ func (h *Hub) ExpireBefore(cursor string) int {
 	}
 	return h.replayer.ExpireBefore(cursor)
 }
-
-// Both hold mu across the call, the way Publish does, so the expiry and
-// the replayer it reads are not torn apart by a concurrent Reset
-// swapping the buffer in between. Neither can stop a Reset that lands
-// immediately afterwards from discarding what was just expired; the
-// count is only ever true as of the moment it was taken.
-//
-// Safe to hold because the replayer's own write lock is only ever held
-// for the truncation itself: Replay snapshots its messages and writes
-// to the subscriber with no lock, so no consumer can park an expiry
-// here and starve the hub's readers.
-//
-// Both report 0 on a closed hub, matching Publish's refusal to act on
-// one — a 200 with {"expired":0} rather than an error, because nothing
-// was expired and the hub only reaches that state during shutdown.
 
 // Shutdown drains every subscriber, stops the keep-alive goroutine,
 // and marks the hub closed permanently. Intended for process

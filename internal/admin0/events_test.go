@@ -53,7 +53,14 @@ func (h *captureHub) Reset(_ context.Context) error {
 	return nil
 }
 
-func (h *captureHub) ExpireAll() int { return h.record("") }
+// expireAllMarker distinguishes an ExpireAll call from
+// ExpireBefore(""). Recording both as "" would let a refactor that
+// routed the omitted-parameter case through ExpireBefore — the method
+// whose whole contract is that it can never mean "expire everything" —
+// pass the tests unchanged.
+const expireAllMarker = "\x00all"
+
+func (h *captureHub) ExpireAll() int { return h.record(expireAllMarker) }
 
 func (h *captureHub) ExpireBefore(cursor string) int { return h.record(cursor) }
 
@@ -322,7 +329,8 @@ func TestPostAdmin0EventsExpire_ExpiresWholeBuffer(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.JSONEq(t, `{"expired":10}`, rec.Body.String())
-	assert.Equal(t, []string{""}, hub.expired, "no ?before means expire everything")
+	assert.Equal(t, []string{expireAllMarker}, hub.expired,
+		"no ?before must route through ExpireAll, not ExpireBefore(\"\")")
 }
 
 func TestPostAdmin0EventsExpire_BeforeCursor(t *testing.T) {

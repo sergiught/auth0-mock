@@ -109,13 +109,18 @@ func (r *ringIndex) idBefore(t time.Time) (string, bool) {
 		bestID string
 		found  bool
 	)
-	for i, e := range r.entries {
+	// Tracks ids already visited rather than calling firstIndex per
+	// entry: that would rescan the prefix every step, making this O(n^2)
+	// under the read lock for what one pass answers.
+	seen := make(map[string]struct{}, len(r.entries))
+	for _, e := range r.entries {
 		if !e.at.Before(t) {
 			break
 		}
-		if r.firstIndex(e.id) != i {
+		if _, dup := seen[e.id]; dup {
 			continue
 		}
+		seen[e.id] = struct{}{}
 		bestID = e.id
 		found = true
 	}
@@ -176,6 +181,12 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 // The entries are really removed, messages included, so an id may be
 // reused afterwards: a test that expires the buffer and then renumbers
 // its offsets from zero gets a clean buffer, not a shadowed one.
+func (r *ringIndex) expireAll() int {
+	return r.dropFront(len(r.entries))
+}
+
+// expireBefore drops everything older than before, keeping before itself
+// resumable, and reports how many it dropped.
 //
 // Before is resolved to its first copy, the same entry a resume from
 // that cursor would start at. If an offset is duplicated inside the
@@ -184,24 +195,32 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 // the later copy expects. Resolving to the last copy instead would put
 // expiry and resume back in disagreement, which is the class of bug
 // this buffer is shaped to avoid; push unique offsets.
-func (r *ringIndex) expireAll() int {
-	return r.dropFront(len(r.entries))
-}
-
-// expireBefore drops everything older than before, keeping before itself
-// resumable, and reports how many it dropped. See expire's notes on
-// resolution and on reused offsets. An id the buffer doesn't hold — the
-// empty string included — drops nothing, so there is no value that turns
-// this into expire-everything by accident.
+//
+// An id the buffer doesn't hold drops nothing, so there is no value
+// that turns this into expire-everything by accident. The empty string
+// is refused outright rather than left to firstIndex: sse.ID("") is a
+// SET event id, so an entry could in principle be buffered under it,
+// and the whole point of splitting expireAll out is that no threaded-
+// through empty value can ever mean "expire everything".
 func (r *ringIndex) expireBefore(before string) int {
+	if before == "" {
+		return 0
+	}
 	return r.dropFront(r.firstIndex(before))
 }
 
 // dropFront removes the first n entries and reports how many went. A
-// negative n (an id that isn't buffered) or zero drops nothing.
+// negative n (an id that isn't buffered) or zero drops nothing, and n
+// is clamped to the buffer length: slicing past the end would panic,
+// and go-sse answers a panic from a Replayer by disabling replay for
+// every subscriber on the server — the same reason newRingIndex keeps
+// its floor.
 func (r *ringIndex) dropFront(drop int) int {
 	if drop <= 0 {
 		return 0
+	}
+	if drop > len(r.entries) {
+		drop = len(r.entries)
 	}
 	// Shift the survivors down in place rather than re-slicing, so the
 	// buffer keeps its original backing array (and capacity) the way put
@@ -312,6 +331,15 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 		return nil
 	}
 	for _, m := range msgs {
+		// Re-check before each write. The snapshot is taken under the
+		// read lock and the writes happen without it — deliberately, so a
+		// subscriber that stops reading cannot park an expiry — which
+		// leaves a window where an expiry lands mid-replay. Without this
+		// the endpoint would answer {"expired":N} while the events it
+		// just aged out were still going out on the wire.
+		if !r.Has(m.ID.String()) {
+			break
+		}
 		if err := sub.Client.Send(m); err != nil {
 			return err
 		}
