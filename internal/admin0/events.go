@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -102,16 +103,14 @@ func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// on the "no ?before at all" branch and expire the whole buffer. A
 	// typo must not be indistinguishable from omission when the two mean
 	// opposite things.
-	unknown := make([]string, 0, len(q))
-	for key := range q {
-		if key != "before" {
-			unknown = append(unknown, strconv.Quote(key))
-		}
-	}
+	// Sorted: map iteration order is randomised, and an error message
+	// naming a different key run to run is one nobody can assert on.
+	unknown := slices.Sorted(maps.Keys(q))
+	unknown = slices.DeleteFunc(unknown, func(key string) bool { return key == "before" })
 	if len(unknown) > 0 {
-		// Sorted: map iteration order is randomised, and an error message
-		// naming a different key run to run is one nobody can assert on.
-		sort.Strings(unknown)
+		for i, key := range unknown {
+			unknown[i] = strconv.Quote(key)
+		}
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"unknown query parameter(s) "+strings.Join(unknown, ", ")+`; only "before" is accepted`,
 			"invalid_query")

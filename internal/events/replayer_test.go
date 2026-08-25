@@ -12,9 +12,9 @@ import (
 func TestRingIndex_PutAndIDBefore(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
-	idx.put("a", base)
-	idx.put("b", base.Add(10*time.Second))
-	idx.put("c", base.Add(20*time.Second))
+	idx.put("a", base, nil, nil)
+	idx.put("b", base.Add(10*time.Second), nil, nil)
+	idx.put("c", base.Add(20*time.Second), nil, nil)
 
 	// Strictly-less semantics: query exactly at b's timestamp returns
 	// a (the latest event strictly before b).
@@ -30,7 +30,7 @@ func TestRingIndex_PutAndIDBefore(t *testing.T) {
 func TestRingIndex_IDBefore_NothingPredates(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
-	idx.put("a", base.Add(10*time.Second))
+	idx.put("a", base.Add(10*time.Second), nil, nil)
 
 	_, ok := idx.idBefore(base)
 	assert.False(t, ok, "no stored event predates t; caller should drop the hint")
@@ -39,8 +39,8 @@ func TestRingIndex_IDBefore_NothingPredates(t *testing.T) {
 func TestRingIndex_IDBefore_AfterAll(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
-	idx.put("a", base)
-	idx.put("b", base.Add(10*time.Second))
+	idx.put("a", base, nil, nil)
+	idx.put("b", base.Add(10*time.Second), nil, nil)
 
 	got, ok := idx.idBefore(base.Add(time.Hour))
 	require.True(t, ok)
@@ -50,9 +50,9 @@ func TestRingIndex_IDBefore_AfterAll(t *testing.T) {
 func TestRingIndex_EvictsOldest(t *testing.T) {
 	idx := newRingIndex(2)
 	base := time.Unix(1_700_000_000, 0).UTC()
-	idx.put("a", base)
-	idx.put("b", base.Add(10*time.Second))
-	idx.put("c", base.Add(20*time.Second)) // Evicts "a".
+	idx.put("a", base, nil, nil)
+	idx.put("b", base.Add(10*time.Second), nil, nil)
+	idx.put("c", base.Add(20*time.Second), nil, nil) // Evicts "a".
 
 	// "a" is gone, so a query that would have matched "a" now matches
 	// nothing strictly before "b" — either returns "b" if t is after
@@ -88,9 +88,9 @@ func TestRecordingReplayer_PutIndexesAndForwards(t *testing.T) {
 	r, err := newRecordingReplayer(3, now)
 	require.NoError(t, err)
 
-	// Put three messages with explicit IDs; FiniteReplayer is configured
-	// with autoIDs=false because the /admin0/events handler enforces
-	// CloudEvent's `id` requirement upstream.
+	// Put three messages with explicit IDs; the buffer never generates
+	// them, because the /admin0/events handler enforces CloudEvent's
+	// `id` requirement upstream.
 	for _, id := range []string{"a", "b", "c"} {
 		out, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
@@ -107,9 +107,9 @@ func TestRecordingReplayer_PutIndexesAndForwards(t *testing.T) {
 func TestRingIndex_Expire_All(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
-	idx.put("a", base)
-	idx.put("b", base.Add(10*time.Second))
-	idx.put("c", base.Add(20*time.Second))
+	idx.put("a", base, nil, nil)
+	idx.put("b", base.Add(10*time.Second), nil, nil)
+	idx.put("c", base.Add(20*time.Second), nil, nil)
 
 	assert.Equal(t, 3, idx.expire(""), "empty cursor expires the whole index")
 	for _, id := range []string{"a", "b", "c"} {
@@ -123,7 +123,7 @@ func TestRingIndex_Expire_Before(t *testing.T) {
 	idx := newRingIndex(4)
 	base := time.Unix(1_700_000_000, 0).UTC()
 	for i, id := range []string{"a", "b", "c", "d"} {
-		idx.put(id, base.Add(time.Duration(i)*10*time.Second))
+		idx.put(id, base.Add(time.Duration(i)*10*time.Second), nil, nil)
 	}
 
 	assert.Equal(t, 2, idx.expire("c"), "everything older than c is dropped")
@@ -136,8 +136,8 @@ func TestRingIndex_Expire_Before(t *testing.T) {
 func TestRingIndex_Expire_UnknownCursorIsNoOp(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
-	idx.put("a", base)
-	idx.put("b", base.Add(10*time.Second))
+	idx.put("a", base, nil, nil)
+	idx.put("b", base.Add(10*time.Second), nil, nil)
 
 	assert.Equal(t, 0, idx.expire("nope"))
 	assert.True(t, idx.has("a"))
@@ -148,7 +148,7 @@ func TestRingIndex_Expire_Idempotent(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
 	for i, id := range []string{"a", "b", "c"} {
-		idx.put(id, base.Add(time.Duration(i)*10*time.Second))
+		idx.put(id, base.Add(time.Duration(i)*10*time.Second), nil, nil)
 	}
 
 	assert.Equal(t, 2, idx.expire("c"))
@@ -156,19 +156,19 @@ func TestRingIndex_Expire_Idempotent(t *testing.T) {
 	assert.Equal(t, 0, newRingIndex(3).expire(""), "expiring an empty index drops nothing")
 }
 
-// Expiring marks entries rather than removing them, so the index keeps
-// mirroring the inner buffer entry-for-entry: capacity is unchanged and
-// expired entries still occupy a slot until eviction reaches them.
+// Expiry removes entries outright, so it frees slots as well as
+// cursors; the buffer keeps its capacity and goes on evicting
+// oldest-first from wherever expiry left it.
 func TestRingIndex_Expire_KeepsCapacityAndEvicts(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
 	for i, id := range []string{"a", "b", "c"} {
-		idx.put(id, base.Add(time.Duration(i)*10*time.Second))
+		idx.put(id, base.Add(time.Duration(i)*10*time.Second), nil, nil)
 	}
 	require.Equal(t, 3, idx.expire(""))
 
 	for i, id := range []string{"d", "e", "f", "g"} {
-		idx.put(id, base.Add(time.Duration(30+i*10)*time.Second))
+		idx.put(id, base.Add(time.Duration(30+i*10)*time.Second), nil, nil)
 	}
 	assert.False(t, idx.has("d"), "capacity is unchanged, so the oldest of four still evicts")
 	assert.True(t, idx.has("e"))
@@ -210,11 +210,10 @@ func (c *captureWriter) Send(m *sse.Message) error {
 }
 func (c *captureWriter) Flush() error { return nil }
 
-// Expiry truncates the index but leaves the messages in the inner
-// FiniteReplayer, so Replay has to consult the index itself. Without
-// that check, a subscribe racing a concurrent Expire (the gate in
-// Hub.Handler runs before Replay, not atomically with it) would be
-// served events the API has just declared aged out.
+// The gate in Hub.Handler runs before Replay, not atomically with it,
+// so a subscribe racing a concurrent Expire arrives here with a cursor
+// that is no longer buffered. Replay has to answer that itself rather
+// than trusting the gate.
 func TestRecordingReplayer_Replay_RefusesExpiredCursor(t *testing.T) {
 	r, err := newRecordingReplayer(5, nil)
 	require.NoError(t, err)
@@ -253,10 +252,8 @@ func TestRecordingReplayer_Replay_LiveCursorStillReplays(t *testing.T) {
 }
 
 // Reusing an offset after an expire is ordinary test behaviour: push a
-// few events, expire the buffer, start numbering from 0 again. The
-// inner FiniteReplayer still holds the old copies, and go-sse resolves
-// a Last-Event-ID to its FIRST occurrence — so resuming from the reused
-// id would replay from the expired copy and serve everything after it.
+// few events, expire the buffer, start numbering from 0 again. Resuming
+// from the reused id must see only what followed the new copy.
 func TestRecordingReplayer_ReusedIDAfterExpire(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
@@ -280,9 +277,9 @@ func TestRecordingReplayer_ReusedIDAfterExpire(t *testing.T) {
 	assert.NotContains(t, w.sent, "2", "expired event 2 must never be replayed")
 }
 
-// has() answered for ANY occurrence while go-sse resolves to the first,
-// so the 410 gate could pass a cursor whose first copy was expired —
-// and then replay everything after that expired copy.
+// A duplicated offset spanning the expiry boundary: because the buffer
+// is really truncated, the expired copy is gone and the surviving one
+// is an ordinary cursor. Nothing older can be reached through it.
 func TestRecordingReplayer_DuplicateIDSpanningExpiry(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
@@ -293,8 +290,7 @@ func TestRecordingReplayer_DuplicateIDSpanningExpiry(t *testing.T) {
 	require.Equal(t, 2, r.Expire("b"), "a and x are older than b")
 
 	assert.False(t, r.Has("x"), "x was expired")
-	assert.False(t, r.Has("a"),
-		"a's first copy was expired, and that is the copy a resume would replay from")
+	assert.True(t, r.Has("a"), "a's surviving copy is newer than the boundary")
 
 	w := &captureWriter{}
 	require.NoError(t, r.Replay(sse.Subscription{
@@ -302,5 +298,37 @@ func TestRecordingReplayer_DuplicateIDSpanningExpiry(t *testing.T) {
 		LastEventID: sse.ID("a"),
 		Topics:      []string{"t1"},
 	}))
-	assert.NotContains(t, w.sent, "x", "expired event x must never be replayed")
+	assert.Equal(t, []string{"c"}, w.sent,
+		"resume starts at the surviving copy; the expired prefix is unreachable")
+}
+
+// An expire really empties the buffer, so a test that renumbers its
+// offsets from zero afterwards gets a clean slate. The mirror-based
+// design failed here: the old copies lingered in a queue it could not
+// truncate, and every reused id resolved to the expired copy, leaving
+// the whole post-expire buffer unresumable.
+func TestRecordingReplayer_ReusedIDsAfterExpireAreResumable(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"0", "1", "2"} {
+		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
+		require.NoError(t, err)
+	}
+	require.Equal(t, 3, r.Expire(""))
+
+	for _, id := range []string{"0", "1", "2"} {
+		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
+		require.NoError(t, err)
+	}
+
+	assert.True(t, r.Has("1"), "an event pushed after the expire must be resumable")
+	assert.Equal(t, "0", r.OldestID())
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Equal(t, []string{"2"}, w.sent)
 }

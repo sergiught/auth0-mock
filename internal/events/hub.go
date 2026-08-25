@@ -165,7 +165,7 @@ type Hub struct {
 // WithReconnectHint sets the SSE retry: value sent on connect.
 func NewHub(bufferSize int, now func() time.Time, opts ...HubOption) (*Hub, error) {
 	if bufferSize == 1 {
-		// The library's NewFiniteReplayer enforces count >= 2;
+		// The replay buffer requires a count of at least 2;
 		// clamp to that minimum rather than crashing the process
 		// at startup over a one-off configuration choice.
 		bufferSize = 2
