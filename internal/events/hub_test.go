@@ -915,6 +915,10 @@ func resumeStatus(t *testing.T, srv *httptest.Server, id string) (int, string) {
 		body, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(body)
 	}
+	// Close the stream before returning: leaving it open would park a
+	// live subscriber on the hub for the rest of the test, which any
+	// later subscriber-count or keep-alive assertion would then see.
+	_ = resp.Body.Close()
 	return resp.StatusCode, ""
 }
 
@@ -1051,7 +1055,7 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
-	var publishErrs, publishOK, expires, subscribes atomic.Int64
+	var publishErrs, publishOK, expires, subscribes, subErrs atomic.Int64
 
 	for i := range 3 {
 		wg.Go(func() {
@@ -1070,6 +1074,7 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 				} else {
 					publishOK.Add(1)
 				}
+				time.Sleep(time.Millisecond)
 			}
 		})
 	}
@@ -1089,6 +1094,7 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 					h.ExpireBefore(fmt.Sprintf("evt_%016x", n))
 				}
 				expires.Add(1)
+				time.Sleep(time.Millisecond)
 			}
 		})
 	}
@@ -1113,7 +1119,9 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 				continue
 			}
 			resp, doErr := http.DefaultClient.Do(req) //nolint:bodyclose // Closed below; the 410 path returns a short body.
-			if doErr == nil {
+			if doErr != nil {
+				subErrs.Add(1)
+			} else {
 				// Read one frame, then drop the connection — the point is
 				// churning subscribe/unsubscribe under a live expirer, not
 				// consuming the stream.
@@ -1122,6 +1130,10 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 				subscribes.Add(1)
 			}
 			cancel()
+			// Throttle: an unbounded dial loop can exhaust ephemeral ports
+			// on a busy runner, and every failed dial is a subscribe that
+			// never raced an expiry.
+			time.Sleep(2 * time.Millisecond)
 		}
 	})
 
@@ -1134,5 +1146,9 @@ func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
 		publishOK.Load(), expires.Load(), subscribes.Load())
 	assert.Greater(t, publishOK.Load(), int64(0))
 	assert.Greater(t, expires.Load(), int64(0))
-	assert.Greater(t, subscribes.Load(), int64(0))
+	// A floor, not "at least one": a run where nearly every dial failed
+	// would otherwise report green having raced almost nothing.
+	assert.Greater(t, subscribes.Load(), int64(20),
+		"too few subscriptions completed to have exercised the race; errs=%d", subErrs.Load())
+	assert.Zero(t, subErrs.Load(), "no subscribe should fail while expiry runs")
 }

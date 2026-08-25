@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/render"
 
@@ -100,13 +102,20 @@ func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// on the "no ?before at all" branch and expire the whole buffer. A
 	// typo must not be indistinguishable from omission when the two mean
 	// opposite things.
+	unknown := make([]string, 0, len(q))
 	for key := range q {
 		if key != "before" {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				"unknown query parameter "+strconv.Quote(key)+"; only \"before\" is accepted",
-				"invalid_query")
-			return
+			unknown = append(unknown, strconv.Quote(key))
 		}
+	}
+	if len(unknown) > 0 {
+		// Sorted: map iteration order is randomised, and an error message
+		// naming a different key run to run is one nobody can assert on.
+		sort.Strings(unknown)
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"unknown query parameter(s) "+strings.Join(unknown, ", ")+`; only "before" is accepted`,
+			"invalid_query")
+		return
 	}
 	// Repeats are ambiguous: q.Get takes the first, so `?before=8&before=`
 	// would trim from 8 while `?before=&before=8` would be rejected.

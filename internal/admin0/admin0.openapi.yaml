@@ -534,11 +534,18 @@ paths:
                       resumable in the first place).
         "400":
           description: |
-            `?before=` was present but empty (`errorCode:
-            "invalid_before"`), or the query string could not be parsed
-            (`errorCode: "invalid_query"`). Omit the parameter to expire
-            the whole buffer; an empty or unparseable value is rejected
-            rather than silently treated as expire-everything.
+            The request named a cursor but the mock could not act on it
+            as written. `errorCode: "invalid_before"` when `?before=` is
+            present but empty; `errorCode: "invalid_query"` when the
+            query string could not be parsed, carries a parameter other
+            than `before`, or repeats `before`.
+
+            The strictness is deliberate and specific to this endpoint:
+            omitting `before` means "expire everything", so a typo
+            (`?BEFORE=`, `?befor=`) or a stray extra parameter would
+            otherwise be indistinguishable from omission and silently
+            expire the whole buffer. Anything ambiguous is refused
+            rather than guessed at.
 components:
   schemas:
     Expectation:

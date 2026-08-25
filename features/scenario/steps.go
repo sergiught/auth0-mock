@@ -433,7 +433,8 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	// regex needs a non-empty capture — and it is exactly the case the
 	// endpoint rejects, so it gets its own phrase.
 	sc.Step(`^I attempt to expire the events replay buffer with an empty before$`, func() error {
-		return attemptExpireEventsRaw(c, "?before=")
+		attemptExpireEventsRaw(c, "?before=")
+		return nil
 	})
 
 	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
@@ -499,9 +500,7 @@ func expireEvents(c *Context, before string) error {
 	if before != "" {
 		query = "?before=" + url.QueryEscape(before)
 	}
-	if err := attemptExpireEventsRaw(c, query); err != nil {
-		return err
-	}
+	attemptExpireEventsRaw(c, query)
 	if c.LastResp.StatusCode != http.StatusOK {
 		return fmt.Errorf("expire: status %d body %s", c.LastResp.StatusCode, string(c.LastBody))
 	}
@@ -511,9 +510,8 @@ func expireEvents(c *Context, before string) error {
 // attemptExpireEventsRaw POSTs /admin0/events/expire with the query
 // string verbatim and records the response without asserting on the
 // status, so negative scenarios can check the 4xx themselves.
-func attemptExpireEventsRaw(c *Context, query string) error {
+func attemptExpireEventsRaw(c *Context, query string) {
 	c.Do("POST", "/admin0/events/expire"+query, "", false)
-	return nil
 }
 
 func pushEvent(c *Context, body string, expect202 bool) error {

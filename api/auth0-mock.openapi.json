@@ -54115,7 +54115,7 @@
             "description": "Cursors expired."
           },
           "400": {
-            "description": "`?before=` was present but empty (`errorCode:\n\"invalid_before\"`), or the query string could not be parsed\n(`errorCode: \"invalid_query\"`). Omit the parameter to expire\nthe whole buffer; an empty or unparseable value is rejected\nrather than silently treated as expire-everything.\n"
+            "description": "The request named a cursor but the mock could not act on it\nas written. `errorCode: \"invalid_before\"` when `?before=` is\npresent but empty; `errorCode: \"invalid_query\"` when the\nquery string could not be parsed, carries a parameter other\nthan `before`, or repeats `before`.\n\nThe strictness is deliberate and specific to this endpoint:\nomitting `before` means \"expire everything\", so a typo\n(`?BEFORE=`, `?befor=`) or a stray extra parameter would\notherwise be indistinguishable from omission and silently\nexpire the whole buffer. Anything ambiguous is refused\nrather than guessed at.\n"
           }
         },
         "summary": "Age out replay cursors so a resume returns 410 Gone.",

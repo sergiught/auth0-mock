@@ -156,12 +156,10 @@ func TestRingIndex_Expire_Idempotent(t *testing.T) {
 	assert.Equal(t, 0, newRingIndex(3).expire(""), "expiring an empty index drops nothing")
 }
 
-// After an expire the index holds fewer entries than the inner
-// FiniteReplayer, but it must never name an id the inner buffer has
-// already evicted: both append in the same order and evict
-// oldest-first, so the index stays a suffix of the inner queue and the
-// two re-converge once cap more events land.
-func TestRingIndex_Expire_KeepsCapacityAndReconverges(t *testing.T) {
+// Expiring marks entries rather than removing them, so the index keeps
+// mirroring the inner buffer entry-for-entry: capacity is unchanged and
+// expired entries still occupy a slot until eviction reaches them.
+func TestRingIndex_Expire_KeepsCapacityAndEvicts(t *testing.T) {
 	idx := newRingIndex(3)
 	base := time.Unix(1_700_000_000, 0).UTC()
 	for i, id := range []string{"a", "b", "c"} {
@@ -252,4 +250,57 @@ func TestRecordingReplayer_Replay_LiveCursorStillReplays(t *testing.T) {
 		Topics:      []string{"t1"},
 	}))
 	assert.Equal(t, []string{"c"}, w.sent)
+}
+
+// Reusing an offset after an expire is ordinary test behaviour: push a
+// few events, expire the buffer, start numbering from 0 again. The
+// inner FiniteReplayer still holds the old copies, and go-sse resolves
+// a Last-Event-ID to its FIRST occurrence — so resuming from the reused
+// id would replay from the expired copy and serve everything after it.
+func TestRecordingReplayer_ReusedIDAfterExpire(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"0", "1", "2"} {
+		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
+		require.NoError(t, err)
+	}
+	require.Equal(t, 3, r.Expire(""))
+
+	// The test starts numbering again from 0.
+	_, err = r.Put(newTestMessage(t, "0"), []string{"t1"})
+	require.NoError(t, err)
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("0"),
+		Topics:      []string{"t1"},
+	}))
+	assert.NotContains(t, w.sent, "1", "expired event 1 must never be replayed")
+	assert.NotContains(t, w.sent, "2", "expired event 2 must never be replayed")
+}
+
+// has() answered for ANY occurrence while go-sse resolves to the first,
+// so the 410 gate could pass a cursor whose first copy was expired —
+// and then replay everything after that expired copy.
+func TestRecordingReplayer_DuplicateIDSpanningExpiry(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"a", "x", "b", "a", "c"} {
+		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
+		require.NoError(t, err)
+	}
+	require.Equal(t, 2, r.Expire("b"), "a and x are older than b")
+
+	assert.False(t, r.Has("x"), "x was expired")
+	assert.False(t, r.Has("a"),
+		"a's first copy was expired, and that is the copy a resume would replay from")
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("a"),
+		Topics:      []string{"t1"},
+	}))
+	assert.NotContains(t, w.sent, "x", "expired event x must never be replayed")
 }

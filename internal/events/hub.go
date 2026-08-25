@@ -386,21 +386,21 @@ func (h *Hub) ExpireBefore(cursor string) int {
 	return h.expire(cursor)
 }
 
-// expire snapshots the replayer and releases mu BEFORE truncating, the
+// expire snapshots the replayer and releases mu BEFORE expiring, the
 // same pattern Handler uses. Holding mu across the call would chain two
-// locks: recordingReplayer.Expire waits on the replayer's own write
-// lock, which an in-flight Replay holds for as long as its subscriber
-// takes to read. A stalled subscriber would then park this call while
-// it holds mu.RLock, Reset's mu.Lock would queue behind it, and Go's
-// RWMutex writer preference would block every later RLock — wedging
-// Publish, new subscribers and the keep-alive, with /admin0/reset (the
-// only way to drain the stuck subscriber) blocked too. Snapshotting
-// keeps the blast radius to this one request.
+// locks — the hub's and the replayer's — and park every reader of the
+// hub behind whatever the replayer's writer is waiting on. Replay is
+// careful never to hold the replayer's lock across a subscriber write
+// for the same reason.
+//
+// Reports 0 on a closed hub, matching Publish's refusal to act on one.
+// A snapshot concurrent with Reset can still expire the outgoing
+// replayer: harmless, since Reset is discarding that buffer anyway.
 func (h *Hub) expire(before string) int {
 	h.mu.RLock()
-	replayer := h.replayer
+	replayer, closed := h.replayer, h.closed
 	h.mu.RUnlock()
-	if replayer == nil {
+	if closed || replayer == nil {
 		return 0
 	}
 	return replayer.Expire(before)
