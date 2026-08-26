@@ -4,6 +4,23 @@ on:
   push:
     branches: [main]
 
+  # Manual re-publish of a tag whose goreleaser job failed.
+  #
+  # "Re-run failed jobs" in the Actions UI is not enough: it checks the tag
+  # back out, so it replays the exact tree that failed, and the tag itself
+  # can't be re-pointed at a fixed commit once proxy.golang.org has cached
+  # the version → commit mapping. This path builds the tagged source but
+  # takes .goreleaser.yaml from the branch you dispatch it on, so a packaging
+  # fix can be applied to an already-cut release. Signing still runs from
+  # release.yml, so the cosign certificate identity matches the one the
+  # verify instructions in .goreleaser.yaml and README.md expect.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to re-publish artifacts for, e.g. v0.232.0'
+        required: true
+        type: string
+
 permissions:
   contents: read
 
@@ -24,8 +41,13 @@ jobs:
   # GitHub release with the generated CHANGELOG as the body.
   #
   # release_created=true only on the second case; that's what gates goreleaser.
+  #
+  # Skipped entirely on workflow_dispatch: that path re-publishes a tag that
+  # already exists, and letting release-please run would risk cutting a new
+  # one as a side effect of repairing an old one.
   release-please:
     name: release-please
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write        # create tags/releases
@@ -60,7 +82,15 @@ jobs:
   goreleaser:
     name: goreleaser
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # `!cancelled()` rather than a plain `needs...` check because on
+    # workflow_dispatch release-please is skipped, and a skipped `needs`
+    # would otherwise skip this job too. A *failed* release-please still
+    # blocks: it leaves release_created empty, and the event isn't a
+    # workflow_dispatch, so neither branch of the condition holds.
+    if: >-
+      ${{ !cancelled()
+          && (needs.release-please.outputs.release_created == 'true'
+              || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write   # upload release artifacts to the GitHub release
@@ -73,16 +103,34 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      # The tag being released: cut by release-please on a push, named by
+      # hand on a re-publish.
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || needs.release-please.outputs.tag_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0   # full history so goreleaser can compute ldflag values
           # Standard supply-chain hardening: don't leave the workflow token
           # in .git/config where any subsequent action step (goreleaser,
           # cosign, syft, …) could read it. Each step passes its required
           # token explicitly via env.
           persist-credentials: false
+
+      # Re-publish path only. The tag was checked out above, so the tree still
+      # carries the .goreleaser.yaml that failed; swap in the one from the ref
+      # this run was dispatched on. Only that single file moves — every
+      # tracked source file, and so the binary and the commit baked into its
+      # ldflags, stays exactly as tagged. Fetching by SHA needs no credentials
+      # against a public repo, which is why persist-credentials stays off.
+      - name: apply packaging config from ${{ github.ref_name }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD -- .goreleaser.yaml
+          echo "::group::.goreleaser.yaml diff vs $RELEASE_TAG"
+          git --no-pager diff -- .goreleaser.yaml
+          echo "::endgroup::"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -140,9 +188,17 @@ jobs:
         with:
           distribution: goreleaser
           version: ${{ env.GORELEASER_VERSION }}
-          args: release --clean
+          # --skip=validate on the re-publish path only: swapping in the
+          # packaging config leaves the worktree dirty, which goreleaser
+          # otherwise refuses to release from. The release itself is still
+          # append mode, so re-running against a tag that already has some
+          # assets tops it up rather than rewriting the body.
+          args: release --clean ${{ github.event_name == 'workflow_dispatch' && '--skip=validate' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pin the version explicitly instead of letting goreleaser derive it
+          # from `git describe`, which is ambiguous once the worktree is dirty.
+          GORELEASER_CURRENT_TAG: ${{ env.RELEASE_TAG }}
           # Passed through so .goreleaser.yaml's dockers[].skip_push template
           # can detect whether Docker Hub creds are available and skip the
           # docker.io push when they aren't (envOrDefault check). GHCR push
