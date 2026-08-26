@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -116,12 +115,29 @@ func subscriptionTopics(q url.Values) []string {
 
 // onSession is the *sse.Server.OnSession callback. ServeHTTP is the
 // only route to it and always stores the topic list on the context, so
-// a missing value is a wiring bug rather than a request the caller can
-// provoke; refusing the session fails closed instead of silently
-// handing out a firehose.
+// the assertion cannot fail on any request a caller can send. If the
+// wiring ever changes, a panic recovered into a 500 is the honest
+// outcome: the alternative — returning allowed=false — makes go-sse
+// return without writing, so the client sees the 200 and :connected
+// frame serveHTTP already sent, then a bare EOF.
 func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
-	topics, ok := r.Context().Value(topicsKey{}).([]string)
-	return topics, ok
+	return r.Context().Value(topicsKey{}).([]string), true
+}
+
+// paddingReason reports why a present value is unusable as given, or
+// "" when it is fine. Both cases are one accident — a template that
+// produced whitespace — and both end somewhere that blames the wrong
+// thing: an empty cursor joins live, and a padded one names a position
+// no buffer holds, so it would be reported as aged out.
+func paddingReason(key, value string) string {
+	switch {
+	case strings.TrimSpace(value) == "":
+		return key + ` was supplied but empty; omit it entirely to mean "no ` + key +
+			`", which is not the same request`
+	case value != strings.TrimSpace(value):
+		return key + " is padded with whitespace, so it names a position nothing holds"
+	}
+	return ""
 }
 
 // validateResume refuses the ways of naming a resume position that
@@ -137,50 +153,59 @@ func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string
 // delivers. POST /admin0/events/expire refuses the same shapes for the
 // same reason; see internal/admin0/events.go.
 func validateResume(w http.ResponseWriter, r *http.Request, q url.Values) bool {
-	// A cursor can be named three ways — this header, ?from, and
-	// ?from_timestamp — so both rules below have to cover all three or
-	// a client templating the one they missed still joins live.
-	if v, present := r.Header[http.CanonicalHeaderKey("Last-Event-ID")]; present {
-		if len(v) > 1 {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				"Last-Event-ID was sent more than once; a resume cursor can only name one position",
-				"invalid_query")
-			return false
-		}
-		if isBlank(v[0]) {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				"Last-Event-ID was sent but empty; omit the header to join live",
-				"invalid_last_event_id")
-			return false
-		}
+	// A cursor can be named three ways — this header, ?from and
+	// ?from_timestamp — and every rule here has to cover all three, or
+	// a client templating the one it missed still joins live.
+	if !validateLastEventID(w, r) {
+		return false
 	}
-	// A resume cursor can only name one position, so a repeat is a
-	// caller bug rather than a list. `event_type` is deliberately
-	// exempt: repeating it is how a caller asks for several types.
-	for _, key := range []string{"from", "from_timestamp"} {
-		if len(q[key]) > 1 {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				key+" was supplied more than once; a resume cursor can only name one position",
-				"invalid_query")
-			return false
-		}
-	}
-	// Whitespace counts as empty: a shell variable that expanded to a
-	// space is the same accident as one that expanded to nothing, and
-	// it reaches the same dead end.
+	// One pass per key: a repeat is a caller bug rather than a list,
+	// since a cursor can only name one position. `event_type` is
+	// deliberately exempt — repeating it is how a caller asks for
+	// several types — and is validated separately below.
 	for _, param := range []struct{ key, code string }{
 		{"from", "invalid_from"},
 		{"from_timestamp", "invalid_from_timestamp"},
 	} {
-		if slices.ContainsFunc(q[param.key], isBlank) {
+		values := q[param.key]
+		if len(values) > 1 {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				param.key+" was supplied but empty; omit it entirely to mean \"no "+
-					param.key+"\", which is not the same request",
-				param.code)
+				param.key+" was supplied more than once; a resume cursor can only name one position",
+				"invalid_query")
 			return false
 		}
+		if len(values) == 1 {
+			if reason := paddingReason(param.key, values[0]); reason != "" {
+				httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", reason, param.code)
+				return false
+			}
+		}
 	}
-	return validateEventTypes(w, q)
+	if !validateEventTypes(w, q) {
+		return false
+	}
+	return validateFromTimestamp(w, q)
+}
+
+// validateLastEventID applies the same one-position and non-blank rules
+// to the header spelling of a cursor. Header.Values rather than raw map
+// indexing, so this neither depends on Go's canonical spelling nor
+// indexes a slice a hand-built request could leave empty.
+func validateLastEventID(w http.ResponseWriter, r *http.Request) bool {
+	values := r.Header.Values("Last-Event-ID")
+	if len(values) > 1 {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"Last-Event-ID was sent more than once; a resume cursor can only name one position",
+			"invalid_last_event_id")
+		return false
+	}
+	if len(values) == 1 && strings.TrimSpace(values[0]) == "" {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"Last-Event-ID was sent but empty; omit the header to join live",
+			"invalid_last_event_id")
+		return false
+	}
+	return true
 }
 
 // validateEventTypes refuses the requested types that would build a
@@ -190,38 +215,38 @@ func validateResume(w http.ResponseWriter, r *http.Request, q url.Values) bool {
 // topic names, one that delivers far too much.
 func validateEventTypes(w http.ResponseWriter, q url.Values) bool {
 	for _, typ := range q["event_type"] {
-		var reason string
-		switch {
-		case isBlank(typ):
-			reason = "was supplied but empty; omit it entirely to receive every event"
-		case typ != strings.TrimSpace(typ):
-			reason = "is padded with whitespace, which would subscribe to a topic nothing publishes to"
-		case typ == broadcastTopic || typ == keepAliveTopic || typ == barrierTopic:
-			reason = "names an internal topic; those carry the unfiltered fan-out and are not event types"
-		default:
+		reason := paddingReason("event_type", typ)
+		if reason == "" && (typ == broadcastTopic || typ == keepAliveTopic || typ == barrierTopic) {
+			reason = "event_type names an internal topic; those carry the unfiltered " +
+				"fan-out and are not event types"
+		}
+		if reason == "" {
 			continue
 		}
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"event_type "+reason, "invalid_event_type")
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", reason, "invalid_event_type")
 		return false
-	}
-	// Validate the timestamp here rather than where it is consumed:
-	// promoteResumeHint returns early when `?from` or the header
-	// already named a cursor, so a malformed `?from_timestamp` beside
-	// either of those would otherwise never be looked at — leaving the
-	// empty value rejected and the garbage value silently accepted.
-	if ts := q.Get("from_timestamp"); ts != "" {
-		if _, err := parseFromTimestamp(ts); err != nil {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				"from_timestamp must be RFC 3339: "+err.Error(),
-				"invalid_from_timestamp")
-			return false
-		}
 	}
 	return true
 }
 
-func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
+// validateFromTimestamp checks RFC 3339 syntax here rather than where
+// the value is consumed. PromoteResumeHint returns early when `?from`
+// or the header already named a cursor, so a malformed
+// `?from_timestamp` beside either of those would otherwise never be
+// looked at — leaving the empty value rejected and the garbage value
+// silently accepted.
+func validateFromTimestamp(w http.ResponseWriter, q url.Values) bool {
+	ts := q.Get("from_timestamp")
+	if ts == "" {
+		return true
+	}
+	if _, err := parseFromTimestamp(ts); err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"from_timestamp must be RFC 3339: "+err.Error(), "invalid_from_timestamp")
+		return false
+	}
+	return true
+}
 
 // promoteResumeHint copies a `?from` / `?from_timestamp` resume hint
 // into Last-Event-ID so the replay buffer handles it on the normal
@@ -329,8 +354,14 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// this check — racing with a concurrent eviction would 410 a
 	// user who never sent a Last-Event-ID, which is worse than the
 	// fallback of joining live.
+	//
+	// A nil replayer (EVENTS_REPLAY_BUFFER <= 0) is the same answer, not
+	// an exemption: with no buffer the cursor is certainly not in it, so
+	// accepting the resume and joining live would be the silent miss
+	// every rule above exists to prevent. POST /admin0/events/expire
+	// already answers 404 for a cursor in this configuration.
 	if id := r.Header.Get("Last-Event-ID"); id != "" && !synthesised {
-		if replayer != nil && !replayer.Has(id) {
+		if replayer == nil || !replayer.Has(id) {
 			httperr.WriteMgmt(w, http.StatusGone, "Gone",
 				"requested Last-Event-ID is no longer in the replay buffer",
 				"event_aged_out")

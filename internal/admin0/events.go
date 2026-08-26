@@ -154,6 +154,16 @@ func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			"invalid_before")
 		return
 	}
+	// A padded cursor is the same accident with a different ending: it
+	// matches nothing, so it would be reported as 404 cursor_not_found
+	// and send the caller to look at buffer retention instead of at
+	// their own variable.
+	if before != strings.TrimSpace(before) {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"before is padded with whitespace, so it names a cursor nothing holds",
+			"invalid_before")
+		return
+	}
 	dropped, found := h.Events.ExpireBefore(before)
 	if !found {
 		httperr.WriteMgmt(w, http.StatusNotFound, "Not Found",

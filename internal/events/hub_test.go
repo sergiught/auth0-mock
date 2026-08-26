@@ -738,6 +738,13 @@ func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
 		{"whitespace-padded event_type", "?event_type=user.created%20", "invalid_event_type"},
 		{"event_type naming the broadcast topic", "?event_type=__broadcast__", "invalid_event_type"},
 		{"event_type naming the keep-alive topic", "?event_type=__keep_alive__", "invalid_event_type"},
+		{"event_type naming the barrier topic", "?event_type=__barrier__", "invalid_event_type"},
+		// A padded cursor is the same template accident as an empty one,
+		// but it used to reach the 410 gate and be reported as aged out,
+		// sending the caller to look at buffer retention instead of at
+		// their own variable.
+		{"whitespace-padded from", "?from=%20evt-1", "invalid_from"},
+		{"whitespace-padded from_timestamp", "?from_timestamp=%202020-01-01T00:00:00Z", "invalid_from_timestamp"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -783,6 +790,53 @@ func TestHub_Handler_EmptyLastEventIDHeader_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body, _ := io.ReadAll(resp.Body)
 	assert.Contains(t, string(body), "invalid_last_event_id")
+}
+
+func TestHub_Handler_RepeatedLastEventIDHeader_400(t *testing.T) {
+	// The one-position rule covers the header spelling of a cursor too,
+	// and reports it with the header's own code: a client branching on
+	// errorCode to decide whether to re-encode its query string would
+	// otherwise retry a header defect forever.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Add("Last-Event-ID", "5")
+	req.Header.Add("Last-Event-ID", "9")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_last_event_id")
+}
+
+func TestHub_Handler_ResumeWithReplayDisabled_410(t *testing.T) {
+	// With EVENTS_REPLAY_BUFFER <= 0 there is no buffer, so a cursor is
+	// certainly not in it. Accepting the resume and joining live would
+	// be the silent miss the whole endpoint's validation exists to
+	// prevent, and POST /admin0/events/expire already answers 404 for a
+	// cursor in this configuration — the two must not disagree about
+	// whether naming a cursor against no buffer is an error.
+	h, err := events.NewHub(0, nil) // Replay disabled.
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from=evt-42")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusGone, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "event_aged_out")
 }
 
 func TestHub_Handler_RepeatedEventTypeStillFilters(t *testing.T) {
