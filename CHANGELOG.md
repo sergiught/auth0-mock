@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.232.0](https://github.com/sergiught/auth0-mock/compare/v0.231.0...v0.232.0) (2026-08-26)
+
+
+### Features
+
+* **events:** add POST /admin0/events/expire to age out replay cursors ([#71](https://github.com/sergiught/auth0-mock/issues/71)) ([a4f32e8](https://github.com/sergiught/auth0-mock/commit/a4f32e8c36f7afd55b69e7bac5f79c126d238a25))
+
+
+### Bug fixes
+
+* **events:** reject query shapes that silently do the wrong thing ([#75](https://github.com/sergiught/auth0-mock/issues/75)) ([2e75b09](https://github.com/sergiught/auth0-mock/commit/2e75b090f1e580c41c468467acf08983df2a74e2))
+* **events:** stop from_timestamp skipping the oldest buffered event ([#76](https://github.com/sergiught/auth0-mock/issues/76)) ([6445a7b](https://github.com/sergiught/auth0-mock/commit/6445a7b29eb4f8f79c7f8619c4b19ee1019c2b01))
+
 ## [0.231.0](https://github.com/sergiught/auth0-mock/compare/v0.230.0...v0.231.0) (2026-07-06)
 
 
