@@ -34,26 +34,56 @@ help: ## Show this help message and exit
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Tooling (SHA-pinned helpers installed into ./bin on first use)
+#
+# Each binary's filename carries both its pin and the Go that built it,
+# and `tool-install` deletes the other copies before writing the new one.
+# A bare `bin/<tool>` target has no prerequisites, so make skips it
+# whenever the file exists — which means neither bumping a pin here nor
+# upgrading the local Go would reinstall anything. That is how a
+# golangci-lint built under go1.26 survived the move to go1.27 and then
+# panicked with "file requires newer Go version go1.27 (application
+# built with go1.26)" on every package importing net/url, and how
+# govulncheck gave up on internal/poll and the vendored x/text tables.
+# Stamping the filename turns both of those into a cache miss.
+#
+# GOVERSION carries a colon on some toolchains (go1.27.0-X:nodwarf5),
+# which make would read as a rule separator, hence the subst.
 #-----------------------------------------------------------------------------------------------------------------------
-$(BINARIES_DIR)/golangci-lint:
-	@echo "==> Installing golangci-lint within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@6d2288e072e6f9c9bca28180cae9ce58a049c912 # v2.13.1
+GO_STAMP := $(subst :,-,$(shell go env GOVERSION))
 
-$(BINARIES_DIR)/commitlint:
-	@echo "==> Installing commitlint within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/conventionalcommit/commitlint@e9a606ce7074ac884ea091765be1651be18356d4 # v0.10.1
+# tool-install,<name>,<module@sha> — install into ./bin under the
+# stamped name, replacing any copy left by an older pin or Go.
+define tool-install
+	@echo "==> Installing $(1) $(2) ($(GO_STAMP)) within ${BINARIES_DIR}"
+	@rm -f $(BINARIES_DIR)/$(1) $(BINARIES_DIR)/$(1)-*
+	@GOBIN=$(BINARIES_DIR) go install $(3)
+	@mv $(BINARIES_DIR)/$(1) $@
+endef
 
-$(BINARIES_DIR)/govulncheck:
-	@echo "==> Installing govulncheck within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@617f44b718537dccdea1915395650e0529e3b72e # v1.7.0
+GOLANGCI_LINT_VERSION := v2.13.1
+GOLANGCI_LINT := $(BINARIES_DIR)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GO_STAMP)
+$(GOLANGCI_LINT):
+	$(call tool-install,golangci-lint,$(GOLANGCI_LINT_VERSION),github.com/golangci/golangci-lint/v2/cmd/golangci-lint@6d2288e072e6f9c9bca28180cae9ce58a049c912)
 
-$(BINARIES_DIR)/air:
-	@echo "==> Installing air within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc # v1.65.1
+COMMITLINT_VERSION := v0.10.1
+COMMITLINT := $(BINARIES_DIR)/commitlint-$(COMMITLINT_VERSION)-$(GO_STAMP)
+$(COMMITLINT):
+	$(call tool-install,commitlint,$(COMMITLINT_VERSION),github.com/conventionalcommit/commitlint@e9a606ce7074ac884ea091765be1651be18356d4)
 
-$(BINARIES_DIR)/go-licenses:
-	@echo "==> Installing go-licenses within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/google/go-licenses@5348b744d0983d85713295ea08a20cca1654a45e # v1.6.0
+GOVULNCHECK_VERSION := v1.7.0
+GOVULNCHECK := $(BINARIES_DIR)/govulncheck-$(GOVULNCHECK_VERSION)-$(GO_STAMP)
+$(GOVULNCHECK):
+	$(call tool-install,govulncheck,$(GOVULNCHECK_VERSION),golang.org/x/vuln/cmd/govulncheck@617f44b718537dccdea1915395650e0529e3b72e)
+
+AIR_VERSION := v1.65.1
+AIR := $(BINARIES_DIR)/air-$(AIR_VERSION)-$(GO_STAMP)
+$(AIR):
+	$(call tool-install,air,$(AIR_VERSION),github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc)
+
+GO_LICENSES_VERSION := v1.6.0
+GO_LICENSES := $(BINARIES_DIR)/go-licenses-$(GO_LICENSES_VERSION)-$(GO_STAMP)
+$(GO_LICENSES):
+	$(call tool-install,go-licenses,$(GO_LICENSES_VERSION),github.com/google/go-licenses@5348b744d0983d85713295ea08a20cca1654a45e)
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Build (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies)
@@ -103,24 +133,24 @@ coverage: test-cover test-features-cover ## Run all tests with coverage and prin
 # Lint & security (golangci-lint, commitlint, govulncheck)
 #-----------------------------------------------------------------------------------------------------------------------
 .PHONY: lint
-lint: $(BINARIES_DIR)/golangci-lint ## Run golangci-lint over the project (with --fix)
+lint: $(GOLANGCI_LINT) ## Run golangci-lint over the project (with --fix)
 	@echo "==> Running golangci-lint"
-	@$(BINARIES_DIR)/golangci-lint run -v --fix -c .golangci.yaml ./...
+	@$(GOLANGCI_LINT) run -v --fix -c .golangci.yaml ./...
 
 .PHONY: lint-commits
-lint-commits: $(BINARIES_DIR)/commitlint ## Lint the current commit message against commitlint.yaml
-	@$(BINARIES_DIR)/commitlint lint
+lint-commits: $(COMMITLINT) ## Lint the current commit message against commitlint.yaml
+	@$(COMMITLINT) lint
 
 .PHONY: vuln
-vuln: $(BINARIES_DIR)/govulncheck ## Scan the module graph for known Go vulnerabilities
+vuln: $(GOVULNCHECK) ## Scan the module graph for known Go vulnerabilities
 	@echo "==> Scanning module graph for known Go vulnerabilities"
-	@$(BINARIES_DIR)/govulncheck ./...
+	@$(GOVULNCHECK) ./...
 
 .PHONY: licenses
-licenses: $(BINARIES_DIR)/go-licenses ## Save bundled-module license texts under licenses/ for release archives
+licenses: $(GO_LICENSES) ## Save bundled-module license texts under licenses/ for release archives
 	@echo "==> Collecting third-party license texts -> licenses/"
 	@rm -rf licenses
-	@$(BINARIES_DIR)/go-licenses save ./cmd/api --save_path=licenses --force
+	@$(GO_LICENSES) save ./cmd/api --save_path=licenses --force
 	@echo "==> Wrote $$(find licenses -name LICENSE -o -name LICENCE -o -name 'LICEN[SC]E.*' | wc -l) LICENSE files under licenses/"
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -162,12 +192,12 @@ dev-env: ## Materialise .env from .env.example (no-op if .env already exists)
 	@cp -n .env.example .env || true
 
 .PHONY: watch
-watch: dev-env $(BINARIES_DIR)/air ## Run the API locally with native hot reload via air
+watch: dev-env $(AIR) ## Run the API locally with native hot reload via air
 	@# Source .env before launching air — neither air nor the binary
 	@# auto-loads it, and dev flow keys (DEBUG=true, SIGNING_KEY_FILE
 	@# to survive hot reload) live there. `set -a` exports every
 	@# subsequently-assigned var; `set +a` switches it off again.
-	@set -a; [ -f .env ] && . ./.env; set +a; $(BINARIES_DIR)/air
+	@set -a; [ -f .env ] && . ./.env; set +a; $(AIR)
 
 .PHONY: dev-run
 dev-run: dev-env ## Run the API inside docker compose and tail its logs

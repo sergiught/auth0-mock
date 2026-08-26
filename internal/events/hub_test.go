@@ -663,6 +663,34 @@ func TestHub_Handler_MalformedEscapeInEventType_400(t *testing.T) {
 	assert.Contains(t, string(body), "invalid_query")
 }
 
+func TestHub_Handler_UnencodedSemicolonInFrom_400(t *testing.T) {
+	// Go refuses `;` as a query separator (it stopped honouring the
+	// legacy `a=1;b=2` form in 1.17), so an unencoded semicolon inside a
+	// cursor value fails the same parse a bad escape does. That is a
+	// rejection of a character RFC 3986 permits in a query, so pin it:
+	// it is a deliberate consequence of parsing strictly, not an
+	// oversight. Callers percent-encode it (`%3B`) — which url.Values
+	// and every Go SDK path already do. The old code dropped the pair
+	// and joined live here too, so 400 replaces a silent miss rather
+	// than a working resume.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from=a;b")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+	// The parser's own reason reaches the caller, so a semicolon
+	// rejection is distinguishable from a bad escape.
+	assert.Contains(t, string(body), "semicolon")
+}
+
 func TestHub_Handler_MalformedEscapeRejectsWholeQuery_400(t *testing.T) {
 	// Url.ParseQuery keeps the pairs it could parse and reports an error
 	// for the one it couldn't. Answering 200 on the strength of the
