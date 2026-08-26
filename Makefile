@@ -59,11 +59,12 @@ help: ## Show this help message and exit
 # minor granularity; stamping the patch as well would discard and
 # rebuild every tool on a routine go1.26.1 -> go1.26.2 upgrade.
 #-----------------------------------------------------------------------------------------------------------------------
-GO_STAMP := $(shell go env GOVERSION | sed -E 's/^(go[0-9]+\.[0-9]+).*/\1/')
+GO_STAMP := $(shell go env GOVERSION | sed -E 's/^(go[0-9]+\.[0-9]+).*/\1/; s/[^A-Za-z0-9._-]+/-/g')
 
 # tool-stamp,<module@sha> — the cache key for one pinned tool: the Go
-# that will build it plus the pinned commit. Both halves come from make
-# string functions, so this costs no subprocess.
+# that will build it plus the pinned commit, taken straight out of the
+# pin with make's own string functions rather than hashed by a
+# subprocess. (GO_STAMP itself does shell out, once per make run.)
 tool-stamp = $(GO_STAMP)-$(lastword $(subst @, ,$(1)))
 
 # tool-install,<name>,<module@sha> — install into ./bin under the
@@ -77,7 +78,7 @@ define tool-install
 	@GOBIN=$(BINARIES_DIR)/.tmp-$(1) go install $(2)
 	@mv $(BINARIES_DIR)/.tmp-$(1)/$(1) $@
 	@rm -rf $(BINARIES_DIR)/.tmp-$(1)
-	@find $(BINARIES_DIR) -maxdepth 1 \( -name '$(1)' -o -name '$(1)-*' \) ! -name '$(notdir $@)' | xargs -r rm -f
+	@find $(BINARIES_DIR) -maxdepth 1 \( -name '$(1)' -o -name '$(1)-*' \) ! -name '$(notdir $@)' -exec rm -f {} +
 endef
 
 # v2.13.1
