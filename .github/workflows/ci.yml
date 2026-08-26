@@ -37,6 +37,19 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
           cache: true
+      # This job takes the upstream release binary by tag while `make lint`
+      # builds the same release from a SHA, so the two pins can silently
+      # name different linters. Assert they agree rather than trusting the
+      # comment beside each one to have been updated.
+      - name: check golangci-lint pin matches the Makefile
+        run: |
+          makefile_version=$(grep -B1 '^GOLANGCI_LINT_PIN' Makefile | head -1 | tr -d '# ')
+          if [ "$makefile_version" != "${GOLANGCI_LINT_VERSION}" ]; then
+            echo "::error::ci.yml pins ${GOLANGCI_LINT_VERSION} but the Makefile pin is labelled ${makefile_version}."
+            echo "Bump GOLANGCI_LINT_PIN (and the label above it) together with GOLANGCI_LINT_VERSION."
+            exit 1
+          fi
+          echo "both pin ${GOLANGCI_LINT_VERSION}"
       # golangci/golangci-lint-action v9.3.0
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
         with:

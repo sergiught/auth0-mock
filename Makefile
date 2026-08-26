@@ -74,10 +74,10 @@ tool-stamp = $(GO_STAMP)-$(lastword $(subst @, ,$(1)))
 # rather than deleting it and aborting with nothing.
 define tool-install
 	@echo "==> Installing $(1) ($(2)) within ${BINARIES_DIR}"
-	@rm -rf $(BINARIES_DIR)/.tmp-$(1) && mkdir -p $(BINARIES_DIR)/.tmp-$(1)
-	@GOBIN=$(BINARIES_DIR)/.tmp-$(1) go install $(2)
-	@mv $(BINARIES_DIR)/.tmp-$(1)/$(1) $@
-	@rm -rf $(BINARIES_DIR)/.tmp-$(1)
+	@set -e; tmp="$(BINARIES_DIR)/.tmp-$(1)"; trap 'rm -rf "$$tmp"' EXIT; \
+		rm -rf "$$tmp"; mkdir -p "$$tmp"; \
+		GOBIN="$$tmp" go install $(2); \
+		mv "$$tmp/$(1)" "$@"
 	@find $(BINARIES_DIR) -maxdepth 1 \( -name '$(1)' -o -name '$(1)-*' \) ! -name '$(notdir $@)' -exec rm -f {} +
 endef
 
