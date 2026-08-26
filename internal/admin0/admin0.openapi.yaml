@@ -493,10 +493,10 @@ paths:
         a cursor, so it is resolved against the same index this expires
         and there is no client-supplied cursor to reject. After a full
         expire such a subscriber joins live. After a `?before=` expire
-        it resumes from the oldest surviving cursor, and because replay
-        starts strictly after the resolved id, the boundary event named
-        by `before` is itself skipped — it stays resumable by
-        `Last-Event-ID` / `?from`, which is how to assert on it.
+        it replays the whole surviving window, the boundary event named
+        by `before` included — an instant that predates everything left
+        in the buffer asks for all of it, and the oldest survivor is
+        part of that answer rather than the boundary excluded from it.
 
         Narrower than `/admin0/reset`: subscribers that are already
         streaming keep receiving events, subscriber counts are left

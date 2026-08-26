@@ -47,6 +47,34 @@ const offsetOnlyEventType = "offset-only"
 // barrier in Publish's error path — see the comment there.
 const barrierTopic = "__barrier__"
 
+// replayAllTopic is an internal topic nothing is ever published to. It
+// isn't a fan-out channel like the others: it is how the handler tells
+// recordingReplayer.Replay that this subscription asked for the whole
+// buffer, oldest event included.
+//
+// `?from_timestamp` names an instant and replay understands only
+// cursors, so the handler translates one into the other. When no
+// buffered event predates the instant there is no cursor to translate
+// to — replay is defined as everything strictly AFTER a cursor, and no
+// cursor means "before the oldest". Resuming from the oldest id instead
+// dropped that event, and at EVENTS_REPLAY_BUFFER=1 dropped the stream
+// entirely, since ringIndex.after reports not-found for the tail entry.
+//
+// The signal rides the topic list rather than a sentinel Last-Event-ID
+// because go-sse populates that field from the request header too, and
+// a sentinel can collide with an offset a caller really pushed; a topic
+// nobody publishes to cannot. ValidateEventTypes refuses it from
+// `?event_type` alongside the other internal names.
+//
+// Unlike barrierTopic, which no subscriber ever joins, this one rides
+// the subscriber's own topic list — so "nothing is ever published here"
+// is load-bearing for filtering, not just tidy. Publish routes a
+// regular event to broadcastTopic and evt.Type verbatim, so an event
+// whose type were this name would reach these subscribers past their
+// `?event_type` filter. The push endpoint's CloudEvent type is a closed
+// discriminator enum, which is what keeps that unreachable.
+const replayAllTopic = "__replay_all__"
+
 // DefaultKeepAliveInterval is the cadence at which a `:keep-alive`
 // comment is broadcast to every connected subscriber. 15s matches
 // what most SSE deployments use; the library doesn't auto-emit.
@@ -558,7 +586,11 @@ func (h *Hub) runKeepAlive() {
 //     them on the normal resume path. ?from wins over ?from_timestamp,
 //     and an explicit Last-Event-ID wins over both — but all three are
 //     validated first, so a malformed ?from_timestamp is rejected even
-//     when a winning ?from means it would never be read.
+//     when a winning ?from means it would never be read. A
+//     ?from_timestamp that predates every buffered event is the one
+//     case with no cursor to promote to — replay runs strictly after a
+//     cursor, and none means "before the oldest" — so it asks for the
+//     whole buffer instead; see replayAllTopic.
 //     ?from_timestamp accepts RFC 3339; clients that send the
 //     timezone `+` unencoded (which URL-decodes to space) are
 //     tolerated by retrying with the space restored.
@@ -569,9 +601,11 @@ func (h *Hub) runKeepAlive() {
 //     immediately rather than waiting for the first event.
 //  7. Tracks the request context in the active set so Reset /
 //     Shutdown can drain in-flight subscribers cleanly.
-//  8. Delegates to the underlying *sse.Server, which uses an
-//     OnSession callback to parse `?event_type=...` into the
-//     subscriber's topic list.
+//  8. Delegates to the underlying *sse.Server. The topic list is
+//     derived here, from the query string this handler already parsed
+//     and validated, and handed to the OnSession callback on the
+//     request context — so the values that were validated and the
+//     values that are subscribed to cannot be two different things.
 func (h *Hub) Handler() http.Handler {
 	return http.HandlerFunc(h.serveHTTP)
 }

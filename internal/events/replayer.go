@@ -132,13 +132,22 @@ func (r *ringIndex) has(id string) bool {
 	return r.firstIndex(id) >= 0
 }
 
-// oldestID returns the id of the oldest buffered event, or "" when the
-// buffer is empty.
-func (r *ringIndex) oldestID() string {
-	if len(r.entries) == 0 {
-		return ""
-	}
-	return r.entries[0].id
+// hasMsg reports whether this exact message is still buffered.
+//
+// Identity rather than id, because the two can disagree: nothing
+// upstream enforces unique offsets, and expireAll really removes
+// entries so an offset may be reused afterwards. An id lookup then
+// answers "still buffered" about a DIFFERENT entry that happens to
+// share the offset, and the replay re-check would put an aged-out
+// message on the wire the expire endpoint has already counted as
+// dropped.
+//
+// What makes a dropped message unreachable is the length of the slice,
+// not dropFront's clear — that exists to stop dropped entries pinning
+// messages, and put's eviction re-slices without clearing at all. So
+// this must scan entries, never cap(entries).
+func (r *ringIndex) hasMsg(m *sse.Message) bool {
+	return slices.ContainsFunc(r.entries, func(e indexEntry) bool { return e.msg == m })
 }
 
 // after returns the messages to replay to a subscriber resuming from
@@ -160,13 +169,40 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 	if i < 0 || i == len(r.entries)-1 {
 		return nil, false
 	}
-	out := make([]*sse.Message, 0, len(r.entries)-i-1)
-	for _, e := range r.entries[i+1:] {
+	return collect(r.entries[i+1:], topics), true
+}
+
+// all returns every buffered message whose topics intersect the
+// subscription's, oldest first. Unlike after there is no cursor to
+// start from: this answers "?from_timestamp predates the whole
+// buffer", where the caller asked for everything and the oldest entry
+// is part of that answer rather than the boundary excluded from it.
+//
+// It replays the buffer rather than filtering on the requested instant,
+// which only diverges when timestamps aren't monotonic — the mock's
+// clock is controllable and /admin0/clock/advance takes negative
+// durations. IdBefore already reasons about that case and lands on the
+// same rule: over-delivering an older event is benign, since SSE
+// consumers tolerate replays, while dropping one is the failure a
+// resume exists to prevent.
+//
+// Returns a snapshot for the same reason after does — see there.
+func (r *ringIndex) all(topics []string) []*sse.Message {
+	return collect(r.entries, topics)
+}
+
+// collect returns the messages among entries that the subscription's
+// topics can see, in order. Shared by after and all so a change to what
+// replay filtering means cannot land on the ?from path and miss the
+// ?from_timestamp one.
+func collect(entries []indexEntry, topics []string) []*sse.Message {
+	out := make([]*sse.Message, 0, len(entries))
+	for _, e := range entries {
 		if topicsIntersect(topics, e.topics) {
 			out = append(out, e.msg)
 		}
 	}
-	return out, true
+	return out
 }
 
 // expireAll drops every buffered cursor and reports how many it
@@ -215,7 +251,14 @@ func (r *ringIndex) expireBefore(before string) (dropped int, found bool) {
 	return r.dropFront(i), true
 }
 
-// dropFront removes the first n entries and reports how many went. A
+// dropFront is the only way entries leave the buffer other than put's
+// eviction, and both go from the FRONT. Replay depends on that: send
+// skips an entry the buffer no longer holds and keeps going, which is
+// only safe because the entries it skips are a prefix of its snapshot.
+// An expiry that could remove from the middle would need send to
+// answer for the interior hole it left.
+//
+// DropFront removes the first n entries and reports how many went. A
 // negative n (an id that isn't buffered) or zero drops nothing, and n
 // is clamped to the buffer length: slicing past the end would panic,
 // and go-sse answers a panic from a Replayer by disabling replay for
@@ -256,9 +299,9 @@ func topicsIntersect(a, b []string) bool {
 // POST /admin0/events/expire.
 //
 // Concurrency: sse.Joe serialises Put and Replay onto one goroutine,
-// but Hub.Handler reads Has / IDBefore / OldestID from arbitrary
-// request goroutines and Expire writes from another. The mutex makes
-// those safe, and is never held across a write to a subscriber.
+// but Hub.Handler reads Has / IDBefore from arbitrary request
+// goroutines and Expire writes from another. The mutex makes those
+// safe, and is never held across a write to a subscriber.
 type recordingReplayer struct {
 	mu  sync.RWMutex
 	idx *ringIndex
@@ -327,8 +370,26 @@ func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message
 // committing a response, and it is the same outcome the eviction race
 // produces.
 func (r *recordingReplayer) Replay(sub sse.Subscription) error {
+	// ReplayAllTopic means the subscriber asked for the whole buffer
+	// rather than a suffix of it — a `?from_timestamp` that predates
+	// every buffered event. It carries no cursor, so this is checked
+	// before the LastEventID gate below. See replayAllTopic.
+	// A named position wins over the whole-buffer marker, stated once
+	// here rather than as two conditions that could drift apart.
+	// PromoteResumeHint never sets both — the marker exists precisely
+	// for the case no cursor can express — but recordingReplayer
+	// implements a published interface, the same reason Put answers
+	// ErrNoTopic on a path sse.Joe cannot reach, and replaying the whole
+	// buffer to a subscriber that named a position would also slip past
+	// the handler's 410 gate.
 	if !sub.LastEventID.IsSet() {
-		return nil
+		if !slices.Contains(sub.Topics, replayAllTopic) {
+			return nil
+		}
+		r.mu.RLock()
+		msgs := r.idx.all(sub.Topics)
+		r.mu.RUnlock()
+		return r.send(sub, msgs)
 	}
 	r.mu.RLock()
 	msgs, ok := r.idx.after(sub.LastEventID.String(), sub.Topics)
@@ -336,6 +397,21 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 	if !ok {
 		return nil
 	}
+	return r.send(sub, msgs)
+}
+
+// send writes a replay snapshot to the subscriber and flushes.
+//
+// Nothing to send means nothing to flush: a snapshot can be empty
+// because the buffer is, or because the subscription's topics filtered
+// every entry out, and in both cases flushing would touch a client this
+// replay never wrote to. That is what go-sse's own FiniteReplayer does
+// for a resume-from-newest, and why after reports ok=false for the tail.
+//
+// An expiry landing between the snapshot and a write is handled in the
+// loop, and which way depends on what has already gone out; see there.
+func (r *recordingReplayer) send(sub sse.Subscription, msgs []*sse.Message) error {
+	var sent int
 	for _, m := range msgs {
 		// Re-check before each write. The snapshot is taken under the
 		// read lock and the writes happen without it — deliberately, so a
@@ -343,30 +419,38 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 		// leaves a window where an expiry lands mid-replay. Without this
 		// the endpoint would answer {"expired":N} while the events it
 		// just aged out were still going out on the wire.
-		if !r.Has(m.ID.String()) {
-			break
+		//
+		// What to do about the aged-out entry turns on whether this
+		// subscriber holds a cursor, because that is what a hole would
+		// falsify.
+		//
+		// No cursor — the whole-buffer path: skip it. Eviction is
+		// front-only, so what is missing is a prefix of the snapshot,
+		// and there is no position to strand by carrying on. Stopping
+		// would empty the replay outright, since it starts at index 0,
+		// exactly what an expiry removes first.
+		//
+		// A cursor — a resume: stop. Everything older than this entry is
+		// gone, and the subscriber's position is older than this entry,
+		// so it is gone too: leave it in place and the reconnect answers
+		// 410 event_aged_out and the consumer learns what it lost.
+		// Delivering the survivors would move it past the hole instead,
+		// and the reconnect would answer 200 with the loss invisible.
+		if !r.holds(m) {
+			if sub.LastEventID.IsSet() {
+				break
+			}
+			continue
 		}
 		if err := sub.Client.Send(m); err != nil {
 			return err
 		}
+		sent++
+	}
+	if sent == 0 {
+		return nil
 	}
 	return sub.Client.Flush()
-}
-
-// OldestID returns the ID of the oldest buffered event, or "" if the
-// buffer is empty. Used by Hub.Handler to translate a ?from_timestamp
-// that predates everything into a Last-Event-ID hint — injecting the
-// oldest ID makes the buffer replay everything strictly after it. The
-// trade-off: the oldest stored event itself is skipped, because the
-// resume protocol only expresses "everything strictly after this
-// cursor" and there is no cursor meaning "before the oldest". In
-// practice the buffer's default cap is 100 and the typical
-// from_timestamp-before-all case is "subscriber wants the whole
-// session", so a single missed event at the oldest edge is acceptable.
-func (r *recordingReplayer) OldestID() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.idx.oldestID()
 }
 
 // IDBefore is the timestamp→ID lookup the hub uses to translate
@@ -376,6 +460,15 @@ func (r *recordingReplayer) IDBefore(t time.Time) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.idx.idBefore(t)
+}
+
+// holds reports whether this exact message is still buffered. Used by
+// the mid-replay re-check; see ringIndex.hasMsg for why the replay path
+// asks about identity where the 410 gate asks about an id.
+func (r *recordingReplayer) holds(m *sse.Message) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.idx.hasMsg(m)
 }
 
 // Has reports whether id is currently in the buffer. Used by the hub to

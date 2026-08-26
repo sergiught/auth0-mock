@@ -107,10 +107,9 @@ type expireEventsResponse struct {
 // same index this call truncates and never has a client cursor to
 // reject with a 410. After ExpireEvents there is nothing left to
 // resolve against and such a subscriber joins live. After
-// ExpireEventsBefore it resumes from the oldest surviving cursor
-// instead, which — since replay starts strictly after the resolved id —
-// skips the boundary event itself; assert on that one through
-// Last-Event-ID or ?from.
+// ExpireEventsBefore it replays the whole surviving window instead,
+// the boundary event named by before included: an instant that predates
+// everything left in the buffer asks for all of it.
 //
 // This is the deterministic way to test a consumer's cursor-loss
 // handling. The alternatives are worse: pushing past the buffer's

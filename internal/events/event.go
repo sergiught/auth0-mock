@@ -6,9 +6,11 @@
 //
 // The package wraps github.com/tmaxmax/go-sse: sse.Server is the
 // HTTP handler, sse.Joe is the in-memory pub/sub provider, and
-// recordingReplayer (this package) adds the (id, timestamp) index
-// needed to translate ?from_timestamp into an event ID for the
-// library's Last-Event-ID-driven Replay path.
+// recordingReplayer (this package) owns the buffer itself, adding the
+// (id, timestamp) index that resolves ?from_timestamp against the
+// library's Last-Event-ID-driven Replay path — and answering the one
+// case that has no cursor, an instant predating every buffered event,
+// with the whole buffer instead.
 package events
 
 import "encoding/json"

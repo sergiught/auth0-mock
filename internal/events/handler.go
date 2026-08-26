@@ -99,17 +99,28 @@ type topicsKey struct{}
 // too (otherwise they'd be silently dropped by reverse-proxy idle
 // timeouts while waiting for a matching event).
 //
+// A replayAll subscriber also joins replayAllTopic. Nothing is ever
+// published there, so it changes nothing about what the subscription
+// receives live; it is how the handler asks the replayer for the whole
+// buffer, oldest event included — see replayAllTopic.
+//
 // Callers must validate first: validateResume refuses the requested
 // types that would produce a subscription nobody wants, including the
 // internal topic names, which would otherwise let `?event_type` name
 // broadcastTopic and collect every event.
-func subscriptionTopics(q url.Values) []string {
+func subscriptionTopics(q url.Values, replayAll bool) []string {
 	requested := q["event_type"]
-	if len(requested) == 0 {
-		return []string{keepAliveTopic, broadcastTopic}
-	}
-	out := make([]string, 0, len(requested)+1)
+	// Three internal names is the ceiling, and only the filterless
+	// branch reaches it — where requested is empty, so this is exact.
+	// A filtered list leaves one slot spare.
+	out := make([]string, 0, len(requested)+3)
 	out = append(out, keepAliveTopic)
+	if replayAll {
+		out = append(out, replayAllTopic)
+	}
+	if len(requested) == 0 {
+		return append(out, broadcastTopic)
+	}
 	return append(out, requested...)
 }
 
@@ -216,7 +227,8 @@ func validateLastEventID(w http.ResponseWriter, r *http.Request) bool {
 func validateEventTypes(w http.ResponseWriter, q url.Values) bool {
 	for _, typ := range q["event_type"] {
 		reason := paddingReason("event_type", typ)
-		if reason == "" && (typ == broadcastTopic || typ == keepAliveTopic || typ == barrierTopic) {
+		if reason == "" && (typ == broadcastTopic || typ == keepAliveTopic ||
+			typ == barrierTopic || typ == replayAllTopic) {
 			reason = "event_type names an internal topic; those carry the unfiltered " +
 				"fan-out and are not event types"
 		}
@@ -255,46 +267,52 @@ func validateFromTimestamp(w http.ResponseWriter, q url.Values) bool {
 //
 // It reports whether WE synthesised the ID, so the caller doesn't 410
 // on it — the caller's up-front Has check would otherwise race a
-// concurrent Put that evicted the just-looked-up ID.
+// concurrent Put that evicted the just-looked-up ID. It also reports
+// whether the subscription should replay the whole buffer, which is
+// the answer when `?from_timestamp` predates every buffered event and
+// so cannot be expressed as a cursor at all.
 //
 // The replayer is passed in rather than read from the hub, so this and
 // the caller's 410 gate judge the same buffer.
 //
 // Every value it reads has already been through validateResume, so
 // there is nothing left here that can fail.
-func promoteResumeHint(r *http.Request, q url.Values, replayer *recordingReplayer) (synthesised bool) {
+func promoteResumeHint(
+	r *http.Request, q url.Values, replayer *recordingReplayer,
+) (synthesised, replayAll bool) {
 	if r.Header.Get("Last-Event-ID") != "" {
-		return false
+		return false, false
 	}
 	if id := q.Get("from"); id != "" {
 		r.Header.Set("Last-Event-ID", id)
-		return false
+		return false, false
 	}
 	ts := q.Get("from_timestamp")
 	if ts == "" {
-		return false
+		return false, false
 	}
 	// ValidateResume already rejected an unparseable value.
 	t, _ := parseFromTimestamp(ts)
 	if replayer == nil {
 		// No replay possible; silently ignore.
-		return false
+		return false, false
 	}
 	if id, found := replayer.IDBefore(t); found {
 		r.Header.Set("Last-Event-ID", id)
-		return true
+		return true, false
 	}
-	if oldest := replayer.OldestID(); oldest != "" {
-		// No stored event predates t, but the buffer holds events
-		// newer than t — replay them by resuming from the oldest
-		// stored ID. The oldest event itself is skipped (replay
-		// starts strictly after the given ID); see
-		// recordingReplayer.OldestID for the trade-off.
-		r.Header.Set("Last-Event-ID", oldest)
-		return true
-	}
-	// Empty buffer: nothing to replay; subscriber joins live.
-	return false
+	// No buffered event predates t, so every buffered event is one the
+	// caller asked for — the oldest included. No cursor can say that,
+	// since replay runs strictly after the cursor it is given, so say it
+	// through the subscription's topics instead.
+	//
+	// An empty buffer takes this branch too. It usually replays nothing,
+	// but the decision is made here and the buffer is read again when
+	// Joe runs Replay, so anything published in between is replayed
+	// rather than missed. That is the same direction ringIndex.idBefore
+	// already chooses when it cannot name an exact suffix: over-deliver
+	// rather than drop.
+	return false, true
 }
 
 func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +362,7 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	replayer := h.replayer
 	h.mu.RUnlock()
 
-	synthesised := promoteResumeHint(r, q, replayer)
+	synthesised, replayAll := promoteResumeHint(r, q, replayer)
 
 	// Surface aged-out resume up-front: if a user-supplied
 	// Last-Event-ID names an ID we no longer carry, return 410 Gone
@@ -380,7 +398,7 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// Hand the delegate the topics derived from the query string this
 	// handler already parsed and validated, rather than leaving it to
 	// re-parse and re-derive them.
-	r = r.WithContext(context.WithValue(ctx, topicsKey{}, subscriptionTopics(q)))
+	r = r.WithContext(context.WithValue(ctx, topicsKey{}, subscriptionTopics(q, replayAll)))
 
 	// Pre-flush SSE response headers so http.Client.Do returns
 	// immediately, rather than blocking until the first event lands.

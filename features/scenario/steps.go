@@ -448,6 +448,10 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		func(wantID string, seconds int) error {
 			return streamDeliversID(c, wantID, time.Duration(seconds)*time.Second)
 		})
+	sc.Step(`^the SSE stream delivers events with ids "([^"]+)" within (\d+)s$`,
+		func(wantIDs string, seconds int) error {
+			return streamDeliversIDs(c, strings.Split(wantIDs, ","), time.Duration(seconds)*time.Second)
+		})
 	sc.Step(`^the SSE stream delivers no event within (\d+)s$`, func(seconds int) error {
 		return streamDeliversNothing(c, time.Duration(seconds)*time.Second)
 	})
@@ -541,10 +545,19 @@ func pushEvent(c *Context, body string, expect202 bool) error {
 	return nil
 }
 
-func streamDeliversID(c *Context, wantID string, within time.Duration) error {
+// streamDeliversIDs asserts that the given ids arrive in order, though
+// other frames may sit between them. Asserting a single id cannot tell
+// "replayed the window the caller asked for" from "replayed its first
+// entry and stopped".
+func streamDeliversIDs(c *Context, wantIDs []string, within time.Duration) error {
 	deadline := time.After(within)
 	r := bufio.NewReader(c.SSEResp.Body)
 	defer func() { _ = c.SSEResp.Body.Close() }()
+	// Closed on return so the reader cannot park forever on a send
+	// nobody will receive: closing the body wakes a reader blocked
+	// inside ReadString, but not one blocked on the channel.
+	done := make(chan struct{})
+	defer close(done)
 	lines := make(chan string, 64)
 	go func() {
 		for {
@@ -553,28 +566,47 @@ func streamDeliversID(c *Context, wantID string, within time.Duration) error {
 				close(lines)
 				return
 			}
-			lines <- line
+			select {
+			case lines <- line:
+			case <-done:
+				return
+			}
 		}
 	}()
+	next := 0
 	for {
 		select {
 		case <-deadline:
-			return fmt.Errorf("timeout waiting for id=%s", wantID)
+			return fmt.Errorf("timeout waiting for id=%s (%d of %d delivered)",
+				strings.TrimSpace(wantIDs[next]), next, len(wantIDs))
 		case line, ok := <-lines:
 			if !ok {
-				return fmt.Errorf("stream closed before id=%s arrived", wantID)
+				return fmt.Errorf("stream closed before id=%s arrived",
+					strings.TrimSpace(wantIDs[next]))
 			}
-			if strings.TrimSpace(line) == "id: "+wantID {
-				return nil
+			if strings.TrimSpace(line) == "id: "+strings.TrimSpace(wantIDs[next]) {
+				next++
+				if next == len(wantIDs) {
+					return nil
+				}
 			}
 		}
 	}
+}
+
+// streamDeliversID is the one-frame case of streamDeliversIDs.
+func streamDeliversID(c *Context, wantID string, within time.Duration) error {
+	return streamDeliversIDs(c, []string{wantID}, within)
 }
 
 func streamDeliversNothing(c *Context, within time.Duration) error {
 	deadline := time.After(within)
 	r := bufio.NewReader(c.SSEResp.Body)
 	defer func() { _ = c.SSEResp.Body.Close() }()
+	// Same reason as streamDeliversIDs: closing the body wakes a reader
+	// inside ReadString, but not one parked on a send nobody receives.
+	done := make(chan struct{})
+	defer close(done)
 	lines := make(chan string, 64)
 	go func() {
 		for {
@@ -583,7 +615,11 @@ func streamDeliversNothing(c *Context, within time.Duration) error {
 				close(lines)
 				return
 			}
-			lines <- line
+			select {
+			case lines <- line:
+			case <-done:
+				return
+			}
 		}
 	}()
 	for {
