@@ -561,6 +561,35 @@ func TestRecordingReplayer_Send_SkipsTheExpiredCopyOfADuplicatedOffset(t *testin
 		"the expired first copy of B must not ride out on the surviving copy's offset")
 }
 
+// The same aged-out prefix on a CURSOR resume must stop the replay
+// rather than skip past it. The consumer already holds a position, and
+// everything older than the skipped entry is gone — that position
+// included — so delivering the survivors would advance its cursor past
+// the hole and turn the 410 its reconnect should get into a 200.
+// Writing nothing leaves the stale cursor in place to be rejected.
+func TestRecordingReplayer_Send_StopsOnAnAgedOutPrefixWhenACursorIsHeld(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"1", "2", "3", "4", "5"} {
+		putOn(t, r, id, "t1")
+	}
+
+	msgs, ok := r.idx.after("1", []string{"t1"})
+	require.True(t, ok)
+	dropped, found := r.ExpireBefore("4")
+	require.Equal(t, 3, dropped, "the consumer's own cursor 1 goes with the prefix")
+	require.True(t, found)
+
+	w := &captureWriter{}
+	require.NoError(t, r.send(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1"},
+	}, msgs))
+	assert.Empty(t, w.sent, "nothing goes out, so the reconnect still resolves cursor 1 to a 410")
+	assert.Zero(t, w.flushes)
+}
+
 // An unset or unknown cursor likewise must not flush.
 func TestRecordingReplayer_Replay_UnknownCursorDoesNotTouchClient(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)

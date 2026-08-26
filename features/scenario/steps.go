@@ -603,6 +603,10 @@ func streamDeliversNothing(c *Context, within time.Duration) error {
 	deadline := time.After(within)
 	r := bufio.NewReader(c.SSEResp.Body)
 	defer func() { _ = c.SSEResp.Body.Close() }()
+	// Same reason as streamDeliversIDs: closing the body wakes a reader
+	// inside ReadString, but not one parked on a send nobody receives.
+	done := make(chan struct{})
+	defer close(done)
 	lines := make(chan string, 64)
 	go func() {
 		for {
@@ -611,7 +615,11 @@ func streamDeliversNothing(c *Context, within time.Duration) error {
 				close(lines)
 				return
 			}
-			lines <- line
+			select {
+			case lines <- line:
+			case <-done:
+				return
+			}
 		}
 	}()
 	for {

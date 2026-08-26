@@ -65,6 +65,14 @@ const barrierTopic = "__barrier__"
 // a sentinel can collide with an offset a caller really pushed; a topic
 // nobody publishes to cannot. ValidateEventTypes refuses it from
 // `?event_type` alongside the other internal names.
+//
+// Unlike barrierTopic, which no subscriber ever joins, this one rides
+// the subscriber's own topic list — so "nothing is ever published here"
+// is load-bearing for filtering, not just tidy. Publish routes a
+// regular event to broadcastTopic and evt.Type verbatim, so an event
+// whose type were this name would reach these subscribers past their
+// `?event_type` filter. The push endpoint's CloudEvent type is a closed
+// discriminator enum, which is what keeps that unreachable.
 const replayAllTopic = "__replay_all__"
 
 // DefaultKeepAliveInterval is the cadence at which a `:keep-alive`

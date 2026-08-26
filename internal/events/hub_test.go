@@ -536,9 +536,12 @@ func TestHub_Handler_FromTimestampBeforeAll_HonoursEventTypeFilter(t *testing.T)
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
 }
 
-func TestHub_Handler_FromTimestampWithEmptyBufferJoinsLive(t *testing.T) {
-	// Empty buffer + from_timestamp predates anything → no replay
-	// possible; subscriber just joins the live stream.
+func TestHub_Handler_FromTimestampWithEmptyBufferReplaysNothing(t *testing.T) {
+	// Empty buffer + from_timestamp predates anything → the whole-buffer
+	// request finds nothing to send, so the subscriber sees only what is
+	// published after it connects. Named for what it pins: it cannot
+	// tell join-live from replay-nothing, because on an empty buffer
+	// they are the same wire.
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })

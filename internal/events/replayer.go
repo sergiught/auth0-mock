@@ -374,21 +374,22 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 	// rather than a suffix of it — a `?from_timestamp` that predates
 	// every buffered event. It carries no cursor, so this is checked
 	// before the LastEventID gate below. See replayAllTopic.
-	// The cursor check is belt-and-braces: promoteResumeHint never sets
-	// both, since the marker exists precisely for the case no cursor can
-	// express. It is kept because recordingReplayer implements a
-	// published interface — the same reason Put answers ErrNoTopic on a
-	// path sse.Joe cannot reach — and because silently replaying the
-	// whole buffer to a subscriber that named a position would also slip
-	// past the handler's 410 gate.
-	if slices.Contains(sub.Topics, replayAllTopic) && !sub.LastEventID.IsSet() {
+	// A named position wins over the whole-buffer marker, stated once
+	// here rather than as two conditions that could drift apart.
+	// PromoteResumeHint never sets both — the marker exists precisely
+	// for the case no cursor can express — but recordingReplayer
+	// implements a published interface, the same reason Put answers
+	// ErrNoTopic on a path sse.Joe cannot reach, and replaying the whole
+	// buffer to a subscriber that named a position would also slip past
+	// the handler's 410 gate.
+	if !sub.LastEventID.IsSet() {
+		if !slices.Contains(sub.Topics, replayAllTopic) {
+			return nil
+		}
 		r.mu.RLock()
 		msgs := r.idx.all(sub.Topics)
 		r.mu.RUnlock()
 		return r.send(sub, msgs)
-	}
-	if !sub.LastEventID.IsSet() {
-		return nil
 	}
 	r.mu.RLock()
 	msgs, ok := r.idx.after(sub.LastEventID.String(), sub.Topics)
@@ -419,24 +420,24 @@ func (r *recordingReplayer) send(sub sse.Subscription, msgs []*sse.Message) erro
 		// the endpoint would answer {"expired":N} while the events it
 		// just aged out were still going out on the wire.
 		//
-		// What to do about the aged-out entry depends on whether this
-		// replay has written anything yet, because that is what decides
-		// whether the consumer ends up holding a cursor at all.
+		// What to do about the aged-out entry turns on whether this
+		// subscriber holds a cursor, because that is what a hole would
+		// falsify.
 		//
-		// Nothing written: skip it. Eviction is front-only, so what is
-		// missing is a prefix of the snapshot, and there is no cursor to
-		// strand by carrying on. Stopping here would empty a whole-buffer
-		// replay outright, since it starts at index 0 — exactly what an
-		// expiry removes first.
+		// No cursor — the whole-buffer path: skip it. Eviction is
+		// front-only, so what is missing is a prefix of the snapshot,
+		// and there is no position to strand by carrying on. Stopping
+		// would empty the replay outright, since it starts at index 0,
+		// exactly what an expiry removes first.
 		//
-		// Already written: stop. The consumer's cursor is the last id we
-		// wrote, and everything older than the entry we just skipped is
-		// gone, that id included — so its reconnect answers 410
-		// event_aged_out and it learns what it lost. Delivering the
-		// survivors instead would advance its cursor past the hole, and
-		// the reconnect would answer 200 with the loss invisible.
+		// A cursor — a resume: stop. Everything older than this entry is
+		// gone, and the subscriber's position is older than this entry,
+		// so it is gone too: leave it in place and the reconnect answers
+		// 410 event_aged_out and the consumer learns what it lost.
+		// Delivering the survivors would move it past the hole instead,
+		// and the reconnect would answer 200 with the loss invisible.
 		if !r.holds(m) {
-			if sent > 0 {
+			if sub.LastEventID.IsSet() {
 				break
 			}
 			continue
