@@ -109,6 +109,26 @@ Feature: GET /api/v2/events Server-Sent Events
     Then I receive a 400 response
     And the response body contains "invalid_query"
 
+  # These parse cleanly; what makes them wrong is what the handler used
+  # to do with the value. An empty ?from read as "no cursor" and joined
+  # live with no 410; an empty ?event_type subscribed the stream to a
+  # topic nothing publishes to, so it connected and then never
+  # delivered; a repeated ?from silently kept the first value.
+  Scenario: An empty from parameter is rejected rather than joining live
+    When I attempt to subscribe to /api/v2/events with query "?from="
+    Then I receive a 400 response
+    And the response body contains "invalid_from"
+
+  Scenario: An empty event_type parameter is rejected rather than subscribing to nothing
+    When I attempt to subscribe to /api/v2/events with query "?event_type="
+    Then I receive a 400 response
+    And the response body contains "invalid_event_type"
+
+  Scenario: A repeated from parameter is rejected rather than silently using the first
+    When I attempt to subscribe to /api/v2/events with query "?from=1&from=0"
+    Then I receive a 400 response
+    And the response body contains "invalid_query"
+
   Scenario: Subscribing without a bearer returns 401
     When I subscribe to /api/v2/events without a bearer
     Then I receive a 401 response

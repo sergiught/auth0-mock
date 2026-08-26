@@ -686,9 +686,99 @@ func TestHub_Handler_UnencodedSemicolonInFrom_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body, _ := io.ReadAll(resp.Body)
 	assert.Contains(t, string(body), "invalid_query")
-	// The parser's own reason reaches the caller, so a semicolon
-	// rejection is distinguishable from a bad escape.
-	assert.Contains(t, string(body), "semicolon")
+}
+
+// TestHub_Handler_RejectedQueryShapes covers the query shapes that used
+// to be accepted and then quietly do the wrong thing. Each one parses
+// cleanly, so the invalid_query gate above lets it through; what makes
+// them wrong is what the handler then does with the value.
+//
+//   - An empty `?from` / `?from_timestamp` fails the `!= ""` guard, so
+//     no Last-Event-ID is set, the 410 gate is skipped, and the
+//     subscriber joins live — the same missed window a bad escape
+//     caused. A client templating `?from=${cursor}` with an unset
+//     variable hits exactly this.
+//   - An empty `?event_type` leaves onSession subscribing to the ""
+//     topic. Nothing ever publishes there (Publish targets
+//     broadcastTopic and evt.Type, and the push schema requires a
+//     non-empty type), so the stream is 200, connected, and incapable
+//     of ever delivering an event.
+//   - A repeated `?from` / `?from_timestamp` silently resolves to the
+//     first value, so a caller can be resumed from a cursor it did not
+//     ask for and gets no 410 saying so.
+//
+// POST /admin0/events/expire already refuses an empty and a repeated
+// `before` for the same reason; see internal/admin0/events.go.
+func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		errorCode string
+	}{
+		{"empty from", "?from=", "invalid_from"},
+		{"empty from_timestamp", "?from_timestamp=", "invalid_from_timestamp"},
+		{"empty event_type", "?event_type=", "invalid_event_type"},
+		{"one empty among several event_types", "?event_type=user.created&event_type=", "invalid_event_type"},
+		{"repeated from", "?from=3&from=1", "invalid_query"},
+		{"repeated from_timestamp", "?from_timestamp=2020-01-01T00:00:00Z&from_timestamp=2021-01-01T00:00:00Z", "invalid_query"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h, err := events.NewHub(10, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+			srv := httptest.NewServer(h.Handler())
+			t.Cleanup(srv.Close)
+
+			resp, err := http.Get(srv.URL + test.query)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+			body, _ := io.ReadAll(resp.Body)
+			assert.Contains(t, string(body), test.errorCode)
+		})
+	}
+}
+
+func TestHub_Handler_RepeatedEventTypeStillFilters(t *testing.T) {
+	// Guard against over-rejecting: repeating `?event_type` is how a
+	// caller asks for several types at once, so unlike a repeated
+	// `?from` it must keep working. Only an empty value is refused.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?event_type=user.created&event_type=user.deleted")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, h.Publish(events.Event{
+		Type:    "user.deleted",
+		ID:      "d1",
+		Payload: json.RawMessage(`{"type":"user.deleted","id":"d1"}`),
+	}))
+
+	got := make(chan string, 4)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			if line := scanner.Text(); strings.HasPrefix(line, "id:") {
+				got <- line
+			}
+		}
+	}()
+	select {
+	case line := <-got:
+		assert.Contains(t, line, "d1")
+	case <-time.After(2 * time.Second):
+		t.Fatal("second event_type filter never delivered its event")
+	}
 }
 
 func TestHub_Handler_MalformedEscapeRejectsWholeQuery_400(t *testing.T) {

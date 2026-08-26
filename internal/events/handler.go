@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +109,46 @@ func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string
 	return out, true
 }
 
+// validateQuery refuses the query shapes that parse cleanly and then
+// quietly do the wrong thing. It returns false once it has written the
+// response, so the caller stops.
+//
+// Everything below reads its parameters with q.Get, which cannot tell
+// "absent" from "present but empty" and silently discards all but the
+// first of a repeat. Left alone that turns a caller's typo into a
+// working-looking subscription: an empty or duplicated `?from` joins
+// live with no 410, and an empty `?event_type` subscribes to a topic
+// nothing ever publishes to, so the stream connects and then never
+// delivers. POST /admin0/events/expire refuses the same two shapes for
+// the same reason; see internal/admin0/events.go.
+func validateQuery(w http.ResponseWriter, q url.Values) bool {
+	// A resume cursor can only mean one instant, so a repeat is a
+	// caller bug rather than a list. `event_type` is deliberately
+	// exempt: repeating it is how a caller asks for several types.
+	for _, key := range []string{"from", "from_timestamp"} {
+		if len(q[key]) > 1 {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				key+" was supplied more than once; a resume cursor can only name one position",
+				"invalid_query")
+			return false
+		}
+	}
+	for _, param := range []struct{ key, code string }{
+		{"from", "invalid_from"},
+		{"from_timestamp", "invalid_from_timestamp"},
+		{"event_type", "invalid_event_type"},
+	} {
+		if slices.Contains(q[param.key], "") {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				param.key+" was supplied but empty; omit it entirely to mean \"no "+
+					param.key+"\", which is not the same request",
+				param.code)
+			return false
+		}
+	}
+	return true
+}
+
 // promoteResumeHint copies a `?from` / `?from_timestamp` resume hint
 // into Last-Event-ID so the replay buffer handles it on the normal
 // resume path. Order: an explicit header wins over ?from, which wins
@@ -195,6 +236,10 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"query string could not be parsed: "+err.Error(), "invalid_query")
+		return
+	}
+
+	if !validateQuery(w, q) {
 		return
 	}
 
