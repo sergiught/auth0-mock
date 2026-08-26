@@ -536,20 +536,40 @@ func (h *Hub) runKeepAlive() {
 //  1. Disables the http.Server WriteTimeout for this connection (SSE
 //     is long-lived; the server default would tear down healthy
 //     subscribers after the configured timeout).
-//  2. Promotes Auth0's ?from and ?from_timestamp query parameters to
+//  2. Parses the query string strictly. A string that will not
+//     unescape is 400 invalid_query rather than a 200 that silently
+//     dropped the pair it choked on — Go's parser keeps the pairs it
+//     managed and discards both the error and the bad pair, so a lost
+//     ?from would join live instead of 410-ing and a lost ?event_type
+//     would turn a filtered subscription into a firehose.
+//  3. Refuses the resume shapes that parse cleanly and then mean
+//     something the caller did not ask for, each with its own code:
+//     an empty (or whitespace-only) ?from, ?from_timestamp,
+//     ?event_type or Last-Event-ID is 400 invalid_from /
+//     invalid_from_timestamp / invalid_event_type /
+//     invalid_last_event_id, because present-but-empty is a different
+//     request from omitted; a repeated ?from or ?from_timestamp is
+//     400 invalid_query, since a cursor can only name one position.
+//     Repeating ?event_type stays legal — that is how a caller asks
+//     for several types. Unknown parameters are ignored, as the real
+//     Auth0 API ignores them.
+//  4. Promotes Auth0's ?from and ?from_timestamp query parameters to
 //     the SSE-spec Last-Event-ID header so the replay buffer resolves
-//     them on the normal resume path. ?from wins over ?from_timestamp.
+//     them on the normal resume path. ?from wins over ?from_timestamp,
+//     and an explicit Last-Event-ID wins over both — but all three are
+//     validated first, so a malformed ?from_timestamp is rejected even
+//     when a winning ?from means it would never be read.
 //     ?from_timestamp accepts RFC 3339; clients that send the
 //     timezone `+` unencoded (which URL-decodes to space) are
 //     tolerated by retrying with the space restored.
-//  3. Surfaces aged-out resume requests as 410 Gone (matching the
-//     OpenAPI declaration). Unparseable ?from_timestamp returns 400
-//     with the standard mgmt error envelope.
-//  4. Pre-flushes the SSE response headers so http.Client.Do returns
+//  5. Surfaces aged-out resume requests as 410 Gone (matching the
+//     OpenAPI declaration). Every 400 above uses the standard mgmt
+//     error envelope.
+//  6. Pre-flushes the SSE response headers so http.Client.Do returns
 //     immediately rather than waiting for the first event.
-//  5. Tracks the request context in the active set so Reset /
+//  7. Tracks the request context in the active set so Reset /
 //     Shutdown can drain in-flight subscribers cleanly.
-//  6. Delegates to the underlying *sse.Server, which uses an
+//  8. Delegates to the underlying *sse.Server, which uses an
 //     OnSession callback to parse `?event_type=...` into the
 //     subscriber's topic list.
 func (h *Hub) Handler() http.Handler {

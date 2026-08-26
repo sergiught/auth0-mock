@@ -604,6 +604,335 @@ func TestHub_Handler_FromTimestampUnparseable_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+func TestHub_Handler_MalformedEscapeInFrom_400(t *testing.T) {
+	// A `?from` that won't unescape used to vanish from the parsed
+	// query, so no Last-Event-ID was synthesised and the 410 gate never
+	// ran: the subscriber joined live and silently missed everything
+	// between its cursor and now — the exact outcome the 410 prevents.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from=evt-1%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+func TestHub_Handler_MalformedEscapeInFromTimestamp_400(t *testing.T) {
+	// Same silent join-live as `?from`, plus the invalid_from_timestamp
+	// guard is skipped: the pair is gone before there is a value to
+	// validate.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from_timestamp=2020-01-01T00:00:00Z%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+func TestHub_Handler_MalformedEscapeInEventType_400(t *testing.T) {
+	// A `?event_type` that won't unescape left onSession with no
+	// requested types, so the filtered subscription silently joined
+	// broadcastTopic and became a firehose.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?event_type=user.created%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+func TestHub_Handler_UnencodedSemicolonInFrom_400(t *testing.T) {
+	// Go refuses `;` as a query separator (it stopped honouring the
+	// legacy `a=1;b=2` form in 1.17), so an unencoded semicolon inside a
+	// cursor value fails the same parse a bad escape does. That is a
+	// rejection of a character RFC 3986 permits in a query, so pin it:
+	// it is a deliberate consequence of parsing strictly, not an
+	// oversight. Callers percent-encode it (`%3B`) — which url.Values
+	// and every Go SDK path already do. The old code dropped the pair
+	// and joined live here too, so 400 replaces a silent miss rather
+	// than a working resume.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from=a;b")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+// TestHub_Handler_RejectedQueryShapes covers the query shapes that used
+// to be accepted and then quietly do the wrong thing. Each one parses
+// cleanly, so the invalid_query gate above lets it through; what makes
+// them wrong is what the handler then does with the value.
+//
+//   - An empty `?from` / `?from_timestamp` fails the `!= ""` guard, so
+//     no Last-Event-ID is set, the 410 gate is skipped, and the
+//     subscriber joins live — the same missed window a bad escape
+//     caused. A client templating `?from=${cursor}` with an unset
+//     variable hits exactly this.
+//   - An empty `?event_type` leaves onSession subscribing to the ""
+//     topic. Nothing ever publishes there (Publish targets
+//     broadcastTopic and evt.Type, and the push schema requires a
+//     non-empty type), so the stream is 200, connected, and incapable
+//     of ever delivering an event.
+//   - A repeated `?from` / `?from_timestamp` silently resolves to the
+//     first value, so a caller can be resumed from a cursor it did not
+//     ask for and gets no 410 saying so.
+//
+// POST /admin0/events/expire already refuses an empty and a repeated
+// `before` for the same reason; see internal/admin0/events.go.
+func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		errorCode string
+	}{
+		{"empty from", "?from=", "invalid_from"},
+		{"empty from_timestamp", "?from_timestamp=", "invalid_from_timestamp"},
+		{"empty event_type", "?event_type=", "invalid_event_type"},
+		{"one empty among several event_types", "?event_type=user.created&event_type=", "invalid_event_type"},
+		{"repeated from", "?from=3&from=1", "invalid_query"},
+		{"repeated from_timestamp", "?from_timestamp=2020-01-01T00:00:00Z&from_timestamp=2021-01-01T00:00:00Z", "invalid_query"},
+		// Whitespace is the same accident as empty and reaches the same
+		// dead end: `?event_type=%20` would subscribe to the " " topic.
+		{"whitespace-only event_type", "?event_type=%20", "invalid_event_type"},
+		{"whitespace-only from", "?from=+", "invalid_from"},
+		// A malformed from_timestamp must be refused even when another
+		// parameter already names the cursor — otherwise the empty value
+		// 400s while the garbage value is silently discarded.
+		{"garbage from_timestamp beside a from", "?from=0&from_timestamp=not-a-timestamp", "invalid_from_timestamp"},
+		// An event type is used verbatim as a topic name. A padded one
+		// subscribes to a topic nothing publishes to (the %20 dead end
+		// again, reached by a variable with a trailing space), and the
+		// internal names carry the unfiltered fan-out — naming
+		// broadcastTopic turned a "filtered" subscription into the very
+		// firehose this endpoint's filter exists to avoid.
+		{"whitespace-padded event_type", "?event_type=user.created%20", "invalid_event_type"},
+		{"event_type naming the broadcast topic", "?event_type=__broadcast__", "invalid_event_type"},
+		{"event_type naming the keep-alive topic", "?event_type=__keep_alive__", "invalid_event_type"},
+		{"event_type naming the barrier topic", "?event_type=__barrier__", "invalid_event_type"},
+		// A padded cursor is the same template accident as an empty one,
+		// but it used to reach the 410 gate and be reported as aged out,
+		// sending the caller to look at buffer retention instead of at
+		// their own variable.
+		{"whitespace-padded from", "?from=%20evt-1", "invalid_from"},
+		{"whitespace-padded from_timestamp", "?from_timestamp=%202020-01-01T00:00:00Z", "invalid_from_timestamp"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h, err := events.NewHub(10, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+			srv := httptest.NewServer(h.Handler())
+			t.Cleanup(srv.Close)
+
+			resp, err := http.Get(srv.URL + test.query)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+			body, _ := io.ReadAll(resp.Body)
+			assert.Contains(t, string(body), test.errorCode)
+		})
+	}
+}
+
+func TestHub_Handler_EmptyLastEventIDHeader_400(t *testing.T) {
+	// A cursor can be named three ways, and the present-but-empty rule
+	// has to cover all three. A client doing
+	// req.Header.Set("Last-Event-ID", cursor) with an unset cursor sends
+	// the header empty; Header.Get can't tell that from absent, so the
+	// resume was skipped and the stream joined live with a 200 — the
+	// same silent miss as an empty `?from`.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_last_event_id")
+}
+
+func TestHub_Handler_RepeatedLastEventIDHeader_400(t *testing.T) {
+	// The one-position rule covers the header spelling of a cursor too,
+	// and reports it with the header's own code: a client branching on
+	// errorCode to decide whether to re-encode its query string would
+	// otherwise retry a header defect forever.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Add("Last-Event-ID", "5")
+	req.Header.Add("Last-Event-ID", "9")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_last_event_id")
+}
+
+func TestHub_Handler_ResumeWithReplayDisabled_410(t *testing.T) {
+	// With EVENTS_REPLAY_BUFFER <= 0 there is no buffer, so a cursor is
+	// certainly not in it. Accepting the resume and joining live would
+	// be the silent miss the whole endpoint's validation exists to
+	// prevent, and POST /admin0/events/expire already answers 404 for a
+	// cursor in this configuration — the two must not disagree about
+	// whether naming a cursor against no buffer is an error.
+	h, err := events.NewHub(0, nil) // Replay disabled.
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from=evt-42")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusGone, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "event_aged_out")
+}
+
+func TestHub_Handler_RepeatedEventTypeStillFilters(t *testing.T) {
+	// Guard against over-rejecting: repeating `?event_type` is how a
+	// caller asks for several types at once, so unlike a repeated
+	// `?from` it must keep working. Only an empty value is refused.
+	//
+	// Both requested types must arrive AND the unrequested one must
+	// not: asserting only that one event turns up would also pass if a
+	// regression kept just the last value, or dropped filtering
+	// altogether and joined broadcastTopic — which is the firehose
+	// outcome TestHub_Handler_MalformedEscapeInEventType_400 exists to
+	// prevent.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?event_type=user.created&event_type=user.deleted")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got := make(chan string, 8)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			if line := scanner.Text(); strings.HasPrefix(line, "id: ") {
+				got <- strings.TrimPrefix(line, "id: ")
+			}
+		}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	for _, e := range []struct{ typ, id string }{
+		{"user.created", "c1"},
+		{"user.updated", "u1"}, // Not requested by this subscriber.
+		{"user.deleted", "d1"},
+	} {
+		require.NoError(t, h.Publish(events.Event{
+			Type:    e.typ,
+			ID:      e.id,
+			Payload: json.RawMessage(`{"type":"` + e.typ + `","id":"` + e.id + `"}`),
+		}))
+	}
+
+	// Wait for the two expected ids, then drain briefly so an
+	// unrequested event that leaked through is still observed. A fixed
+	// window would work too, but Joe delivers synchronously from
+	// Publish, so it would only add wall-clock.
+	var ids []string
+	deadline := time.After(2 * time.Second)
+Loop:
+	for len(ids) < 2 {
+		select {
+		case id := <-got:
+			ids = append(ids, id)
+		case <-deadline:
+			break Loop
+		}
+	}
+	drain := time.After(150 * time.Millisecond)
+Drain:
+	for {
+		select {
+		case id := <-got:
+			ids = append(ids, id)
+		case <-drain:
+			break Drain
+		}
+	}
+	assert.ElementsMatch(t, []string{"c1", "d1"}, ids,
+		"both requested types must arrive and the unrequested one must not")
+}
+
+func TestHub_Handler_MalformedEscapeRejectsWholeQuery_400(t *testing.T) {
+	// Url.ParseQuery keeps the pairs it could parse and reports an error
+	// for the one it couldn't. Answering 200 on the strength of the
+	// survivors would serve a request the caller never made, so one bad
+	// pair rejects the request even when the rest parsed cleanly.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?event_type=user.created&from=evt-1%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
 func TestHub_Handler_MultipleSubscribersEachReceiveOnce(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)

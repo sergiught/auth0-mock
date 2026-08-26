@@ -545,12 +545,19 @@ are already streaming keep receiving events.
 | Status | `errorCode` | Cause |
 |---|---|---|
 | 400 | `invalid_event` | Schema violation. The `message` field lists each failed `/json/pointer: reason` on a single line. |
-| 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339. |
-| 400 | `invalid_before` | `POST /admin0/events/expire?before=` was present but empty. Omit the parameter to expire the whole buffer — an empty value is refused rather than treated as expire-everything. |
-| 400 | `invalid_query` | `POST /admin0/events/expire` got an unparseable query string, a parameter other than `before`, or a repeated `before`. Omitting `before` means "expire everything", so a typo can't be allowed to look like omission. |
+| 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339, or was supplied empty or padded with whitespace. It is validated even when `?from` or `Last-Event-ID` already names the cursor, so a malformed value can't ride along unread. |
+| 400 | `invalid_from` | `?from` was supplied empty or padded with whitespace. Omit the parameter to join live — an empty value is refused rather than read as "no cursor", because a client templating `?from=${cursor}` with an unset variable would otherwise get a `200` and silently miss everything buffered since its cursor. |
+| 400 | `invalid_event_type` | `?event_type` was supplied empty, padded with whitespace, or naming one of the mock's internal topics (`__broadcast__`, `__keep_alive__`, `__barrier__`). Each value becomes a topic name verbatim: an empty or padded one subscribed the stream to a topic nothing publishes to, so it connected and then never delivered; an internal one collected the unfiltered fan-out, turning a filtered subscription into the firehose the filter exists to avoid. Omit the parameter to receive every event. |
+| 400 | `invalid_last_event_id` | The `Last-Event-ID` header was sent but empty, or sent more than once. Omit the header to join live — a cursor can be named three ways (this header, `?from`, `?from_timestamp`) and present-but-empty is refused for all three. |
+| 400 | `invalid_before` | `POST /admin0/events/expire?before=` was present but empty, or padded with whitespace. Omit the parameter to expire the whole buffer — an empty value is refused rather than treated as expire-everything, and a padded one is refused rather than reported as a cursor the buffer doesn't hold. |
+| 400 | `invalid_query` | The query string wouldn't parse — a stray `%` that isn't a valid escape, or an unencoded `;`, which Go refuses as a query separator — or a resume cursor was named twice (`?from`, `?from_timestamp`). A repeated `Last-Event-ID` header reports `invalid_last_event_id` instead, since nothing about the query string is wrong. |
 | 404 | `cursor_not_found` | `POST /admin0/events/expire?before=` named a cursor the replay buffer doesn't hold — mistyped, already evicted, or the mock runs with `EVENTS_REPLAY_BUFFER=0`. Reported rather than folded into a `200` with `expired: 0`, which couldn't say whether nothing was older or the cursor was never there. |
-| 410 | `event_aged_out` | `Last-Event-ID` / `?from` references an event the ring buffer no longer holds — through natural eviction or `POST /admin0/events/expire`. A `?from_timestamp` resolves against the buffer instead, so it joins live rather than 410-ing. |
+| 410 | `event_aged_out` | `Last-Event-ID` / `?from` references an event the ring buffer no longer holds — through natural eviction, `POST /admin0/events/expire`, or `EVENTS_REPLAY_BUFFER=0`, where there is no buffer to hold it and joining live would silently skip the window the caller asked to resume. A `?from_timestamp` resolves against the buffer instead, so it joins live rather than 410-ing. |
 | 401 | _bearer envelope_ | No / invalid bearer on `/api/v2/events`. |
+
+On `GET /api/v2/events`, one unparseable pair rejects the whole request. Go's parser keeps the pairs it managed and discards both the error and the pair it choked on, so a `?from` that vanished would join live instead of 410-ing, and a vanished `?event_type` would turn a filtered subscription into a firehose — answering `200` on the strength of the pairs that survived would serve a request nobody made. Percent-encode a `%` or `;` that a cursor genuinely contains (`%25`, `%3B`); the `message` field carries the parser's own reason. Unknown parameters are ignored, as the real Auth0 API ignores them.
+
+`POST /admin0/events/expire` is stricter still: it also rejects any parameter other than `before`, and a repeated `before`, because omitting `before` means "expire everything" and a typo must not be indistinguishable from omission.
 
 ## Use a Go test that boots the mock in-process
 

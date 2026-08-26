@@ -421,6 +421,24 @@ func TestPostAdmin0EventsExpire_RejectsEmptyBefore(t *testing.T) {
 	assert.Empty(t, hub.expired, "nothing should have been expired")
 }
 
+// A variable that expanded to a space is the same accident as one that
+// expanded to nothing, and it must not fall through to a 404 that
+// blames the cursor. GET /api/v2/events applies the identical rule to
+// its own parameters, and the two endpoints document themselves as
+// refusing the same shapes.
+func TestPostAdmin0EventsExpire_RejectsWhitespaceBefore(t *testing.T) {
+	hub := &captureHub{expireResult: 10}
+	r := newEventsRouter(t, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin0/events/expire?before=%20", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid_before")
+	assert.Empty(t, hub.expired, "nothing should have been expired")
+}
+
 // r.URL.Query() discards pairs it cannot parse along with the error, so
 // a cursor carrying a stray `%` or `;` would vanish and take the
 // empty-value guard with it — landing on the "no ?before at all"
