@@ -132,6 +132,25 @@ func (r *ringIndex) has(id string) bool {
 	return r.firstIndex(id) >= 0
 }
 
+// hasMsg reports whether this exact message is still buffered.
+//
+// Identity rather than id, because the two can disagree: nothing
+// upstream enforces unique offsets, and expireAll really removes
+// entries so an offset may be reused afterwards. An id lookup then
+// answers "still buffered" about a DIFFERENT entry that happens to
+// share the offset, and the replay re-check would put an aged-out
+// message on the wire the expire endpoint has already counted as
+// dropped. DropFront zeroes the entries it vacates, so a dropped
+// message is unreachable here even if its offset lives on.
+func (r *ringIndex) hasMsg(m *sse.Message) bool {
+	for _, e := range r.entries {
+		if e.msg == m {
+			return true
+		}
+	}
+	return false
+}
+
 // after returns the messages to replay to a subscriber resuming from
 // id: everything strictly after it whose topics intersect the
 // subscription's, in order. Ok=false means the id isn't buffered, which
@@ -349,7 +368,14 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 	// rather than a suffix of it — a `?from_timestamp` that predates
 	// every buffered event. It carries no cursor, so this is checked
 	// before the LastEventID gate below. See replayAllTopic.
-	if slices.Contains(sub.Topics, replayAllTopic) {
+	// The cursor check is belt-and-braces: promoteResumeHint never sets
+	// both, since the marker exists precisely for the case no cursor can
+	// express. It is kept because recordingReplayer implements a
+	// published interface — the same reason Put answers ErrNoTopic on a
+	// path sse.Joe cannot reach — and because silently replaying the
+	// whole buffer to a subscriber that named a position would also slip
+	// past the handler's 410 gate.
+	if slices.Contains(sub.Topics, replayAllTopic) && !sub.LastEventID.IsSet() {
 		r.mu.RLock()
 		msgs := r.idx.all(sub.Topics)
 		r.mu.RUnlock()
@@ -390,7 +416,7 @@ func (r *recordingReplayer) send(sub sse.Subscription, msgs []*sse.Message) erro
 		// dropped the survivors too, and a whole-buffer replay starts at
 		// index 0 — exactly what an expiry removes first — so a
 		// concurrent expire emptied the stream instead of trimming it.
-		if !r.Has(m.ID.String()) {
+		if !r.holds(m) {
 			continue
 		}
 		if err := sub.Client.Send(m); err != nil {
@@ -411,6 +437,15 @@ func (r *recordingReplayer) IDBefore(t time.Time) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.idx.idBefore(t)
+}
+
+// holds reports whether this exact message is still buffered. Used by
+// the mid-replay re-check; see ringIndex.hasMsg for why the replay path
+// asks about identity where the 410 gate asks about an id.
+func (r *recordingReplayer) holds(m *sse.Message) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.idx.hasMsg(m)
 }
 
 // Has reports whether id is currently in the buffer. Used by the hub to

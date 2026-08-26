@@ -578,7 +578,11 @@ func (h *Hub) runKeepAlive() {
 //     them on the normal resume path. ?from wins over ?from_timestamp,
 //     and an explicit Last-Event-ID wins over both — but all three are
 //     validated first, so a malformed ?from_timestamp is rejected even
-//     when a winning ?from means it would never be read.
+//     when a winning ?from means it would never be read. A
+//     ?from_timestamp that predates every buffered event is the one
+//     case with no cursor to promote to — replay runs strictly after a
+//     cursor, and none means "before the oldest" — so it asks for the
+//     whole buffer instead; see replayAllTopic.
 //     ?from_timestamp accepts RFC 3339; clients that send the
 //     timezone `+` unencoded (which URL-decodes to space) are
 //     tolerated by retrying with the space restored.
@@ -589,9 +593,11 @@ func (h *Hub) runKeepAlive() {
 //     immediately rather than waiting for the first event.
 //  7. Tracks the request context in the active set so Reset /
 //     Shutdown can drain in-flight subscribers cleanly.
-//  8. Delegates to the underlying *sse.Server, which uses an
-//     OnSession callback to parse `?event_type=...` into the
-//     subscriber's topic list.
+//  8. Delegates to the underlying *sse.Server. The topic list is
+//     derived here, from the query string this handler already parsed
+//     and validated, and handed to the OnSession callback on the
+//     request context — so the values that were validated and the
+//     values that are subscribed to cannot be two different things.
 func (h *Hub) Handler() http.Handler {
 	return http.HandlerFunc(h.serveHTTP)
 }

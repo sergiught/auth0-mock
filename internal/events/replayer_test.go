@@ -530,6 +530,30 @@ func TestRecordingReplayer_Send_SkipsAgedOutRatherThanStopping(t *testing.T) {
 	assert.Equal(t, []string{"2", "3"}, w.sent, "the survivors still go out")
 }
 
+// The mid-replay re-check has to identify the ENTRY, not the offset.
+// Nothing upstream enforces unique offsets, and an offset may be reused
+// after an expiry, so an id lookup answers "still buffered" for a
+// different entry that happens to share it — putting an aged-out
+// message on the wire the endpoint has already counted as expired.
+func TestRecordingReplayer_Send_SkipsTheExpiredCopyOfADuplicatedOffset(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	putOn(t, r, "A", "t1")
+	putOn(t, r, "B", "t1")
+	putOn(t, r, "C", "t1")
+	putOn(t, r, "B", "t1")
+
+	msgs := r.idx.all([]string{"t1"})
+	dropped, found := r.ExpireBefore("C")
+	require.Equal(t, 2, dropped, "A and the FIRST copy of B age out")
+	require.True(t, found)
+
+	w := &captureWriter{}
+	require.NoError(t, r.send(sse.Subscription{Client: w, Topics: []string{"t1"}}, msgs))
+	assert.Equal(t, []string{"C", "B"}, w.sent,
+		"the expired first copy of B must not ride out on the surviving copy's offset")
+}
+
 // An unset or unknown cursor likewise must not flush.
 func TestRecordingReplayer_Replay_UnknownCursorDoesNotTouchClient(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
@@ -629,10 +653,14 @@ func TestRingIndex_IDBefore_NonMonotonicNeverSkipsNewerEvents(t *testing.T) {
 			"picking C would silently drop it")
 }
 
-// An expiry that lands mid-replay must stop the rest of the buffer
-// going out: otherwise the endpoint answers {"expired":N} while the
-// events it just aged out are still being written to a subscriber.
-func TestRecordingReplayer_Replay_StopsWhenExpiredMidFlight(t *testing.T) {
+// An expiry that lands mid-replay must keep the events it aged out off
+// the wire: otherwise the endpoint answers {"expired":N} while those
+// same events are still being written to a subscriber. Here the whole
+// buffer goes, so nothing survives to send. It is the aged-out entries
+// that are withheld, not the rest of the replay — see
+// TestRecordingReplayer_Send_SkipsAgedOutRatherThanStopping for a
+// partial expiry, where the survivors still go out.
+func TestRecordingReplayer_Replay_WithholdsEventsExpiredMidFlight(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
 	for _, id := range []string{"1", "2", "3", "4"} {
@@ -648,7 +676,7 @@ func TestRecordingReplayer_Replay_StopsWhenExpiredMidFlight(t *testing.T) {
 		Topics:      []string{"t1"},
 	}))
 	assert.Equal(t, []string{"2"}, w.sent,
-		"only the write already in flight goes out; the rest were expired")
+		"only the write already in flight goes out; every survivor behind it aged out")
 }
 
 // expiringWriter expires the whole buffer once it has accepted `after`
