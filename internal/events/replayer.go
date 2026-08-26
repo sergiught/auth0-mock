@@ -406,6 +406,9 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 // every entry out, and in both cases flushing would touch a client this
 // replay never wrote to. That is what go-sse's own FiniteReplayer does
 // for a resume-from-newest, and why after reports ok=false for the tail.
+//
+// An expiry landing between the snapshot and a write is handled in the
+// loop, and which way depends on what has already gone out; see there.
 func (r *recordingReplayer) send(sub sse.Subscription, msgs []*sse.Message) error {
 	var sent int
 	for _, m := range msgs {
@@ -416,13 +419,26 @@ func (r *recordingReplayer) send(sub sse.Subscription, msgs []*sse.Message) erro
 		// the endpoint would answer {"expired":N} while the events it
 		// just aged out were still going out on the wire.
 		//
-		// Skip the aged-out entry rather than stopping: the ring only
-		// ever evicts from the front, so a missing id means "this one
-		// aged out", never "everything behind it did". Breaking here
-		// dropped the survivors too, and a whole-buffer replay starts at
-		// index 0 — exactly what an expiry removes first — so a
-		// concurrent expire emptied the stream instead of trimming it.
+		// What to do about the aged-out entry depends on whether this
+		// replay has written anything yet, because that is what decides
+		// whether the consumer ends up holding a cursor at all.
+		//
+		// Nothing written: skip it. Eviction is front-only, so what is
+		// missing is a prefix of the snapshot, and there is no cursor to
+		// strand by carrying on. Stopping here would empty a whole-buffer
+		// replay outright, since it starts at index 0 — exactly what an
+		// expiry removes first.
+		//
+		// Already written: stop. The consumer's cursor is the last id we
+		// wrote, and everything older than the entry we just skipped is
+		// gone, that id included — so its reconnect answers 410
+		// event_aged_out and it learns what it lost. Delivering the
+		// survivors instead would advance its cursor past the hole, and
+		// the reconnect would answer 200 with the loss invisible.
 		if !r.holds(m) {
+			if sent > 0 {
+				break
+			}
 			continue
 		}
 		if err := sub.Client.Send(m); err != nil {

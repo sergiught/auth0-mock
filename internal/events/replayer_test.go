@@ -513,12 +513,12 @@ func TestRecordingReplayer_Replay_EmptyAfterTopicFilterDoesNotFlush(t *testing.T
 	assert.Zero(t, w.flushes, "the topic filter emptied the replay, so there is nothing to flush")
 }
 
-// An expiry landing mid-replay evicts from the FRONT of the ring, so
-// the aged-out entries are always a prefix of the snapshot. Stopping at
-// the first one threw away every survivor behind it — and a whole-buffer
-// replay starts at index 0, which is exactly what expiry removes first,
-// so a concurrent expire emptied the stream instead of trimming it.
-func TestRecordingReplayer_Send_SkipsAgedOutRatherThanStopping(t *testing.T) {
+// Before anything has been written there is no cursor to strand, so an
+// aged-out prefix is skipped rather than ending the replay. Eviction is
+// front-only, so that prefix is all the snapshot can have lost — and a
+// whole-buffer replay starts at index 0, exactly what expiry removes
+// first, so stopping there emptied the stream instead of trimming it.
+func TestRecordingReplayer_Send_SkipsAnAgedOutPrefixBeforeWriting(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
 	for _, id := range []string{"0", "1", "2", "3"} {
@@ -660,13 +660,13 @@ func TestRingIndex_IDBefore_NonMonotonicNeverSkipsNewerEvents(t *testing.T) {
 			"picking C would silently drop it")
 }
 
-// The partial-expiry half of the mid-replay window, driven through Replay
-// with a real cursor rather than by calling send directly: the entries
-// that aged out stay off the wire, and the ones that survived still go
-// out. Without this, a regression that stopped routing the ?from branch
-// through send — or re-added a break inside it — would leave the
-// send-level tests green while every real resume lost its survivors.
-func TestRecordingReplayer_Replay_PartialExpiryMidFlightKeepsSurvivors(t *testing.T) {
+// Once a replay has written something, an expiry that lands under it
+// stops the rest. The consumer is then left holding a cursor that just
+// aged out, so its next reconnect answers 410 event_aged_out and it
+// learns it lost data. Carrying on to the survivors would advance its
+// cursor past the hole instead, and the reconnect would answer 200 with
+// the loss invisible for good.
+func TestRecordingReplayer_Replay_ExpiryAfterAWriteStopsToPreserveThe410(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
 	for _, id := range []string{"1", "2", "3", "4", "5"} {
@@ -674,15 +674,15 @@ func TestRecordingReplayer_Replay_PartialExpiryMidFlightKeepsSurvivors(t *testin
 	}
 
 	// Once "2" is on the wire, age out everything before "4" — so "3"
-	// is gone but "4" and "5" are not.
+	// is gone, and so is the "2" the consumer now holds as its cursor.
 	w := &expireBeforeWriter{r: r, after: 1, before: "4"}
 	require.NoError(t, r.Replay(sse.Subscription{
 		Client:      w,
 		LastEventID: sse.ID("1"),
 		Topics:      []string{"t1"},
 	}))
-	assert.Equal(t, []string{"2", "4", "5"}, w.sent,
-		"the aged-out 3 is withheld; the survivors behind it still go out")
+	assert.Equal(t, []string{"2"}, w.sent,
+		"stops at the aged-out 3, leaving the consumer on cursor 2, which is gone too")
 }
 
 // A subscription that names a position gets the suffix it asked for,
@@ -710,8 +710,8 @@ func TestRecordingReplayer_ReplayAll_CursorWinsOverTheMarker(t *testing.T) {
 // the wire: otherwise the endpoint answers {"expired":N} while those
 // same events are still being written to a subscriber. Here the whole
 // buffer goes, so nothing survives to send — see
-// TestRecordingReplayer_Replay_PartialExpiryMidFlightKeepsSurvivors for
-// the case where some of it does.
+// TestRecordingReplayer_Replay_ExpiryAfterAWriteStopsToPreserveThe410
+// for why it stops rather than skipping on.
 func TestRecordingReplayer_Replay_WithholdsEventsExpiredMidFlight(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
