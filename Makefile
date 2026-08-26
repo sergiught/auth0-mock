@@ -37,7 +37,7 @@ help: ## Show this help message and exit
 #-----------------------------------------------------------------------------------------------------------------------
 $(BINARIES_DIR)/golangci-lint:
 	@echo "==> Installing golangci-lint within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@c0d3ddc9cf3faa61a4e378e879ece580256d76e5 # v2.12.2
+	@GOBIN=$(BINARIES_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@6d2288e072e6f9c9bca28180cae9ce58a049c912 # v2.13.1
 
 $(BINARIES_DIR)/commitlint:
 	@echo "==> Installing commitlint within ${BINARIES_DIR}"
@@ -45,7 +45,7 @@ $(BINARIES_DIR)/commitlint:
 
 $(BINARIES_DIR)/govulncheck:
 	@echo "==> Installing govulncheck within ${BINARIES_DIR}"
-	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@0782b76014f15f24e22a438f30f308df42899ba1 # v1.3.0
+	@GOBIN=$(BINARIES_DIR) go install golang.org/x/vuln/cmd/govulncheck@617f44b718537dccdea1915395650e0529e3b72e # v1.7.0
 
 $(BINARIES_DIR)/air:
 	@echo "==> Installing air within ${BINARIES_DIR}"

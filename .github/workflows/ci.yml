@@ -15,7 +15,7 @@ env:
   # the current patch release — that is how CI ended up building on a Go with
   # known stdlib CVEs while govulncheck (correctly) failed every PR.
   GO_VERSION: '1.26'
-  GOLANGCI_LINT_VERSION: 'v2.12.2'
+  GOLANGCI_LINT_VERSION: 'v2.13.1'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
