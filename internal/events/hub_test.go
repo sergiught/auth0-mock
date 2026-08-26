@@ -1603,7 +1603,7 @@ func TestHub_Expire_BeforeThenFromTimestampResumesSurvivingWindow(t *testing.T) 
 	require.True(t, found)
 
 	// Every surviving event postdates this instant, so IDBefore finds
-	// nothing and the handler falls back to the oldest survivor.
+	// nothing and the handler asks for the whole surviving buffer.
 	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
 	defer cancel()
 

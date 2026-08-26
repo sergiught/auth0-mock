@@ -110,7 +110,9 @@ type topicsKey struct{}
 // broadcastTopic and collect every event.
 func subscriptionTopics(q url.Values, replayAll bool) []string {
 	requested := q["event_type"]
-	out := make([]string, 0, len(requested)+2)
+	// +3: keepAliveTopic, optionally replayAllTopic, and either
+	// broadcastTopic or the requested types.
+	out := make([]string, 0, len(requested)+3)
 	out = append(out, keepAliveTopic)
 	if replayAll {
 		out = append(out, replayAllTopic)

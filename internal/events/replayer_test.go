@@ -1,6 +1,7 @@
 package events
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -379,7 +380,10 @@ func replayAllIDs(t *testing.T, r *recordingReplayer, topics ...string) []string
 	w := &captureWriter{}
 	require.NoError(t, r.Replay(sse.Subscription{
 		Client: w,
-		Topics: append(topics, replayAllTopic),
+		// Concat rather than append: topics is the caller's variadic
+		// slice, and appending into its spare capacity would overwrite
+		// an element the caller still owns.
+		Topics: slices.Concat(topics, []string{replayAllTopic}),
 	}))
 	return w.sent
 }
@@ -481,6 +485,49 @@ func TestRecordingReplayer_Replay_NewestCursorDoesNotTouchClient(t *testing.T) {
 	}))
 	assert.Empty(t, w.sent)
 	assert.Zero(t, w.flushes, "nothing was replayed, so the client should not be flushed")
+}
+
+// The topic filter can empty a replay just as thoroughly as a tail
+// cursor can, and the rule is the same: a client we sent nothing to is
+// a client we have no reason to flush.
+func TestRecordingReplayer_Replay_EmptyAfterTopicFilterDoesNotFlush(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	putOn(t, r, "1", "t1")
+	putOn(t, r, "2", "t2")
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Empty(t, w.sent)
+	assert.Zero(t, w.flushes, "the topic filter emptied the replay, so there is nothing to flush")
+}
+
+// An expiry landing mid-replay evicts from the FRONT of the ring, so
+// the aged-out entries are always a prefix of the snapshot. Stopping at
+// the first one threw away every survivor behind it — and a whole-buffer
+// replay starts at index 0, which is exactly what expiry removes first,
+// so a concurrent expire emptied the stream instead of trimming it.
+func TestRecordingReplayer_Send_SkipsAgedOutRatherThanStopping(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"0", "1", "2", "3"} {
+		putOn(t, r, id, "t1")
+	}
+
+	// Snapshot the way Replay does, then let an expiry land before any
+	// of it reaches the client.
+	msgs := r.idx.all([]string{"t1"})
+	dropped, found := r.ExpireBefore("2")
+	require.Equal(t, 2, dropped)
+	require.True(t, found)
+
+	w := &captureWriter{}
+	require.NoError(t, r.send(sse.Subscription{Client: w, Topics: []string{"t1"}}, msgs))
+	assert.Equal(t, []string{"2", "3"}, w.sent, "the survivors still go out")
 }
 
 // An unset or unknown cursor likewise must not flush.
