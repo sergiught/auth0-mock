@@ -251,7 +251,14 @@ func (r *ringIndex) expireBefore(before string) (dropped int, found bool) {
 	return r.dropFront(i), true
 }
 
-// dropFront removes the first n entries and reports how many went. A
+// dropFront is the only way entries leave the buffer other than put's
+// eviction, and both go from the FRONT. Replay depends on that: send
+// skips an entry the buffer no longer holds and keeps going, which is
+// only safe because the entries it skips are a prefix of its snapshot.
+// An expiry that could remove from the middle would need send to
+// answer for the interior hole it left.
+//
+// DropFront removes the first n entries and reports how many went. A
 // negative n (an id that isn't buffered) or zero drops nothing, and n
 // is clamped to the buffer length: slicing past the end would panic,
 // and go-sse answers a panic from a Replayer by disabling replay for

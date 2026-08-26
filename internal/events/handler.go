@@ -110,8 +110,9 @@ type topicsKey struct{}
 // broadcastTopic and collect every event.
 func subscriptionTopics(q url.Values, replayAll bool) []string {
 	requested := q["event_type"]
-	// Room for the requested types plus the internal names appended
-	// below, whichever branch runs.
+	// Three internal names is the ceiling, and only the filterless
+	// branch reaches it — where requested is empty, so this is exact.
+	// A filtered list leaves one slot spare.
 	out := make([]string, 0, len(requested)+3)
 	out = append(out, keepAliveTopic)
 	if replayAll {
@@ -303,9 +304,14 @@ func promoteResumeHint(
 	// No buffered event predates t, so every buffered event is one the
 	// caller asked for — the oldest included. No cursor can say that,
 	// since replay runs strictly after the cursor it is given, so say it
-	// through the subscription's topics instead. An empty buffer takes
-	// this branch too and replays nothing, which is the same join-live
-	// outcome as before.
+	// through the subscription's topics instead.
+	//
+	// An empty buffer takes this branch too. It usually replays nothing,
+	// but the decision is made here and the buffer is read again when
+	// Joe runs Replay, so anything published in between is replayed
+	// rather than missed. That is the same direction ringIndex.idBefore
+	// already chooses when it cannot name an exact suffix: over-deliver
+	// rather than drop.
 	return false, true
 }
 

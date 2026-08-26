@@ -545,45 +545,19 @@ func pushEvent(c *Context, body string, expect202 bool) error {
 	return nil
 }
 
-func streamDeliversID(c *Context, wantID string, within time.Duration) error {
-	deadline := time.After(within)
-	r := bufio.NewReader(c.SSEResp.Body)
-	defer func() { _ = c.SSEResp.Body.Close() }()
-	lines := make(chan string, 64)
-	go func() {
-		for {
-			line, err := r.ReadString('\n')
-			if err != nil {
-				close(lines)
-				return
-			}
-			lines <- line
-		}
-	}()
-	for {
-		select {
-		case <-deadline:
-			return fmt.Errorf("timeout waiting for id=%s", wantID)
-		case line, ok := <-lines:
-			if !ok {
-				return fmt.Errorf("stream closed before id=%s arrived", wantID)
-			}
-			if strings.TrimSpace(line) == "id: "+wantID {
-				return nil
-			}
-		}
-	}
-}
-
-// streamDeliversIDs is streamDeliversID for a window rather than a
-// single frame: the ids must arrive in the order given, though other
-// frames may sit between them. Asserting one id cannot tell "replayed
-// the window the caller asked for" from "replayed its first entry and
-// stopped".
+// streamDeliversIDs asserts that the given ids arrive in order, though
+// other frames may sit between them. Asserting a single id cannot tell
+// "replayed the window the caller asked for" from "replayed its first
+// entry and stopped".
 func streamDeliversIDs(c *Context, wantIDs []string, within time.Duration) error {
 	deadline := time.After(within)
 	r := bufio.NewReader(c.SSEResp.Body)
 	defer func() { _ = c.SSEResp.Body.Close() }()
+	// Closed on return so the reader cannot park forever on a send
+	// nobody will receive: closing the body wakes a reader blocked
+	// inside ReadString, but not one blocked on the channel.
+	done := make(chan struct{})
+	defer close(done)
 	lines := make(chan string, 64)
 	go func() {
 		for {
@@ -592,7 +566,11 @@ func streamDeliversIDs(c *Context, wantIDs []string, within time.Duration) error
 				close(lines)
 				return
 			}
-			lines <- line
+			select {
+			case lines <- line:
+			case <-done:
+				return
+			}
 		}
 	}()
 	next := 0
@@ -614,6 +592,11 @@ func streamDeliversIDs(c *Context, wantIDs []string, within time.Duration) error
 			}
 		}
 	}
+}
+
+// streamDeliversID is the one-frame case of streamDeliversIDs.
+func streamDeliversID(c *Context, wantID string, within time.Duration) error {
+	return streamDeliversIDs(c, []string{wantID}, within)
 }
 
 func streamDeliversNothing(c *Context, within time.Duration) error {

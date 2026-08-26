@@ -660,14 +660,7 @@ func TestRingIndex_IDBefore_NonMonotonicNeverSkipsNewerEvents(t *testing.T) {
 			"picking C would silently drop it")
 }
 
-// An expiry that lands mid-replay must keep the events it aged out off
-// the wire: otherwise the endpoint answers {"expired":N} while those
-// same events are still being written to a subscriber. Here the whole
-// buffer goes, so nothing survives to send. It is the aged-out entries
-// that are withheld, not the rest of the replay — see
-// TestRecordingReplayer_Send_SkipsAgedOutRatherThanStopping for a
-// partial expiry, where the survivors still go out.
-// The partial-expiry half of the same window, driven through Replay
+// The partial-expiry half of the mid-replay window, driven through Replay
 // with a real cursor rather than by calling send directly: the entries
 // that aged out stay off the wire, and the ones that survived still go
 // out. Without this, a regression that stopped routing the ?from branch
@@ -713,6 +706,12 @@ func TestRecordingReplayer_ReplayAll_CursorWinsOverTheMarker(t *testing.T) {
 	assert.Equal(t, []string{"2"}, w.sent, "a named position wins over the marker")
 }
 
+// An expiry that lands mid-replay must keep the events it aged out off
+// the wire: otherwise the endpoint answers {"expired":N} while those
+// same events are still being written to a subscriber. Here the whole
+// buffer goes, so nothing survives to send — see
+// TestRecordingReplayer_Replay_PartialExpiryMidFlightKeepsSurvivors for
+// the case where some of it does.
 func TestRecordingReplayer_Replay_WithholdsEventsExpiredMidFlight(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
