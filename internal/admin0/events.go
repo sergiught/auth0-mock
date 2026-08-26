@@ -143,7 +143,12 @@ func (h *ExpireEventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// cursor, not to expire the whole buffer. Reject it rather than
 	// silently widening the blast radius — the same guard the SDK's
 	// ExpireEventsBefore applies.
-	if before == "" {
+	//
+	// Whitespace counts as empty here exactly as it does on
+	// GET /api/v2/events: a variable that expanded to a space is the
+	// same accident as one that expanded to nothing, and the two
+	// endpoints claim to refuse the same shapes.
+	if strings.TrimSpace(before) == "" {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"before must not be empty; omit the parameter to expire the whole buffer",
 			"invalid_before")

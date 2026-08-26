@@ -81,8 +81,15 @@ func (d *drainableWriter) Unwrap() http.ResponseWriter {
 	return d.ResponseWriter
 }
 
-// onSession is the *sse.Server.OnSession callback. It parses
-// `?event_type=...` into the subscriber's topic list:
+// topicsKey addresses the subscriber's topic list on the request
+// context. ServeHTTP computes it from the query string it has already
+// parsed and validated; onSession reads it back. Passing the list
+// rather than re-deriving it means the values that were validated and
+// the values that are subscribed to cannot be two different things.
+type topicsKey struct{}
+
+// subscriptionTopics turns a validated `?event_type` list into the
+// subscriber's topic list:
 //   - Filterless subscribers join broadcastTopic — publishers send
 //     every event there, so the subscriber sees everything.
 //   - Filtered subscribers join the requested types — they receive
@@ -93,20 +100,28 @@ func (d *drainableWriter) Unwrap() http.ResponseWriter {
 // too (otherwise they'd be silently dropped by reverse-proxy idle
 // timeouts while waiting for a matching event).
 //
-// Reading r.URL.Query() here is safe despite it discarding its error:
-// this runs as the delegate of serveHTTP, which has already rejected
-// any query string that wouldn't parse. The signature above —
-// (topics, allowed) — has no way to spell a 400, which is why that
-// check lives in serveHTTP rather than here.
-func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
-	requested := r.URL.Query()["event_type"]
+// Callers must validate first: validateResume refuses the requested
+// types that would produce a subscription nobody wants, including the
+// internal topic names, which would otherwise let `?event_type` name
+// broadcastTopic and collect every event.
+func subscriptionTopics(q url.Values) []string {
+	requested := q["event_type"]
 	if len(requested) == 0 {
-		return []string{keepAliveTopic, broadcastTopic}, true
+		return []string{keepAliveTopic, broadcastTopic}
 	}
 	out := make([]string, 0, len(requested)+1)
 	out = append(out, keepAliveTopic)
-	out = append(out, requested...)
-	return out, true
+	return append(out, requested...)
+}
+
+// onSession is the *sse.Server.OnSession callback. ServeHTTP is the
+// only route to it and always stores the topic list on the context, so
+// a missing value is a wiring bug rather than a request the caller can
+// provoke; refusing the session fails closed instead of silently
+// handing out a firehose.
+func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
+	topics, ok := r.Context().Value(topicsKey{}).([]string)
+	return topics, ok
 }
 
 // validateResume refuses the ways of naming a resume position that
@@ -123,14 +138,21 @@ func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string
 // same reason; see internal/admin0/events.go.
 func validateResume(w http.ResponseWriter, r *http.Request, q url.Values) bool {
 	// A cursor can be named three ways — this header, ?from, and
-	// ?from_timestamp — so the present-but-empty rule has to cover all
-	// three or a client templating the one it missed still joins live.
-	if v, present := r.Header[http.CanonicalHeaderKey("Last-Event-ID")]; present &&
-		(len(v) == 0 || strings.TrimSpace(v[0]) == "") {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"Last-Event-ID was sent but empty; omit the header to join live",
-			"invalid_last_event_id")
-		return false
+	// ?from_timestamp — so both rules below have to cover all three or
+	// a client templating the one they missed still joins live.
+	if v, present := r.Header[http.CanonicalHeaderKey("Last-Event-ID")]; present {
+		if len(v) > 1 {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				"Last-Event-ID was sent more than once; a resume cursor can only name one position",
+				"invalid_query")
+			return false
+		}
+		if isBlank(v[0]) {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				"Last-Event-ID was sent but empty; omit the header to join live",
+				"invalid_last_event_id")
+			return false
+		}
 	}
 	// A resume cursor can only name one position, so a repeat is a
 	// caller bug rather than a list. `event_type` is deliberately
@@ -149,7 +171,6 @@ func validateResume(w http.ResponseWriter, r *http.Request, q url.Values) bool {
 	for _, param := range []struct{ key, code string }{
 		{"from", "invalid_from"},
 		{"from_timestamp", "invalid_from_timestamp"},
-		{"event_type", "invalid_event_type"},
 	} {
 		if slices.ContainsFunc(q[param.key], isBlank) {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
@@ -158,6 +179,31 @@ func validateResume(w http.ResponseWriter, r *http.Request, q url.Values) bool {
 				param.code)
 			return false
 		}
+	}
+	return validateEventTypes(w, q)
+}
+
+// validateEventTypes refuses the requested types that would build a
+// subscription nobody wants. Each value becomes a topic name verbatim,
+// so anything that is not exactly a publishable event type yields a
+// stream that connects and then never delivers — or, for the internal
+// topic names, one that delivers far too much.
+func validateEventTypes(w http.ResponseWriter, q url.Values) bool {
+	for _, typ := range q["event_type"] {
+		var reason string
+		switch {
+		case isBlank(typ):
+			reason = "was supplied but empty; omit it entirely to receive every event"
+		case typ != strings.TrimSpace(typ):
+			reason = "is padded with whitespace, which would subscribe to a topic nothing publishes to"
+		case typ == broadcastTopic || typ == keepAliveTopic || typ == barrierTopic:
+			reason = "names an internal topic; those carry the unfiltered fan-out and are not event types"
+		default:
+			continue
+		}
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"event_type "+reason, "invalid_event_type")
+		return false
 	}
 	// Validate the timestamp here rather than where it is consumed:
 	// promoteResumeHint returns early when `?from` or the header
@@ -186,9 +232,12 @@ func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
 // on it — the caller's up-front Has check would otherwise race a
 // concurrent Put that evicted the just-looked-up ID.
 //
+// The replayer is passed in rather than read from the hub, so this and
+// the caller's 410 gate judge the same buffer.
+//
 // Every value it reads has already been through validateResume, so
 // there is nothing left here that can fail.
-func (h *Hub) promoteResumeHint(r *http.Request, q url.Values) (synthesised bool) {
+func promoteResumeHint(r *http.Request, q url.Values, replayer *recordingReplayer) (synthesised bool) {
 	if r.Header.Get("Last-Event-ID") != "" {
 		return false
 	}
@@ -202,9 +251,6 @@ func (h *Hub) promoteResumeHint(r *http.Request, q url.Values) (synthesised bool
 	}
 	// ValidateResume already rejected an unparseable value.
 	t, _ := parseFromTimestamp(ts)
-	h.mu.RLock()
-	replayer := h.replayer
-	h.mu.RUnlock()
 	if replayer == nil {
 		// No replay possible; silently ignore.
 		return false
@@ -265,7 +311,15 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	synthesised := h.promoteResumeHint(r, q)
+	// One snapshot for both the promotion and the 410 gate below. Each
+	// used to take its own RLock and read h.replayer separately, so a
+	// concurrent Reset landing between them would promote a cursor
+	// against one buffer and check it against another.
+	h.mu.RLock()
+	replayer := h.replayer
+	h.mu.RUnlock()
+
+	synthesised := promoteResumeHint(r, q, replayer)
 
 	// Surface aged-out resume up-front: if a user-supplied
 	// Last-Event-ID names an ID we no longer carry, return 410 Gone
@@ -276,9 +330,6 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// user who never sent a Last-Event-ID, which is worse than the
 	// fallback of joining live.
 	if id := r.Header.Get("Last-Event-ID"); id != "" && !synthesised {
-		h.mu.RLock()
-		replayer := h.replayer
-		h.mu.RUnlock()
 		if replayer != nil && !replayer.Has(id) {
 			httperr.WriteMgmt(w, http.StatusGone, "Gone",
 				"requested Last-Event-ID is no longer in the replay buffer",
@@ -295,7 +346,10 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	dw := &drainableWriter{ResponseWriter: w}
 	ctx, cancel := registerSub(h, r, dw)
 	defer cancel()
-	r = r.WithContext(ctx)
+	// Hand the delegate the topics derived from the query string this
+	// handler already parsed and validated, rather than leaving it to
+	// re-parse and re-derive them.
+	r = r.WithContext(context.WithValue(ctx, topicsKey{}, subscriptionTopics(q)))
 
 	// Pre-flush SSE response headers so http.Client.Do returns
 	// immediately, rather than blocking until the first event lands.

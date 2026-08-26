@@ -729,6 +729,15 @@ func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
 		// parameter already names the cursor — otherwise the empty value
 		// 400s while the garbage value is silently discarded.
 		{"garbage from_timestamp beside a from", "?from=0&from_timestamp=not-a-timestamp", "invalid_from_timestamp"},
+		// An event type is used verbatim as a topic name. A padded one
+		// subscribes to a topic nothing publishes to (the %20 dead end
+		// again, reached by a variable with a trailing space), and the
+		// internal names carry the unfiltered fan-out — naming
+		// broadcastTopic turned a "filtered" subscription into the very
+		// firehose this endpoint's filter exists to avoid.
+		{"whitespace-padded event_type", "?event_type=user.created%20", "invalid_event_type"},
+		{"event_type naming the broadcast topic", "?event_type=__broadcast__", "invalid_event_type"},
+		{"event_type naming the keep-alive topic", "?event_type=__keep_alive__", "invalid_event_type"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -821,17 +830,29 @@ func TestHub_Handler_RepeatedEventTypeStillFilters(t *testing.T) {
 		}))
 	}
 
-	// Collect for a fixed window rather than stopping at the first two,
-	// so an unrequested event that leaked through is still observed.
+	// Wait for the two expected ids, then drain briefly so an
+	// unrequested event that leaked through is still observed. A fixed
+	// window would work too, but Joe delivers synchronously from
+	// Publish, so it would only add wall-clock.
 	var ids []string
 	deadline := time.After(2 * time.Second)
 Loop:
-	for {
+	for len(ids) < 2 {
 		select {
 		case id := <-got:
 			ids = append(ids, id)
 		case <-deadline:
 			break Loop
+		}
+	}
+	drain := time.After(150 * time.Millisecond)
+Drain:
+	for {
+		select {
+		case id := <-got:
+			ids = append(ids, id)
+		case <-drain:
+			break Drain
 		}
 	}
 	assert.ElementsMatch(t, []string{"c1", "d1"}, ids,

@@ -547,7 +547,7 @@ are already streaming keep receiving events.
 | 400 | `invalid_event` | Schema violation. The `message` field lists each failed `/json/pointer: reason` on a single line. |
 | 400 | `invalid_from_timestamp` | `?from_timestamp` isn't valid RFC 3339, or was supplied empty. |
 | 400 | `invalid_from` | `?from` was supplied empty. Omit the parameter to join live — an empty value is refused rather than read as "no cursor", because a client templating `?from=${cursor}` with an unset variable would otherwise get a `200` and silently miss everything buffered since its cursor. |
-| 400 | `invalid_event_type` | `?event_type` was supplied empty (on its own or alongside real types). Omit it to receive every event. An empty value used to subscribe the stream to a topic nothing publishes to, so the connection succeeded and then never delivered an event. |
+| 400 | `invalid_event_type` | `?event_type` was supplied empty, padded with whitespace, or naming one of the mock's internal topics (`__broadcast__`, `__keep_alive__`). Each value becomes a topic name verbatim: an empty or padded one subscribed the stream to a topic nothing publishes to, so it connected and then never delivered; an internal one collected the unfiltered fan-out, turning a filtered subscription into the firehose the filter exists to avoid. Omit the parameter to receive every event. |
 | 400 | `invalid_last_event_id` | The `Last-Event-ID` header was sent but empty. Omit the header to join live — a cursor can be named three ways (this header, `?from`, `?from_timestamp`) and present-but-empty is refused for all three. |
 | 400 | `invalid_before` | `POST /admin0/events/expire?before=` was present but empty. Omit the parameter to expire the whole buffer — an empty value is refused rather than treated as expire-everything. |
 | 400 | `invalid_query` | The query string wouldn't parse — a stray `%` that isn't a valid escape, or an unencoded `;`, which Go refuses as a query separator — or a resume cursor was named twice (`?from`, `?from_timestamp`). |
@@ -557,7 +557,7 @@ are already streaming keep receiving events.
 
 On `GET /api/v2/events`, one unparseable pair rejects the whole request. Go's parser keeps the pairs it managed and discards both the error and the pair it choked on, so a `?from` that vanished would join live instead of 410-ing, and a vanished `?event_type` would turn a filtered subscription into a firehose — answering `200` on the strength of the pairs that survived would serve a request nobody made. Percent-encode a `%` or `;` that a cursor genuinely contains (`%25`, `%3B`); the `message` field carries the parser's own reason. Unknown parameters are ignored, as the real Auth0 API ignores them.
 
-`POST /admin0/events/expire` is stricter still: it also rejects any parameter other than `before`, because omitting `before` means "expire everything" and a typo must not be indistinguishable from omission.
+`POST /admin0/events/expire` is stricter still: it also rejects any parameter other than `before`, and a repeated `before`, because omitting `before` means "expire everything" and a typo must not be indistinguishable from omission.
 
 ## Use a Go test that boots the mock in-process
 
