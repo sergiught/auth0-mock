@@ -15,6 +15,11 @@ env:
   # the current patch release — that is how CI ended up building on a Go with
   # known stdlib CVEs while govulncheck (correctly) failed every PR.
   GO_VERSION: '1.26'
+  # Keep in step with GOLANGCI_LINT_PIN in the Makefile, which is the
+  # same release by SHA. The two are separate because this job takes the
+  # upstream release binary via golangci-lint-action while `make lint`
+  # builds from source; bumping only one puts local and CI on different
+  # linters, which is the drift the pin exists to prevent.
   GOLANGCI_LINT_VERSION: 'v2.13.1'
 
 concurrency:

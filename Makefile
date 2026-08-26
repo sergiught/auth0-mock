@@ -46,44 +46,59 @@ help: ## Show this help message and exit
 # govulncheck gave up on internal/poll and the vendored x/text tables.
 # Stamping the filename turns both of those into a cache miss.
 #
-# GOVERSION carries a colon on some toolchains (go1.27.0-X:nodwarf5),
-# which make would read as a rule separator, hence the subst.
+# The stamp is derived from the module@sha itself, not from a version
+# label beside it: renovate can move a digest without touching the tag,
+# and a label edited out of step with its SHA would rename the binary
+# while reinstalling the same code. GOVERSION needs sanitizing — it
+# carries a colon on some toolchains (go1.27.0-X:nodwarf5), which make
+# reads as a rule separator, and spaces on devel builds, which make
+# reads as several targets.
 #-----------------------------------------------------------------------------------------------------------------------
-GO_STAMP := $(subst :,-,$(shell go env GOVERSION))
+space := $(subst ,, )
+GO_STAMP := $(subst $(space),-,$(subst :,-,$(shell go env GOVERSION)))
+
+# tool-stamp,<module@sha> — the cache key for one pinned tool: the pin
+# and the Go that will build it, folded to something usable in a path.
+tool-stamp = $(GO_STAMP)-$(firstword $(shell echo '$(1)' | cksum))
 
 # tool-install,<name>,<module@sha> — install into ./bin under the
-# stamped name, replacing any copy left by an older pin or Go.
+# stamped name. Installs to a scratch GOBIN and only then moves the
+# binary into place and prunes earlier copies, so an install that fails
+# (offline, proxy down) leaves the working tool that is already there
+# rather than deleting it and aborting with nothing.
 define tool-install
-	@echo "==> Installing $(1) $(2) ($(GO_STAMP)) within ${BINARIES_DIR}"
-	@rm -f $(BINARIES_DIR)/$(1) $(BINARIES_DIR)/$(1)-*
-	@GOBIN=$(BINARIES_DIR) go install $(3)
-	@mv $(BINARIES_DIR)/$(1) $@
+	@echo "==> Installing $(1) ($(2)) within ${BINARIES_DIR}"
+	@rm -rf $(BINARIES_DIR)/.tmp-$(1) && mkdir -p $(BINARIES_DIR)/.tmp-$(1)
+	@GOBIN=$(BINARIES_DIR)/.tmp-$(1) go install $(2)
+	@mv $(BINARIES_DIR)/.tmp-$(1)/$(1) $@
+	@rm -rf $(BINARIES_DIR)/.tmp-$(1)
+	@find $(BINARIES_DIR) -maxdepth 1 -name '$(1)' -o -name '$(1)-*' ! -name '$(notdir $@)' | xargs -r rm -f
 endef
 
-GOLANGCI_LINT_VERSION := v2.13.1
-GOLANGCI_LINT := $(BINARIES_DIR)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GO_STAMP)
+GOLANGCI_LINT_PIN := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@6d2288e072e6f9c9bca28180cae9ce58a049c912
+GOLANGCI_LINT := $(BINARIES_DIR)/golangci-lint-$(call tool-stamp,$(GOLANGCI_LINT_PIN))
 $(GOLANGCI_LINT):
-	$(call tool-install,golangci-lint,$(GOLANGCI_LINT_VERSION),github.com/golangci/golangci-lint/v2/cmd/golangci-lint@6d2288e072e6f9c9bca28180cae9ce58a049c912)
+	$(call tool-install,golangci-lint,$(GOLANGCI_LINT_PIN))
 
-COMMITLINT_VERSION := v0.10.1
-COMMITLINT := $(BINARIES_DIR)/commitlint-$(COMMITLINT_VERSION)-$(GO_STAMP)
+COMMITLINT_PIN := github.com/conventionalcommit/commitlint@e9a606ce7074ac884ea091765be1651be18356d4
+COMMITLINT := $(BINARIES_DIR)/commitlint-$(call tool-stamp,$(COMMITLINT_PIN))
 $(COMMITLINT):
-	$(call tool-install,commitlint,$(COMMITLINT_VERSION),github.com/conventionalcommit/commitlint@e9a606ce7074ac884ea091765be1651be18356d4)
+	$(call tool-install,commitlint,$(COMMITLINT_PIN))
 
-GOVULNCHECK_VERSION := v1.7.0
-GOVULNCHECK := $(BINARIES_DIR)/govulncheck-$(GOVULNCHECK_VERSION)-$(GO_STAMP)
+GOVULNCHECK_PIN := golang.org/x/vuln/cmd/govulncheck@617f44b718537dccdea1915395650e0529e3b72e
+GOVULNCHECK := $(BINARIES_DIR)/govulncheck-$(call tool-stamp,$(GOVULNCHECK_PIN))
 $(GOVULNCHECK):
-	$(call tool-install,govulncheck,$(GOVULNCHECK_VERSION),golang.org/x/vuln/cmd/govulncheck@617f44b718537dccdea1915395650e0529e3b72e)
+	$(call tool-install,govulncheck,$(GOVULNCHECK_PIN))
 
-AIR_VERSION := v1.65.1
-AIR := $(BINARIES_DIR)/air-$(AIR_VERSION)-$(GO_STAMP)
+AIR_PIN := github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc
+AIR := $(BINARIES_DIR)/air-$(call tool-stamp,$(AIR_PIN))
 $(AIR):
-	$(call tool-install,air,$(AIR_VERSION),github.com/air-verse/air@3df4a176ee4896be4a4485a6a2dd85f7583534dc)
+	$(call tool-install,air,$(AIR_PIN))
 
-GO_LICENSES_VERSION := v1.6.0
-GO_LICENSES := $(BINARIES_DIR)/go-licenses-$(GO_LICENSES_VERSION)-$(GO_STAMP)
+GO_LICENSES_PIN := github.com/google/go-licenses@5348b744d0983d85713295ea08a20cca1654a45e
+GO_LICENSES := $(BINARIES_DIR)/go-licenses-$(call tool-stamp,$(GO_LICENSES_PIN))
 $(GO_LICENSES):
-	$(call tool-install,go-licenses,$(GO_LICENSES_VERSION),github.com/google/go-licenses@5348b744d0983d85713295ea08a20cca1654a45e)
+	$(call tool-install,go-licenses,$(GO_LICENSES_PIN))
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Build (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies)
