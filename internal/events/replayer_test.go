@@ -192,6 +192,81 @@ func TestRingIndex_Expire_KeepsCapacityAndEvicts(t *testing.T) {
 	assert.True(t, idx.has("g"))
 }
 
+// send skips an aged-out entry and keeps going on the whole-buffer
+// path, which is only safe because entries leave the buffer from the
+// FRONT and nowhere else: what a snapshot can have lost is then always
+// a prefix of it, never an interior hole. Nothing enforced that, so pin
+// both removal paths — put's eviction at capacity and dropFront behind
+// the expire endpoints. An expire-by-event-type, or a compaction of
+// duplicated offsets, would break send silently.
+func TestRingIndex_EntriesOnlyEverLeaveFromTheFront(t *testing.T) {
+	tests := []struct {
+		name  string
+		op    func(idx *ringIndex)
+		added int
+	}{
+		{"eviction at capacity", func(idx *ringIndex) {
+			idx.put("d", time.Time{}, nil, nil)
+		}, 1},
+		{"expireBefore", func(idx *ringIndex) { idx.expireBefore("c") }, 0},
+		{"expireAll", func(idx *ringIndex) { idx.expireAll() }, 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			idx := newRingIndex(3)
+			for _, id := range []string{"a", "b", "c"} {
+				idx.put(id, time.Time{}, nil, nil)
+			}
+			before := idsOf(idx)
+
+			test.op(idx)
+
+			survivors := idsOf(idx)
+			survivors = survivors[:len(survivors)-test.added]
+			require.LessOrEqual(t, len(survivors), len(before))
+			assert.Equal(t, before[len(before)-len(survivors):], survivors,
+				"survivors must be a suffix of what was there, so a snapshot only ever "+
+					"loses a prefix")
+		})
+	}
+}
+
+// idsOf reads the buffer's ids in order.
+func idsOf(idx *ringIndex) []string {
+	out := make([]string, 0, len(idx.entries))
+	for _, e := range idx.entries {
+		out = append(out, e.id)
+	}
+	return out
+}
+
+// Stopping a cut-short replay is only worth anything if it leaves the
+// consumer somewhere the 410 gate will reject — otherwise the reconnect
+// answers 200 and the loss stays invisible. Send's rule and
+// Hub.Handler's gate are written in different files against different
+// questions (a message, an id); this asserts they meet.
+func TestRecordingReplayer_CutShortReplayLeavesACursorThe410GateRejects(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"1", "2", "3", "4", "5"} {
+		putOn(t, r, id, "t1")
+	}
+
+	w := &expireBeforeWriter{r: r, after: 1, before: "4"}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1"},
+	}))
+	require.Equal(t, []string{"2"}, w.sent)
+
+	// The consumer resumes from the last id it saw, and Has is what the
+	// gate consults.
+	last := w.sent[len(w.sent)-1]
+	assert.False(t, r.Has(last),
+		"a cut-short replay must leave the consumer on a cursor the 410 gate rejects")
+}
+
 func TestRecordingReplayer_Expire(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0).UTC()
 	calls := 0
