@@ -47,6 +47,26 @@ const offsetOnlyEventType = "offset-only"
 // barrier in Publish's error path — see the comment there.
 const barrierTopic = "__barrier__"
 
+// replayAllTopic is an internal topic nothing is ever published to. It
+// isn't a fan-out channel like the others: it is how the handler tells
+// recordingReplayer.Replay that this subscription asked for the whole
+// buffer, oldest event included.
+//
+// `?from_timestamp` names an instant and replay understands only
+// cursors, so the handler translates one into the other. When no
+// buffered event predates the instant there is no cursor to translate
+// to — replay is defined as everything strictly AFTER a cursor, and no
+// cursor means "before the oldest". Resuming from the oldest id instead
+// dropped that event, and at EVENTS_REPLAY_BUFFER=1 dropped the stream
+// entirely, since ringIndex.after reports not-found for the tail entry.
+//
+// The signal rides the topic list rather than a sentinel Last-Event-ID
+// because go-sse populates that field from the request header too, and
+// a sentinel can collide with an offset a caller really pushed; a topic
+// nobody publishes to cannot. ValidateEventTypes refuses it from
+// `?event_type` alongside the other internal names.
+const replayAllTopic = "__replay_all__"
+
 // DefaultKeepAliveInterval is the cadence at which a `:keep-alive`
 // comment is broadcast to every connected subscriber. 15s matches
 // what most SSE deployments use; the library doesn't auto-emit.

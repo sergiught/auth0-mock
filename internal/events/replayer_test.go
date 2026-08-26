@@ -205,17 +205,18 @@ func TestRecordingReplayer_Expire(t *testing.T) {
 		_, err := r.Put(newTestMessage(t, id), []string{"t1"})
 		require.NoError(t, err)
 	}
-	require.Equal(t, "a", r.OldestID())
+	require.Equal(t, []string{"a", "b", "c"}, replayAllIDs(t, r, "t1"))
 
 	dropped, found := r.ExpireBefore("c")
 	assert.Equal(t, 2, dropped)
 	assert.True(t, found)
 	assert.False(t, r.Has("a"), "an expired cursor is what the 410 gate keys on")
 	assert.True(t, r.Has("c"))
-	assert.Equal(t, "c", r.OldestID(), "?from_timestamp now resolves to the surviving window")
+	assert.Equal(t, []string{"c"}, replayAllIDs(t, r, "t1"),
+		"?from_timestamp now replays only the surviving window")
 
 	assert.Equal(t, 1, r.ExpireAll())
-	assert.Empty(t, r.OldestID(), "an expired buffer has no oldest cursor to fall back to")
+	assert.Empty(t, replayAllIDs(t, r, "t1"), "an expired buffer has nothing left to replay")
 }
 
 // captureWriter records every message a Replay call emits, and how many
@@ -351,7 +352,7 @@ func TestRecordingReplayer_ReusedIDsAfterExpireAreResumable(t *testing.T) {
 	}
 
 	assert.True(t, r.Has("1"), "an event pushed after the expire must be resumable")
-	assert.Equal(t, "0", r.OldestID())
+	assert.Equal(t, []string{"0", "1", "2"}, replayAllIDs(t, r, "t1"))
 
 	w := &captureWriter{}
 	require.NoError(t, r.Replay(sse.Subscription{
@@ -368,6 +369,78 @@ func putOn(t *testing.T, r *recordingReplayer, id string, topics ...string) {
 	t.Helper()
 	_, err := r.Put(newTestMessage(t, id), topics)
 	require.NoError(t, err)
+}
+
+// replayAllIDs returns the ids a whole-buffer replay delivers to a
+// subscription on the given topics — what ?from_timestamp asks for when
+// it predates every buffered event.
+func replayAllIDs(t *testing.T, r *recordingReplayer, topics ...string) []string {
+	t.Helper()
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client: w,
+		Topics: append(topics, replayAllTopic),
+	}))
+	return w.sent
+}
+
+// replayAllTopic carries no cursor, so it has to be answered before the
+// LastEventID gate — and it includes the oldest entry, which is the one
+// a resume-from-oldest could never deliver.
+func TestRecordingReplayer_ReplayAll_IncludesOldestAndCarriesNoCursor(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"0", "1", "2"} {
+		putOn(t, r, id, "t1")
+	}
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client: w,
+		Topics: []string{"t1", replayAllTopic},
+	}))
+	assert.Equal(t, []string{"0", "1", "2"}, w.sent)
+	assert.Equal(t, 1, w.flushes)
+}
+
+// A single buffered event is the case that used to deliver nothing at
+// all: it is both oldest and newest, and ringIndex.after reports
+// not-found for the tail entry.
+func TestRecordingReplayer_ReplayAll_SingleEntryBuffer(t *testing.T) {
+	r, err := newRecordingReplayer(1, nil)
+	require.NoError(t, err)
+	putOn(t, r, "only", "t1")
+
+	assert.Equal(t, []string{"only"}, replayAllIDs(t, r, "t1"))
+}
+
+// Asking for the whole buffer must not widen the event_type filter: the
+// marker rides the subscription's topic list, and topicsIntersect is
+// what keeps it from matching messages it shouldn't.
+func TestRecordingReplayer_ReplayAll_RespectsTopicFilter(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	putOn(t, r, "0", "t1")
+	putOn(t, r, "1", "t2")
+	putOn(t, r, "2", "t1")
+
+	assert.Equal(t, []string{"0", "2"}, replayAllIDs(t, r, "t1"))
+}
+
+// Nothing to send means nothing to flush, matching what the after path
+// does for a resume-from-newest. A flush on a client we sent nothing to
+// is a write go-sse's own replayers never make.
+func TestRecordingReplayer_ReplayAll_EmptyBufferDoesNotFlush(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client: w,
+		Topics: []string{"t1", replayAllTopic},
+	}))
+	assert.Empty(t, w.sent)
+	assert.Zero(t, w.flushes)
 }
 
 // Topic filtering on the replay path is this package's own code now

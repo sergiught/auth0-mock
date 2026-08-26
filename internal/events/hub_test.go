@@ -456,7 +456,12 @@ func TestHub_Handler_FromTimestampResolvedToID(t *testing.T) {
 	assert.Contains(t, f, "id: evt-3")
 }
 
-func TestHub_Handler_FromTimestampBeforeAllReplaysFromOldest(t *testing.T) {
+// A ?from_timestamp that predates every buffered event asks for the
+// whole buffer, and the oldest event is part of that answer rather than
+// the boundary excluded from it. Resolving the instant to the oldest
+// buffered id and letting replay run strictly after it dropped exactly
+// the one event the caller was certain to want.
+func TestHub_Handler_FromTimestampBeforeAllReplaysWholeBuffer(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0).UTC()
 	step := 0
 	now := func() time.Time {
@@ -477,17 +482,58 @@ func TestHub_Handler_FromTimestampBeforeAllReplaysFromOldest(t *testing.T) {
 		}))
 	}
 
-	// From_timestamp before everything → adapter injects oldest stored
-	// ID (evt-1) → library replays strictly after, i.e. evt-2 + evt-3.
-	// The oldest event itself is skipped; see recordingReplayer.OldestID
-	// for the rationale.
 	old := base.Add(-time.Hour).Format(time.RFC3339)
 	r, cancel := subscribe(t, srv, "?from_timestamp="+old)
 	defer cancel()
-	f1 := readOneEvent(t, r, 2*time.Second)
-	f2 := readOneEvent(t, r, 2*time.Second)
-	assert.Contains(t, f1, "id: evt-2")
-	assert.Contains(t, f2, "id: evt-3")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-2")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
+}
+
+// The sharpest form of the same bug: with one event retained, the
+// oldest entry is also the newest, and ringIndex.after reports
+// not-found for the tail — so "give me everything since the beginning
+// of time" answered with an empty stream.
+func TestHub_Handler_FromTimestampBeforeAll_BufferSizeOneStillReplays(t *testing.T) {
+	h, err := events.NewHub(1, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1")
+
+	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
+	defer cancel()
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
+}
+
+// Replaying the whole buffer must still respect ?event_type. The
+// marker that asks for it rides the subscription's topic list, so a
+// mistake there would widen the filter into the firehose rather than
+// merely replaying too little.
+func TestHub_Handler_FromTimestampBeforeAll_HonoursEventTypeFilter(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	for _, e := range []struct{ typ, id string }{
+		{"user.created", "evt-1"},
+		{"user.deleted", "evt-2"},
+		{"user.created", "evt-3"},
+	} {
+		require.NoError(t, h.Publish(events.Event{
+			Type: e.typ, ID: e.id,
+			Payload: json.RawMessage(`{"type":"` + e.typ + `","id":"` + e.id + `"}`),
+		}))
+	}
+
+	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z&event_type=user.created")
+	defer cancel()
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
 }
 
 func TestHub_Handler_FromTimestampWithEmptyBufferJoinsLive(t *testing.T) {
@@ -739,6 +785,7 @@ func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
 		{"event_type naming the broadcast topic", "?event_type=__broadcast__", "invalid_event_type"},
 		{"event_type naming the keep-alive topic", "?event_type=__keep_alive__", "invalid_event_type"},
 		{"event_type naming the barrier topic", "?event_type=__barrier__", "invalid_event_type"},
+		{"event_type naming the replay-all topic", "?event_type=__replay_all__", "invalid_event_type"},
 		// A padded cursor is the same template accident as an empty one,
 		// but it used to reach the 410 gate and be reported as aged out,
 		// sending the caller to look at buffer retention instead of at
@@ -1539,10 +1586,10 @@ func TestHub_BufferSizeOne_RetainsExactlyOneEvent(t *testing.T) {
 
 // The partial-expire case is described in the OpenAPI fragment, the
 // README, the cookbook and the SDK godoc, and it runs through the
-// IDBefore-fails → OldestID-fallback branch in the handler. Without
-// this, deleting that fallback would leave the suite green while every
-// ?from_timestamp subscriber after a partial expire silently joined
-// live instead of replaying the surviving window.
+// IDBefore-finds-nothing branch in the handler. Without this, deleting
+// that branch would leave the suite green while every ?from_timestamp
+// subscriber after a partial expire silently joined live instead of
+// replaying the surviving window.
 func TestHub_Expire_BeforeThenFromTimestampResumesSurvivingWindow(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
@@ -1560,7 +1607,9 @@ func TestHub_Expire_BeforeThenFromTimestampResumesSurvivingWindow(t *testing.T) 
 	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
 	defer cancel()
 
-	// The resolved cursor is evt-2, and replay starts strictly after it,
-	// so the surviving window delivers evt-3 — the documented trade-off.
+	// The surviving window is evt-2 and evt-3, and the boundary cursor
+	// evt-2 is part of it: it survived its own expiry, and nothing in
+	// the buffer predates the requested instant.
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-2")
 	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
 }

@@ -132,15 +132,6 @@ func (r *ringIndex) has(id string) bool {
 	return r.firstIndex(id) >= 0
 }
 
-// oldestID returns the id of the oldest buffered event, or "" when the
-// buffer is empty.
-func (r *ringIndex) oldestID() string {
-	if len(r.entries) == 0 {
-		return ""
-	}
-	return r.entries[0].id
-}
-
 // after returns the messages to replay to a subscriber resuming from
 // id: everything strictly after it whose topics intersect the
 // subscription's, in order. Ok=false means the id isn't buffered, which
@@ -167,6 +158,23 @@ func (r *ringIndex) after(id string, topics []string) ([]*sse.Message, bool) {
 		}
 	}
 	return out, true
+}
+
+// all returns every buffered message whose topics intersect the
+// subscription's, oldest first. Unlike after there is no cursor to
+// start from: this answers "?from_timestamp predates the whole
+// buffer", where the caller asked for everything and the oldest entry
+// is part of that answer rather than the boundary excluded from it.
+//
+// Returns a snapshot for the same reason after does — see there.
+func (r *ringIndex) all(topics []string) []*sse.Message {
+	out := make([]*sse.Message, 0, len(r.entries))
+	for _, e := range r.entries {
+		if topicsIntersect(topics, e.topics) {
+			out = append(out, e.msg)
+		}
+	}
+	return out
 }
 
 // expireAll drops every buffered cursor and reports how many it
@@ -256,9 +264,9 @@ func topicsIntersect(a, b []string) bool {
 // POST /admin0/events/expire.
 //
 // Concurrency: sse.Joe serialises Put and Replay onto one goroutine,
-// but Hub.Handler reads Has / IDBefore / OldestID from arbitrary
-// request goroutines and Expire writes from another. The mutex makes
-// those safe, and is never held across a write to a subscriber.
+// but Hub.Handler reads Has / IDBefore from arbitrary request
+// goroutines and Expire writes from another. The mutex makes those
+// safe, and is never held across a write to a subscriber.
 type recordingReplayer struct {
 	mu  sync.RWMutex
 	idx *ringIndex
@@ -327,6 +335,22 @@ func (r *recordingReplayer) Put(msg *sse.Message, topics []string) (*sse.Message
 // committing a response, and it is the same outcome the eviction race
 // produces.
 func (r *recordingReplayer) Replay(sub sse.Subscription) error {
+	// ReplayAllTopic means the subscriber asked for the whole buffer
+	// rather than a suffix of it — a `?from_timestamp` that predates
+	// every buffered event. It carries no cursor, so this is checked
+	// before the LastEventID gate below. See replayAllTopic.
+	if slices.Contains(sub.Topics, replayAllTopic) {
+		r.mu.RLock()
+		msgs := r.idx.all(sub.Topics)
+		r.mu.RUnlock()
+		if len(msgs) == 0 {
+			// An empty buffer, or one holding nothing this subscription
+			// can see: join live rather than flush a client we sent
+			// nothing to, the same way the after path declines to.
+			return nil
+		}
+		return r.send(sub, msgs)
+	}
 	if !sub.LastEventID.IsSet() {
 		return nil
 	}
@@ -336,6 +360,11 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 	if !ok {
 		return nil
 	}
+	return r.send(sub, msgs)
+}
+
+// send writes a replay snapshot to the subscriber and flushes.
+func (r *recordingReplayer) send(sub sse.Subscription, msgs []*sse.Message) error {
 	for _, m := range msgs {
 		// Re-check before each write. The snapshot is taken under the
 		// read lock and the writes happen without it — deliberately, so a
@@ -351,22 +380,6 @@ func (r *recordingReplayer) Replay(sub sse.Subscription) error {
 		}
 	}
 	return sub.Client.Flush()
-}
-
-// OldestID returns the ID of the oldest buffered event, or "" if the
-// buffer is empty. Used by Hub.Handler to translate a ?from_timestamp
-// that predates everything into a Last-Event-ID hint — injecting the
-// oldest ID makes the buffer replay everything strictly after it. The
-// trade-off: the oldest stored event itself is skipped, because the
-// resume protocol only expresses "everything strictly after this
-// cursor" and there is no cursor meaning "before the oldest". In
-// practice the buffer's default cap is 100 and the typical
-// from_timestamp-before-all case is "subscriber wants the whole
-// session", so a single missed event at the oldest edge is acceptable.
-func (r *recordingReplayer) OldestID() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.idx.oldestID()
 }
 
 // IDBefore is the timestamp→ID lookup the hub uses to translate
