@@ -110,9 +110,8 @@ type topicsKey struct{}
 // broadcastTopic and collect every event.
 func subscriptionTopics(q url.Values, replayAll bool) []string {
 	requested := q["event_type"]
-	// +3 is the filterless worst case: keep-alive, replay-all and
-	// broadcast. A filtered list needs one fewer, and over-reserving one
-	// slot beats regrowing the slice on the branch that can't spare it.
+	// Room for the requested types plus the internal names appended
+	// below, whichever branch runs.
 	out := make([]string, 0, len(requested)+3)
 	out = append(out, keepAliveTopic)
 	if replayAll {

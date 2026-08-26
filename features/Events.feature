@@ -97,7 +97,7 @@ Feature: GET /api/v2/events Server-Sent Events
       {"type":"user.created","offset":"1","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_fromts0000000002","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-2","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
       """
     And I subscribe to /api/v2/events with query "?from_timestamp=2020-01-01T00:00:00Z"
-    Then the SSE stream delivers an event with id "0" within 3s
+    Then the SSE stream delivers events with ids "0,1" within 3s
 
   Scenario: Last-Event-ID for an unknown event returns 410 event_aged_out
     When I attempt to subscribe to /api/v2/events with header "Last-Event-ID: 999"

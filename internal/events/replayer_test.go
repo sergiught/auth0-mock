@@ -490,6 +490,13 @@ func TestRecordingReplayer_Replay_NewestCursorDoesNotTouchClient(t *testing.T) {
 // The topic filter can empty a replay just as thoroughly as a tail
 // cursor can, and the rule is the same: a client we sent nothing to is
 // a client we have no reason to flush.
+//
+// This path used to flush — after reports ok=true and the loop simply
+// wrote nothing — and dropping that is deliberate, not inherited from
+// the whole-buffer path. Nothing depended on it: serveHTTP has already
+// flushed the headers and the :connected frame before delegating, and
+// go-sse's own FiniteReplayer does not touch the client at all when it
+// has nothing to replay.
 func TestRecordingReplayer_Replay_EmptyAfterTopicFilterDoesNotFlush(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
@@ -660,6 +667,52 @@ func TestRingIndex_IDBefore_NonMonotonicNeverSkipsNewerEvents(t *testing.T) {
 // that are withheld, not the rest of the replay — see
 // TestRecordingReplayer_Send_SkipsAgedOutRatherThanStopping for a
 // partial expiry, where the survivors still go out.
+// The partial-expiry half of the same window, driven through Replay
+// with a real cursor rather than by calling send directly: the entries
+// that aged out stay off the wire, and the ones that survived still go
+// out. Without this, a regression that stopped routing the ?from branch
+// through send — or re-added a break inside it — would leave the
+// send-level tests green while every real resume lost its survivors.
+func TestRecordingReplayer_Replay_PartialExpiryMidFlightKeepsSurvivors(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"1", "2", "3", "4", "5"} {
+		putOn(t, r, id, "t1")
+	}
+
+	// Once "2" is on the wire, age out everything before "4" — so "3"
+	// is gone but "4" and "5" are not.
+	w := &expireBeforeWriter{r: r, after: 1, before: "4"}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1"},
+	}))
+	assert.Equal(t, []string{"2", "4", "5"}, w.sent,
+		"the aged-out 3 is withheld; the survivors behind it still go out")
+}
+
+// A subscription that names a position gets the suffix it asked for,
+// even if the whole-buffer marker is somehow also present.
+// PromoteResumeHint never sets both, but recordingReplayer implements a
+// published interface, and replaying everything to a caller that named
+// a position would also slip past the handler's 410 gate.
+func TestRecordingReplayer_ReplayAll_CursorWinsOverTheMarker(t *testing.T) {
+	r, err := newRecordingReplayer(10, nil)
+	require.NoError(t, err)
+	for _, id := range []string{"0", "1", "2"} {
+		putOn(t, r, id, "t1")
+	}
+
+	w := &captureWriter{}
+	require.NoError(t, r.Replay(sse.Subscription{
+		Client:      w,
+		LastEventID: sse.ID("1"),
+		Topics:      []string{"t1", replayAllTopic},
+	}))
+	assert.Equal(t, []string{"2"}, w.sent, "a named position wins over the marker")
+}
+
 func TestRecordingReplayer_Replay_WithholdsEventsExpiredMidFlight(t *testing.T) {
 	r, err := newRecordingReplayer(10, nil)
 	require.NoError(t, err)
@@ -678,6 +731,26 @@ func TestRecordingReplayer_Replay_WithholdsEventsExpiredMidFlight(t *testing.T) 
 	assert.Equal(t, []string{"2"}, w.sent,
 		"only the write already in flight goes out; every survivor behind it aged out")
 }
+
+// expireBeforeWriter ages out everything older than `before` once it has
+// accepted `after` messages, simulating a concurrent
+// POST /admin0/events/expire?before= that lands mid-replay.
+type expireBeforeWriter struct {
+	r      *recordingReplayer
+	after  int
+	before string
+	sent   []string
+}
+
+func (e *expireBeforeWriter) Send(m *sse.Message) error {
+	e.sent = append(e.sent, m.ID.String())
+	if len(e.sent) == e.after {
+		e.r.ExpireBefore(e.before)
+	}
+	return nil
+}
+
+func (e *expireBeforeWriter) Flush() error { return nil }
 
 // expiringWriter expires the whole buffer once it has accepted `after`
 // messages, simulating a concurrent POST /admin0/events/expire.

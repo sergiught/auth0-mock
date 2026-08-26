@@ -140,15 +140,14 @@ func (r *ringIndex) has(id string) bool {
 // answers "still buffered" about a DIFFERENT entry that happens to
 // share the offset, and the replay re-check would put an aged-out
 // message on the wire the expire endpoint has already counted as
-// dropped. DropFront zeroes the entries it vacates, so a dropped
-// message is unreachable here even if its offset lives on.
+// dropped.
+//
+// What makes a dropped message unreachable is the length of the slice,
+// not dropFront's clear — that exists to stop dropped entries pinning
+// messages, and put's eviction re-slices without clearing at all. So
+// this must scan entries, never cap(entries).
 func (r *ringIndex) hasMsg(m *sse.Message) bool {
-	for _, e := range r.entries {
-		if e.msg == m {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(r.entries, func(e indexEntry) bool { return e.msg == m })
 }
 
 // after returns the messages to replay to a subscriber resuming from

@@ -448,6 +448,10 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		func(wantID string, seconds int) error {
 			return streamDeliversID(c, wantID, time.Duration(seconds)*time.Second)
 		})
+	sc.Step(`^the SSE stream delivers events with ids "([^"]+)" within (\d+)s$`,
+		func(wantIDs string, seconds int) error {
+			return streamDeliversIDs(c, strings.Split(wantIDs, ","), time.Duration(seconds)*time.Second)
+		})
 	sc.Step(`^the SSE stream delivers no event within (\d+)s$`, func(seconds int) error {
 		return streamDeliversNothing(c, time.Duration(seconds)*time.Second)
 	})
@@ -566,6 +570,47 @@ func streamDeliversID(c *Context, wantID string, within time.Duration) error {
 			}
 			if strings.TrimSpace(line) == "id: "+wantID {
 				return nil
+			}
+		}
+	}
+}
+
+// streamDeliversIDs is streamDeliversID for a window rather than a
+// single frame: the ids must arrive in the order given, though other
+// frames may sit between them. Asserting one id cannot tell "replayed
+// the window the caller asked for" from "replayed its first entry and
+// stopped".
+func streamDeliversIDs(c *Context, wantIDs []string, within time.Duration) error {
+	deadline := time.After(within)
+	r := bufio.NewReader(c.SSEResp.Body)
+	defer func() { _ = c.SSEResp.Body.Close() }()
+	lines := make(chan string, 64)
+	go func() {
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				close(lines)
+				return
+			}
+			lines <- line
+		}
+	}()
+	next := 0
+	for {
+		select {
+		case <-deadline:
+			return fmt.Errorf("timeout waiting for id=%s (%d of %d delivered)",
+				strings.TrimSpace(wantIDs[next]), next, len(wantIDs))
+		case line, ok := <-lines:
+			if !ok {
+				return fmt.Errorf("stream closed before id=%s arrived",
+					strings.TrimSpace(wantIDs[next]))
+			}
+			if strings.TrimSpace(line) == "id: "+strings.TrimSpace(wantIDs[next]) {
+				next++
+				if next == len(wantIDs) {
+					return nil
+				}
 			}
 		}
 	}
