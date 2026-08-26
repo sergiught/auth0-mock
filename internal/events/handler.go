@@ -109,20 +109,30 @@ func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string
 	return out, true
 }
 
-// validateQuery refuses the query shapes that parse cleanly and then
-// quietly do the wrong thing. It returns false once it has written the
-// response, so the caller stops.
+// validateResume refuses the ways of naming a resume position that
+// parse cleanly and then quietly do the wrong thing. It returns false
+// once it has written the response, so the caller stops.
 //
-// Everything below reads its parameters with q.Get, which cannot tell
+// Everything downstream reads these with Get, which cannot tell
 // "absent" from "present but empty" and silently discards all but the
 // first of a repeat. Left alone that turns a caller's typo into a
 // working-looking subscription: an empty or duplicated `?from` joins
 // live with no 410, and an empty `?event_type` subscribes to a topic
 // nothing ever publishes to, so the stream connects and then never
-// delivers. POST /admin0/events/expire refuses the same two shapes for
-// the same reason; see internal/admin0/events.go.
-func validateQuery(w http.ResponseWriter, q url.Values) bool {
-	// A resume cursor can only mean one instant, so a repeat is a
+// delivers. POST /admin0/events/expire refuses the same shapes for the
+// same reason; see internal/admin0/events.go.
+func validateResume(w http.ResponseWriter, r *http.Request, q url.Values) bool {
+	// A cursor can be named three ways — this header, ?from, and
+	// ?from_timestamp — so the present-but-empty rule has to cover all
+	// three or a client templating the one it missed still joins live.
+	if v, present := r.Header[http.CanonicalHeaderKey("Last-Event-ID")]; present &&
+		(len(v) == 0 || strings.TrimSpace(v[0]) == "") {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"Last-Event-ID was sent but empty; omit the header to join live",
+			"invalid_last_event_id")
+		return false
+	}
+	// A resume cursor can only name one position, so a repeat is a
 	// caller bug rather than a list. `event_type` is deliberately
 	// exempt: repeating it is how a caller asks for several types.
 	for _, key := range []string{"from", "from_timestamp"} {
@@ -133,12 +143,15 @@ func validateQuery(w http.ResponseWriter, q url.Values) bool {
 			return false
 		}
 	}
+	// Whitespace counts as empty: a shell variable that expanded to a
+	// space is the same accident as one that expanded to nothing, and
+	// it reaches the same dead end.
 	for _, param := range []struct{ key, code string }{
 		{"from", "invalid_from"},
 		{"from_timestamp", "invalid_from_timestamp"},
 		{"event_type", "invalid_event_type"},
 	} {
-		if slices.Contains(q[param.key], "") {
+		if slices.ContainsFunc(q[param.key], isBlank) {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				param.key+" was supplied but empty; omit it entirely to mean \"no "+
 					param.key+"\", which is not the same request",
@@ -146,50 +159,59 @@ func validateQuery(w http.ResponseWriter, q url.Values) bool {
 			return false
 		}
 	}
+	// Validate the timestamp here rather than where it is consumed:
+	// promoteResumeHint returns early when `?from` or the header
+	// already named a cursor, so a malformed `?from_timestamp` beside
+	// either of those would otherwise never be looked at — leaving the
+	// empty value rejected and the garbage value silently accepted.
+	if ts := q.Get("from_timestamp"); ts != "" {
+		if _, err := parseFromTimestamp(ts); err != nil {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				"from_timestamp must be RFC 3339: "+err.Error(),
+				"invalid_from_timestamp")
+			return false
+		}
+	}
 	return true
 }
+
+func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
 
 // promoteResumeHint copies a `?from` / `?from_timestamp` resume hint
 // into Last-Event-ID so the replay buffer handles it on the normal
 // resume path. Order: an explicit header wins over ?from, which wins
 // over ?from_timestamp.
 //
-// The first return says whether WE synthesised the ID, so the caller
-// doesn't 410 on it — its up-front Has check would otherwise race a
-// concurrent Put that evicted the just-looked-up ID. The second is
-// false when the response has already been written and the caller must
-// stop; an unparseable ?from_timestamp is the only such case.
-func (h *Hub) promoteResumeHint(
-	w http.ResponseWriter, r *http.Request, q url.Values,
-) (synthesised, ok bool) {
+// It reports whether WE synthesised the ID, so the caller doesn't 410
+// on it — the caller's up-front Has check would otherwise race a
+// concurrent Put that evicted the just-looked-up ID.
+//
+// Every value it reads has already been through validateResume, so
+// there is nothing left here that can fail.
+func (h *Hub) promoteResumeHint(r *http.Request, q url.Values) (synthesised bool) {
 	if r.Header.Get("Last-Event-ID") != "" {
-		return false, true
+		return false
 	}
 	if id := q.Get("from"); id != "" {
 		r.Header.Set("Last-Event-ID", id)
-		return false, true
+		return false
 	}
 	ts := q.Get("from_timestamp")
 	if ts == "" {
-		return false, true
+		return false
 	}
-	t, err := parseFromTimestamp(ts)
-	if err != nil {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"from_timestamp must be RFC 3339: "+err.Error(),
-			"invalid_from_timestamp")
-		return false, false
-	}
+	// ValidateResume already rejected an unparseable value.
+	t, _ := parseFromTimestamp(ts)
 	h.mu.RLock()
 	replayer := h.replayer
 	h.mu.RUnlock()
 	if replayer == nil {
 		// No replay possible; silently ignore.
-		return false, true
+		return false
 	}
 	if id, found := replayer.IDBefore(t); found {
 		r.Header.Set("Last-Event-ID", id)
-		return true, true
+		return true
 	}
 	if oldest := replayer.OldestID(); oldest != "" {
 		// No stored event predates t, but the buffer holds events
@@ -198,10 +220,10 @@ func (h *Hub) promoteResumeHint(
 		// starts strictly after the given ID); see
 		// recordingReplayer.OldestID for the trade-off.
 		r.Header.Set("Last-Event-ID", oldest)
-		return true, true
+		return true
 	}
 	// Empty buffer: nothing to replay; subscriber joins live.
-	return false, true
+	return false
 }
 
 func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -239,14 +261,11 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validateQuery(w, q) {
+	if !validateResume(w, r, q) {
 		return
 	}
 
-	synthesised, ok := h.promoteResumeHint(w, r, q)
-	if !ok {
-		return
-	}
+	synthesised := h.promoteResumeHint(r, q)
 
 	// Surface aged-out resume up-front: if a user-supplied
 	// Last-Event-ID names an ID we no longer carry, return 410 Gone

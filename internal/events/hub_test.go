@@ -721,6 +721,14 @@ func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
 		{"one empty among several event_types", "?event_type=user.created&event_type=", "invalid_event_type"},
 		{"repeated from", "?from=3&from=1", "invalid_query"},
 		{"repeated from_timestamp", "?from_timestamp=2020-01-01T00:00:00Z&from_timestamp=2021-01-01T00:00:00Z", "invalid_query"},
+		// Whitespace is the same accident as empty and reaches the same
+		// dead end: `?event_type=%20` would subscribe to the " " topic.
+		{"whitespace-only event_type", "?event_type=%20", "invalid_event_type"},
+		{"whitespace-only from", "?from=+", "invalid_from"},
+		// A malformed from_timestamp must be refused even when another
+		// parameter already names the cursor — otherwise the empty value
+		// 400s while the garbage value is silently discarded.
+		{"garbage from_timestamp beside a from", "?from=0&from_timestamp=not-a-timestamp", "invalid_from_timestamp"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -742,10 +750,43 @@ func TestHub_Handler_RejectedQueryShapes(t *testing.T) {
 	}
 }
 
+func TestHub_Handler_EmptyLastEventIDHeader_400(t *testing.T) {
+	// A cursor can be named three ways, and the present-but-empty rule
+	// has to cover all three. A client doing
+	// req.Header.Set("Last-Event-ID", cursor) with an unset cursor sends
+	// the header empty; Header.Get can't tell that from absent, so the
+	// resume was skipped and the stream joined live with a 200 — the
+	// same silent miss as an empty `?from`.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_last_event_id")
+}
+
 func TestHub_Handler_RepeatedEventTypeStillFilters(t *testing.T) {
 	// Guard against over-rejecting: repeating `?event_type` is how a
 	// caller asks for several types at once, so unlike a repeated
 	// `?from` it must keep working. Only an empty value is refused.
+	//
+	// Both requested types must arrive AND the unrequested one must
+	// not: asserting only that one event turns up would also pass if a
+	// regression kept just the last value, or dropped filtering
+	// altogether and joined broadcastTopic — which is the firehose
+	// outcome TestHub_Handler_MalformedEscapeInEventType_400 exists to
+	// prevent.
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -757,28 +798,44 @@ func TestHub_Handler_RepeatedEventTypeStillFilters(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	time.Sleep(50 * time.Millisecond)
-	require.NoError(t, h.Publish(events.Event{
-		Type:    "user.deleted",
-		ID:      "d1",
-		Payload: json.RawMessage(`{"type":"user.deleted","id":"d1"}`),
-	}))
-
-	got := make(chan string, 4)
+	got := make(chan string, 8)
 	go func() {
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
-			if line := scanner.Text(); strings.HasPrefix(line, "id:") {
-				got <- line
+			if line := scanner.Text(); strings.HasPrefix(line, "id: ") {
+				got <- strings.TrimPrefix(line, "id: ")
 			}
 		}
 	}()
-	select {
-	case line := <-got:
-		assert.Contains(t, line, "d1")
-	case <-time.After(2 * time.Second):
-		t.Fatal("second event_type filter never delivered its event")
+
+	time.Sleep(50 * time.Millisecond)
+	for _, e := range []struct{ typ, id string }{
+		{"user.created", "c1"},
+		{"user.updated", "u1"}, // Not requested by this subscriber.
+		{"user.deleted", "d1"},
+	} {
+		require.NoError(t, h.Publish(events.Event{
+			Type:    e.typ,
+			ID:      e.id,
+			Payload: json.RawMessage(`{"type":"` + e.typ + `","id":"` + e.id + `"}`),
+		}))
 	}
+
+	// Collect for a fixed window rather than stopping at the first two,
+	// so an unrequested event that leaked through is still observed.
+	var ids []string
+	deadline := time.After(2 * time.Second)
+Loop:
+	for {
+		select {
+		case id := <-got:
+			ids = append(ids, id)
+		case <-deadline:
+			break Loop
+		}
+	}
+	assert.ElementsMatch(t, []string{"c1", "d1"}, ids,
+		"both requested types must arrive and the unrequested one must not")
 }
 
 func TestHub_Handler_MalformedEscapeRejectsWholeQuery_400(t *testing.T) {
