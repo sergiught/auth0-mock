@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.232.1](https://github.com/sergiught/auth0-mock/compare/v0.232.0...v0.232.1) (2026-08-26)
+
+
+### Bug fixes
+
+* **release:** sign checksums as a Sigstore bundle for cosign v3 ([#77](https://github.com/sergiught/auth0-mock/issues/77)) ([271c441](https://github.com/sergiught/auth0-mock/commit/271c441eee451f60c0c8de7fed8ae035f7ceddb4))
+
 ## [0.232.0](https://github.com/sergiught/auth0-mock/compare/v0.231.0...v0.232.0) (2026-08-26)
 
 
