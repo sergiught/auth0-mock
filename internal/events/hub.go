@@ -156,20 +156,13 @@ type Hub struct {
 // NewHub constructs a Hub. BufferSize is the cap of the replay buffer
 // (used for resume via Last-Event-ID / ?from / ?from_timestamp);
 // values <= 0 disable replay entirely (sse.Joe accepts a nil
-// Replayer); values of 1 are clamped to 2 because the library
-// requires a count of at least 2. Now is the clock the replayer's
+// Replayer). Now is the clock the replayer's
 // timestamp index uses; nil falls back to time.Now. The caller should
 // wire this to internal/clock.Clock.Now when a controllable clock is
 // present so ?from_timestamp behaves deterministically in
 // clock-controlled tests. Opts customise the hub — e.g.
 // WithReconnectHint sets the SSE retry: value sent on connect.
 func NewHub(bufferSize int, now func() time.Time, opts ...HubOption) (*Hub, error) {
-	if bufferSize == 1 {
-		// The library's NewFiniteReplayer enforces count >= 2;
-		// clamp to that minimum rather than crashing the process
-		// at startup over a one-off configuration choice.
-		bufferSize = 2
-	}
 	h := &Hub{
 		bufferSize:    bufferSize,
 		now:           now,
@@ -356,6 +349,68 @@ func (h *Hub) Reset(ctx context.Context) error {
 	return nil
 }
 
+// ExpireAll ages out every buffered resume cursor and reports how many
+// it dropped. Returns 0 when replay is disabled.
+//
+// This is the deterministic way to provoke the aged-out path: a
+// subscriber that later resumes from an expired cursor gets 410 Gone /
+// event_aged_out, without having to push past the buffer's capacity or
+// reset the whole mock. Unlike Reset it touches nothing else — live
+// subscribers keep streaming, the server is not rebuilt, and counters
+// are left alone.
+//
+// Both this and ExpireBefore hold mu across the call, the way Publish
+// does, so the expiry and the replayer it reads are not torn apart by a
+// concurrent Reset swapping the buffer in between. Neither can stop a
+// Reset that lands immediately afterwards from discarding what was just
+// expired; the count is only ever true as of the moment it was taken.
+//
+// Holding mu costs nothing extra: the replayer's own write lock is held
+// only for the truncation, because Replay writes to its subscriber
+// unlocked. It is NOT a guarantee that an expiry can never block — a
+// subscriber that stops reading stalls Joe, which leaves Publish
+// holding mu.RLock, and a Reset queued behind it then blocks every
+// later RLock including this one. That hazard predates expiry and is
+// shared with the keep-alive and the handler's aged-out lookup.
+//
+// Both report 0 on a closed hub rather than erroring as Publish does:
+// nothing was expired, and the hub only reaches that state during
+// shutdown. ExpireBefore additionally reports the cursor as not found
+// there and when replay is disabled, which is literally true — there is
+// no buffer holding it — and gives the endpoint a 404 to answer with
+// instead of a success that expired nothing.
+func (h *Hub) ExpireAll() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.closed || h.replayer == nil {
+		return 0
+	}
+	return h.replayer.ExpireAll()
+}
+
+// ExpireBefore ages out every cursor older than cursor, leaving cursor
+// itself — and everything after it — resumable. It reports how many it
+// dropped and whether the buffer held cursor at all; a cursor it
+// doesn't hold drops nothing. Found is false when replay is disabled.
+//
+// Repeating the call is therefore safe but not silent: the second one
+// drops 0 and reports found, because cursor is still buffered — it is
+// the boundary, not one of the casualties. It only stops being found
+// once something else evicts it.
+//
+// An empty cursor drops nothing rather than falling through to
+// expire-everything: ExpireAll is how you say that, all the way down to
+// the buffer, so no caller can widen the blast radius by passing
+// through an unset value.
+func (h *Hub) ExpireBefore(cursor string) (dropped int, found bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.closed || h.replayer == nil {
+		return 0, false
+	}
+	return h.replayer.ExpireBefore(cursor)
+}
+
 // Shutdown drains every subscriber, stops the keep-alive goroutine,
 // and marks the hub closed permanently. Intended for process
 // shutdown. Idempotent — extra calls are no-ops.
@@ -482,8 +537,8 @@ func (h *Hub) runKeepAlive() {
 //     is long-lived; the server default would tear down healthy
 //     subscribers after the configured timeout).
 //  2. Promotes Auth0's ?from and ?from_timestamp query parameters to
-//     the SSE-spec Last-Event-ID header so the library's native
-//     replay path picks them up. ?from wins over ?from_timestamp.
+//     the SSE-spec Last-Event-ID header so the replay buffer resolves
+//     them on the normal resume path. ?from wins over ?from_timestamp.
 //     ?from_timestamp accepts RFC 3339; clients that send the
 //     timezone `+` unencoded (which URL-decodes to space) are
 //     tolerated by retrying with the space restored.

@@ -54081,6 +54081,52 @@
         ]
       }
     },
+    "/admin0/events/expire": {
+      "post": {
+        "description": "Expires cursors in the SSE replay buffer, so a consumer that\nlater resumes from one — via `Last-Event-ID` or `?from` — gets\n`410 event_aged_out`. This is the deterministic way to exercise\na consumer's unrecoverable-cursor-loss path, instead of pushing\npast `EVENTS_REPLAY_BUFFER` to force natural eviction.\n\n`?from_timestamp` never yields a `410`: it names an instant, not\na cursor, so it is resolved against the same index this expires\nand there is no client-supplied cursor to reject. After a full\nexpire such a subscriber joins live. After a `?before=` expire\nit resumes from the oldest surviving cursor, and because replay\nstarts strictly after the resolved id, the boundary event named\nby `before` is itself skipped — it stays resumable by\n`Last-Event-ID` / `?from`, which is how to assert on it.\n\nNarrower than `/admin0/reset`: subscribers that are already\nstreaming keep receiving events, subscriber counts are left\nalone, and no other mock state is touched. Only future resumes\nare affected.\n\nRepeating a `?before=` call is safe: the boundary cursor\nsurvives its own expiry, so the second call finds it and reports\n`0`. A cursor the buffer does not hold is `404\ncursor_not_found` rather than a `200` that expired nothing — a\nmistyped offset should fail here, not several steps later on the\nreconnect that came back `200` where the test asserted `410`.\n",
+        "parameters": [
+          {
+            "description": "Expire only cursors older than this one, keeping it and\neverything after it resumable — the partial-loss case.\nOmit to expire the whole buffer.\n\nResolved to its first copy in the buffer, the same entry a\nresume from this cursor would start at. Push unique offsets:\nwith a duplicated one, \"older than\" is measured from the\nearliest copy.\n",
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "expired": {
+                      "description": "How many cursors this call dropped. With `before`,\n`0` means the buffer held nothing older than it —\na `before` the buffer does not hold is a `404`\ninstead. Without `before`, `0` means the buffer\nwas already empty, which includes a mock started\nwith `EVENTS_REPLAY_BUFFER=0`.\n",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "expired"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Cursors expired."
+          },
+          "400": {
+            "description": "The request named a cursor but the mock could not act on it\nas written. `errorCode: \"invalid_before\"` when `?before=` is\npresent but empty; `errorCode: \"invalid_query\"` when the\nquery string could not be parsed, carries a parameter other\nthan `before`, or repeats `before`.\n\nThe strictness is deliberate and specific to this endpoint:\nomitting `before` means \"expire everything\", so a typo\n(`?BEFORE=`, `?befor=`) or a stray extra parameter would\notherwise be indistinguishable from omission and silently\nexpire the whole buffer. Anything ambiguous is refused\nrather than guessed at.\n"
+          },
+          "404": {
+            "description": "`errorCode: \"cursor_not_found\"` — `?before=` named a cursor\nthe replay buffer does not hold. It was mistyped, it has\nalready been evicted or expired, or the mock runs with\n`EVENTS_REPLAY_BUFFER=0` and holds no cursors at all.\n\nReported rather than folded into a `200` with `expired: 0`,\nwhich cannot say whether nothing was older than the cursor\nor the cursor was never there. Expiring the whole buffer\n(no `?before=`) has no cursor to look up and never 404s.\n"
+          }
+        },
+        "summary": "Age out replay cursors so a resume returns 410 Gone.",
+        "tags": [
+          "Event Producer"
+        ]
+      }
+    },
     "/admin0/events/subscribers": {
       "get": {
         "description": "Observability for `GET /api/v2/events`, for tests that set\nexpectations on or verify the SSE connection lifecycle — e.g.\nasserting a consumer's stream closed cleanly, or that a client\nreconnected the expected number of times.\n\n`active` is eventually-consistent: a subscriber leaves the\ncount only when the mock observes its connection close, which\ncan lag the client's disconnect by a few milliseconds. Poll\nuntil `active` settles rather than reading it immediately after\nclosing a stream. `total` counts every connection since the\nlast `/admin0/reset`, which zeroes it.\n",

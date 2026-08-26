@@ -31,6 +31,7 @@ func TestAdmin0FragmentDescribesEveryMountedRoute(t *testing.T) {
 		{"DELETE", "/admin0/permissions/{audience}", "Permissions"},
 		{"GET", "/admin0/mfa-required", "MFA"},
 		{"PUT", "/admin0/mfa-required", "MFA"},
+		{"POST", "/admin0/events/expire", "Event Producer"},
 	}
 	for _, mp := range want {
 		method, path, tag := mp[0], mp[1], mp[2]

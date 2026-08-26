@@ -123,3 +123,89 @@ func TestNewStreamID_MatchesSchemaPattern(t *testing.T) {
 		assert.True(t, re.MatchString(id), "NewStreamID() = %q, want match for %s", id, re)
 	}
 }
+
+func TestEventsClient_ExpireEvents(t *testing.T) {
+	var gotMethod, gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"expired":10}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+
+	expired, err := c.Events.ExpireEvents(t.Context())
+	require.NoError(t, err)
+
+	assert.Equal(t, 10, expired)
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "/admin0/events/expire", gotPath)
+	assert.Empty(t, gotQuery, "expiring everything sends no ?before")
+}
+
+func TestEventsClient_ExpireEventsBefore(t *testing.T) {
+	var gotPath, gotBefore string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotBefore = r.URL.Query().Get("before")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"expired":7}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+
+	expired, err := c.Events.ExpireEventsBefore(t.Context(), "8")
+	require.NoError(t, err)
+
+	assert.Equal(t, 7, expired)
+	assert.Equal(t, "/admin0/events/expire", gotPath)
+	assert.Equal(t, "8", gotBefore)
+}
+
+// Cursors are opaque strings that may contain URL metacharacters, so
+// they have to survive the round trip intact.
+func TestEventsClient_ExpireEventsBefore_EscapesCursor(t *testing.T) {
+	var gotBefore string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBefore = r.URL.Query().Get("before")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"expired":0}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c, _ := auth0mock.NewClient(srv.URL)
+	_, err := c.Events.ExpireEventsBefore(t.Context(), "off set&x=1/2+3")
+	require.NoError(t, err)
+	assert.Equal(t, "off set&x=1/2+3", gotBefore)
+}
+
+// An empty cursor would expire the entire buffer, which is what
+// ExpireEvents is for — silently widening the blast radius of an
+// ExpireEventsBefore call is the wrong default.
+func TestEventsClient_ExpireEventsBefore_RejectsEmptyCursor(t *testing.T) {
+	c, err := auth0mock.NewClient("http://localhost:1")
+	require.NoError(t, err)
+
+	_, err = c.Events.ExpireEventsBefore(t.Context(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cursor is required")
+}
+
+func TestEventsClient_ExpireEvents_PropagatesServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","errorCode":"boom","message":"nope"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c, _ := auth0mock.NewClient(srv.URL)
+	expired, err := c.Events.ExpireEvents(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+	assert.Zero(t, expired)
+}

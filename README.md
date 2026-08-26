@@ -258,7 +258,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 ### 📡 Event streams
 
-`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>` and the library's native replay path fills in what they missed.
+`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>`, and the buffer fills in what they missed.
 
 ```bash
 # In one terminal: subscribe (bearer required).
@@ -291,6 +291,15 @@ Push an **offset-only marker** (`{"type":"offset-only","offset":"42"}`) to advan
 
 Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI).
 
+To test how a consumer handles **unrecoverable cursor loss**, `POST /admin0/events/expire` ages out the replay buffer on demand, so the next reconnect presenting an expired cursor gets that `410 event_aged_out` — no need to push past `EVENTS_REPLAY_BUFFER` to force natural eviction. Pass `?before=<offset>` to expire only what is older than that cursor, leaving it and everything after it replayable, which models partial loss. It replies `{"expired":N}` with the number of cursors dropped; repeating a `?before` call is safe, since the boundary cursor survives its own expiry and the second call drops `0`. A cursor the buffer doesn't hold is `404 cursor_not_found` rather than a `200` that expired nothing, so a mistyped offset fails at the expire call instead of at the reconnect that then came back `200` where you asserted `410`. Unlike `/admin0/reset` it is scoped to the replay buffer: subscribers that are already streaming keep receiving events, and no other mock state is touched.
+
+```bash
+# Everything buffered so far is now unresumable.
+curl -X POST http://localhost:8080/admin0/events/expire
+# Or: keep offset 42 and newer, age out the rest.
+curl -X POST "http://localhost:8080/admin0/events/expire?before=42"
+```
+
 To set expectations and verify connection lifecycle, `GET /admin0/events/subscribers` reports `{"active":N,"total":M}` — `active` is how many subscribers are connected right now, `total` how many have connected since the last `/admin0/reset` (handy for asserting reconnection behaviour). `active` is eventually-consistent: the mock removes a subscriber only when it observes the connection close, which can lag a client's disconnect by a few milliseconds. So to assert "my stream closed cleanly", poll until `active` settles rather than reading it immediately:
 
 ```bash
@@ -320,6 +329,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 | `/admin0/clock/advance` | POST | Step the held clock by a Go duration (`{"by":"25h"}`). Negative durations allowed. |
 | `/admin0/events` | POST | Push an Auth0 event-stream envelope onto `GET /api/v2/events` so consumer SDKs see it live. Body is the full envelope `{type, offset, event:{...CloudEvent}}` — validated against the OpenAPI `text/event-stream` schema before fan-out. See [Event streams](#-event-streams). |
 | `/admin0/events/subscribers` | GET | Observe the SSE endpoint: `{"active":N,"total":M}` — subscribers connected right now, and total connected since the last `/admin0/reset`. See [Event streams](#-event-streams). |
+| `/admin0/events/expire` | POST | Age out replay cursors so a reconnect gets `410 event_aged_out`. `?before=<offset>` expires only what is older than that cursor. Leaves live subscribers and every other store alone. See [Event streams](#-event-streams). |
 
 > [!WARNING]
 > **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
@@ -570,7 +580,7 @@ What's covered:
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
-| `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | (top-level `Reset` drains subscribers + replay buffer) | — |
+| `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | `ExpireEvents` / `ExpireEventsBefore(ctx, cursor)` age out replay cursors so a resume gets `410 event_aged_out`; top-level `Reset` drains subscribers + replay buffer | — |
 | top-level | — | — | `Reset` — wipes every store (including the clock back to real mode) | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
 
 `Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.

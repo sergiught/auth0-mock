@@ -812,9 +812,11 @@ func TestHub_KeepAlive_ReachesFilteredSubscribers(t *testing.T) {
 		"filtered subscriber must receive keep-alive comments; got %q", frame)
 }
 
-func TestNewHub_BufferSizeOneClampedToTwo(t *testing.T) {
-	// Library requires count >= 2; we used to crash at startup
-	// instead of clamping.
+func TestNewHub_BufferSizeOneIsAccepted(t *testing.T) {
+	// One is a valid buffer size. It used to be widened to 2 because
+	// sse.FiniteReplayer refused anything smaller; the hub owns its
+	// buffer now, so the size is taken at face value — see
+	// TestHub_BufferSizeOne_RetainsExactlyOneEvent for the behaviour.
 	h, err := events.NewHub(1, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
@@ -887,4 +889,349 @@ func TestHub_ConcurrentPushAndReset(t *testing.T) {
 		publishOK.Load(), resets.Load())
 	assert.Greater(t, publishOK.Load(), int64(0))
 	assert.Greater(t, resets.Load(), int64(0))
+}
+
+// publishSeq publishes one event per id, in order, so expiry tests have
+// a buffer to age out. The payload carries the position as "seq".
+func publishSeq(t *testing.T, h *events.Hub, ids ...string) {
+	t.Helper()
+	for i, id := range ids {
+		require.NoError(t, h.Publish(events.Event{
+			Type: "user.created", ID: id,
+			Payload: json.RawMessage(`{"type":"user.created","id":"` + id + `","seq":` + strconv.Itoa(i) + `}`),
+		}))
+	}
+}
+
+// resumeStatus subscribes with Last-Event-ID: id and reports the status
+// code plus body, without consuming the stream.
+func resumeStatus(t *testing.T, srv *httptest.Server, id string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", id)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+	// Close the stream before returning: leaving it open would park a
+	// live subscriber on the hub for the rest of the test, which any
+	// later subscriber-count or keep-alive assertion would then see.
+	_ = resp.Body.Close()
+	return resp.StatusCode, ""
+}
+
+func TestHub_Expire_AllAgesOutEveryCursor(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
+	assert.Equal(t, 3, h.ExpireAll())
+
+	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
+		status, body := resumeStatus(t, srv, id)
+		assert.Equalf(t, http.StatusGone, status, "resume from %q should be aged out", id)
+		assert.Contains(t, body, "event_aged_out")
+	}
+}
+
+func TestHub_Expire_BeforeKeepsCursorAndNewer(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
+	dropped, found := h.ExpireBefore("evt-2")
+	assert.Equal(t, 1, dropped)
+	assert.True(t, found)
+
+	status, body := resumeStatus(t, srv, "evt-1")
+	assert.Equal(t, http.StatusGone, status)
+	assert.Contains(t, body, "event_aged_out")
+
+	// The boundary cursor survives, so resuming from it still replays
+	// what came after.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "evt-2")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	r := bufio.NewReader(resp.Body)
+	readOneEvent(t, r, 2*time.Second) // Consume the connect announcement frame.
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
+}
+
+func TestHub_Expire_UnknownCursorIsNoOp(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2")
+	dropped, found := h.ExpireBefore("never-seen")
+	assert.Equal(t, 0, dropped)
+	assert.False(t, found, "the handler needs this to answer 404 rather than a 0-drop success")
+
+	status, _ := resumeStatus(t, srv, "evt-1")
+	assert.Equal(t, http.StatusOK, status, "an unknown cursor must not age out the buffer")
+}
+
+// Expiry is a control-plane operation over the resume index only: it
+// must not disturb subscribers that are already streaming.
+func TestHub_Expire_LeavesConnectedSubscribersStreaming(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	r, cancel := subscribe(t, srv, "")
+	defer cancel()
+	// Give the subscription a moment to register with Joe: subscribe()
+	// returns once the :connected frame lands, which the handler writes
+	// before it delegates to the server.
+	time.Sleep(50 * time.Millisecond)
+
+	publishSeq(t, h, "evt-1")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-1")
+
+	require.Equal(t, 1, h.ExpireAll())
+
+	publishSeq(t, h, "evt-2")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-2",
+		"the live stream should be untouched by an expiry")
+}
+
+// ?from_timestamp resolves through the same index, so an expired
+// buffer has nothing to resolve against and the subscriber joins live
+// rather than 410-ing (it never named a cursor of its own).
+func TestHub_Expire_FromTimestampJoinsLive(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2")
+	require.Equal(t, 2, h.ExpireAll())
+
+	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
+	defer cancel()
+	time.Sleep(50 * time.Millisecond) // Let the subscription register; see above.
+
+	publishSeq(t, h, "evt-3")
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
+}
+
+func TestHub_Expire_DisabledBufferReportsZero(t *testing.T) {
+	h, err := events.NewHub(0, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+
+	assert.Equal(t, 0, h.ExpireAll())
+
+	dropped, found := h.ExpireBefore("evt-1")
+	assert.Equal(t, 0, dropped)
+	assert.False(t, found, "with no buffer at all, no cursor is in it")
+
+	dropped, found = h.ExpireBefore("")
+	assert.Equal(t, 0, dropped, "an empty cursor is never expire-everything")
+	assert.False(t, found)
+}
+
+// The delicate part of the expiry feature is lock scope: neither Replay
+// nor Hub.expire may hold a lock across a subscriber write, or a
+// consumer that stops reading parks an expiry and Go's RWMutex then
+// queues every later reader behind it. That reasoning is invisible to a
+// single-threaded test, so drive expiry against publishes, subscribes
+// and resumes at once and let -race and the deadlock detector judge.
+// The assertions are liveness ones: nothing wedges, and every publish
+// still finds a live server.
+func TestHub_ConcurrentExpirePublishAndSubscribe(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var publishErrs, publishOK, expires, subscribes, subErrs atomic.Int64
+
+	for i := range 3 {
+		wg.Go(func() {
+			for n := 0; ; n++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				id := fmt.Sprintf("evt_%016x", n*10+i)
+				if err := h.Publish(events.Event{
+					Type: "x.y", ID: id,
+					Payload: json.RawMessage(`{"type":"x.y","id":"` + id + `"}`),
+				}); err != nil {
+					publishErrs.Add(1)
+				} else {
+					publishOK.Add(1)
+				}
+				time.Sleep(time.Millisecond)
+			}
+		})
+	}
+
+	// Expirers alternate between the whole buffer and a partial trim.
+	for i := range 2 {
+		wg.Go(func() {
+			for n := 0; ; n++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if (n+i)%2 == 0 {
+					h.ExpireAll()
+				} else {
+					_, _ = h.ExpireBefore(fmt.Sprintf("evt_%016x", n))
+				}
+				expires.Add(1)
+				time.Sleep(time.Millisecond)
+			}
+		})
+	}
+
+	// Subscribers connect and disconnect, some presenting a resume
+	// cursor so they exercise the Replay path against a live expirer.
+	wg.Go(func() {
+		for n := 0; ; n++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			query := ""
+			if n%2 == 0 {
+				query = fmt.Sprintf("?from=evt_%016x", n)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+query, nil)
+			if reqErr != nil {
+				cancel()
+				continue
+			}
+			resp, doErr := http.DefaultClient.Do(req) //nolint:bodyclose // Closed below; the 410 path returns a short body.
+			if doErr != nil {
+				subErrs.Add(1)
+			} else {
+				// Read one frame, then drop the connection — the point is
+				// churning subscribe/unsubscribe under a live expirer, not
+				// consuming the stream.
+				_, _ = io.CopyN(io.Discard, resp.Body, 32)
+				_ = resp.Body.Close()
+				subscribes.Add(1)
+			}
+			cancel()
+			// Throttle: an unbounded dial loop can exhaust ephemeral ports
+			// on a busy runner, and every failed dial is a subscribe that
+			// never raced an expiry.
+			time.Sleep(2 * time.Millisecond)
+		}
+	})
+
+	time.Sleep(500 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	assert.Equal(t, int64(0), publishErrs.Load(),
+		"no Publish should fail while expiry runs; ok=%d expires=%d subs=%d",
+		publishOK.Load(), expires.Load(), subscribes.Load())
+	assert.Greater(t, publishOK.Load(), int64(0))
+	assert.Greater(t, expires.Load(), int64(0))
+	// A floor, not "at least one": a run where nearly every dial failed
+	// would otherwise report green having raced almost nothing. Kept low,
+	// and counting failures rather than forbidding them, because a
+	// contended runner under -race can legitimately drop a connection —
+	// this test exists to catch a wedge, not to measure throughput.
+	total := subscribes.Load() + subErrs.Load()
+	assert.Greater(t, total, int64(10),
+		"too few subscribe attempts completed to have exercised the race")
+	assert.Greater(t, subscribes.Load(), int64(0),
+		"every subscribe failed (errs=%d); the race was never exercised", subErrs.Load())
+}
+
+// Hub.expire documents that it refuses a closed hub the way Publish
+// does. The two conditions share a line, so without this a future edit
+// dropping the closed half would leave the whole suite green while
+// expiry ran against a replayer Shutdown had torn down.
+func TestHub_Expire_ClosedHubReportsZero(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	publishSeq(t, h, "evt-1", "evt-2")
+	require.NoError(t, h.Shutdown(context.Background()))
+
+	assert.Equal(t, 0, h.ExpireAll())
+
+	dropped, found := h.ExpireBefore("evt-2")
+	assert.Equal(t, 0, dropped)
+	assert.False(t, found, "a torn-down replayer holds nothing, cursors included")
+}
+
+// EVENTS_REPLAY_BUFFER=1 means one event retained. It used to be
+// silently widened to 2 — a floor sse.FiniteReplayer imposed, which the
+// hub no longer uses — so a resume from the second-oldest cursor
+// succeeded where the operator expected 410.
+func TestHub_BufferSizeOne_RetainsExactlyOneEvent(t *testing.T) {
+	h, err := events.NewHub(1, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2")
+
+	status, body := resumeStatus(t, srv, "evt-1")
+	assert.Equal(t, http.StatusGone, status, "only one event is retained, so evt-1 has aged out")
+	assert.Contains(t, body, "event_aged_out")
+
+	status, _ = resumeStatus(t, srv, "evt-2")
+	assert.Equal(t, http.StatusOK, status)
+}
+
+// The partial-expire case is described in the OpenAPI fragment, the
+// README, the cookbook and the SDK godoc, and it runs through the
+// IDBefore-fails → OldestID-fallback branch in the handler. Without
+// this, deleting that fallback would leave the suite green while every
+// ?from_timestamp subscriber after a partial expire silently joined
+// live instead of replaying the surviving window.
+func TestHub_Expire_BeforeThenFromTimestampResumesSurvivingWindow(t *testing.T) {
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	publishSeq(t, h, "evt-1", "evt-2", "evt-3")
+	dropped, found := h.ExpireBefore("evt-2")
+	require.Equal(t, 1, dropped)
+	require.True(t, found)
+
+	// Every surviving event postdates this instant, so IDBefore finds
+	// nothing and the handler falls back to the oldest survivor.
+	r, cancel := subscribe(t, srv, "?from_timestamp=2020-01-01T00:00:00Z")
+	defer cancel()
+
+	// The resolved cursor is evt-2, and replay starts strictly after it,
+	// so the surviving window delivers evt-3 — the documented trade-off.
+	assert.Contains(t, readOneEvent(t, r, 2*time.Second), "id: evt-3")
 }

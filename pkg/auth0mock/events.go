@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 // NewEventID returns a fresh event ID conforming to Auth0's
@@ -86,4 +88,79 @@ func (e *EventsClient) Push(ctx context.Context, payload json.RawMessage) error 
 	// Json.RawMessage marshals to itself — do() sends the bytes
 	// verbatim without a re-encode round-trip.
 	return e.c.do(ctx, http.MethodPost, "/admin0/events", payload, nil)
+}
+
+// expireEventsResponse is the reply from POST /admin0/events/expire:
+// how many replay cursors the call dropped.
+type expireEventsResponse struct {
+	Expired int `json:"expired"`
+}
+
+// ExpireEvents ages out every cursor in the mock's replay buffer and
+// reports how many it dropped. A subscriber that later resumes from one
+// of those cursors — by Last-Event-ID or ?from — gets 410 Gone with
+// errorCode "event_aged_out", exactly as real Auth0 does when a
+// consumer's cursor falls out of the retention window.
+//
+// ?from_timestamp behaves differently, and deliberately so: it names an
+// instant rather than a cursor, so the mock resolves it against the
+// same index this call truncates and never has a client cursor to
+// reject with a 410. After ExpireEvents there is nothing left to
+// resolve against and such a subscriber joins live. After
+// ExpireEventsBefore it resumes from the oldest surviving cursor
+// instead, which — since replay starts strictly after the resolved id —
+// skips the boundary event itself; assert on that one through
+// Last-Event-ID or ?from.
+//
+// This is the deterministic way to test a consumer's cursor-loss
+// handling. The alternatives are worse: pushing past the buffer's
+// capacity is slow and couples the test to EVENTS_REPLAY_BUFFER, and
+// Client.Reset is far blunter — it wipes every other store and
+// disconnects subscribers too.
+//
+// Idempotent, and scoped to the replay buffer: subscribers that are
+// already streaming keep receiving events, and events pushed after the
+// call are buffered and resumable as usual.
+func (e *EventsClient) ExpireEvents(ctx context.Context) (int, error) {
+	var resp expireEventsResponse
+	if err := e.c.do(ctx, http.MethodPost, "/admin0/events/expire", nil, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Expired, nil
+}
+
+// ExpireEventsBefore ages out every replay cursor older than cursor,
+// leaving cursor itself — and everything after it — resumable. Use it
+// to model partial cursor loss: a consumer resuming from an older
+// offset gets 410 event_aged_out, while one resuming from cursor still
+// replays the events that followed. Returns how many cursors it
+// dropped.
+//
+// A cursor the buffer doesn't hold — mistyped, already evicted, or from
+// a mock started with replay disabled — returns *APIError with
+// StatusCode 404 and ErrorCode "cursor_not_found". The alternative, a 0
+// count, would report a mistyped offset as a successful expiry and let
+// the test fail somewhere unrelated: at the reconnect that came back 200
+// where it asserted 410.
+//
+// Repeating the call is still safe. The boundary cursor survives its own
+// expiry, so a second call with the same cursor finds it and drops 0.
+//
+// Cursor is resolved to its first copy in the buffer, the same entry a
+// resume from it would start at. Push unique offsets: with a duplicated
+// one, "older than cursor" means older than the earliest copy, so this
+// trims less than a caller holding the later copy expects. An empty
+// cursor is rejected client-side — expiring the whole buffer is
+// ExpireEvents' job, and it should be spelled out rather than fallen
+// into.
+func (e *EventsClient) ExpireEventsBefore(ctx context.Context, cursor string) (int, error) {
+	if cursor == "" {
+		return 0, errors.New("auth0mock: events: ExpireEventsBefore: cursor is required (use ExpireEvents to expire the whole buffer)")
+	}
+	var resp expireEventsResponse
+	path := "/admin0/events/expire?before=" + url.QueryEscape(cursor)
+	if err := e.c.do(ctx, http.MethodPost, path, nil, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Expired, nil
 }

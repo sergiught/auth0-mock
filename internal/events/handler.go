@@ -116,9 +116,9 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Promote resume hints to Last-Event-ID so the library handles
-	// replay natively. Order: explicit header wins over ?from wins
-	// over ?from_timestamp. Track whether WE synthesised the ID so
+	// Promote resume hints to Last-Event-ID so the replay buffer handles
+	// them on the normal resume path. Order: explicit header wins over
+	// ?from, which wins over ?from_timestamp. Track whether WE synthesised the ID so
 	// we don't 410 on it (the up-front Has check below would race a
 	// concurrent Put that evicted the just-looked-up ID).
 	synthesised := false
@@ -145,8 +145,8 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 					// No stored event predates t, but the buffer
 					// holds events newer than t — replay them by
 					// resuming from the oldest stored ID. The
-					// oldest event itself is skipped (the library
-					// replays strictly after the given ID); see
+					// oldest event itself is skipped (replay starts
+					// strictly after the given ID); see
 					// recordingReplayer.OldestID for the trade-off.
 					r.Header.Set("Last-Event-ID", oldest)
 					synthesised = true

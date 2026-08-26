@@ -423,6 +423,27 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return pushEvent(c, body.Content, false)
 	})
 
+	sc.Step(`^I expire the events replay buffer$`, func() error {
+		return expireEvents(c, "")
+	})
+	sc.Step(`^I expire the events replay buffer before "([^"]+)"$`, func(cursor string) error {
+		return expireEvents(c, cursor)
+	})
+	// An empty ?before= can't be spelled through the step above — its
+	// regex needs a non-empty capture — and it is exactly the case the
+	// endpoint rejects, so it gets its own phrase.
+	sc.Step(`^I attempt to expire the events replay buffer with an empty before$`, func() error {
+		attemptExpireEventsRaw(c, "?before=")
+		return nil
+	})
+	// The "I expire" steps insist on a 200, which is what makes them
+	// useful as Given-style setup. Rejections need the attempt form so
+	// the scenario can assert on the status itself.
+	sc.Step(`^I attempt to expire the events replay buffer before "([^"]+)"$`, func(cursor string) error {
+		attemptExpireEventsRaw(c, "?before="+url.QueryEscape(cursor))
+		return nil
+	})
+
 	sc.Step(`^the SSE stream delivers an event with id "([^"]+)" within (\d+)s$`,
 		func(wantID string, seconds int) error {
 			return streamDeliversID(c, wantID, time.Duration(seconds)*time.Second)
@@ -473,6 +494,31 @@ func subscribeEvents(c *Context, query, header string, bearer, expect2xx bool) e
 		return fmt.Errorf("subscribe: status %d body %s", resp.StatusCode, string(c.LastBody))
 	}
 	return nil
+}
+
+// expireEvents POSTs /admin0/events/expire, optionally scoped to a
+// cursor via ?before=. The response is stashed in LastResp / LastBody
+// so a scenario can assert on the {"expired": N} count with the
+// `the response JSON path "expired" equals "N"` step. Don't reach for
+// "the response body contains" here — its regex can't hold the quotes
+// a JSON field needs, and a bare number matches any digit in the body.
+func expireEvents(c *Context, before string) error {
+	query := ""
+	if before != "" {
+		query = "?before=" + url.QueryEscape(before)
+	}
+	attemptExpireEventsRaw(c, query)
+	if c.LastResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expire: status %d body %s", c.LastResp.StatusCode, string(c.LastBody))
+	}
+	return nil
+}
+
+// attemptExpireEventsRaw POSTs /admin0/events/expire with the query
+// string verbatim and records the response without asserting on the
+// status, so negative scenarios can check the 4xx themselves.
+func attemptExpireEventsRaw(c *Context, query string) {
+	c.Do("POST", "/admin0/events/expire"+query, "", false)
 }
 
 func pushEvent(c *Context, body string, expect202 bool) error {
