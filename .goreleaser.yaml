@@ -59,28 +59,40 @@ checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
 
-# Cosign keyless signing of the checksums file. Produces checksums.txt.sig
-# and checksums.txt.pem, attached to the GitHub release — signing the
-# checksums transitively covers every archive it lists. This is the artifact
-# surface OpenSSF Scorecard's Signed-Releases check inspects (docker_signs
-# below only covers the GHCR images). Reuses the workflow's OIDC token
-# (id-token: write), the same keyless flow as docker_signs — no managed key.
+# Cosign keyless signing of the checksums file. Produces
+# checksums.txt.sigstore.json — a Sigstore bundle holding the signature, the
+# Fulcio certificate and the Rekor inclusion proof in one file — attached to
+# the GitHub release. Signing the checksums transitively covers every archive
+# it lists. This is the artifact surface OpenSSF Scorecard's Signed-Releases
+# check inspects (docker_signs below only covers the GHCR images). Reuses the
+# workflow's OIDC token (id-token: write), the same keyless flow as
+# docker_signs — no managed key.
+#
+# The bundle replaces the checksums.txt.sig + checksums.txt.pem pair used up
+# to v0.231.0. Cosign v3 turned --use-signing-config on by default, which
+# forces the bundle format and rejects the --output-signature /
+# --output-certificate flags outright ("must specify --bundle with
+# --new-bundle-format"), so the old pair is no longer producible without
+# opting back out via two deprecated flags.
+#
+# The .sigstore.json suffix is deliberate, not cosmetic: Scorecard matches
+# signatures by file extension and its list accepts .sigstore.json but not
+# .bundle, so naming this checksums.txt.bundle would silently drop the
+# Signed-Releases score.
 #
 # Verify with:
 #   cosign verify-blob \
-#     --certificate checksums.txt.pem \
-#     --signature checksums.txt.sig \
+#     --bundle checksums.txt.sigstore.json \
 #     --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
 #     checksums.txt
 signs:
   - cmd: cosign
     artifacts: checksum
-    certificate: '${artifact}.pem'
+    signature: '${artifact}.sigstore.json'
     args:
       - 'sign-blob'
-      - '--output-certificate=${certificate}'
-      - '--output-signature=${signature}'
+      - '--bundle=${signature}'
       - '${artifact}'
       - '--yes'
     output: true
