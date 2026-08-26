@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -90,6 +91,12 @@ func (d *drainableWriter) Unwrap() http.ResponseWriter {
 // goroutine targets. That makes heartbeats reach filtered subscribers
 // too (otherwise they'd be silently dropped by reverse-proxy idle
 // timeouts while waiting for a matching event).
+//
+// Reading r.URL.Query() here is safe despite it discarding its error:
+// this runs as the delegate of serveHTTP, which has already rejected
+// any query string that wouldn't parse. The signature above —
+// (topics, allowed) — has no way to spell a 400, which is why that
+// check lives in serveHTTP rather than here.
 func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
 	requested := r.URL.Query()["event_type"]
 	if len(requested) == 0 {
@@ -99,6 +106,61 @@ func (h *Hub) onSession(_ http.ResponseWriter, r *http.Request) (topics []string
 	out = append(out, keepAliveTopic)
 	out = append(out, requested...)
 	return out, true
+}
+
+// promoteResumeHint copies a `?from` / `?from_timestamp` resume hint
+// into Last-Event-ID so the replay buffer handles it on the normal
+// resume path. Order: an explicit header wins over ?from, which wins
+// over ?from_timestamp.
+//
+// The first return says whether WE synthesised the ID, so the caller
+// doesn't 410 on it — its up-front Has check would otherwise race a
+// concurrent Put that evicted the just-looked-up ID. The second is
+// false when the response has already been written and the caller must
+// stop; an unparseable ?from_timestamp is the only such case.
+func (h *Hub) promoteResumeHint(
+	w http.ResponseWriter, r *http.Request, q url.Values,
+) (synthesised, ok bool) {
+	if r.Header.Get("Last-Event-ID") != "" {
+		return false, true
+	}
+	if id := q.Get("from"); id != "" {
+		r.Header.Set("Last-Event-ID", id)
+		return false, true
+	}
+	ts := q.Get("from_timestamp")
+	if ts == "" {
+		return false, true
+	}
+	t, err := parseFromTimestamp(ts)
+	if err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"from_timestamp must be RFC 3339: "+err.Error(),
+			"invalid_from_timestamp")
+		return false, false
+	}
+	h.mu.RLock()
+	replayer := h.replayer
+	h.mu.RUnlock()
+	if replayer == nil {
+		// No replay possible; silently ignore.
+		return false, true
+	}
+	if id, found := replayer.IDBefore(t); found {
+		r.Header.Set("Last-Event-ID", id)
+		return true, true
+	}
+	if oldest := replayer.OldestID(); oldest != "" {
+		// No stored event predates t, but the buffer holds events
+		// newer than t — replay them by resuming from the oldest
+		// stored ID. The oldest event itself is skipped (replay
+		// starts strictly after the given ID); see
+		// recordingReplayer.OldestID for the trade-off.
+		r.Header.Set("Last-Event-ID", oldest)
+		return true, true
+	}
+	// Empty buffer: nothing to replay; subscriber joins live.
+	return false, true
 }
 
 func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -116,46 +178,29 @@ func (h *Hub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Promote resume hints to Last-Event-ID so the replay buffer handles
-	// them on the normal resume path. Order: explicit header wins over
-	// ?from, which wins over ?from_timestamp. Track whether WE synthesised the ID so
-	// we don't 410 on it (the up-front Has check below would race a
-	// concurrent Put that evicted the just-looked-up ID).
-	synthesised := false
-	if r.Header.Get("Last-Event-ID") == "" {
-		q := r.URL.Query()
-		if id := q.Get("from"); id != "" {
-			r.Header.Set("Last-Event-ID", id)
-		} else if ts := q.Get("from_timestamp"); ts != "" {
-			t, err := parseFromTimestamp(ts)
-			if err != nil {
-				httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-					"from_timestamp must be RFC 3339: "+err.Error(),
-					"invalid_from_timestamp")
-				return
-			}
-			h.mu.RLock()
-			replayer := h.replayer
-			h.mu.RUnlock()
-			if replayer != nil {
-				if id, ok := replayer.IDBefore(t); ok {
-					r.Header.Set("Last-Event-ID", id)
-					synthesised = true
-				} else if oldest := replayer.OldestID(); oldest != "" {
-					// No stored event predates t, but the buffer
-					// holds events newer than t — replay them by
-					// resuming from the oldest stored ID. The
-					// oldest event itself is skipped (replay starts
-					// strictly after the given ID); see
-					// recordingReplayer.OldestID for the trade-off.
-					r.Header.Set("Last-Event-ID", oldest)
-					synthesised = true
-				}
-				// Empty buffer: nothing to replay; subscriber joins
-				// live.
-			}
-			// Replayer is nil: silently ignore, no replay possible.
-		}
+	// Parse explicitly rather than via r.URL.Query(), which throws the
+	// error away along with every pair it couldn't parse. A parameter
+	// that fails to unescape would then not fail the request — it would
+	// vanish, and the handler would proceed as if the caller never sent
+	// it. Each of the three we read fails differently and silently: a
+	// dropped ?from or ?from_timestamp skips the 410 gate below and
+	// joins live, missing everything between the caller's cursor and
+	// now; a dropped ?event_type leaves onSession with no requested
+	// types, turning a filtered subscription into a firehose. One bad
+	// pair rejects the whole request — answering 200 on the strength of
+	// the pairs that did parse would serve a request nobody made.
+	// POST /admin0/events/expire rejects the same way; see
+	// internal/admin0/events.go.
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"query string could not be parsed: "+err.Error(), "invalid_query")
+		return
+	}
+
+	synthesised, ok := h.promoteResumeHint(w, r, q)
+	if !ok {
+		return
 	}
 
 	// Surface aged-out resume up-front: if a user-supplied

@@ -100,6 +100,15 @@ Feature: GET /api/v2/events Server-Sent Events
     Then I receive a 400 response
     And the response body contains "invalid_from_timestamp"
 
+  # A ?from that won't unescape used to be dropped from the parsed query
+  # rather than rejected, so the subscriber joined live and missed every
+  # event since its cursor — a consumer testing its resume path got a
+  # green run that proved nothing.
+  Scenario: Unparseable query string returns 400 invalid_query
+    When I attempt to subscribe to /api/v2/events with query "?from=0%2"
+    Then I receive a 400 response
+    And the response body contains "invalid_query"
+
   Scenario: Subscribing without a bearer returns 401
     When I subscribe to /api/v2/events without a bearer
     Then I receive a 401 response

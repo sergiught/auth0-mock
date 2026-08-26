@@ -604,6 +604,85 @@ func TestHub_Handler_FromTimestampUnparseable_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+func TestHub_Handler_MalformedEscapeInFrom_400(t *testing.T) {
+	// A `?from` that won't unescape used to vanish from the parsed
+	// query, so no Last-Event-ID was synthesised and the 410 gate never
+	// ran: the subscriber joined live and silently missed everything
+	// between its cursor and now — the exact outcome the 410 prevents.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from=evt-1%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+func TestHub_Handler_MalformedEscapeInFromTimestamp_400(t *testing.T) {
+	// Same silent join-live as `?from`, plus the invalid_from_timestamp
+	// guard is skipped: the pair is gone before there is a value to
+	// validate.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?from_timestamp=2020-01-01T00:00:00Z%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+func TestHub_Handler_MalformedEscapeInEventType_400(t *testing.T) {
+	// A `?event_type` that won't unescape left onSession with no
+	// requested types, so the filtered subscription silently joined
+	// broadcastTopic and became a firehose.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?event_type=user.created%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
+func TestHub_Handler_MalformedEscapeRejectsWholeQuery_400(t *testing.T) {
+	// Url.ParseQuery keeps the pairs it could parse and reports an error
+	// for the one it couldn't. Answering 200 on the strength of the
+	// survivors would serve a request the caller never made, so one bad
+	// pair rejects the request even when the rest parsed cleanly.
+	h, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "?event_type=user.created&from=evt-1%2")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_query")
+}
+
 func TestHub_Handler_MultipleSubscribersEachReceiveOnce(t *testing.T) {
 	h, err := events.NewHub(10, nil)
 	require.NoError(t, err)
