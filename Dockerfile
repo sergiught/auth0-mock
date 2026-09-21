@@ -1,11 +1,11 @@
-# syntax=docker/dockerfile:1.26
+# syntax=docker/dockerfile:1.27
 #
 # Local-dev Dockerfile for auth0-mock — builds from source with the Go
 # toolchain so `docker compose up --build` is fast on every source edit.
 # For published images the release pipeline uses the slimmer
 # `Dockerfile.release`, which is fed a pre-built binary by goreleaser.
 
-FROM golang:1.27-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS build
+FROM golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
 WORKDIR /src
 
 # Cache deps separately from source so a code-only change doesn't re-download.
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/auth0-mock ./cmd/
 
 # --- runtime image -----------------------------------------------------------
 
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 LABEL org.opencontainers.image.title="auth0-mock"
 LABEL org.opencontainers.image.description="Drop-in mock of Auth0's Authentication and Management APIs."
 LABEL org.opencontainers.image.licenses="MIT"
