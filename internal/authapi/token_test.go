@@ -770,21 +770,23 @@ func TestToken_BasicAuth_BodyWinsOverHeader(t *testing.T) {
 	assert.Equal(t, "body-id", c.Extra["azp"])
 }
 
-func TestToken_BasicAuth_MalformedIgnored(t *testing.T) {
-	r, ks := newAuthRouter(t)
+func TestParseTokenRequest_BasicAuth_MalformedIgnored(t *testing.T) {
 	for _, h := range []string{
 		"Basic !!!notbase64",
 		"Basic " + base64.StdEncoding.EncodeToString([]byte("nocolon")),
-		"Bearer abc",
+		"Bearer " + base64.StdEncoding.EncodeToString([]byte("hid:hsecret")),
 		"Basic",
 	} {
-		withHdr := tokenClaims(t, ks, postToken(r, formCT, "grant_type=client_credentials&client_id=abc", h))
-		assert.Equal(t, "abc", withHdr.Extra["azp"], h)
+		req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader("grant_type=client_credentials"))
+		req.Header.Set("Content-Type", formCT)
+		req.Header.Set("Authorization", h)
+		got, err := parseTokenRequest(req)
+		require.NoError(t, err, h)
+		assert.Empty(t, got.ClientID, h)
+		assert.Empty(t, got.ClientSecret, h)
+		assert.NotContains(t, got.Params, "client_id", h)
+		assert.NotContains(t, got.Params, "client_secret", h)
 	}
-	// With no client_id anywhere, a malformed header behaves like no header.
-	noHdr := postToken(r, formCT, "grant_type=client_credentials", "")
-	bad := postToken(r, formCT, "grant_type=client_credentials", "Basic !!!")
-	assert.Equal(t, noHdr.Code, bad.Code)
 }
 
 func TestToken_BasicAuth_JSONBody(t *testing.T) {
@@ -822,4 +824,32 @@ func TestParseTokenRequest_BasicAuth_FillsFieldsIndependently(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "hid", req.Params["client_id"])
 	assert.Equal(t, "hsecret", req.Params["client_secret"])
+}
+
+func TestParseTokenRequest_BasicAuth_Secrets(t *testing.T) {
+	parse := func(body, authz string) *tokenRequest {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(body))
+		req.Header.Set("Content-Type", formCT)
+		req.Header.Set("Authorization", authz)
+		got, err := parseTokenRequest(req)
+		require.NoError(t, err)
+		return got
+	}
+
+	// Form-urlencoded before base64 (RFC 6749 §2.3.1).
+	got := parse("grant_type=client_credentials", basicHeader("hid", "s%3Ax+y"))
+	assert.Equal(t, "s:x y", got.ClientSecret)
+	assert.Equal(t, "s:x y", got.Params["client_secret"])
+
+	// Only the first colon separates id from secret.
+	got = parse("grant_type=client_credentials", basicHeader("hid", "a:b"))
+	assert.Equal(t, "hid", got.ClientID)
+	assert.Equal(t, "a:b", got.ClientSecret)
+
+	// A body secret wins over the header's.
+	got = parse("grant_type=client_credentials&client_secret=bsecret", basicHeader("hid", "hsecret"))
+	assert.Equal(t, "hid", got.ClientID)
+	assert.Equal(t, "bsecret", got.ClientSecret)
+	assert.Equal(t, "bsecret", got.Params["client_secret"])
 }

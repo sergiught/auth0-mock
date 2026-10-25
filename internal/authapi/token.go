@@ -241,6 +241,7 @@ func applyBasicAuth(r *http.Request, req *tokenRequest) {
 	fill(&req.ClientSecret, "client_secret", unescape(secret))
 }
 
+// parseTokenBody reads the token request from the JSON or form body.
 func parseTokenBody(r *http.Request) (*tokenRequest, error) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "application/json") {
