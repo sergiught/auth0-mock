@@ -1,10 +1,12 @@
 package auth0mocktest_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -76,12 +78,14 @@ type fakeT struct {
 	testing.TB
 	fatalCalled  atomic.Bool
 	fatalMessage string
+	fatalText    string // Fully formatted message.
 	cleanups     []func()
 }
 
 func (f *fakeT) Helper() {}
 func (f *fakeT) Fatalf(format string, args ...any) {
 	f.fatalCalled.Store(true)
+	f.fatalText = fmt.Sprintf(format, args...)
 	if len(args) > 0 {
 		f.fatalMessage = format
 	}
@@ -241,4 +245,69 @@ func TestBracket_HappyPath(t *testing.T) {
 		cleanup()
 	}
 	assert.False(t, ft.fatalCalled.Load())
+}
+
+func journalEntryJSON(id, method, path string, status int, outcome, near string) string {
+	return `{"id":"` + id + `","receivedAt":"2026-10-25T13:04:05.123Z","method":"` + method + `","path":"` + path +
+		`","status":` + fmt.Sprint(status) + `,"outcome":"` + outcome + `"` + near + `}`
+}
+
+func TestMustFindCall_ReturnsMostRecent(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"entries":[` +
+			journalEntryJSON("old", "PATCH", "/api/v2/users/1", 200, "matched", "") + `,` +
+			journalEntryJSON("new", "PATCH", "/api/v2/users/1", 200, "matched", "") + `]}`))
+	}
+
+	ft := &fakeT{}
+	got := auth0mocktest.MustFindCall(ft, c, "PATCH", "/api/v2/users/1")
+	assert.False(t, ft.fatalCalled.Load())
+	assert.Equal(t, "new", got.ID)
+}
+
+func TestMustFindCall_FailsListingSameMethodCalls(t *testing.T) {
+	t.Parallel()
+	near := `,"nearMisses":[{"expectationId":"e1","method":"PATCH","path":"/api/v2/users/{id}",` +
+		`"differences":[{"field":"body.blocked","reason":"mismatch","want":true,"got":false}]}]`
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("path") != "" {
+			_, _ = w.Write([]byte(`{"entries":[]}`))
+			return
+		}
+		var entries []string
+		for i := 1; i <= 7; i++ {
+			n := ""
+			if i == 7 {
+				n = near
+			}
+			entries = append(entries, journalEntryJSON(fmt.Sprint(i), "PATCH", fmt.Sprintf("/api/v2/users/%d", i), 404, "no_match", n))
+		}
+		_, _ = w.Write([]byte(`{"entries":[` + strings.Join(entries, ",") + `]}`))
+	}
+
+	ft := &fakeT{}
+	auth0mocktest.MustFindCall(ft, c, "PATCH", "/api/v2/users/123")
+	require.True(t, ft.fatalCalled.Load())
+	msg := ft.fatalText
+	assert.Contains(t, msg, "auth0mocktest: no PATCH /api/v2/users/123 call recorded; recent PATCH calls:")
+	assert.Contains(t, msg, "PATCH /api/v2/users/7 → 404 no_match at 13:04:05.123")
+	assert.Contains(t, msg, "body.blocked: want true, got false")
+	assert.Contains(t, msg, "/api/v2/users/3 ")
+	assert.NotContains(t, msg, "/api/v2/users/2 ", "only the newest 5 are listed")
+}
+
+func TestMustFindCall_FailsWithNone(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"entries":[]}`))
+	}
+
+	ft := &fakeT{}
+	auth0mocktest.MustFindCall(ft, c, "GET", "/api/v2/users")
+	require.True(t, ft.fatalCalled.Load())
+	assert.Contains(t, ft.fatalText, "(none)")
 }

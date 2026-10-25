@@ -15,6 +15,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/events"
+	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -74,14 +75,26 @@ type Deps struct {
 	// connect (EVENTS_RECONNECT_HINT in production); <= 0 omits it. Zero
 	// value omits the hint, which is fine for tests.
 	EventsReconnectHint time.Duration
+
+	// Journal records /api/v2 calls for GET /admin0/journal. Nil is
+	// defaulted to a disabled journal (size 0).
+	Journal *journal.Journal
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
 func New(d Deps) (http.Handler, error) {
 	r := chi.NewRouter()
+	// Off-by-default journal for callers (tests) that don't wire one; the
+	// middleware must be installed before any route registration.
+	if d.Journal == nil {
+		d.Journal = journal.New(0)
+	}
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Recovery(d.Log))
 	r.Use(middleware.MaxBodyBytes(d.MaxRequestBodyBytes))
+	// Recovery sits inside the journal so a recovered panic's 500 is
+	// recorded too.
+	r.Use(d.Journal.Middleware)
+	r.Use(middleware.Recovery(d.Log))
 	// DebugDump and Logging are mutually exclusive: when DEBUG is on the
 	// per-request summary line is redundant noise (DebugDump's `←` line
 	// already carries method, path, status, body_bytes, and latency),
@@ -122,6 +135,7 @@ func New(d Deps) (http.Handler, error) {
 		Validator:     d.Validator,
 		Clock:         d.Clock,
 		Events:        hub,
+		Journal:       d.Journal,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {

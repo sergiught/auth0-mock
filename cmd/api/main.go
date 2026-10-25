@@ -14,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/config"
+	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/logger"
 	"github.com/sergiught/auth0-mock/internal/matches"
@@ -109,6 +110,7 @@ func run() error {
 		BearerRequireAudience:        cfg.BearerRequireAudience,
 		Debug:                        cfg.Debug,
 		EventsReplayBuffer:           cfg.EventsReplayBuffer,
+		Journal:                      journal.New(cfg.RequestJournalSize),
 		EventsReconnectHint:          cfg.EventsReconnectHint,
 	})
 	if err != nil {

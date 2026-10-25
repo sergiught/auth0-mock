@@ -14,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/httperr"
+	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
@@ -34,6 +35,10 @@ type Deps struct {
 	// only registers when both Events and Validator are non-nil, and
 	// reset's shutdown call is skipped.
 	Events EventsPublisher
+
+	// Journal backs /admin0/journal*. Nil is defaulted to a disabled
+	// journal (size 0) by Mount.
+	Journal *journal.Journal
 }
 
 // Mount registers every /admin0/* route on r.
@@ -45,10 +50,16 @@ func Mount(r chi.Router, d Deps) {
 	// the token endpoint shares the same instance; one defaulted here is
 	// reachable only from the admin surface, which is exactly what an
 	// admin0-only mount needs.
+	if d.Journal == nil {
+		d.Journal = journal.New(0)
+	}
 	if d.ClaimMappings == nil {
 		d.ClaimMappings = claims.NewMappingStore()
 	}
 
+	r.Method(http.MethodGet, "/admin0/journal", &ListJournalHandler{Journal: d.Journal})
+	r.Method(http.MethodGet, "/admin0/journal/unmatched", &ListUnmatchedJournalHandler{Journal: d.Journal})
+	r.Method(http.MethodDelete, "/admin0/journal", &DeleteJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
@@ -117,6 +128,9 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Deps.MFA != nil {
 		h.Deps.MFA.Reset()
+	}
+	if h.Deps.Journal != nil {
+		h.Deps.Journal.Clear()
 	}
 	if h.Deps.Clock != nil {
 		h.Deps.Clock.Reset()

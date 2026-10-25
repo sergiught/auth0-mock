@@ -23,6 +23,7 @@ type Store struct {
 	exact    map[key][]Expectation
 	template map[key][]Expectation
 	hits     map[string]*atomic.Int64
+	seq      uint64
 }
 
 type key struct {
@@ -63,6 +64,8 @@ func (s *Store) Put(exp Expectation) Expectation {
 	exp.ID = uuid.NewString()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.seq++
+	exp.seq = s.seq
 	m := s.bucket(exp.Kind)
 	k := key{Method: exp.Method, Path: exp.Path}
 	var kept []Expectation
@@ -225,4 +228,59 @@ func (s *Store) ResetAll() {
 	s.exact = make(map[key][]Expectation)
 	s.template = make(map[key][]Expectation)
 	s.hits = make(map[string]*atomic.Int64)
+}
+
+// maxNearMisses caps how many near misses NearMisses returns.
+const maxNearMisses = 3
+
+// NearMisses explains why req matched no stub: it returns up to three
+// stubs on the same method and operation that did not match, fewest
+// differences first, then newest first. Candidates are template stubs on
+// opTemplate plus exact stubs on any concrete path that templateOf maps to
+// opTemplate; an exact stub on a different concrete path carries a leading
+// "path" difference. Stubs with no differences are skipped.
+func (s *Store) NearMisses(method, concretePath, opTemplate string, req MatchableRequest,
+	templateOf func(method, path string) string) []NearMiss {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	type candidate struct {
+		nm  NearMiss
+		seq uint64
+	}
+	var cands []candidate
+	add := func(e Expectation, extra []Difference) {
+		diffs := slices.Concat(extra, e.Request.Explain(req))
+		if len(diffs) == 0 {
+			return
+		}
+		cands = append(cands, candidate{
+			nm:  NearMiss{ExpectationID: e.ID, Method: e.Method, Path: e.Path, Differences: diffs},
+			seq: e.seq,
+		})
+	}
+	for _, e := range s.template[key{Method: method, Path: opTemplate}] {
+		add(e, nil)
+	}
+	for k, list := range s.exact {
+		if k.Method != method || templateOf(method, k.Path) != opTemplate {
+			continue
+		}
+		var extra []Difference
+		if k.Path != concretePath {
+			extra = []Difference{{Field: "path", Reason: "mismatch", Want: rawString(k.Path), Got: rawString(concretePath)}}
+		}
+		for _, e := range list {
+			add(e, extra)
+		}
+	}
+
+	slices.SortFunc(cands, func(a, b candidate) int {
+		return cmp.Or(cmp.Compare(len(a.nm.Differences), len(b.nm.Differences)), cmp.Compare(b.seq, a.seq))
+	})
+	var out []NearMiss
+	for _, c := range cands[:min(len(cands), maxNearMisses)] {
+		out = append(out, c.nm)
+	}
+	return out
 }

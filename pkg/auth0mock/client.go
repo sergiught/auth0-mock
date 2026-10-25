@@ -58,6 +58,10 @@ type Client struct {
 	// producers POST events for fan-out to subscribed consumers.
 	Events *EventsClient
 
+	// Journal typed entry point for /admin0/journal — reads the
+	// request journal and the near misses of unmatched requests.
+	Journal *JournalClient
+
 	// RegisteredMu guards registered (the list of handles returned
 	// from Expectations.Add). Consulted by Expectations.Verify and
 	// pruned by Clear / Reset.
@@ -257,6 +261,7 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	c.MFA = &MFAClient{c: c}
 	c.Clock = &ClockClient{c: c}
 	c.Events = &EventsClient{c: c}
+	c.Journal = &JournalClient{c: c}
 	return c, nil
 }
 

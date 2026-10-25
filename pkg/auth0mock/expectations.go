@@ -223,6 +223,9 @@ func (e *ExpectationsClient) Verify(ctx context.Context) error {
 		byID[exp.ID] = exp.Hits
 	}
 	var violations []string
+	// Unmatched journal entries per method, fetched lazily (best
+	// effort: a failed fetch just means no hints).
+	unmatched := map[string][]JournalEntry{}
 	for _, re := range tracked {
 		want := re.expected.Load()
 		if want == nil || want.mode == hitsModeUnset {
@@ -237,8 +240,16 @@ func (e *ExpectationsClient) Verify(ctx context.Context) error {
 			continue
 		}
 		if !want.satisfied(actual) {
-			violations = append(violations,
-				fmt.Sprintf("%s — expected %s, got %d", label, want.describe(), actual))
+			msg := fmt.Sprintf("%s — expected %s, got %d", label, want.describe(), actual)
+			if want.tooFew(actual) {
+				entries, ok := unmatched[re.method]
+				if !ok {
+					entries, _ = e.c.Journal.Unmatched(ctx, JournalFilter{Method: re.method})
+					unmatched[re.method] = entries
+				}
+				msg += nearMissHints(entries, re.ID)
+			}
+			violations = append(violations, msg)
 		}
 	}
 	// Successful Verify "consumes" the pending-adds counter so a
@@ -445,6 +456,19 @@ func (h hitsConstraint) describe() string {
 	}
 }
 
+// tooFew reports whether actual hits fall below the lower bound of an
+// exact or at-least constraint.
+func (h hitsConstraint) tooFew(actual int64) bool {
+	switch h.mode {
+	case hitsModeExact:
+		return actual < h.exact
+	case hitsModeAtLeast:
+		return actual < h.atLeast
+	default:
+		return false
+	}
+}
+
 // satisfied reports whether actual hits meet the constraint.
 func (h hitsConstraint) satisfied(actual int64) bool {
 	switch h.mode {
@@ -457,6 +481,31 @@ func (h hitsConstraint) satisfied(actual int64) bool {
 	default:
 		return true
 	}
+}
+
+// maxNearMissHints caps how many near-miss requests Verify prints per
+// violated expectation.
+const maxNearMissHints = 3
+
+// nearMissHints renders up to maxNearMissHints of the newest entries
+// (entries are oldest first) whose near misses name the expectation id.
+func nearMissHints(entries []JournalEntry, id string) string {
+	var b strings.Builder
+	shown := 0
+	for i := len(entries) - 1; i >= 0 && shown < maxNearMissHints; i-- {
+		for _, nm := range entries[i].NearMisses {
+			if nm.ExpectationID != id {
+				continue
+			}
+			shown++
+			b.WriteString("\n    near miss: " + entries[i].String())
+			for _, d := range nm.Differences {
+				b.WriteString("\n      " + d.String())
+			}
+			break
+		}
+	}
+	return b.String()
 }
 
 // List returns every registered Expectation in registration order

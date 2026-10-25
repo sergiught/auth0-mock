@@ -43,6 +43,9 @@ type Expectation struct {
 	Request  *RequestMatcher `json:"request,omitempty"`
 	Response ResponseDef     `json:"response"`
 	Hits     int64           `json:"hits"`
+	// Seq is the Store's registration counter, used to order near misses
+	// newest first across buckets.
+	seq uint64
 }
 
 // RequestMatcher is the optional set of conditions an incoming request must
