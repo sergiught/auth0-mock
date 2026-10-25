@@ -32,6 +32,8 @@ func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
 		"grant_types_supported":                 []string{"client_credentials", "password", "refresh_token", "authorization_code"},
+		"code_challenge_methods_supported":      []string{"S256", "plain"},
+		"claims_supported":                      []string{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"},
 	}
 	// Match render.JSON's encoding (HTML-escaped, trailing newline) so the wire
 	// output is byte-identical to the previous per-request render. A map of
