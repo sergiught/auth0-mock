@@ -2,12 +2,15 @@ package mgmtapi
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
+	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
@@ -50,21 +53,54 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 2. Find a registered expectation for this request.
-	exp := h.Store.Find(r.Method, r.URL.Path, h.Op.Template, matches.MatchableRequest{
+	req := matches.MatchableRequest{
 		Query:   r.URL.Query(),
 		Headers: r.Header,
 		Body:    body,
-	})
+	}
+	exp := h.Store.Find(r.Method, r.URL.Path, h.Op.Template, req)
 	if exp == nil {
+		// TemplateOf runs under the store's read lock; Resolve never
+		// calls back into the store.
+		templateOf := func(method, path string) string {
+			op, err := h.Validator.Resolve(method, path)
+			if err != nil {
+				return ""
+			}
+			return op.Template
+		}
+		nm := h.Store.NearMisses(r.Method, r.URL.Path, h.Op.Template, req, templateOf)
+		journal.MarkNoMatch(r.Context(), nm)
 		httperr.WriteMgmt(w, http.StatusNotFound, "Not Found",
-			"no registered match for "+r.Method+" "+r.URL.Path, "no_match")
+			noMatchMessage(r.Method, r.URL.Path, h.Op.Template, nm), "no_match")
 		return
 	}
-	h.respond(w, exp)
+	h.respond(r.Context(), w, exp)
+}
+
+// noMatchMessage explains a no_match 404: which fields of the closest stub
+// differed, or that nothing is registered for the operation.
+func noMatchMessage(method, path, opTemplate string, nm []matches.NearMiss) string {
+	msg := "no registered match for " + method + " " + path
+	if len(nm) == 0 {
+		return msg + "; no stubs registered for " + method + " " + opTemplate
+	}
+	const maxShown = 3
+	diffs := nm[0].Differences
+	fields := make([]string, 0, maxShown)
+	for _, d := range diffs[:min(len(diffs), maxShown)] {
+		fields = append(fields, d.Field)
+	}
+	msg += "; closest stub differed on " + strings.Join(fields, ", ")
+	if len(diffs) > maxShown {
+		msg += ", …"
+	}
+	return msg
 }
 
 // respond writes a matched expectation's canned response.
-func (h *GenericHandler) respond(w http.ResponseWriter, exp *matches.Expectation) {
+func (h *GenericHandler) respond(ctx context.Context, w http.ResponseWriter, exp *matches.Expectation) {
+	journal.MarkMatched(ctx, exp.ID)
 	// 3. Defense-in-depth response validation.
 	if err := h.Validator.ValidateResponse(h.Op, exp.Response.Status, exp.Response.Headers, exp.Response.Body); err != nil {
 		h.Log.Error().
@@ -113,8 +149,9 @@ func (h *eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Headers: r.Header,
 	})
 	if exp == nil {
+		journal.MarkMatched(r.Context(), "")
 		h.stream.ServeHTTP(w, r)
 		return
 	}
-	h.stubs.respond(w, exp)
+	h.stubs.respond(r.Context(), w, exp)
 }
