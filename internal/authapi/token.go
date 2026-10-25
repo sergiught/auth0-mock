@@ -1,10 +1,12 @@
 package authapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/render"
@@ -189,8 +191,58 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 }
 
 // parseTokenRequest accepts either application/json or
-// application/x-www-form-urlencoded.
+// application/x-www-form-urlencoded. Client credentials may also arrive via
+// HTTP Basic (client_secret_basic); body values win over the header.
 func parseTokenRequest(r *http.Request) (*tokenRequest, error) {
+	req, err := parseTokenBody(r)
+	if err != nil {
+		return nil, err
+	}
+	applyBasicAuth(r, req)
+	return req, nil
+}
+
+// applyBasicAuth fills an empty ClientID/ClientSecret (and their Params
+// entries, as a body-sent value would have) from a well-formed
+// `Authorization: Basic` header. A malformed header is ignored.
+func applyBasicAuth(r *http.Request, req *tokenRequest) {
+	scheme, cred, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !ok || !strings.EqualFold(scheme, "Basic") {
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(cred))
+	if err != nil {
+		return
+	}
+	id, secret, ok := strings.Cut(string(raw), ":")
+	if !ok {
+		return
+	}
+	// RFC 6749 §2.3.1: both halves are form-urlencoded before base64.
+	unescape := func(v string) string {
+		if u, err := url.QueryUnescape(v); err == nil {
+			return u
+		}
+		return v
+	}
+	fill := func(field *string, key, v string) {
+		if *field != "" || v == "" {
+			return
+		}
+		*field = v
+		if req.Params == nil {
+			req.Params = map[string]any{}
+		}
+		if cur, present := req.Params[key]; !present || cur == "" || cur == nil {
+			req.Params[key] = v
+		}
+	}
+	fill(&req.ClientID, "client_id", unescape(id))
+	fill(&req.ClientSecret, "client_secret", unescape(secret))
+}
+
+// parseTokenBody reads the token request from the JSON or form body.
+func parseTokenBody(r *http.Request) (*tokenRequest, error) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "application/json") {
 		body, err := io.ReadAll(r.Body)

@@ -22,6 +22,16 @@ Feature: /oauth/token supports all four grant types
       }
       """
 
+  Scenario: client_credentials grant accepts client credentials via HTTP Basic
+    When I post to "/oauth/token" with form body and Basic credentials "demo:x":
+      """
+      grant_type=client_credentials
+      audience=http://example/api/v2/
+      """
+    Then I receive a 200 response
+    And the access_token claim "azp" equals "demo"
+    And the access_token claim "sub" equals "demo@clients"
+
   Scenario: password grant returns access_token, id_token, and refresh_token
     When I post to "/oauth/token" with form body:
       """
