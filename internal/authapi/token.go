@@ -174,6 +174,8 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 			"email_verified": true,
 			"name":           subject,
 			"connection":     req.Realm,
+			"azp":            req.ClientID,
+			"auth_time":      h.Keys.Cfg().Now().Unix(),
 		},
 	})
 	if err != nil {
@@ -349,6 +351,8 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 			"email":          subject,
 			"email_verified": true,
 			"name":           subject,
+			"azp":            req.ClientID,
+			"auth_time":      h.Keys.Cfg().Now().Unix(),
 		},
 	})
 	if err != nil {

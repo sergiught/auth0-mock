@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 )
 
@@ -171,6 +172,49 @@ func TestAuthorizationCode_NonPKCEEntryRejectsVerifier(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid_grant")
 	assert.Contains(t, w.Body.String(), "no stored challenge")
+}
+
+func TestPasswordGrants_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
+	r, ks, clk := newNonceRouter(t)
+
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice"}, "password": {"x"},
+	})
+	c := idTokenClaims(t, ks, w)
+	assert.Equal(t, "demo", c.Extra["azp"])
+	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+
+	w = postTokenForm(r, url.Values{
+		"grant_type": {"http://auth0.com/oauth/grant-type/password-realm"}, "client_id": {"demo"},
+		"username": {"alice"}, "password": {"x"}, "realm": {"db"},
+	})
+	c = idTokenClaims(t, ks, w)
+	assert.Equal(t, "demo", c.Extra["azp"])
+	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+}
+
+func TestMFAGrant_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
+	clk := &steppedClock{now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, Now: clk.Now,
+	})
+	require.NoError(t, err)
+	mfaStore := mfa.NewStore()
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), MFA: mfaStore,
+	})
+	tok := mfaStore.Issue(mfa.Context{
+		ClientID: "abc", Audience: "https://api/", Scope: "openid", Subject: "alice",
+	})
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"http://auth0.com/oauth/grant-type/mfa-otp"}, "client_id": {"abc"},
+		"mfa_token": {tok}, "otp": {mfa.AcceptedOTP},
+	})
+	c := idTokenClaims(t, ks, w)
+	assert.Equal(t, "abc", c.Extra["azp"])
+	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
 }
 
 func pkceS256(verifier string) string {
