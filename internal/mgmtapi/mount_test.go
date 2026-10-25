@@ -259,3 +259,51 @@ func TestMount_SubscribeEvents_Without_Bearer_Is_401(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
+
+// A registered error stub stands in for the stream on the requests it
+// matches; everything else still reaches the stream.
+func TestMount_SubscribeEvents_ErrorStubWinsOverStream(t *testing.T) {
+	streamed := 0
+	eventsH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		streamed++
+		w.WriteHeader(http.StatusOK)
+	})
+	r := chi.NewRouter()
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	store := matches.NewStore()
+	require.NoError(t, Mount(MountOpts{
+		Router: r, Spec: s, Validator: v, Store: store,
+		Keys: ks, Log: zerolog.Nop(), Strict: true, EventsHandler: eventsH,
+	}))
+
+	const gone = `{"statusCode":410,"error":"Gone","message":"cursor expired"}`
+	store.Put(matches.Expectation{Method: "GET", Path: "/api/v2/events", Kind: matches.KindExact,
+		Request:  &matches.RequestMatcher{Headers: map[string]string{"Last-Event-ID": "evt_0000000000000001"}},
+		Response: matches.ResponseDef{Status: http.StatusGone, Body: json.RawMessage(gone)}})
+
+	subscribe := func(lastEventID string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/events", nil)
+		req.Header.Set("Authorization", "Bearer "+mintBearer(t, ks))
+		if lastEventID != "" {
+			req.Header.Set("Last-Event-ID", lastEventID)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := subscribe("evt_0000000000000001")
+	assert.Equal(t, http.StatusGone, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.JSONEq(t, gone, rec.Body.String())
+	assert.Zero(t, streamed, "a matching stub must not open the stream")
+
+	rec = subscribe("")
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 1, streamed, "a request no stub matches must reach the stream")
+}

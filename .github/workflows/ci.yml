@@ -20,7 +20,7 @@ env:
   # upstream release binary via golangci-lint-action while `make lint`
   # builds from source; bumping only one puts local and CI on different
   # linters, which is the drift the pin exists to prevent.
-  GOLANGCI_LINT_VERSION: 'v2.13.1'
+  GOLANGCI_LINT_VERSION: 'v2.15.0'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

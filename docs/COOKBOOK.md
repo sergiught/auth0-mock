@@ -316,7 +316,7 @@ Missing `realm` returns `400 invalid_request`.
 
 ## Stub an error response (400, 429, 500)
 
-The registration validator rejects bodies that violate the spec for the chosen status, but valid error shapes are fine.
+The status must be one the spec declares for the operation. Auth0's spec gives error statuses no body schema, so an error body is checked against Auth0's error envelope instead: `statusCode` (equal to the stub's status), `error` and `message` are required, `errorCode` is optional, and any other field is rejected so a typo like `mesage` fails at registration. An empty body is also accepted.
 
 ```bash
 # Force a 429 rate-limit on the next call to GET /api/v2/users/auth0|x
@@ -539,6 +539,34 @@ eviction (slow, and couples the test to the buffer's capacity) or over
 a full reset (which drops every other store and disconnects
 subscribers). Expiry touches the replay buffer only: subscribers that
 are already streaming keep receiving events.
+
+### Stub a failure the stream can't produce on its own
+
+Some Auth0 failures — the concurrent-connection limit, a rate limit, a
+5xx — have no natural trigger in the mock. Register an error stub for
+`GET /api/v2/events` and matching subscribe requests get it instead of
+a stream:
+
+```go
+_, err := c.ExpectGet("/api/v2/events").
+    Respond(http.StatusForbidden).
+    JSON(map[string]any{
+        "statusCode": 403,
+        "error":      "Forbidden",
+        "message":    "Maximum concurrent event stream connections reached. Please close existing connections.",
+    }).
+    Apply(ctx)
+require.NoError(t, err)
+```
+
+Add a matcher to fail only some subscribers — `WithHeader("Last-Event-ID", "42")`
+returns the stub to a consumer resuming from `42`, while everyone else
+still gets the live stream. Stubs are checked before the stream's own
+resume checks, so one can stand in for a real `410`.
+
+Only error statuses (`>= 400`) are accepted for this route. A `2xx` stub
+is refused at registration: the success answer is the live stream, fed
+by `Events.Push` / `POST /admin0/events`.
 
 **Common errors** the mock returns:
 

@@ -409,6 +409,9 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	sc.Step(`^I subscribe to /api/v2/events without a bearer$`, func() error {
 		return subscribeEvents(c, "", "", false, false)
 	})
+	sc.Step(`^I attempt to subscribe to /api/v2/events$`, func() error {
+		return subscribeEvents(c, "", "", true, false)
+	})
 	sc.Step(`^I attempt to subscribe to /api/v2/events with query "([^"]+)"$`, func(query string) error {
 		return subscribeEvents(c, query, "", true, false)
 	})

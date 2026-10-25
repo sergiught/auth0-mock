@@ -266,3 +266,37 @@ Feature: GET /api/v2/events Server-Sent Events
     # resume from the newest entry replays nothing regardless.
     When I subscribe to /api/v2/events with query "?from=0"
     Then the SSE stream delivers an event with id "1" within 3s
+
+  # Error stubs let a consumer test its handling of failures the mock
+  # can't otherwise produce, such as Auth0's connection limit.
+  Scenario: A registered error stub answers in place of the stream
+    Given I register an expectation for "GET /api/v2/events" with response:
+      """
+      {"status":403,"body":{"statusCode":403,"error":"Forbidden","message":"Maximum concurrent event stream connections reached. Please close existing connections."}}
+      """
+    When I attempt to subscribe to /api/v2/events
+    Then I receive a 403 response
+    And the response JSON path "message" equals "Maximum concurrent event stream connections reached. Please close existing connections."
+
+  Scenario: A request-matched error stub leaves other subscribers on the stream
+    Given I register the expectation "GET /api/v2/events":
+      """
+      {"request":{"headers":{"Last-Event-ID":"42"}},"response":{"status":410,"body":{"statusCode":410,"error":"Gone","message":"stubbed cursor loss","errorCode":"event_aged_out"}}}
+      """
+    When I attempt to subscribe to /api/v2/events with header "Last-Event-ID: 42"
+    Then I receive a 410 response
+    And the response JSON path "message" equals "stubbed cursor loss"
+    When I subscribe to /api/v2/events
+    And I push an event:
+      """
+      {"type":"user.created","offset":"0","event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_stubbedstream001","time":"2026-05-19T00:00:00Z","a0tenant":"t-1","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}}
+      """
+    Then the SSE stream delivers an event with id "0" within 3s
+
+  Scenario: A success stub for the stream is rejected
+    When I attempt to register an expectation for "GET /api/v2/events" with response:
+      """
+      {"status":200}
+      """
+    Then I receive a 400 response
+    And the response body contains "POST /admin0/events"

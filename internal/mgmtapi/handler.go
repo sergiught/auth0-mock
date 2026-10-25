@@ -60,6 +60,11 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"no registered match for "+r.Method+" "+r.URL.Path, "no_match")
 		return
 	}
+	h.respond(w, exp)
+}
+
+// respond writes a matched expectation's canned response.
+func (h *GenericHandler) respond(w http.ResponseWriter, exp *matches.Expectation) {
 	// 3. Defense-in-depth response validation.
 	if err := h.Validator.ValidateResponse(h.Op, exp.Response.Status, exp.Response.Headers, exp.Response.Body); err != nil {
 		h.Log.Error().
@@ -87,4 +92,29 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Str("op", h.Op.Op.OperationID).
 			Msg("write failed (client likely gone)")
 	}
+}
+
+// eventsHandler serves GET /events: a registered error stub when one
+// matches the request, otherwise the live SSE stream. Registration
+// refuses success stubs for this route, so a stub can only ever stand in
+// for a failure — the stream stays the one source of 200s.
+//
+// Stubs are looked up before stream runs its own resume checks, so a
+// stub can answer a request the stream would have accepted or refused
+// differently — e.g. a 410 matched on a Last-Event-ID header.
+type eventsHandler struct {
+	stubs  *GenericHandler
+	stream http.Handler
+}
+
+func (h *eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	exp := h.stubs.Store.Find(r.Method, r.URL.Path, h.stubs.Op.Template, matches.MatchableRequest{
+		Query:   r.URL.Query(),
+		Headers: r.Header,
+	})
+	if exp == nil {
+		h.stream.ServeHTTP(w, r)
+		return
+	}
+	h.stubs.respond(w, exp)
 }

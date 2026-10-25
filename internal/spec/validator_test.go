@@ -29,7 +29,8 @@ const minSpec = `{
           "200": {
             "description":"ok",
             "content":{"application/json":{"schema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}}}
-          }
+          },
+          "404": {"description":"not found"}
         }
       },
       "post": {
@@ -116,6 +117,46 @@ func TestValidator_ValidateRegistration_RejectsUndeclaredStatus(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"id": "abc"})
 	err = v.ValidateRegistration(getOp, 999, body)
 	assert.Error(t, err)
+}
+
+// Auth0's spec declares every error status without content, so an error
+// body is checked against Auth0's error envelope instead.
+func TestValidator_ValidateRegistration_ErrorEnvelope(t *testing.T) {
+	s, getOp, postOp := loadMinSpec(t)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{name: "empty body", body: ``},
+		{name: "full envelope", body: `{"statusCode":404,"error":"Not Found","message":"gone","errorCode":"inexistent_widget"}`},
+		{name: "errorCode optional", body: `{"statusCode":404,"error":"Not Found","message":"gone"}`},
+		{name: "statusCode mismatch", body: `{"statusCode":403,"error":"Forbidden","message":"no"}`, wantErr: "statusCode 403 does not match status 404"},
+		{name: "missing message", body: `{"statusCode":404,"error":"Not Found"}`, wantErr: "message"},
+		{name: "unknown field", body: `{"statusCode":404,"error":"Not Found","mesage":"typo"}`, wantErr: "mesage"},
+		{name: "statusCode not integer", body: `{"statusCode":"404","error":"Not Found","message":"gone"}`, wantErr: "statusCode"},
+		{name: "not an object", body: `["gone"]`, wantErr: "object"},
+		{name: "not JSON", body: `gone`, wantErr: "body json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := v.ValidateRegistration(getOp, 404, json.RawMessage(tc.body))
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), tc.wantErr)
+			}
+		})
+	}
+
+	// A success status declared without content still takes no body:
+	// the envelope is for errors only.
+	err = v.ValidateRegistration(postOp, 201, json.RawMessage(`{"statusCode":201,"error":"Created","message":"ok"}`))
+	assert.ErrorContains(t, err, "declares no body")
 }
 
 func TestValidatorResolve(t *testing.T) {

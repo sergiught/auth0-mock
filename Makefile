@@ -81,8 +81,8 @@ define tool-install
 	@find $(BINARIES_DIR) -maxdepth 1 \( -name '$(1)' -o -name '$(1)-*' \) ! -name '$(notdir $@)' -exec rm -f {} +
 endef
 
-# v2.13.1
-GOLANGCI_LINT_PIN := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@6d2288e072e6f9c9bca28180cae9ce58a049c912
+# v2.15.0
+GOLANGCI_LINT_PIN := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@25c5369a93aacb8cccea0d46e1569ca4a194564d
 GOLANGCI_LINT := $(BINARIES_DIR)/golangci-lint-$(call tool-stamp,$(GOLANGCI_LINT_PIN))
 $(GOLANGCI_LINT):
 	$(call tool-install,golangci-lint,$(GOLANGCI_LINT_PIN))

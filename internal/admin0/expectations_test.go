@@ -41,6 +41,15 @@ const tinySpec = `{
         },
         "responses":{"201":{"description":"created","content":{"application/json":{"schema":{"type":"object","properties":{"id":{"type":"string"}}}}}}}
       }
+    },
+    "/events":{
+      "get":{
+        "operationId":"subscribe_events",
+        "responses":{
+          "200":{"description":"stream","content":{"text/event-stream":{"schema":{"type":"object"}}}},
+          "403":{"description":"forbidden"}
+        }
+      }
     }
   }
 }`
@@ -154,6 +163,7 @@ func TestPostExpectation_Rejects(t *testing.T) {
 		{"request matcher mistyped field", `{"method":"POST","path":"/api/v2/widgets","request":{"body":{"size":"big"}},"response":{"status":201,"body":{"id":"x"}}}`, "invalid_request_match", 400},
 		{"request matcher unknown query param", `{"method":"GET","path":"/api/v2/widgets/abc","request":{"query":{"nope":"x"}},"response":{"status":200,"body":{"id":"x"}}}`, "invalid_request_match", 400},
 		{"request body matcher on bodyless op", `{"method":"GET","path":"/api/v2/widgets/abc","request":{"body":{"id":"x"}},"response":{"status":200,"body":{"id":"x"}}}`, "invalid_request_match", 400},
+		{"success stub on event stream", `{"method":"GET","path":"/api/v2/events","response":{"status":200}}`, "POST /admin0/events", 400},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -162,6 +172,16 @@ func TestPostExpectation_Rejects(t *testing.T) {
 			assert.Contains(t, rec.Body.String(), c.wantCode)
 		})
 	}
+}
+
+func TestPostExpectation_EventStreamAcceptsErrorStub(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/events","response":{"status":403,"body":{"statusCode":403,"error":"Forbidden","message":"Maximum concurrent event stream connections reached. Please close existing connections."}}}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	m := store.Find("GET", "/api/v2/events", "/api/v2/events", matches.MatchableRequest{})
+	require.NotNil(t, m)
+	assert.Equal(t, 403, m.Response.Status)
 }
 
 func TestPostExpectation_RequestMatcherAcceptsValidPartial(t *testing.T) {

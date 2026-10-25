@@ -54,6 +54,15 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 			"no Management API operation for "+p.Method+" "+p.Path, "unknown_operation")
 		return
 	}
+	// The event stream's success answer is the live stream itself, fed by
+	// POST /admin0/events. A canned 2xx would silently replace it with a
+	// static body, so only error stubs may stand in for it.
+	if op.Op.OperationID == spec.SubscribeEventsOperationID && p.Response.Status < http.StatusBadRequest {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"GET /api/v2/events accepts only error stubs (status >= 400); push events with POST /admin0/events instead",
+			"invalid_match")
+		return
+	}
 	if err := h.Validator.ValidateRegistration(op, p.Response.Status, p.Response.Body); err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 			"registered response violates schema for status "+strconv.Itoa(p.Response.Status)+": "+err.Error(),

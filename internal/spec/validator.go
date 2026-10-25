@@ -107,10 +107,14 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 	if resp == nil || resp.Value == nil {
 		return fmt.Errorf("status %d not declared for operation %s", status, op.Op.OperationID)
 	}
-	// Status with no content is fine only if body is empty.
+	// Status with no content is fine only if body is empty — except an
+	// error status, which may carry Auth0's error envelope.
 	if len(resp.Value.Content) == 0 {
 		if len(bytes.TrimSpace(body)) == 0 {
 			return nil
+		}
+		if status >= http.StatusBadRequest {
+			return validateErrorEnvelope(status, body)
 		}
 		return fmt.Errorf("status %d declares no body but a body was provided", status)
 	}
@@ -125,6 +129,37 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 	}
 	if err := media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()); err != nil {
 		return fmt.Errorf("body schema: %w", err)
+	}
+	return nil
+}
+
+// errorEnvelopeSchema is the body Auth0 sends with every Management API
+// error. The embedded spec declares error statuses without content, so
+// a registered error body is checked against this instead. Unknown
+// fields are refused so a misspelt "mesage" fails at registration
+// rather than reaching the consumer as an envelope with no message.
+var errorEnvelopeSchema = openapi3.NewObjectSchema().
+	WithProperty("statusCode", openapi3.NewIntegerSchema()).
+	WithProperty("error", openapi3.NewStringSchema()).
+	WithProperty("message", openapi3.NewStringSchema()).
+	WithProperty("errorCode", openapi3.NewStringSchema()).
+	WithRequired([]string{"statusCode", "error", "message"}).
+	WithoutAdditionalProperties()
+
+// validateErrorEnvelope checks body against errorEnvelopeSchema and
+// that its statusCode names the status it is served with — a 403 stub
+// whose body says 404 would hand the consumer two answers.
+func validateErrorEnvelope(status int, body json.RawMessage) error {
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return fmt.Errorf("body json: %w", err)
+	}
+	if err := errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()); err != nil {
+		return fmt.Errorf("error envelope: %w", err)
+	}
+	// The schema has proven an object with an integer statusCode.
+	if got := decoded.(map[string]any)["statusCode"].(float64); got != float64(status) {
+		return fmt.Errorf("error envelope: statusCode %v does not match status %d", got, status)
 	}
 	return nil
 }
