@@ -1,11 +1,12 @@
-// Package pkce implements the in-memory store of PKCE challenges that link a
-// /authorize redirect to its later /oauth/token exchange.
+// Package pkce implements the in-memory store of per-code authorization state
+// that links a /authorize redirect to its later /oauth/token exchange.
 //
-// Auth0 (and OAuth 2.1 generally) requires SPAs and native clients to send a
-// code_challenge + code_challenge_method on /authorize and the matching
-// code_verifier on /oauth/token. The server stores the challenge keyed by the
-// generated code; when the client exchanges that code it must present a
-// verifier that hashes back to the stored challenge.
+// Every code issued by /authorize gets an Entry carrying the nonce and the
+// authorization time, echoed into the id_token. When the client also sent a
+// PKCE code_challenge + code_challenge_method (required by Auth0 and OAuth 2.1
+// for SPAs and native clients), the Entry carries the challenge too, and the
+// matching code_verifier must be presented on /oauth/token: the verifier must
+// hash back to the stored challenge.
 package pkce
 
 import (
@@ -30,16 +31,23 @@ const (
 // becomes unredeemable.
 const DefaultTTL = 10 * time.Minute
 
-// Entry is the data stashed at /authorize and consulted at /oauth/token.
+// Entry is the per-code authorization state stashed at /authorize and
+// consulted at /oauth/token. Challenge and Method are set only when the client
+// used PKCE; Nonce and AuthTime feed the id_token.
 type Entry struct {
 	Challenge string
 	Method    Method
 	ClientID  string
 	Redirect  string
+	// Nonce is the /authorize nonce, echoed into the id_token. May be empty.
+	Nonce string
+	// AuthTime is when the code was issued, stamped by Store.Put from the
+	// store clock. It becomes the id_token auth_time claim.
+	AuthTime  time.Time
 	expiresAt time.Time
 }
 
-// Store maps the random code returned by /authorize to its PKCE Entry.
+// Store maps the random code returned by /authorize to its authorization Entry.
 // Entries expire after DefaultTTL. Safe for concurrent use.
 type Store struct {
 	mu      sync.Mutex
@@ -81,7 +89,9 @@ func (s *Store) Put(code string, e Entry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweepLocked()
-	e.expiresAt = s.now().Add(s.ttl)
+	now := s.now()
+	e.AuthTime = now
+	e.expiresAt = now.Add(s.ttl)
 	s.entries[code] = e
 }
 

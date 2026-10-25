@@ -227,7 +227,7 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 | `client_credentials` | M2M flow, returns `access_token` only |
 | `password` | Returns access + id + refresh; gates on the MFA flag |
 | `refresh_token` | New `access_token`; no refresh state tracked |
-| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize` |
+| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp` |
 | `http://auth0.com/oauth/grant-type/password-realm` | Auth0 Native SDKs; same as password + `realm` field threaded into claims |
 | `http://auth0.com/oauth/grant-type/passwordless/otp` | Mints if `otp=000000` |
 | `http://auth0.com/oauth/grant-type/mfa-otp` | Step 2 of MFA dance; accepts `otp=123456` |

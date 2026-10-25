@@ -384,20 +384,23 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
-	// PKCE verification. The matrix:
-	//   - entry stored + verifier supplied  → must match (existing-correct path)
-	//   - entry stored + no verifier        → entry.Verify("") returns
+	// PKCE verification. The matrix ("stored" means an entry with a challenge):
+	//   - challenge stored + verifier supplied → must match (existing-correct path)
+	//   - challenge stored + no verifier       → entry.Verify("") returns
 	//     "missing code_verifier" → 400
-	//   - no entry     + verifier supplied  → client thinks PKCE is in play
-	//     but the server has no challenge stored (expired, swept, or the
-	//     /authorize step was never paired with a challenge). Failing closed
+	//   - no challenge stored + verifier supplied → client thinks PKCE is in
+	//     play but the server has no challenge (expired, swept, never sent at
+	//     /authorize, or the code was issued without PKCE). Failing closed
 	//     here closes a real bypass: a stolen `code` from a non-PKCE flow
 	//     would otherwise be redeemable.
-	//   - no entry     + no verifier        → legitimate non-PKCE flow → pass.
+	//   - no challenge stored + no verifier       → legitimate non-PKCE flow → pass.
+	var entry pkce.Entry
+	var hasEntry bool
 	if h.PKCE != nil && req.Code != "" {
-		entry, hasEntry := h.PKCE.Consume(req.Code)
-		if hasEntry || req.CodeVerifier != "" {
-			if !hasEntry {
+		entry, hasEntry = h.PKCE.Consume(req.Code)
+		hasChallenge := hasEntry && entry.Challenge != ""
+		if hasChallenge || req.CodeVerifier != "" {
+			if !hasChallenge {
 				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
 					"PKCE verification failed: no stored challenge for this authorization_code (expired or never issued)")
 				return
@@ -421,11 +424,23 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	idExtra := map[string]any{
+		"email": subject + "@example.com",
+		"azp":   req.ClientID,
+	}
+	if hasEntry {
+		idExtra["auth_time"] = entry.AuthTime.Unix()
+		if entry.Nonce != "" {
+			idExtra["nonce"] = entry.Nonce
+		}
+	} else {
+		idExtra["auth_time"] = h.Keys.Cfg().Now().Unix()
+	}
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra:    map[string]any{"email": subject + "@example.com"},
+		Extra:    idExtra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())

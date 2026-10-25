@@ -325,6 +325,27 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I start /authorize with nonce "([^"]+)"$`, func(nonce string) error {
+		q := url.Values{}
+		q.Set("client_id", "demo")
+		q.Set("redirect_uri", "https://app/cb")
+		q.Set("response_type", "code")
+		q.Set("nonce", nonce)
+		c.Do("GET", "/authorize?"+q.Encode(), "", false)
+		return nil
+	})
+
+	sc.Step(`^the id_token claim "([^"]+)" equals "([^"]*)"$`, func(claim, want string) error {
+		got, err := claimValueFromToken(c.LastBody, "id_token", claim)
+		if err != nil {
+			return err
+		}
+		if got.String() != want {
+			return fmt.Errorf("id_token claim %q: got %q, want %q", claim, got.String(), want)
+		}
+		return nil
+	})
+
 	sc.Step(`^I exchange the code with verifier "([^"]+)"$`, func(verifier string) error {
 		code, err := codeFromLastLocation(c)
 		if err != nil {
@@ -672,13 +693,20 @@ func pkceS256Challenge(verifier string) string {
 // the given JSON response body and returns the gjson Result for the named
 // claim path.
 func claimValueFromAccessToken(body []byte, claim string) (gjson.Result, error) {
-	tok := gjson.GetBytes(body, "access_token").String()
+	return claimValueFromToken(body, "access_token", claim)
+}
+
+// claimValueFromToken decodes the JWT payload from the named token field
+// (access_token or id_token) of the given JSON response body and returns the
+// gjson Result for claim.
+func claimValueFromToken(body []byte, field, claim string) (gjson.Result, error) {
+	tok := gjson.GetBytes(body, field).String()
 	if tok == "" {
-		return gjson.Result{}, fmt.Errorf("no access_token in response")
+		return gjson.Result{}, fmt.Errorf("no %s in response", field)
 	}
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 {
-		return gjson.Result{}, fmt.Errorf("access_token is not a JWT")
+		return gjson.Result{}, fmt.Errorf("%s is not a JWT", field)
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {

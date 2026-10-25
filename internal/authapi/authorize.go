@@ -78,20 +78,25 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("code_challenge must be 43..128 chars per RFC 7636 §4.1 (got %d)", n))
 			return
 		}
-		// Stash the validated challenge so /oauth/token can verify the
-		// verifier later. Only meaningful for the "code" response type.
-		if h.PKCE != nil && issuedCode != "" {
-			method := pkce.Method(q.Get("code_challenge_method"))
-			if method == "" {
-				method = pkce.MethodPlain // RFC 7636 default when method omitted.
-			}
-			h.PKCE.Put(issuedCode, pkce.Entry{
-				Challenge: challenge,
-				Method:    method,
-				ClientID:  q.Get("client_id"),
-				Redirect:  redirect,
-			})
+	}
+
+	// Record per-code authorization state (nonce, auth time and, when sent,
+	// the validated PKCE challenge) for /oauth/token. Only meaningful for the
+	// "code" response type.
+	if h.PKCE != nil && issuedCode != "" {
+		entry := pkce.Entry{
+			ClientID: q.Get("client_id"),
+			Redirect: redirect,
+			Nonce:    q.Get("nonce"),
 		}
+		if challenge := q.Get("code_challenge"); challenge != "" {
+			entry.Challenge = challenge
+			entry.Method = pkce.Method(q.Get("code_challenge_method"))
+			if entry.Method == "" {
+				entry.Method = pkce.MethodPlain // RFC 7636 default when method omitted.
+			}
+		}
+		h.PKCE.Put(issuedCode, entry)
 	}
 
 	w.Header().Set("Location", u.String())
