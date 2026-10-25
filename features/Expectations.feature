@@ -43,6 +43,26 @@ Feature: Expectation registration and lookup
       """
     Then I receive a 400 response
 
+  Scenario: An error expectation carries Auth0's error envelope
+    Given the mock is running
+    And I have a valid bearer token
+    And I register an expectation for "GET /api/v2/users/auth0|missing" with response:
+      """
+      {"status":404,"body":{"statusCode":404,"error":"Not Found","message":"The user does not exist.","errorCode":"inexistent_user"}}
+      """
+    When I send "GET /api/v2/users/auth0|missing" with a valid bearer
+    Then I receive a 404 response
+    And the response JSON path "errorCode" equals "inexistent_user"
+
+  Scenario: An error body that isn't Auth0's error envelope is rejected
+    Given the mock is running
+    When I attempt to register an expectation for "GET /api/v2/users/auth0|typo" with response:
+      """
+      {"status":404,"body":{"statusCode":404,"error":"Not Found","mesage":"typo"}}
+      """
+    Then I receive a 400 response
+    And the response body contains "mesage"
+
   Scenario: Expectation with missing status field is rejected
     Given the mock is running
     When I attempt to register an expectation for "GET /api/v2/users/auth0|nostatus" with response:

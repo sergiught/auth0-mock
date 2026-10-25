@@ -7,6 +7,10 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+// SubscribeEventsOperationID names GET /events, the one operation served
+// by the SSE hub rather than the generic stub-driven handler.
+const SubscribeEventsOperationID = "subscribe_events"
+
 // Operation is one (method, path, openapi3.Operation) triple from the spec.
 type Operation struct {
 	Method   string // Upper-case HTTP verb, e.g. "GET".
