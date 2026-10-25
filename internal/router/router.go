@@ -90,9 +90,11 @@ func New(d Deps) (http.Handler, error) {
 		d.Journal = journal.New(0)
 	}
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Recovery(d.Log))
 	r.Use(middleware.MaxBodyBytes(d.MaxRequestBodyBytes))
+	// Recovery sits inside the journal so a recovered panic's 500 is
+	// recorded too.
 	r.Use(d.Journal.Middleware)
+	r.Use(middleware.Recovery(d.Log))
 	// DebugDump and Logging are mutually exclusive: when DEBUG is on the
 	// per-request summary line is redundant noise (DebugDump's `←` line
 	// already carries method, path, status, body_bytes, and latency),
