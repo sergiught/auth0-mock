@@ -92,7 +92,7 @@ func (rm *RequestMatcher) explainBody(gotBody []byte) []Difference {
 		return nil
 	}
 	if len(gotBody) == 0 {
-		return []Difference{{Field: "body", Reason: "missing", Want: body}}
+		return []Difference{{Field: "body", Reason: "missing", Want: rawJSON(json.RawMessage(body))}}
 	}
 	var want, got any
 	if err := json.Unmarshal(body, &want); err != nil {

@@ -91,6 +91,18 @@ func TestExplain_CapsLargeValues(t *testing.T) {
 	assert.Equal(t, maxDiffValue+len("…"), len(s))
 }
 
+func TestExplain_CapsLargeMissingBody(t *testing.T) {
+	t.Parallel()
+	rm := &RequestMatcher{Body: raw(`{"k":"` + strings.Repeat("x", 5000) + `"}`)}
+	diffs := rm.Explain(MatchableRequest{})
+	require.Len(t, diffs, 1)
+	assert.Equal(t, "missing", diffs[0].Reason)
+	var s string
+	require.NoError(t, json.Unmarshal(diffs[0].Want, &s))
+	assert.True(t, strings.HasSuffix(s, "…"))
+	assert.Equal(t, maxDiffValue+len("…"), len(s))
+}
+
 func TestExplain_BodyInvalidJSON(t *testing.T) {
 	t.Parallel()
 	rm := &RequestMatcher{Body: raw(`{"a":1}`)}
