@@ -78,7 +78,7 @@ type fakeT struct {
 	testing.TB
 	fatalCalled  atomic.Bool
 	fatalMessage string
-	fatalText    string // fully formatted message
+	fatalText    string // Fully formatted message.
 	cleanups     []func()
 }
 
