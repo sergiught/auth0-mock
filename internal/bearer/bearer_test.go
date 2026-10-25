@@ -144,3 +144,33 @@ func TestMiddleware_RejectsAfterClockAdvance(t *testing.T) {
 	assert.Equal(t, 401, w.Code)
 	assert.False(t, called, "middleware must reject expired token even though sig is valid")
 }
+
+func TestMiddleware_SchemeCaseInsensitive(t *testing.T) {
+	t.Parallel()
+	ks := newKS(t)
+	tok, err := ks.Mint(jwks.MintOpts{Subject: "abc@clients", Audience: []string{"a"}, TTL: time.Hour})
+	require.NoError(t, err)
+
+	for _, hdr := range []string{"bearer " + tok, "BEARER " + tok, "Bearer   " + tok + "  "} {
+		called := false
+		h := Middleware(ks, "")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.Header.Set("Authorization", hdr)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		assert.True(t, called, hdr)
+	}
+}
+
+func TestMiddleware_NonBearerOrEmptyToken_MissingBearer(t *testing.T) {
+	t.Parallel()
+	ks := newKS(t)
+	for _, hdr := range []string{"Basic xyz", "Bearer", "Bearer   "} {
+		h := Middleware(ks, "")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.Header.Set("Authorization", hdr)
+		h.ServeHTTP(w, req)
+		assert.Equal(t, 401, w.Code, hdr)
+		assert.Contains(t, w.Body.String(), "missing_bearer", hdr)
+	}
+}

@@ -251,3 +251,29 @@ func TestRevoke_AlwaysReturns200(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("POST", "/oauth/revoke", nil))
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestUserinfo_SchemeCaseInsensitive(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	tok, err := ks.Mint(jwks.MintOpts{Subject: "auth0|123", Audience: []string{"a"}, TTL: time.Hour})
+	require.NoError(t, err)
+
+	for _, hdr := range []string{"bearer " + tok, "BEARER " + tok} {
+		req := httptest.NewRequest("GET", "/userinfo", nil)
+		req.Header.Set("Authorization", hdr)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code, hdr)
+	}
+}
+
+func TestUserinfo_NonBearerOrEmptyToken_MissingBearer(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	for _, hdr := range []string{"Basic xyz", "Bearer", "Bearer  "} {
+		req := httptest.NewRequest("GET", "/userinfo", nil)
+		req.Header.Set("Authorization", hdr)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnauthorized, w.Code, hdr)
+		assert.Contains(t, w.Body.String(), "missing bearer token", hdr)
+	}
+}

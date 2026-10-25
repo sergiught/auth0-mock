@@ -21,6 +21,17 @@ func ClaimsFromContext(ctx context.Context) *jwks.Claims {
 	return nil
 }
 
+// Token extracts the token from an `Authorization: Bearer <token>` header
+// value. The scheme is case-insensitive; an empty token counts as missing.
+func Token(header string) (string, bool) {
+	scheme, token, ok := strings.Cut(strings.TrimSpace(header), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
+}
+
 // Middleware enforces a verifiable bearer token on every wrapped handler.
 // When requireAudience is non-empty the token's `aud` claim must contain that
 // value (matches Auth0's tenant-API-audience binding). Empty preserves the
@@ -30,7 +41,7 @@ func Middleware(ks *jwks.KeySet, requireAudience string) func(http.Handler) http
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
-			token, ok := strings.CutPrefix(h, "Bearer ")
+			token, ok := Token(h)
 			if !ok {
 				httperr.WriteMgmt(w, http.StatusUnauthorized, "Unauthorized",
 					"missing bearer token", "missing_bearer")

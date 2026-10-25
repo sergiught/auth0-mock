@@ -3,10 +3,10 @@ package authapi
 import (
 	"maps"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/render"
 
+	"github.com/sergiught/auth0-mock/internal/bearer"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 )
@@ -18,7 +18,7 @@ type UserInfoHandler struct {
 
 func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hdr := r.Header.Get("Authorization")
-	token, ok := strings.CutPrefix(hdr, "Bearer ")
+	token, ok := bearer.Token(hdr)
 	if !ok {
 		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", "missing bearer token")
 		return
