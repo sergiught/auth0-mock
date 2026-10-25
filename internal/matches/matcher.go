@@ -28,40 +28,16 @@ func (rm *RequestMatcher) IsEmpty() bool {
 		(len(body) == 0 || string(body) == "null")
 }
 
-// Matches reports whether req satisfies the matcher. A nil matcher (catch-all)
-// always matches. Query and header keys are subset-matched (every matcher key
-// must be present with an equal value; extras are allowed); the body is
-// subset-matched via subsetMatch.
+// Matches reports whether req satisfies matcher, i.e. Explain finds no
+// differences. A nil matcher (catch-all) always matches. Query and header
+// keys are subset-matched (every matcher key must be present with an equal
+// value; extras allowed); body is subset-matched recursively.
 //
 // Header lookup is case-insensitive — http.Header.Get canonicalises the key
-// against the canonical MIME header form, so a matcher entry "X-Tenant: acme"
+// against the canonical MIME header form, so matcher entry "X-Tenant: acme"
 // matches an incoming header named "x-tenant" or "X-TENANT".
 func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
-	if rm == nil {
-		return true
-	}
-	for k, v := range rm.Query {
-		if req.Query.Get(k) != v {
-			return false
-		}
-	}
-	for k, v := range rm.Headers {
-		if req.Headers.Get(k) != v {
-			return false
-		}
-	}
-	body := bytes.TrimSpace(rm.Body)
-	if len(body) == 0 || string(body) == "null" {
-		return true
-	}
-	var want, got any
-	if err := json.Unmarshal(body, &want); err != nil {
-		return false
-	}
-	if err := json.Unmarshal(req.Body, &got); err != nil {
-		return false
-	}
-	return subsetMatch(want, got)
+	return len(rm.Explain(req)) == 0
 }
 
 // subsetMatch reports whether want is a recursive subset of got: every object

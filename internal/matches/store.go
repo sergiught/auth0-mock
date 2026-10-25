@@ -2,6 +2,7 @@ package matches
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -225,4 +226,58 @@ func (s *Store) ResetAll() {
 	s.exact = make(map[key][]Expectation)
 	s.template = make(map[key][]Expectation)
 	s.hits = make(map[string]*atomic.Int64)
+}
+
+// maxNearMisses caps how many near misses NearMisses returns.
+const maxNearMisses = 3
+
+// NearMisses explains why req matched no stub: it returns up to three
+// stubs on the same method and operation that did not match, fewest
+// differences first, then newest first. Candidates are template stubs on
+// opTemplate plus exact stubs on any concrete path that templateOf maps to
+// opTemplate; an exact stub on a different concrete path carries a leading
+// "path" difference. Stubs with no differences are skipped.
+func (s *Store) NearMisses(method, concretePath, opTemplate string, req MatchableRequest,
+	templateOf func(method, path string) string) []NearMiss {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Collected oldest to newest: the template bucket first, then exact.
+	var out []NearMiss
+	add := func(e Expectation, extra []Difference) {
+		diffs := slices.Concat(extra, e.Request.Explain(req))
+		if len(diffs) == 0 {
+			return
+		}
+		out = append(out, NearMiss{ExpectationID: e.ID, Method: e.Method, Path: e.Path, Differences: diffs})
+	}
+	for _, e := range s.template[key{Method: method, Path: opTemplate}] {
+		add(e, nil)
+	}
+	// Map order is random; sort exact keys so ties are deterministic.
+	exactKeys := slices.SortedFunc(maps.Keys(s.exact), func(a, b key) int { return cmp.Compare(a.Path, b.Path) })
+	for _, k := range exactKeys {
+		list := s.exact[k]
+		if k.Method != method || templateOf(method, k.Path) != opTemplate {
+			continue
+		}
+		var extra []Difference
+		if k.Path != concretePath {
+			extra = []Difference{{Field: "path", Reason: "mismatch", Want: rawString(k.Path), Got: rawString(concretePath)}}
+		}
+		for _, e := range list {
+			add(e, extra)
+		}
+	}
+
+	// Reverse so newest comes first, then a stable sort keeps that order
+	// within equal difference counts.
+	slices.Reverse(out)
+	slices.SortStableFunc(out, func(a, b NearMiss) int {
+		return cmp.Compare(len(a.Differences), len(b.Differences))
+	})
+	if len(out) > maxNearMisses {
+		out = out[:maxNearMisses]
+	}
+	return out
 }
