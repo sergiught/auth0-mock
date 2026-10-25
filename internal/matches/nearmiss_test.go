@@ -219,6 +219,21 @@ func TestNearMisses_RankingAndCap(t *testing.T) {
 		[]string{got[0].ExpectationID, got[1].ExpectationID, got[2].ExpectationID})
 }
 
+func TestNearMisses_TiesAreNewestFirstAcrossBuckets(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	const tpl, path = "/api/v2/users/{id}", "/api/v2/users/123"
+	s.Put(queryStub(path, KindExact, "GET", "a"))
+	exactB := s.Put(queryStub(path, KindExact, "GET", "b"))
+	exactC := s.Put(queryStub(path, KindExact, "GET", "c"))
+	newest := s.Put(queryStub(tpl, KindTemplate, "GET", "d"))
+
+	got := s.NearMisses("GET", path, tpl, MatchableRequest{}, tmplOf)
+	require.Len(t, got, 3)
+	assert.Equal(t, []string{newest.ID, exactC.ID, exactB.ID},
+		[]string{got[0].ExpectationID, got[1].ExpectationID, got[2].ExpectationID})
+}
+
 func TestNearMisses_ExactStubOnOtherConcretePath(t *testing.T) {
 	t.Parallel()
 	s := NewStore()

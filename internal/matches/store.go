@@ -2,7 +2,6 @@ package matches
 
 import (
 	"cmp"
-	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -24,6 +23,7 @@ type Store struct {
 	exact    map[key][]Expectation
 	template map[key][]Expectation
 	hits     map[string]*atomic.Int64
+	seq      uint64
 }
 
 type key struct {
@@ -64,6 +64,8 @@ func (s *Store) Put(exp Expectation) Expectation {
 	exp.ID = uuid.NewString()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.seq++
+	exp.seq = s.seq
 	m := s.bucket(exp.Kind)
 	k := key{Method: exp.Method, Path: exp.Path}
 	var kept []Expectation
@@ -242,22 +244,25 @@ func (s *Store) NearMisses(method, concretePath, opTemplate string, req Matchabl
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Collected oldest to newest: the template bucket first, then exact.
-	var out []NearMiss
+	type candidate struct {
+		nm  NearMiss
+		seq uint64
+	}
+	var cands []candidate
 	add := func(e Expectation, extra []Difference) {
 		diffs := slices.Concat(extra, e.Request.Explain(req))
 		if len(diffs) == 0 {
 			return
 		}
-		out = append(out, NearMiss{ExpectationID: e.ID, Method: e.Method, Path: e.Path, Differences: diffs})
+		cands = append(cands, candidate{
+			nm:  NearMiss{ExpectationID: e.ID, Method: e.Method, Path: e.Path, Differences: diffs},
+			seq: e.seq,
+		})
 	}
 	for _, e := range s.template[key{Method: method, Path: opTemplate}] {
 		add(e, nil)
 	}
-	// Map order is random; sort exact keys so ties are deterministic.
-	exactKeys := slices.SortedFunc(maps.Keys(s.exact), func(a, b key) int { return cmp.Compare(a.Path, b.Path) })
-	for _, k := range exactKeys {
-		list := s.exact[k]
+	for k, list := range s.exact {
 		if k.Method != method || templateOf(method, k.Path) != opTemplate {
 			continue
 		}
@@ -270,14 +275,12 @@ func (s *Store) NearMisses(method, concretePath, opTemplate string, req Matchabl
 		}
 	}
 
-	// Reverse so newest comes first, then a stable sort keeps that order
-	// within equal difference counts.
-	slices.Reverse(out)
-	slices.SortStableFunc(out, func(a, b NearMiss) int {
-		return cmp.Compare(len(a.Differences), len(b.Differences))
+	slices.SortFunc(cands, func(a, b candidate) int {
+		return cmp.Or(cmp.Compare(len(a.nm.Differences), len(b.nm.Differences)), cmp.Compare(b.seq, a.seq))
 	})
-	if len(out) > maxNearMisses {
-		out = out[:maxNearMisses]
+	var out []NearMiss
+	for _, c := range cands[:min(len(cands), maxNearMisses)] {
+		out = append(out, c.nm)
 	}
 	return out
 }
