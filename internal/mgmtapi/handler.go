@@ -149,9 +149,43 @@ func (h *eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Headers: r.Header,
 	})
 	if exp == nil {
-		journal.MarkMatched(r.Context(), "")
-		h.stream.ServeHTTP(w, r)
+		h.stream.ServeHTTP(&markOn2xx{ResponseWriter: w, ctx: r.Context()}, r)
 		return
 	}
 	h.stubs.respond(r.Context(), w, exp)
 }
+
+// markOn2xx marks the request matched only when the stream answers 2xx, so
+// its own 4xx/410 refusals stay unmarked (recorded as rejected). The mark is
+// made before the first write is delegated because the journal commits on it.
+type markOn2xx struct {
+	http.ResponseWriter
+	ctx   context.Context
+	wrote bool
+}
+
+func (m *markOn2xx) WriteHeader(code int) {
+	if !m.wrote {
+		m.wrote = true
+		if code >= 200 && code < 300 {
+			journal.MarkMatched(m.ctx, "")
+		}
+	}
+	m.ResponseWriter.WriteHeader(code)
+}
+
+func (m *markOn2xx) Write(b []byte) (int, error) {
+	if !m.wrote {
+		m.WriteHeader(http.StatusOK)
+	}
+	return m.ResponseWriter.Write(b)
+}
+
+func (m *markOn2xx) Flush() {
+	if !m.wrote {
+		m.WriteHeader(http.StatusOK)
+	}
+	_ = http.NewResponseController(m.ResponseWriter).Flush()
+}
+
+func (m *markOn2xx) Unwrap() http.ResponseWriter { return m.ResponseWriter }

@@ -197,6 +197,21 @@ func TestJournal_SSEStreamRecordedWhileOpen(t *testing.T) {
 	assert.Equal(t, http.StatusOK, got[0].Status)
 }
 
+func TestJournal_SSERefusalRecordedAsRejected(t *testing.T) {
+	hub, err := events.NewHub(10, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
+	e := newJournalEnv(t, 10, hub.Handler())
+
+	w := e.do("GET", "/api/v2/events?from_timestamp=garbage", "", true)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	got := e.j.List(journal.Filter{})
+	require.Len(t, got, 1)
+	assert.Equal(t, http.StatusBadRequest, got[0].Status)
+	assert.Equal(t, journal.OutcomeRejected, got[0].Outcome)
+}
+
 func TestJournal_EventsErrorStubRecordedAsMatched(t *testing.T) {
 	hub, err := events.NewHub(10, nil)
 	require.NoError(t, err)

@@ -40,26 +40,6 @@ func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
 	return len(rm.Explain(req)) == 0
 }
 
-// subsetMatch reports whether want is a recursive subset of got: every object
-// key in want must be present in got with a subset-matching value; arrays and
-// scalars must be deeply equal.
-func subsetMatch(want, got any) bool {
-	if w, ok := want.(map[string]any); ok {
-		g, ok := got.(map[string]any)
-		if !ok {
-			return false
-		}
-		for k, wv := range w {
-			gv, ok := g[k]
-			if !ok || !subsetMatch(wv, gv) {
-				return false
-			}
-		}
-		return true
-	}
-	return reflect.DeepEqual(want, got)
-}
-
 // requestMatcherEqual reports whether two matchers are equivalent. Two nil
 // (catch-all) matchers are equal; otherwise the query and header maps must
 // be equal and the bodies must be semantically equal JSON.

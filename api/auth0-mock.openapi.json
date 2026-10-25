@@ -39111,7 +39111,7 @@
             "type": "array"
           },
           "operation": {
-            "description": "OpenAPI path template the call resolved to, or the raw path when none did.",
+            "description": "OpenAPI path template the call resolved to, empty when no operation route matched (unknown route, 405).",
             "example": "/api/v2/users/{id}",
             "type": "string"
           },
@@ -54664,7 +54664,7 @@
             "description": "Reset complete."
           }
         },
-        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events).",
+        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events, journal).",
         "tags": [
           "Expectations"
         ]

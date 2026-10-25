@@ -1,9 +1,11 @@
 package matches
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,6 +71,26 @@ func TestExplain_BodyRootTypeMismatch(t *testing.T) {
 		rm.Explain(MatchableRequest{Body: []byte(`[1]`)}))
 }
 
+func TestExplain_BodyMissing(t *testing.T) {
+	t.Parallel()
+	rm := &RequestMatcher{Body: raw(`{"a":1}`)}
+	assert.Equal(t, []Difference{{Field: "body", Reason: "missing", Want: raw(`{"a":1}`)}},
+		rm.Explain(MatchableRequest{}))
+}
+
+func TestExplain_CapsLargeValues(t *testing.T) {
+	t.Parallel()
+	rm := &RequestMatcher{Body: raw(`{"a":true}`)}
+	big := `{"a":{"k":"` + strings.Repeat("x", 5000) + `"}}`
+	diffs := rm.Explain(MatchableRequest{Body: []byte(big)})
+	require.Len(t, diffs, 1)
+	var s string
+	require.NoError(t, json.Unmarshal(diffs[0].Got, &s))
+	assert.LessOrEqual(t, len(diffs[0].Got), maxDiffValue+10)
+	assert.True(t, strings.HasSuffix(s, "…"))
+	assert.Equal(t, maxDiffValue+len("…"), len(s))
+}
+
 func TestExplain_BodyInvalidJSON(t *testing.T) {
 	t.Parallel()
 	rm := &RequestMatcher{Body: raw(`{"a":1}`)}
@@ -108,10 +130,48 @@ func TestExplain_AgreesWithMatches(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assert.Equal(t, c.rm.Matches(c.req), len(c.rm.Explain(c.req)) == 0)
+			want := oracleMatches(c.rm, c.req)
+			assert.Equal(t, want, c.rm.Matches(c.req))
+			assert.Equal(t, want, len(c.rm.Explain(c.req)) == 0)
 		})
 	}
 	assert.GreaterOrEqual(t, len(cases), 15)
+}
+
+// oracleMatches decides a match independently of Explain: subsetMatch for the
+// body, a direct first-value query check and a case-insensitive header check.
+func oracleMatches(rm *RequestMatcher, req MatchableRequest) bool {
+	if rm == nil {
+		return true
+	}
+	for k, want := range rm.Query {
+		if vs := req.Query[k]; (len(vs) == 0 && want != "") || (len(vs) > 0 && vs[0] != want) {
+			return false
+		}
+	}
+	for k, want := range rm.Headers {
+		if oracleHeader(req.Headers, k) != want {
+			return false
+		}
+	}
+	body := bytes.TrimSpace(rm.Body)
+	if len(body) == 0 || string(body) == "null" {
+		return true
+	}
+	var w, g any
+	if json.Unmarshal(body, &w) != nil || json.Unmarshal(req.Body, &g) != nil {
+		return false
+	}
+	return subsetMatch(w, g)
+}
+
+func oracleHeader(h http.Header, key string) string {
+	for name, vs := range h {
+		if strings.EqualFold(name, key) && len(vs) > 0 {
+			return vs[0]
+		}
+	}
+	return ""
 }
 
 func tmplOf(_, p string) string {

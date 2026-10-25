@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // RedactedValue replaces the value of sensitive headers wherever they are
@@ -22,7 +23,10 @@ func IsRedactedHeader(name string) bool {
 //
 // Field is "path", "query.<key>", "headers.<Canonical-Key>", "body" or a
 // dotted body path such as "body.a.b". Reason is "mismatch", "missing" or
-// "invalid_json". Got is omitted when Reason is "missing".
+// "invalid_json" (a non-empty request body that is not valid JSON). Got is
+// omitted when Reason is "missing"; a request with no body at all is
+// "missing" on Field "body". Want/Got values over maxDiffValue bytes are
+// truncated into a JSON string.
 type Difference struct {
 	Field  string          `json:"field"`
 	Reason string          `json:"reason"`
@@ -87,6 +91,9 @@ func (rm *RequestMatcher) explainBody(gotBody []byte) []Difference {
 	if len(body) == 0 || string(body) == "null" {
 		return nil
 	}
+	if len(gotBody) == 0 {
+		return []Difference{{Field: "body", Reason: "missing", Want: body}}
+	}
 	var want, got any
 	if err := json.Unmarshal(body, &want); err != nil {
 		return []Difference{{Field: "body", Reason: "invalid_json"}}
@@ -123,9 +130,22 @@ func explainValue(field string, want, got any) []Difference {
 	return diffs
 }
 
+// maxDiffValue caps a stored want/got value in bytes.
+const maxDiffValue = 1024
+
 func rawString(s string) json.RawMessage { return rawJSON(s) }
 
+// rawJSON marshals v. A value larger than maxDiffValue bytes is stored as a
+// JSON string holding the first maxDiffValue bytes of its JSON plus "…".
 func rawJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
+	if len(b) <= maxDiffValue {
+		return b
+	}
+	cut := maxDiffValue
+	for cut > 0 && !utf8.RuneStart(b[cut]) {
+		cut--
+	}
+	b, _ = json.Marshal(string(b[:cut]) + "…")
 	return b
 }

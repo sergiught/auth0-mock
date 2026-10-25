@@ -64,7 +64,7 @@ paths:
   /admin0/reset:
     post:
       tags: [Expectations]
-      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events).
+      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events, journal).
       responses:
         "204": { description: Reset complete. }
   /admin0/expectations:
@@ -632,7 +632,7 @@ components:
         path: { type: string, example: /api/v2/users/auth0|1 }
         operation:
           type: string
-          description: OpenAPI path template the call resolved to, or the raw path when none did.
+          description: OpenAPI path template the call resolved to, empty when no operation route matched (unknown route, 405).
           example: /api/v2/users/{id}
         query:
           type: object
