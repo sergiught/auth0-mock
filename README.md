@@ -584,13 +584,14 @@ What's covered:
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
 | `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | `ExpireEvents` / `ExpireEventsBefore(ctx, cursor)` age out replay cursors so a resume gets `410 event_aged_out`; top-level `Reset` drains subscribers + replay buffer | — |
+| `Journal` | `List(ctx, JournalFilter)`, `Unmatched(ctx, JournalFilter)`; `auth0mocktest.MustFindCall(t, c, method, path)` returns the newest matching call | — | `Clear` | — |
 | top-level | — | — | `Reset` — wipes every store (including the clock back to real mode) | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
 
 `Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.
 
 **Which helper?** Use `auth0mocktest.Bracket(t, c)` for every test that wants hit-count assertions — one line wires Reset on entry, Reset on exit, and Verify on exit in the correct LIFO order. Use `auth0mocktest.ResetOnCleanup(t, c)` when you only want isolation (no Times/AtLeast/AtMost constraints anywhere in the test).
 
-**When a stub doesn't match,** the mock returns `{"errorCode":"no_match"}` with HTTP 404 to the SUT. From your test, the quickest debug move is `exps, _ := c.Expectations.List(ctx); fmt.Println(exps)` to see what's actually registered, and `reg.Hits(ctx)` on a specific handle to see if it fired.
+**When a stub doesn't match,** the mock returns `{"errorCode":"no_match"}` with HTTP 404 to the SUT, and the 404 `message` names the fields where the closest stub differed. `c.Journal.Unmatched(ctx, auth0mock.JournalFilter{})` gives the full near misses (each stub's differing fields with wanted and received values), and `Verify` prints them automatically under any stub that was hit too few times. To assert on what the SUT actually sent, use `auth0mocktest.MustFindCall(t, c, "PATCH", "/api/v2/users/123")`; if nothing matches, it lists the recent calls of that method.
 
 What's NOT covered: the Auth0 APIs themselves (`/oauth/*`, `/api/v2/*`) — point your existing Auth0 SDK at the mock for those. The SDK only wraps the test-fixture-shaping surface.
 

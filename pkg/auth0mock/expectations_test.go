@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -688,4 +690,111 @@ func TestMustJSON_Happy(t *testing.T) {
 	t.Parallel()
 	got := auth0mock.MustJSON(map[string]any{"a": 1, "b": "two"})
 	assert.JSONEq(t, `{"a":1,"b":"two"}`, string(got))
+}
+
+// verifyJournalStub serves one registered expectation (id "e1", hits 0)
+// on the expectations endpoints and the given entries on
+// /admin0/journal/unmatched. JournalCalls counts journal fetches.
+func verifyJournalStub(t *testing.T, hits int64, journalStatus int, entries string, journalCalls *atomic.Int64) func(http.ResponseWriter, *http.Request) {
+	t.Helper()
+	add := listOrAddRespond(t, "e1", []auth0mock.Expectation{{ID: "e1", Method: "PATCH", Path: "/api/v2/users/{id}", Hits: hits}})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin0/journal/unmatched" {
+			add(w, r)
+			return
+		}
+		journalCalls.Add(1)
+		if journalStatus != http.StatusOK {
+			w.WriteHeader(journalStatus)
+			return
+		}
+		_, _ = w.Write([]byte(`{"entries":` + entries + `}`))
+	}
+}
+
+func nearMissEntry(path, expID string) string {
+	return `{"id":"j","receivedAt":"2026-10-25T13:04:05.123Z","method":"PATCH","path":"` + path +
+		`","status":404,"outcome":"no_match","nearMisses":[{"expectationId":"` + expID +
+		`","method":"PATCH","path":"/api/v2/users/{id}","differences":[{"field":"body.blocked","reason":"mismatch","want":true,"got":false}]}]}`
+}
+
+func addPatchStub(t *testing.T, c *auth0mock.Client) *auth0mock.RegisteredExpectation {
+	t.Helper()
+	re, err := c.Expectations.Add(t.Context(), auth0mock.Expectation{
+		Method: "PATCH", Path: "/api/v2/users/{id}", Response: auth0mock.ResponseDef{Status: 200},
+	})
+	require.NoError(t, err)
+	return re
+}
+
+func TestVerify_AppendsNearMisses(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	rec, c := newStub(t)
+	rec.respond = verifyJournalStub(t, 0, http.StatusOK, "["+nearMissEntry("/api/v2/users/124", "e1")+"]", &calls)
+	addPatchStub(t, c).Times(1)
+
+	err := c.Expectations.Verify(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "near miss: PATCH /api/v2/users/124 → 404 no_match at 13:04:05.123")
+	assert.Contains(t, err.Error(), "body.blocked: want true, got false")
+}
+
+func TestVerify_NearMissesSelectedByIDNotPath(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	rec, c := newStub(t)
+	rec.respond = verifyJournalStub(t, 0, http.StatusOK,
+		"["+nearMissEntry("/api/v2/users/124", "other")+"]", &calls)
+	addPatchStub(t, c).Times(1)
+
+	err := c.Expectations.Verify(t.Context())
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "near miss:")
+}
+
+func TestVerify_AtMostThreeNearMisses(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	var entries []string
+	for i := 1; i <= 5; i++ {
+		entries = append(entries, nearMissEntry(fmt.Sprintf("/api/v2/users/%d", i), "e1"))
+	}
+	rec, c := newStub(t)
+	rec.respond = verifyJournalStub(t, 0, http.StatusOK, "["+strings.Join(entries, ",")+"]", &calls)
+	addPatchStub(t, c).Times(1)
+
+	err := c.Expectations.Verify(t.Context())
+	require.Error(t, err)
+	assert.Equal(t, 3, strings.Count(err.Error(), "near miss:"))
+	// Newest first: entries are oldest first on the wire.
+	assert.Contains(t, err.Error(), "/api/v2/users/5 ")
+	assert.Contains(t, err.Error(), "/api/v2/users/3 ")
+	assert.NotContains(t, err.Error(), "/api/v2/users/2 ")
+}
+
+func TestVerify_NoNearMissFetchForTooMany(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	rec, c := newStub(t)
+	rec.respond = verifyJournalStub(t, 2, http.StatusOK, "[]", &calls)
+	addPatchStub(t, c).AtMost(1)
+
+	err := c.Expectations.Verify(t.Context())
+	require.Error(t, err)
+	assert.Zero(t, calls.Load(), "AtMost violations are never too few, so the journal must not be fetched")
+}
+
+func TestVerify_JournalFetchFailureKeepsOriginalError(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	rec, c := newStub(t)
+	rec.respond = verifyJournalStub(t, 0, http.StatusInternalServerError, "", &calls)
+	addPatchStub(t, c).Times(1)
+
+	err := c.Expectations.Verify(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected exactly 1, got 0")
+	assert.NotContains(t, err.Error(), "near miss")
+	assert.NotContains(t, err.Error(), "journal")
 }

@@ -31,6 +31,8 @@ package auth0mocktest
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/sergiught/auth0-mock/pkg/auth0mock"
@@ -159,4 +161,42 @@ func Bracket(t testing.TB, c *auth0mock.Client) {
 	t.Helper()
 	ResetOnCleanup(t, c)
 	t.Cleanup(func() { MustVerify(t, c) })
+}
+
+// MustFindCall returns the most recent recorded request matching
+// method and path (exact, as the SUT sent it), or t.Fatalf's listing
+// the newest same-method calls with their near misses so a wrong path
+// or body is visible at a glance. Use it to assert on what the SUT
+// actually sent:
+//
+//	call := auth0mocktest.MustFindCall(t, c, "PATCH", "/api/v2/users/123")
+func MustFindCall(t testing.TB, c *auth0mock.Client, method, path string) auth0mock.JournalEntry {
+	t.Helper()
+	ctx := context.Background()
+	entries, err := c.Journal.List(ctx, auth0mock.JournalFilter{Method: method, Path: path})
+	if err != nil {
+		t.Fatalf("auth0mocktest: list journal: %v", err)
+	}
+	if len(entries) > 0 {
+		return entries[len(entries)-1]
+	}
+	same, err := c.Journal.List(ctx, auth0mock.JournalFilter{Method: method})
+	if err != nil {
+		t.Fatalf("auth0mocktest: list journal: %v", err)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "auth0mocktest: no %s %s call recorded; recent %s calls:", method, path, method)
+	if len(same) == 0 {
+		b.WriteString("\n  (none)")
+	}
+	for i := len(same) - 1; i >= 0 && i >= len(same)-5; i-- {
+		b.WriteString("\n  " + same[i].String())
+		for _, nm := range same[i].NearMisses {
+			for _, d := range nm.Differences {
+				b.WriteString("\n    " + d.String())
+			}
+		}
+	}
+	t.Fatalf("%s", b.String())
+	return auth0mock.JournalEntry{}
 }
