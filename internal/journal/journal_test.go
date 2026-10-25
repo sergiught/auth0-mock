@@ -2,12 +2,17 @@ package journal
 
 import (
 	"encoding/json"
-	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sergiught/auth0-mock/internal/matches"
 )
 
 func entry(id, method, path, op string, o Outcome) Entry {
@@ -69,12 +74,28 @@ func TestJournal_UnmatchedOnlyNoMatch(t *testing.T) {
 
 func TestJournal_ConcurrentAddListClear(t *testing.T) {
 	j := New(10)
+	r := chi.NewRouter()
+	r.Use(j.Middleware)
+	r.Post("/api/v2/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch chi.URLParam(r, "id")[0] {
+		case 'a':
+			MarkMatched(r.Context(), "exp")
+		case 'b':
+			MarkNoMatch(r.Context(), []matches.NearMiss{{ExpectationID: "e"}})
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	var wg sync.WaitGroup
 	for i := range 50 {
-		wg.Add(1)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			j.add(entry(fmt.Sprint(i), "GET", "/api/v2/x", "", OutcomeMatched))
+			id := string(rune('a' + i%3))
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/users/"+id, strings.NewReader(`{"n":1}`))
+			r.ServeHTTP(httptest.NewRecorder(), req)
+		}()
+		go func() {
+			defer wg.Done()
 			j.List(Filter{})
 			j.Unmatched(Filter{})
 			if i%10 == 0 {

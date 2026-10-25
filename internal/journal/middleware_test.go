@@ -172,8 +172,7 @@ func TestMiddleware_RecordsAtFirstWrite(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	srv := httptest.NewServer(j.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(200)
-		require.NoError(t, http.NewResponseController(w).Flush())
+		assert.NoError(t, http.NewResponseController(w).Flush())
 		close(started)
 		<-release
 	})))
@@ -198,4 +197,26 @@ func TestMiddleware_RecordsAtFirstWrite(t *testing.T) {
 func TestMark_NoSlotIsNoop(t *testing.T) {
 	MarkMatched(context.Background(), "x")
 	MarkNoMatch(context.Background(), nil)
+}
+
+func TestMiddleware_NoWriteStillRecorded(t *testing.T) {
+	j := New(10)
+	h := j.Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	do(h, "GET", "/api/v2/x", nil, nil)
+	es := j.List(Filter{})
+	require.Len(t, es, 1)
+	assert.Equal(t, 200, es[0].Status)
+}
+
+func TestMiddleware_WriteHeaderWriteFlushSingleEntry(t *testing.T) {
+	j := New(10)
+	h := j.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("x"))
+		assert.NoError(t, http.NewResponseController(w).Flush())
+	}))
+	do(h, "POST", "/api/v2/x", nil, nil)
+	es := j.List(Filter{})
+	require.Len(t, es, 1)
+	assert.Equal(t, 201, es[0].Status)
 }
