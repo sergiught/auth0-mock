@@ -179,39 +179,16 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
-	// Same as above, plus an `Authorization: Basic` header built from "id:secret".
-	sc.Step(`^I post to "([^"]+)" with form body and Basic credentials "([^"]*)":$`, func(path, creds string, body *godog.DocString) error {
-		form := url.Values{}
-		for line := range strings.SplitSeq(strings.TrimSpace(body.Content), "\n") {
-			kv := strings.SplitN(strings.TrimSpace(line), "=", 2)
-			if len(kv) == 2 {
-				form.Set(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
-			}
-		}
-		req, _ := http.NewRequest("POST", c.BaseURL+path, strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(creds)))
-		resp, err := nonFollowingClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("post form with basic auth: %w", err)
-		}
-		defer resp.Body.Close()
-		c.LastResp = resp
-		c.LastBody, _ = io.ReadAll(resp.Body)
+	// Form-encoded POST. The DocString is a sequence of "key=value" lines.
+	sc.Step(`^I post to "([^"]+)" with form body:$`, func(path string, body *godog.DocString) error {
+		c.DoForm("POST", path, parseFormDocString(body.Content), false)
 		return nil
 	})
 
-	// Form-encoded POST. The DocString is a sequence of "key=value" lines.
-	sc.Step(`^I post to "([^"]+)" with form body:$`, func(path string, body *godog.DocString) error {
-		form := url.Values{}
-		for line := range strings.SplitSeq(strings.TrimSpace(body.Content), "\n") {
-			kv := strings.SplitN(strings.TrimSpace(line), "=", 2)
-			if len(kv) != 2 {
-				continue
-			}
-			form.Set(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
-		}
-		c.DoForm("POST", path, form, false)
+	// Same as above, plus an `Authorization: Basic` header built from "id:secret".
+	sc.Step(`^I post to "([^"]+)" with form body and Basic credentials "([^"]*)":$`, func(path, creds string, body *godog.DocString) error {
+		c.DoFormWithAuthorization("POST", path, parseFormDocString(body.Content),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(creds)))
 		return nil
 	})
 
@@ -765,4 +742,17 @@ func nestedExpectationBody(target, nestedJSON string) (string, error) {
 		return "", err
 	}
 	return string(out), nil
+}
+
+// parseFormDocString reads a DocString of "key=value" lines into form values.
+func parseFormDocString(content string) url.Values {
+	form := url.Values{}
+	for line := range strings.SplitSeq(strings.TrimSpace(content), "\n") {
+		kv := strings.SplitN(strings.TrimSpace(line), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		form.Set(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
+	}
+	return form
 }

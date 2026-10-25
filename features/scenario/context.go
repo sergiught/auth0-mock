@@ -169,10 +169,20 @@ func (c *Context) MintBearer() {
 
 // DoForm sends a POST with application/x-www-form-urlencoded body.
 func (c *Context) DoForm(method, path string, form url.Values, withBearer bool) {
+	authorization := ""
+	if withBearer {
+		authorization = "Bearer " + c.BearerTok
+	}
+	c.DoFormWithAuthorization(method, path, form, authorization)
+}
+
+// DoFormWithAuthorization is DoForm with an explicit Authorization header
+// value; empty sends none.
+func (c *Context) DoFormWithAuthorization(method, path string, form url.Values, authorization string) {
 	req, _ := http.NewRequest(method, c.BaseURL+path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if withBearer {
-		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
 	}
 	resp, err := nonFollowingClient.Do(req)
 	if err != nil {
