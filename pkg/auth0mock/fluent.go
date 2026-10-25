@@ -157,9 +157,11 @@ func (r *ResponseBuilder) JSON(v any) *ResponseBuilder {
 }
 
 // Body sets the response body to the pre-encoded raw bytes. Useful
-// when you've already marshalled the body elsewhere or you want to
-// send something other than JSON (the server doesn't enforce a
-// content-type — it'll happily return raw bytes verbatim).
+// when you've already marshalled the body elsewhere. The server still
+// validates it at registration the same as JSON: against the
+// operation's response schema, or Auth0's error envelope for an error
+// status (see ExpectationsClient.Add). Registered bytes are then
+// returned verbatim.
 func (r *ResponseBuilder) Body(raw json.RawMessage) *ResponseBuilder {
 	r.response.Body = raw
 	return r

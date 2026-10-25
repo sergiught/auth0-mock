@@ -81,7 +81,16 @@ type ExpectationsClient struct {
 // invalid_body, unknown_operation, invalid_match, invalid_request_match.
 // The server validates response.body against the operation's response
 // schema at registration time so test code fails on bad fixtures
-// instead of at SDK-call time.
+// instead of at SDK-call time. Auth0's spec gives error statuses no
+// body schema, so an error body is checked against Auth0's error
+// envelope instead: statusCode (equal to Status), error and message
+// required, errorCode optional, no other fields. An empty body is
+// always accepted.
+//
+// GET /api/v2/events accepts only error stubs (Status >= 400): they
+// answer matching subscribe requests in place of the live stream. A
+// 2xx stub is rejected with invalid_match — push events with
+// EventsClient.Push instead.
 //
 // The Client tracks every returned handle so Verify can iterate them;
 // Reset() clears the tracking list alongside the server-side state.
