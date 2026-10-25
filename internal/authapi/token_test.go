@@ -1,6 +1,7 @@
 package authapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -704,4 +705,121 @@ func TestToken_MFA_MissingMFAToken_400(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "mfa_token")
+}
+
+func basicHeader(id, secret string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(id+":"+secret))
+}
+
+func postToken(r chi.Router, contentType, body, authz string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	if authz != "" {
+		req.Header.Set("Authorization", authz)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func tokenClaims(t *testing.T, ks *jwks.KeySet, w *httptest.ResponseRecorder) *jwks.Claims {
+	t.Helper()
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	c, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	return c
+}
+
+const formCT = "application/x-www-form-urlencoded"
+
+func TestToken_BasicAuth_ClientCredentials(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	form := "grant_type=client_credentials&audience=https://api/"
+
+	viaHeader := tokenClaims(t, ks, postToken(r, formCT, form, basicHeader("abc", "xyz")))
+	viaBody := tokenClaims(t, ks, postToken(r, formCT, form+"&client_id=abc&client_secret=xyz", ""))
+
+	assert.Equal(t, "abc", viaHeader.Extra["azp"])
+	assert.Equal(t, viaBody.Subject, viaHeader.Subject)
+	assert.Equal(t, viaBody.Audience, viaHeader.Audience)
+	assert.Equal(t, viaBody.Extra["azp"], viaHeader.Extra["azp"])
+}
+
+func TestToken_BasicAuth_SchemeCaseInsensitive(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	h := "basic " + strings.TrimPrefix(basicHeader("abc", "x"), "Basic ")
+	c := tokenClaims(t, ks, postToken(r, formCT, "grant_type=client_credentials", h))
+	assert.Equal(t, "abc@clients", c.Subject)
+}
+
+func TestToken_BasicAuth_URLEncodedCredentialsDecoded(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	// RFC 6749 §2.3.1: "a b:c" and "s%3Ax+y" are form-encoded before base64.
+	c := tokenClaims(t, ks, postToken(r, formCT, "grant_type=client_credentials",
+		basicHeader("my+app%3Aone", "s%3Ax+y")))
+	assert.Equal(t, "my app:one", c.Extra["azp"])
+	assert.Equal(t, "my app:one@clients", c.Subject)
+}
+
+func TestToken_BasicAuth_BodyWinsOverHeader(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	c := tokenClaims(t, ks, postToken(r, formCT,
+		"grant_type=client_credentials&client_id=body-id", basicHeader("header-id", "s")))
+	assert.Equal(t, "body-id", c.Extra["azp"])
+}
+
+func TestToken_BasicAuth_MalformedIgnored(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	for _, h := range []string{
+		"Basic !!!notbase64",
+		"Basic " + base64.StdEncoding.EncodeToString([]byte("nocolon")),
+		"Bearer abc",
+		"Basic",
+	} {
+		withHdr := tokenClaims(t, ks, postToken(r, formCT, "grant_type=client_credentials&client_id=abc", h))
+		assert.Equal(t, "abc", withHdr.Extra["azp"], h)
+	}
+	// With no client_id anywhere, a malformed header behaves like no header.
+	noHdr := postToken(r, formCT, "grant_type=client_credentials", "")
+	bad := postToken(r, formCT, "grant_type=client_credentials", "Basic !!!")
+	assert.Equal(t, noHdr.Code, bad.Code)
+}
+
+func TestToken_BasicAuth_JSONBody(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	c := tokenClaims(t, ks, postToken(r, "application/json",
+		`{"grant_type":"client_credentials"}`, basicHeader("abc", "x")))
+	assert.Equal(t, "abc", c.Extra["azp"])
+
+	c = tokenClaims(t, ks, postToken(r, "application/json",
+		`{"grant_type":"client_credentials","client_id":"body-id"}`, basicHeader("abc", "x")))
+	assert.Equal(t, "body-id", c.Extra["azp"])
+}
+
+func TestParseTokenRequest_BasicAuth_FillsFieldsIndependently(t *testing.T) {
+	mk := func(ct, body string) *http.Request {
+		req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(body))
+		req.Header.Set("Content-Type", ct)
+		req.Header.Set("Authorization", basicHeader("hid", "hsecret"))
+		return req
+	}
+
+	req, err := parseTokenRequest(mk(formCT, "grant_type=client_credentials&client_id=bid"))
+	require.NoError(t, err)
+	assert.Equal(t, "bid", req.ClientID)
+	assert.Equal(t, "hsecret", req.ClientSecret)
+	assert.Equal(t, "bid", req.Params["client_id"])
+
+	req, err = parseTokenRequest(mk("application/json", `{"client_id":"bid"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "bid", req.ClientID)
+	assert.Equal(t, "hsecret", req.ClientSecret)
+
+	// Header-derived values land in Params like body-sent ones do.
+	req, err = parseTokenRequest(mk(formCT, "grant_type=client_credentials"))
+	require.NoError(t, err)
+	assert.Equal(t, "hid", req.Params["client_id"])
+	assert.Equal(t, "hsecret", req.Params["client_secret"])
 }
