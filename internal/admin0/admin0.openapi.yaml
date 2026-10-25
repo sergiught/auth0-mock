@@ -33,6 +33,14 @@ tags:
       Registered canned responses ("expectations") for Management API
       operations, plus the global state reset. None of these require
       authentication.
+  - name: Journal
+    description: |
+      Request journal. Records every `/api/v2/*` call the mock receives
+      (bounded ring, `REQUEST_JOURNAL_SIZE`, default 1000; `<= 0` disables
+      recording) so tests can assert on what the application under test
+      actually sent, and see why a call missed every stub. None require
+      authentication. `DELETE /admin0/expectations` leaves the journal
+      alone; `POST /admin0/reset` clears it.
   - name: Clock
     description: |
       Runtime clock control. Lets tests freeze the mock's perception of
@@ -118,6 +126,41 @@ paths:
       responses:
         "204": { description: Expectation(s) cleared. }
         "400": { description: Body was present but could not be parsed or was missing method/path. }
+  /admin0/journal:
+    get:
+      tags: [Journal]
+      summary: List recorded Management API calls, oldest first.
+      description: |
+        `path` may be concrete (`/api/v2/users/auth0|1`, compared with the
+        request path) or an OpenAPI template (`/api/v2/users/{id}`, compared
+        with the matched operation). `method` is case-insensitive.
+      parameters:
+        - { name: method, in: query, required: false, schema: { type: string } }
+        - { name: path, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Recorded calls (an empty list when none, or when the journal is disabled).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JournalEntries" }
+    delete:
+      tags: [Journal]
+      summary: Clear the journal.
+      responses:
+        "204": { description: Journal cleared. }
+  /admin0/journal/unmatched:
+    get:
+      tags: [Journal]
+      summary: List recorded calls that no stub matched (outcome `no_match`).
+      parameters:
+        - { name: method, in: query, required: false, schema: { type: string } }
+        - { name: path, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Unmatched calls, each with the closest stubs and how they differed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JournalEntries" }
   /admin0/claims:
     get:
       tags: [Claims]
@@ -568,6 +611,74 @@ paths:
             (no `?before=`) has no cursor to look up and never 404s.
 components:
   schemas:
+    JournalEntries:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/JournalEntry" }
+    JournalEntry:
+      type: object
+      description: One recorded Management API call.
+      required: [id, receivedAt, method, path, operation, query, headers, status, outcome]
+      properties:
+        id: { type: string }
+        receivedAt:
+          type: string
+          format: date-time
+          description: Wall-clock arrival time (not the controlled clock).
+        method: { type: string, example: PATCH }
+        path: { type: string, example: /api/v2/users/auth0|1 }
+        operation:
+          type: string
+          description: OpenAPI path template the call resolved to, or the raw path when none did.
+          example: /api/v2/users/{id}
+        query:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+        headers:
+          type: object
+          description: Request headers; `Authorization` and `Cookie` values are `[REDACTED]`.
+          additionalProperties: { type: array, items: { type: string } }
+        body:
+          description: Request body as JSON (a string when it was not valid JSON). Capped at 65536 bytes.
+        bodyTruncated:
+          type: boolean
+          description: Present and true when the stored body was cut at the cap.
+        status: { type: integer, description: HTTP status the mock returned. }
+        outcome:
+          type: string
+          enum: [matched, no_match, rejected]
+          description: |
+            `matched` a stub (or the SSE stream) served the call; `no_match`
+            the call was well formed but no stub matched; `rejected` it never
+            reached stub matching (auth, validation, unknown route, ...).
+        expectationId:
+          type: string
+          description: ID of the stub that served the call (`matched` only).
+        nearMisses:
+          type: array
+          description: Up to 3 closest stubs that did not match (`no_match` only).
+          items: { $ref: "#/components/schemas/JournalNearMiss" }
+    JournalNearMiss:
+      type: object
+      required: [expectationId, method, path, differences]
+      properties:
+        expectationId: { type: string }
+        method: { type: string }
+        path: { type: string, description: The stub's registered path (concrete or template). }
+        differences:
+          type: array
+          items: { $ref: "#/components/schemas/JournalDifference" }
+    JournalDifference:
+      type: object
+      required: [field, reason]
+      properties:
+        field: { type: string, example: body.blocked }
+        reason: { type: string, enum: [mismatch, missing, invalid_json] }
+        want: { description: Value the stub required (raw JSON). }
+        got: { description: Value the request carried (raw JSON). }
     Expectation:
       type: object
       description: |

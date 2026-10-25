@@ -40,6 +40,11 @@ type Specification struct {
 	// (the endpoint still works; resume params become no-ops).
 	EventsReplayBuffer int `env:"EVENTS_REPLAY_BUFFER" envDefault:"100"`
 
+	// RequestJournalSize caps the in-memory journal of /api/v2 calls served
+	// at GET /admin0/journal. <= 0 disables recording (the endpoints then
+	// return an empty list; the no_match 404 hint is unaffected).
+	RequestJournalSize int `env:"REQUEST_JOURNAL_SIZE" envDefault:"1000"`
+
 	// EventsReconnectHint is the SSE `retry:` reconnect-delay hint sent to
 	// GET /events subscribers on connect (Auth0's Events API sends one
 	// too). 0 omits the hint, so clients fall back to their built-in

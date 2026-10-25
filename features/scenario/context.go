@@ -23,6 +23,7 @@ import (
 	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
+	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -102,6 +103,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
 		EventsReplayBuffer:   50, // small but functional in scenario tests
+		Journal:              journal.New(100),
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)

@@ -318,8 +318,10 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, clock, SSE events hub |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, clock, SSE events hub, request journal |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses |
+| `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
+| `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/claims/mappings` | GET / PUT / DELETE | Request-parameter → claim projection: map a token-request body parameter (form or JSON) to a claim name and `/oauth/token` stamps that parameter's value into the minted access token — per request, overriding `/admin0/claims` for that key. Allowlist semantics; empty map (default) = off. Independent store: `DELETE /admin0/claims` doesn't touch it |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
@@ -410,6 +412,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap. Anything larger is read up to this point and the handler surfaces a 400. Set to `0` to disable. |
 | `EVENTS_REPLAY_BUFFER` | `100` | Cap of the `/api/v2/events` SSE replay ring buffer. Reconnecting subscribers can resume from `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>` up to this many events back. `<= 0` disables replay (the endpoint still works; resume params become no-ops). |
+| `REQUEST_JOURNAL_SIZE` | `1000` | Cap of the in-memory request journal behind `/admin0/journal` (oldest entries are evicted). `<= 0` disables recording: the endpoints return `{"entries":[]}`. The `; closest stub differed on …` hint on `no_match` 404s is unaffected. |
 | `EVENTS_RECONNECT_HINT` | `3s` | The SSE `retry:` reconnect-delay hint sent to `/api/v2/events` subscribers on connect (mirrors Auth0). Clients wait this long before reconnecting after a disconnect. `0` omits the hint, so clients use their built-in default. |
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
 | `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |

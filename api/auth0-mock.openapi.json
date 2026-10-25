@@ -39031,6 +39031,162 @@
         ],
         "type": "string"
       },
+      "JournalDifference": {
+        "properties": {
+          "field": {
+            "example": "body.blocked",
+            "type": "string"
+          },
+          "got": {
+            "description": "Value the request carried (raw JSON)."
+          },
+          "reason": {
+            "enum": [
+              "mismatch",
+              "missing",
+              "invalid_json"
+            ],
+            "type": "string"
+          },
+          "want": {
+            "description": "Value the stub required (raw JSON)."
+          }
+        },
+        "required": [
+          "field",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "JournalEntries": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/JournalEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "JournalEntry": {
+        "description": "One recorded Management API call.",
+        "properties": {
+          "body": {
+            "description": "Request body as JSON (a string when it was not valid JSON). Capped at 65536 bytes."
+          },
+          "bodyTruncated": {
+            "description": "Present and true when the stored body was cut at the cap.",
+            "type": "boolean"
+          },
+          "expectationId": {
+            "description": "ID of the stub that served the call (`matched` only).",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Request headers; `Authorization` and `Cookie` values are `[REDACTED]`.",
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "method": {
+            "example": "PATCH",
+            "type": "string"
+          },
+          "nearMisses": {
+            "description": "Up to 3 closest stubs that did not match (`no_match` only).",
+            "items": {
+              "$ref": "#/components/schemas/JournalNearMiss"
+            },
+            "type": "array"
+          },
+          "operation": {
+            "description": "OpenAPI path template the call resolved to, or the raw path when none did.",
+            "example": "/api/v2/users/{id}",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "`matched` a stub (or the SSE stream) served the call; `no_match`\nthe call was well formed but no stub matched; `rejected` it never\nreached stub matching (auth, validation, unknown route, ...).\n",
+            "enum": [
+              "matched",
+              "no_match",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "example": "/api/v2/users/auth0|1",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "receivedAt": {
+            "description": "Wall-clock arrival time (not the controlled clock).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status the mock returned.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "receivedAt",
+          "method",
+          "path",
+          "operation",
+          "query",
+          "headers",
+          "status",
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "JournalNearMiss": {
+        "properties": {
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/JournalDifference"
+            },
+            "type": "array"
+          },
+          "expectationId": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "description": "The stub's registered path (concrete or template).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectationId",
+          "method",
+          "path",
+          "differences"
+        ],
+        "type": "object"
+      },
       "LinkUserIdentityRequestContent": {
         "additionalProperties": false,
         "minProperties": 1,
@@ -54251,6 +54407,90 @@
         "summary": "Register (or replace) a canned response for a Management API operation.",
         "tags": [
           "Expectations"
+        ]
+      }
+    },
+    "/admin0/journal": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Journal cleared."
+          }
+        },
+        "summary": "Clear the journal.",
+        "tags": [
+          "Journal"
+        ]
+      },
+      "get": {
+        "description": "`path` may be concrete (`/api/v2/users/auth0|1`, compared with the\nrequest path) or an OpenAPI template (`/api/v2/users/{id}`, compared\nwith the matched operation). `method` is case-insensitive.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "method",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntries"
+                }
+              }
+            },
+            "description": "Recorded calls (an empty list when none, or when the journal is disabled)."
+          }
+        },
+        "summary": "List recorded Management API calls, oldest first.",
+        "tags": [
+          "Journal"
+        ]
+      }
+    },
+    "/admin0/journal/unmatched": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "method",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntries"
+                }
+              }
+            },
+            "description": "Unmatched calls, each with the closest stubs and how they differed."
+          }
+        },
+        "summary": "List recorded calls that no stub matched (outcome `no_match`).",
+        "tags": [
+          "Journal"
         ]
       }
     },
@@ -79836,6 +80076,10 @@
       "name": "Expectations"
     },
     {
+      "description": "Request journal. Records every `/api/v2/*` call the mock receives\n(bounded ring, `REQUEST_JOURNAL_SIZE`, default 1000; `\u003c= 0` disables\nrecording) so tests can assert on what the application under test\nactually sent, and see why a call missed every stub. None require\nauthentication. `DELETE /admin0/expectations` leaves the journal\nalone; `POST /admin0/reset` clears it.\n",
+      "name": "Journal"
+    },
+    {
       "description": "Runtime clock control. Lets tests freeze the mock's perception of\ntime, set an offset against wall-clock, or advance step-by-step\nthrough time — so token expiry, code TTLs, and refresh windows can\nbe exercised deterministically without sleeps. The same clock\ndrives JWT iat/exp on mint and the bearer middleware's expiry\ncheck on validate.\n",
       "name": "Clock"
     },
@@ -79880,6 +80124,7 @@
         "Guardian",
         "Hooks",
         "Jobs",
+        "Journal",
         "Keys",
         "Log Streams",
         "Logs",

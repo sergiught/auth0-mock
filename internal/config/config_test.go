@@ -68,7 +68,7 @@ func clearEnv(t *testing.T) {
 		"TLS_CACHE_DIR", "TLS_HOSTNAMES", "SIGNING_KEY_FILE", "ISSUER_URL",
 		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
-		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT",
+		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT", "REQUEST_JOURNAL_SIZE",
 	} {
 		_ = os.Unsetenv(k)
 	}
@@ -102,4 +102,19 @@ func TestLoad_EventsReconnectHint_HonoursOverride(t *testing.T) {
 	spec, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, 10*time.Second, spec.EventsReconnectHint)
+}
+
+func TestLoad_RequestJournalSize_DefaultsTo1000(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 1000, spec.RequestJournalSize)
+}
+
+func TestLoad_RequestJournalSize_HonoursOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("REQUEST_JOURNAL_SIZE", "25")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 25, spec.RequestJournalSize)
 }
