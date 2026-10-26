@@ -232,3 +232,64 @@ func TestStore_DeleteByID(t *testing.T) {
 	assert.False(t, s.DeleteByID(stored.ID))
 	assert.False(t, s.DeleteByID("never-existed"))
 }
+
+func TestStore_SequenceServedInOrder(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/1", Kind: KindExact, Response: resp(429, `{}`), Then: []ResponseDef{resp(200, `{"a":1}`)}})
+	var got []int
+	for range 3 {
+		m := s.Find("GET", "/api/v2/users/1", "/api/v2/users/{id}", MatchableRequest{})
+		assert.NotNil(t, m)
+		got = append(got, m.Served().Status)
+	}
+	assert.Equal(t, []int{429, 200, 200}, got)
+}
+
+func TestStore_SequenceRestartsOnReRegistration(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	put := func() {
+		s.Put(Expectation{Method: "GET", Path: "/api/v2/users/1", Kind: KindExact, Response: resp(429, `{}`), Then: []ResponseDef{resp(200, `{}`)}})
+	}
+	find := func() int {
+		return s.Find("GET", "/api/v2/users/1", "/api/v2/users/{id}", MatchableRequest{}).Served().Status
+	}
+	put()
+	assert.Equal(t, 429, find())
+	assert.Equal(t, 200, find())
+	put()
+	assert.Equal(t, 429, find())
+}
+
+func TestStore_SequenceConcurrentPositions(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/1", Kind: KindExact, Response: resp(429, `{}`), Then: []ResponseDef{resp(200, `{}`)}})
+	var mu sync.Mutex
+	counts := map[int]int{}
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			st := s.Find("GET", "/api/v2/users/1", "/api/v2/users/{id}", MatchableRequest{}).Served().Status
+			mu.Lock()
+			counts[st]++
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	assert.Equal(t, 1, counts[429])
+	assert.Equal(t, 19, counts[200])
+}
+
+func TestStore_GetByIDAndListCarryThen(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	stored := s.Put(Expectation{Method: "GET", Path: "/api/v2/users/1", Kind: KindExact, Response: resp(429, `{}`), Then: []ResponseDef{resp(200, `{}`), resp(200, `{}`)}})
+	assert.Len(t, s.GetByID(stored.ID).Then, 2)
+	list := s.List()
+	assert.Len(t, list, 1)
+	assert.Len(t, list[0].Then, 2)
+}

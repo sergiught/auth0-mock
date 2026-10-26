@@ -18,12 +18,13 @@ import (
 
 // expectationBody is the POST /admin0/expectations request payload: the target
 // operation (method + path), an optional request matcher, and the canned
-// response to return when the matcher applies.
+// response to return when the matcher applies, plus optional later answers.
 type expectationBody struct {
 	Method   string                  `json:"method"`
 	Path     string                  `json:"path"`
 	Request  *matches.RequestMatcher `json:"request,omitempty"`
 	Response matches.ResponseDef     `json:"response"`
+	Then     []matches.ResponseDef   `json:"then,omitempty"`
 }
 
 // PostExpectationHandler registers (upserts) an expectation for the Management
@@ -69,6 +70,10 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 			"invalid_match")
 		return
 	}
+	if msg := h.validateThen(op, p.Then); msg != "" {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", msg, "invalid_match")
+		return
+	}
 	// Normalize an empty request matcher to a nil catch-all so a catch-all has
 	// exactly one representation in the store.
 	req := p.Request
@@ -98,6 +103,7 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		Kind:     kind,
 		Request:  req,
 		Response: p.Response,
+		Then:     p.Then,
 	})
 	// Echo the assigned ID so the SDK / curl caller can hold a handle
 	// to this specific registration (used by per-stub Hits / Clear in
@@ -108,6 +114,24 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(struct {
 		ID string `json:"id"`
 	}{ID: stored.ID})
+}
+
+// validateThen checks every sequence entry like the primary response and
+// returns the first problem as a message naming the entry, or "" when valid.
+func (h *PostExpectationHandler) validateThen(op spec.Operation, then []matches.ResponseDef) string {
+	for i, t := range then {
+		at := "then[" + strconv.Itoa(i) + "]"
+		switch {
+		case t.Status == 0:
+			return at + ".status required"
+		case op.Op.OperationID == spec.SubscribeEventsOperationID && t.Status < http.StatusBadRequest:
+			return at + ": GET /api/v2/events accepts only error stubs (status >= 400); push events with POST /admin0/events instead"
+		}
+		if err := h.Validator.ValidateRegistration(op, t.Status, t.Body); err != nil {
+			return at + " violates schema for status " + strconv.Itoa(t.Status) + ": " + err.Error()
+		}
+	}
+	return ""
 }
 
 type listExpectationsResponse struct {

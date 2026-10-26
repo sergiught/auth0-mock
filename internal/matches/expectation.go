@@ -35,6 +35,10 @@ const (
 // atomic counter — every match served by Find() increments it by one.
 // Callers leave Hits zero on Put(); the counter starts at 0 and is
 // reset when the expectation is removed.
+//
+// Then optionally lists further answers served after Response, in order.
+// Hits selects the answer: call 1 gets Response, call 2 gets Then[0], and
+// so on, repeating the last entry once the list is exhausted (see Served).
 type Expectation struct {
 	ID       string          `json:"id,omitempty"`
 	Method   string          `json:"method"`
@@ -42,10 +46,20 @@ type Expectation struct {
 	Kind     Kind            `json:"-"`
 	Request  *RequestMatcher `json:"request,omitempty"`
 	Response ResponseDef     `json:"response"`
+	Then     []ResponseDef   `json:"then,omitempty"`
 	Hits     int64           `json:"hits"`
 	// Seq is the Store's registration counter, used to order near misses
 	// newest first across buckets.
 	seq uint64
+}
+
+// Served returns the answer for this call: Response on the first, then each
+// Then entry in turn, repeating the last. Hits is 1-based and set by Find.
+func (e Expectation) Served() ResponseDef {
+	if e.Hits <= 1 || len(e.Then) == 0 {
+		return e.Response
+	}
+	return e.Then[min(e.Hits-2, int64(len(e.Then)-1))]
 }
 
 // RequestMatcher is the optional set of conditions an incoming request must
