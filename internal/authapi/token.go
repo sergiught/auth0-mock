@@ -231,7 +231,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 // a stable user derived from that identifier.
 func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	for _, p := range []struct{ name, value string }{
-		{"client_id", req.ClientID}, {"username", req.Username}, {"otp", req.OTP}, {"realm", req.Realm},
+		{"client_id", req.ClientID}, {"username", strings.TrimSpace(req.Username)}, {"otp", req.OTP}, {"realm", req.Realm},
 	} {
 		if p.value == "" {
 			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: "+p.name)

@@ -98,6 +98,14 @@ func TestToken_PasswordlessMissingParams(t *testing.T) {
 			assert.Equal(t, "Missing required parameter: "+name, body["error_description"])
 		})
 	}
+	t.Run("blank username", func(t *testing.T) {
+		w := postTokenForm(r, passwordlessForm(url.Values{"username": {" "}}))
+		require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		assert.Equal(t, "invalid_request", body["error"])
+		assert.Equal(t, "Missing required parameter: username", body["error_description"])
+	})
 }
 
 func TestToken_PasswordlessBadRealm(t *testing.T) {
@@ -113,12 +121,14 @@ func TestToken_PasswordlessWrongOTP(t *testing.T) {
 		"email": "Wrong email or verification code.",
 		"sms":   "Wrong phone number or verification code.",
 	} {
-		w := postTokenForm(r, passwordlessForm(url.Values{"realm": {realm}, "otp": {"111111"}}))
-		require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
-		var body map[string]any
-		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-		assert.Equal(t, "invalid_grant", body["error"])
-		assert.Equal(t, desc, body["error_description"])
+		t.Run(realm, func(t *testing.T) {
+			w := postTokenForm(r, passwordlessForm(url.Values{"realm": {realm}, "otp": {"111111"}}))
+			require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+			assert.Equal(t, "invalid_grant", body["error"])
+			assert.Equal(t, desc, body["error_description"])
+		})
 	}
 }
 
