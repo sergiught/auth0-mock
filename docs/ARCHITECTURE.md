@@ -50,6 +50,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │   ├── permissions.Store    per-audience permission slice                 │
 │   ├── pkce.Store           authorize_code → code_challenge map           │
 │   ├── mfa.Store            mfa_token map + global "required" flag       │
+│   ├── session.Store        user profiles + refresh grants               │
 │   ├── jwks.KeySet          RS256 signing key + JWKS publisher           │
 │   └── spec.{Spec,Validator} embedded OpenAPI 3.1 + kin-openapi          │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -138,6 +139,7 @@ The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.
 | [`internal/permissions/`](../internal/permissions/) | `map[audience] → []permission` for RBAC claim injection | `PUT/DELETE /admin0/permissions[/{audience}]`, `POST /admin0/reset` | `TokenHandler.augmentExtra` (looks up by audience), `PasswordlessVerifyHandler` |
 | [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | (none) |
 | [`internal/mfa/`](../internal/mfa/) | `mfa_token → Context` with 10-min TTL + atomic "required" flag | `PUT /admin0/mfa-required`, `POST /admin0/reset`, `TokenHandler.requireMFA` | `respondPassword`, `respondPasswordRealm`, `respondMFA*` |
+| [`internal/session/`](../internal/session/) | Remembered user profiles (per subject) and refresh-token grants (per token), capped at `session.MaxEntries` of each kind, oldest evicted first | `TokenHandler` (on every id_token / refresh token minted), `POST /admin0/reset` | `/userinfo`, `refresh_token` grant |
 | [`internal/clock/`](../internal/clock/) | Controllable time source — `real`, `frozen` (pinned instant), or `offset` (real + skew) mode | `PUT/POST/DELETE /admin0/clock[/advance]`, `POST /admin0/reset` | `jwks.Mint` (iat/exp), `jwks.Verify` (exp/nbf check), `pkce.Store` (code TTL), `mfa.Store` (mfa_token TTL) |
 
 Every store is mutex-protected and snapshot-isolating on reads (so the caller can mutate the returned slice/map without corrupting the store).
@@ -146,7 +148,7 @@ The clock is the one store whose state affects *protocol output*: the same insta
 
 There is **no persistence** anywhere. Each process restart is a clean slate. That's a deliberate design choice: tests get isolation for free; you don't need a teardown step beyond `POST /admin0/reset` (which is also called automatically between godog scenarios via the scenario harness).
 
-There are also **no per-store size caps**. The expectations store, MFA token store, PKCE store, and per-audience permissions map all grow without bound as you register more entries. The MFA and PKCE stores sweep their own expired entries on every write (TTL-bounded), but the expectations and permissions stores grow until the process restarts or `/admin0/reset` is called. This is fine for a test harness where each scenario starts clean; it's a footgun if you point the mock at long-lived synthetic load. Treat `/admin0/reset` as your teardown contract.
+There are also **almost no per-store size caps** — the session store is the exception, holding at most `session.MaxEntries` profiles and refresh grants. The expectations store, MFA token store, PKCE store, and per-audience permissions map all grow without bound as you register more entries. The MFA and PKCE stores sweep their own expired entries on every write (TTL-bounded), but the expectations and permissions stores grow until the process restarts or `/admin0/reset` is called. This is fine for a test harness where each scenario starts clean; it's a footgun if you point the mock at long-lived synthetic load. Treat `/admin0/reset` as your teardown contract.
 
 ## Token claim composition
 

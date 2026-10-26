@@ -9,8 +9,9 @@ import (
 	"time"
 )
 
-// MaxEntries bounds how many user profiles the store keeps; the oldest
-// inserted subject is evicted when a new one arrives at the limit.
+// MaxEntries bounds how many user profiles, and separately how many
+// refresh grants, the store keeps; the oldest inserted entry of a kind is
+// evicted when a new one arrives at the limit.
 const MaxEntries = 10000
 
 // Store is a mutex-guarded session registry.

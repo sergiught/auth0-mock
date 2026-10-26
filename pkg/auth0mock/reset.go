@@ -6,7 +6,7 @@ import (
 )
 
 // Reset clears every expectation, claim, claim mapping, permission, and
-// MFA flag back to the mock's startup defaults, and restores the clock
+// MFA flag, remembered users and refresh tokens back to the mock's startup defaults, and restores the clock
 // to real mode.
 // Equivalent to restarting the mock process from the perspective of
 // registered state, but ~1000x faster — call this from t.Cleanup so

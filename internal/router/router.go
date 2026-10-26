@@ -33,7 +33,8 @@ type Deps struct {
 	Store         *matches.Store
 	Claims        *claims.Store
 	ClaimMappings *claims.MappingStore
-	// Sessions remembers each user's profile for /userinfo. Nil is
+	// Sessions remembers each user's profile for /userinfo and each refresh
+	// token's grant for refresh_token requests. Nil is
 	// defaulted to a fresh store; /admin0/reset clears it.
 	Sessions             *session.Store
 	Permissions          *permissions.Store

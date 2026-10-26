@@ -46,7 +46,8 @@ type TokenHandler struct {
 	// a fixed canned challenge for an access_token.
 	MFA *mfa.Store
 	// Sessions may be nil. When set, the profile of every id_token minted
-	// is remembered per subject so /userinfo can return it.
+	// is remembered per subject so /userinfo can return it, and each refresh
+	// token's grant is remembered so refreshes keep the same user.
 	Sessions *session.Store
 }
 
