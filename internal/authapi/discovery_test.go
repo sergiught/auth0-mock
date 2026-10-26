@@ -71,7 +71,7 @@ func TestDiscovery_GrantTypesAreServed(t *testing.T) {
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 			var body map[string]any
-			_ = json.Unmarshal(w.Body.Bytes(), &body)
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 			assert.NotEqual(t, "unsupported_grant_type", body["error"])
 		})
 	}
