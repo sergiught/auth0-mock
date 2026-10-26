@@ -33,7 +33,7 @@ const DefaultTTL = 10 * time.Minute
 
 // Entry is the per-code authorization state stashed at /authorize and
 // consulted at /oauth/token. Challenge and Method are set only when the client
-// used PKCE; Nonce and AuthTime feed the id_token.
+// used PKCE; Nonce, LoginHint and AuthTime feed the id_token.
 type Entry struct {
 	Challenge string
 	Method    Method
@@ -41,6 +41,9 @@ type Entry struct {
 	Redirect  string
 	// Nonce is the /authorize nonce, echoed into the id_token. May be empty.
 	Nonce string
+	// LoginHint is the /authorize login_hint, used as the id_token subject
+	// when non-empty. May be empty.
+	LoginHint string
 	// AuthTime is when the code was issued, stamped by Store.Put from the
 	// store clock. It becomes the id_token auth_time claim.
 	AuthTime  time.Time

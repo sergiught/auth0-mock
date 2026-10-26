@@ -209,9 +209,9 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 | Endpoint | Method | Notes |
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
-| `/oauth/revoke` | POST | 200 no-op (mock doesn't track refresh state) |
+| `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
 | `/authorize` | GET | 302 with `code` (or implicit token); stashes PKCE challenge if present |
-| `/userinfo` | GET | Returns claims from the bearer |
+| `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
 | `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer |
@@ -226,8 +226,8 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 |---|---|
 | `client_credentials` | M2M flow, returns `access_token` only |
 | `password` | Returns access + id + refresh; gates on the MFA flag |
-| `refresh_token` | New `access_token`; no refresh state tracked |
-| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp` |
+| `refresh_token` | A refresh token the mock issued returns the same user: new `access_token` and `id_token` (same profile and `auth_time`) plus a new `refresh_token`; the old one keeps working. `audience`/`scope` default to the login's. Unknown tokens still work and get just a new `access_token` (subject `<client_id>@refresh`) |
+| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |
 | `http://auth0.com/oauth/grant-type/password-realm` | Auth0 Native SDKs; same as password + `realm` field threaded into claims |
 | `http://auth0.com/oauth/grant-type/passwordless/otp` | Mints if `otp=000000` |
 | `http://auth0.com/oauth/grant-type/mfa-otp` | Step 2 of MFA dance; accepts `otp=123456` |
@@ -320,7 +320,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, clock, SSE events hub, request journal |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses |
 | `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
 | `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |

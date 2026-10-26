@@ -20,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 const nonceTestVerifier = "the-quick-brown-fox-jumps-over-the-lazy-dog-43"
@@ -55,8 +56,9 @@ func newNonceRouter(t *testing.T) (chi.Router, *jwks.KeySet, *steppedClock) {
 	Mount(Deps{
 		Router: r, Keys: ks,
 		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
-		Log:  zerolog.Nop(),
-		PKCE: pkce.NewStore(pkce.WithNow(clk.Now)),
+		Log:      zerolog.Nop(),
+		PKCE:     pkce.NewStore(pkce.WithNow(clk.Now)),
+		Sessions: session.NewStore(),
 	})
 	return r, ks, clk
 }
@@ -183,6 +185,8 @@ func TestPasswordGrants_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
 	c := idTokenClaims(t, ks, w)
 	assert.Equal(t, "demo", c.Extra["azp"])
 	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+	assert.Equal(t, "alice", c.Extra["email"])
+	assert.Equal(t, "alice", c.Extra["name"])
 
 	w = postTokenForm(r, url.Values{
 		"grant_type": {"http://auth0.com/oauth/grant-type/password-realm"}, "client_id": {"demo"},
@@ -191,6 +195,30 @@ func TestPasswordGrants_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
 	c = idTokenClaims(t, ks, w)
 	assert.Equal(t, "demo", c.Extra["azp"])
 	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+	assert.Equal(t, "alice", c.Extra["email"])
+	assert.Equal(t, "alice", c.Extra["name"])
+}
+
+func TestMFAGrant_IDTokenCarriesRealmConnection(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	mfaStore := mfa.NewStore()
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), MFA: mfaStore,
+	})
+	tok := mfaStore.Issue(mfa.Context{
+		ClientID: "abc", Audience: "https://api/", Scope: "openid", Subject: "alice", Realm: "db",
+	})
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"http://auth0.com/oauth/grant-type/mfa-otp"}, "client_id": {"abc"},
+		"mfa_token": {tok}, "otp": {mfa.AcceptedOTP},
+	})
+	c := idTokenClaims(t, ks, w)
+	assert.Equal(t, "db", c.Extra["connection"])
 }
 
 func TestMFAGrant_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
@@ -215,9 +243,53 @@ func TestMFAGrant_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
 	c := idTokenClaims(t, ks, w)
 	assert.Equal(t, "abc", c.Extra["azp"])
 	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+	assert.Equal(t, "alice", c.Extra["email"])
+	assert.Equal(t, "alice", c.Extra["name"])
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "https://cdn.auth0.com/avatars/al.png", c.Extra["picture"])
 }
 
 func pkceS256(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func TestAuthorizationCode_LoginHintBecomesSubjectAndProfile(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	code := authorizeCode(t, r, url.Values{"login_hint": {"alice@example.com"}})
+	c := idTokenClaims(t, ks, exchangeCode(r, code, ""))
+	assert.Equal(t, "alice@example.com", c.Subject)
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "alice@example.com", c.Extra["email"])
+	assert.Equal(t, "demo", c.Extra["azp"])
+	assert.NotNil(t, c.Extra["auth_time"])
+}
+
+func TestAuthorizationCode_DefaultSubjectWithoutLoginHint(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	code := authorizeCode(t, r, nil)
+	c := idTokenClaims(t, ks, exchangeCode(r, code, ""))
+	assert.Equal(t, DefaultSubject, c.Subject)
+	assert.Equal(t, "mock-user@example.com", c.Extra["email"])
+
+	c = idTokenClaims(t, ks, exchangeCode(r, "unknown-code", ""))
+	assert.Equal(t, DefaultSubject, c.Subject)
+}
+
+func TestPasswordGrants_IDTokenCarriesDerivedProfile(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"}, "password": {"x"},
+	})
+	c := idTokenClaims(t, ks, w)
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "https://cdn.auth0.com/avatars/al.png", c.Extra["picture"])
+
+	w = postTokenForm(r, url.Values{
+		"grant_type": {"http://auth0.com/oauth/grant-type/password-realm"}, "client_id": {"demo"},
+		"username": {"alice@example.com"}, "password": {"x"}, "realm": {"db"},
+	})
+	c = idTokenClaims(t, ks, w)
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "alice@example.com", c.Extra["email"])
 }

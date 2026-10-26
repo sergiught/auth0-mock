@@ -4,11 +4,11 @@ import (
 	"net/http"
 
 	"github.com/go-chi/render"
-	"github.com/google/uuid"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // respondMFAOTP handles grant_type=http://auth0.com/oauth/grant-type/mfa-otp.
@@ -98,26 +98,32 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	authTime := h.Keys.Cfg().Now()
+	idExtra := fillProfile(map[string]any{
+		"email":          ctx.Subject,
+		"email_verified": true,
+		"name":           ctx.Subject,
+		"azp":            ctx.ClientID,
+		"auth_time":      authTime.Unix(),
+	}, ctx.Subject)
+	if ctx.Realm != "" {
+		idExtra["connection"] = ctx.Realm
+	}
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  ctx.Subject,
 		Audience: []string{ctx.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: map[string]any{
-			"email":          ctx.Subject,
-			"email_verified": true,
-			"name":           ctx.Subject,
-			"azp":            ctx.ClientID,
-			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		},
+		Extra:    idExtra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(ctx.Subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: uuid.NewString(),
+		RefreshToken: h.issueRefreshToken(session.Grant{Subject: ctx.Subject, ClientID: ctx.ClientID, Audience: ctx.Audience, Scope: ctx.Scope, Realm: ctx.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        ctx.Scope,

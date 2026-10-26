@@ -55,6 +55,26 @@ Feature: /oauth/token supports all four grant types
       }
       """
 
+  Scenario: refresh_token grant for a refresh token the mock issued keeps the user
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      scope=openid offline_access
+      """
+    And I save the refresh_token from the response
+    And I refresh with the saved refresh_token and form body:
+      """
+      client_id=demo
+      """
+    Then I receive a 200 response
+    And the response JSON path "id_token" exists
+    And the response JSON path "refresh_token" exists
+    And the access_token claim "sub" equals "alice@example.com"
+    And the id_token claim "sub" equals "alice@example.com"
+
   Scenario: refresh_token grant mints a new access_token
     When I post to "/oauth/token" with form body:
       """

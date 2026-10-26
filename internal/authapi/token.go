@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // TokenHandler handles OAuth token requests.
@@ -43,6 +45,30 @@ type TokenHandler struct {
 	// of minting; the three Auth0 mfa-* grants then trade the mfa_token plus
 	// a fixed canned challenge for an access_token.
 	MFA *mfa.Store
+	// Sessions may be nil. When set, the profile of every id_token minted
+	// is remembered per subject so /userinfo can return it, and each refresh
+	// token's grant is remembered so refreshes keep the same user.
+	Sessions *session.Store
+}
+
+// rememberProfile records the profile claims of an id_token's extra for
+// /userinfo. Call it only after the id_token minted successfully.
+func (h *TokenHandler) rememberProfile(subject string, extra map[string]any) {
+	if h.Sessions != nil {
+		h.Sessions.RememberProfile(subject, profileOf(extra))
+	}
+}
+
+// issueRefreshToken returns a new refresh token. When Sessions is set it also
+// remembers the grant so the refresh_token grant can return the same user. Call
+// it only after the mints succeeded.
+func (h *TokenHandler) issueRefreshToken(g session.Grant, idExtra map[string]any) string {
+	token := uuid.NewString()
+	if h.Sessions != nil {
+		g.Profile = profileOf(idExtra)
+		h.Sessions.RememberRefresh(token, g)
+	}
+	return token
 }
 
 // mfaChallengeResponse is the body returned alongside the 403 mfa_required.
@@ -165,27 +191,30 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	authTime := h.Keys.Cfg().Now()
+	idExtra := fillProfile(map[string]any{
+		"email":          subject,
+		"email_verified": true,
+		"name":           subject,
+		"connection":     req.Realm,
+		"azp":            req.ClientID,
+		"auth_time":      authTime.Unix(),
+	}, subject)
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: map[string]any{
-			"email":          subject,
-			"email_verified": true,
-			"name":           subject,
-			"connection":     req.Realm,
-			"azp":            req.ClientID,
-			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		},
+		Extra:    idExtra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: uuid.NewString(),
+		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -343,26 +372,29 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	authTime := h.Keys.Cfg().Now()
+	idExtra := fillProfile(map[string]any{
+		"email":          subject,
+		"email_verified": true,
+		"name":           subject,
+		"azp":            req.ClientID,
+		"auth_time":      authTime.Unix(),
+	}, subject)
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: map[string]any{
-			"email":          subject,
-			"email_verified": true,
-			"name":           subject,
-			"azp":            req.ClientID,
-			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		},
+		Extra:    idExtra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: uuid.NewString(),
+		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -370,6 +402,76 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 }
 
 func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	var grant session.Grant
+	var known bool
+	if h.Sessions != nil {
+		grant, known = h.Sessions.Refresh(req.RefreshToken)
+	}
+	if !known {
+		h.respondUnknownRefreshToken(w, r, req, aud)
+		return
+	}
+	// Request values win; an omitted audience/scope falls back to the stored
+	// one when non-empty (not the defaulted aud, which would always shadow it);
+	// otherwise the already-defaulted aud stands.
+	if req.Audience != "" {
+		aud = req.Audience
+	} else if grant.Audience != "" {
+		aud = grant.Audience
+	}
+	scope := req.Scope
+	if scope == "" {
+		scope = grant.Scope
+	}
+	clientID := req.ClientID
+	if clientID == "" {
+		clientID = grant.ClientID
+	}
+	access, err := h.Keys.Mint(jwks.MintOpts{
+		Subject:  grant.Subject,
+		Audience: []string{aud},
+		Scope:    scope,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
+		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": clientID}, aud, req.Params),
+	})
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	idExtra := maps.Clone(grant.Profile)
+	if idExtra == nil {
+		idExtra = deriveProfile(grant.Subject)
+	}
+	idExtra["azp"] = clientID
+	idExtra["auth_time"] = grant.AuthTime.Unix()
+	if grant.Realm != "" {
+		idExtra["connection"] = grant.Realm
+	}
+	id, err := h.Keys.Mint(jwks.MintOpts{
+		Subject:  grant.Subject,
+		Audience: []string{clientID},
+		TTL:      h.Keys.Cfg().IDTokenTTL,
+		Extra:    idExtra,
+	})
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	h.rememberProfile(grant.Subject, idExtra)
+	grant.Audience, grant.Scope, grant.ClientID = aud, scope, clientID
+	render.JSON(w, r, tokenResponse{
+		AccessToken:  access,
+		IDToken:      id,
+		RefreshToken: h.issueRefreshToken(grant, idExtra),
+		TokenType:    "Bearer",
+		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
+		Scope:        scope,
+	})
+}
+
+// respondUnknownRefreshToken keeps the lenient behaviour for refresh tokens
+// the mock did not issue: an access_token for "<client_id>@refresh".
+func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
@@ -416,7 +518,10 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 			}
 		}
 	}
-	subject := "auth0|" + uuid.NewString()
+	subject := DefaultSubject
+	if hasEntry && entry.LoginHint != "" {
+		subject = entry.LoginHint
+	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
@@ -428,18 +533,16 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	idExtra := map[string]any{
-		"email": subject + "@example.com",
-		"azp":   req.ClientID,
-	}
+	idExtra := deriveProfile(subject)
+	idExtra["azp"] = req.ClientID
+	authTime := h.Keys.Cfg().Now()
 	if hasEntry {
-		idExtra["auth_time"] = entry.AuthTime.Unix()
+		authTime = entry.AuthTime
 		if entry.Nonce != "" {
 			idExtra["nonce"] = entry.Nonce
 		}
-	} else {
-		idExtra["auth_time"] = h.Keys.Cfg().Now().Unix()
 	}
+	idExtra["auth_time"] = authTime.Unix()
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
@@ -450,10 +553,11 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: uuid.NewString(),
+		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,

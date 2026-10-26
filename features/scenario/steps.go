@@ -221,6 +221,13 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the response JSON path "([^"]+)" does not exist$`, func(path string) error {
+		if gjson.GetBytes(c.LastBody, path).Exists() {
+			return fmt.Errorf("JSON path %s exists (body=%s)", path, string(c.LastBody))
+		}
+		return nil
+	})
+
 	// Match the entire response body against a JSON shape. Use "<<PRESENCE>>"
 	// for fields whose values are truly runtime-random (signed JWTs, UUIDs).
 	// Use "${BASE_URL}" inside string values to refer to the live server's
@@ -335,6 +342,16 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I start /authorize with login_hint "([^"]+)"$`, func(hint string) error {
+		q := url.Values{}
+		q.Set("client_id", "demo")
+		q.Set("redirect_uri", "https://app/cb")
+		q.Set("response_type", "code")
+		q.Set("login_hint", hint)
+		c.Do("GET", "/authorize?"+q.Encode(), "", false)
+		return nil
+	})
+
 	sc.Step(`^the id_token claim "([^"]+)" equals "([^"]*)"$`, func(claim, want string) error {
 		got, err := claimValueFromToken(c.LastBody, "id_token", claim)
 		if err != nil {
@@ -369,6 +386,30 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 			return fmt.Errorf("no mfa_token in response (body=%s)", string(c.LastBody))
 		}
 		c.MFAToken = tok
+		return nil
+	})
+
+	sc.Step(`^I save the refresh_token from the response$`, func() error {
+		tok := gjson.GetBytes(c.LastBody, "refresh_token").String()
+		if tok == "" {
+			return fmt.Errorf("no refresh_token in response (body=%s)", string(c.LastBody))
+		}
+		c.RefreshTok = tok
+		return nil
+	})
+
+	sc.Step(`^I refresh with the saved refresh_token and form body:$`, func(body *godog.DocString) error {
+		form := url.Values{}
+		form.Set("grant_type", "refresh_token")
+		form.Set("refresh_token", c.RefreshTok)
+		for line := range strings.SplitSeq(strings.TrimSpace(body.Content), "\n") {
+			kv := strings.SplitN(strings.TrimSpace(line), "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			form.Set(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
+		}
+		c.DoForm("POST", "/oauth/token", form, false)
 		return nil
 	})
 

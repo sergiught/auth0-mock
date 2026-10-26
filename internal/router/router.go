@@ -23,15 +23,20 @@ import (
 	"github.com/sergiught/auth0-mock/internal/middleware"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 // Deps is the parameter object for New.
 type Deps struct {
-	Log                  zerolog.Logger
-	Store                *matches.Store
-	Claims               *claims.Store
-	ClaimMappings        *claims.MappingStore
+	Log           zerolog.Logger
+	Store         *matches.Store
+	Claims        *claims.Store
+	ClaimMappings *claims.MappingStore
+	// Sessions remembers each user's profile for /userinfo and each refresh
+	// token's grant for refresh_token requests. Nil is
+	// defaulted to a fresh store; /admin0/reset clears it.
+	Sessions             *session.Store
 	Permissions          *permissions.Store
 	PKCE                 *pkce.Store
 	MFA                  *mfa.Store
@@ -126,10 +131,14 @@ func New(d Deps) (http.Handler, error) {
 		d.ClaimMappings = claims.NewMappingStore()
 	}
 
+	if d.Sessions == nil {
+		d.Sessions = session.NewStore()
+	}
 	admin0.Mount(r, admin0.Deps{
 		Matches:       d.Store,
 		Claims:        d.Claims,
 		ClaimMappings: d.ClaimMappings,
+		Sessions:      d.Sessions,
 		Permissions:   d.Permissions,
 		MFA:           d.MFA,
 		Validator:     d.Validator,
@@ -150,6 +159,7 @@ func New(d Deps) (http.Handler, error) {
 		Log:                          d.Log,
 		Claims:                       d.Claims,
 		ClaimMappings:                d.ClaimMappings,
+		Sessions:                     d.Sessions,
 		Permissions:                  d.Permissions,
 		PKCE:                         d.PKCE,
 		MFA:                          d.MFA,

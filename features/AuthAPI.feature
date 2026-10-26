@@ -20,6 +20,35 @@ Feature: Authentication API endpoints
     Then I receive a 200 response
     And the response JSON path "sub" exists
 
+  Scenario: /userinfo returns the code-flow user's profile
+    When I start /authorize with login_hint "alice@example.com"
+    And I exchange the code without a verifier
+    And I save the access_token as my bearer
+    And I send "GET /userinfo" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "sub" equals "alice@example.com"
+    And the response JSON path "nickname" equals "alice"
+    And the response JSON path "email" equals "alice@example.com"
+
+  Scenario: /userinfo returns the password-grant user's profile
+    When I POST "/oauth/token" with body:
+      """
+      {"grant_type":"password","client_id":"demo","username":"alice@example.com","password":"pw"}
+      """
+    And I save the access_token as my bearer
+    And I send "GET /userinfo" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "nickname" equals "alice"
+
+  Scenario: /admin0/reset forgets remembered profiles
+    When I start /authorize with login_hint "alice@example.com"
+    And I exchange the code without a verifier
+    And I save the access_token as my bearer
+    And I reset all mock state
+    And I send "GET /userinfo" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "nickname" does not exist
+
   Scenario: /userinfo without bearer is 401
     When I send "GET /userinfo" without a bearer
     Then I receive a 401 response
