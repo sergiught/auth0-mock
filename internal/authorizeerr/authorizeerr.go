@@ -5,8 +5,10 @@ package authorizeerr
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"net/url"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -109,6 +111,11 @@ func Validate(r Rule) error {
 	}
 	if !oauthSafe(r.ErrorDescription) {
 		return errors.New("error_description contains characters OAuth does not allow")
+	}
+	for _, k := range slices.Sorted(maps.Keys(r.Match)) {
+		if r.Match[k] == "" {
+			return fmt.Errorf("match values must not be empty (key %q)", k)
+		}
 	}
 	return nil
 }

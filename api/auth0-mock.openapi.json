@@ -1514,7 +1514,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "/authorize query parameters that must all be present with these values. Omit to match every request.",
+            "description": "/authorize query parameters that must all be present with these values (values must be non-empty). Omit to match every request.",
             "type": "object"
           }
         },

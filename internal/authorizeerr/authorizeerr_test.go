@@ -104,6 +104,7 @@ func TestValidate(t *testing.T) {
 		{"backslash in description", Rule{Error: "x", ErrorDescription: `back\slash`}, "error_description contains characters OAuth does not allow"},
 		{"tab in description", Rule{Error: "x", ErrorDescription: "tab\t"}, "error_description contains characters OAuth does not allow"},
 		{"unicode in description", Rule{Error: "x", ErrorDescription: "ünicode"}, "error_description contains characters OAuth does not allow"},
+		{"empty match value", Rule{Error: "x", Match: map[string]string{"b": "", "a": "", "c": "v"}}, `match values must not be empty (key "a")`},
 		{"spaces and symbols in description", Rule{Error: "x", ErrorDescription: "User said no &#=<"}, ""},
 	}
 	for _, tt := range tests {

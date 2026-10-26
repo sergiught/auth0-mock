@@ -33,6 +33,7 @@ func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
 		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
 		"grant_types_supported":                 []string{"client_credentials", "password", "refresh_token", "authorization_code"},
 		"code_challenge_methods_supported":      []string{"S256", "plain"},
+		"response_modes_supported":              []string{"query", "fragment", "form_post"},
 		"claims_supported":                      []string{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"},
 	}
 	// Match render.JSON's encoding (HTML-escaped, trailing newline) so the wire

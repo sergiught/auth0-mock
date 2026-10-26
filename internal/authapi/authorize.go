@@ -55,6 +55,11 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := resolveMode(q.Get("response_mode"), responseType == "token")
+	// Go html/template rewrites a form action with a non-http(s) scheme to
+	// #ZgotmplZ, so fall back to the default mode for such redirect URIs.
+	if mode == modeFormPost && u.Scheme != "http" && u.Scheme != "https" {
+		mode = resolveMode("", responseType == "token")
+	}
 
 	// Validate PKCE challenge length up-front. RFC 7636 §4.1 requires the
 	// code_verifier (and therefore the plain code_challenge, or the pre-hash

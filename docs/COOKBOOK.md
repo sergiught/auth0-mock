@@ -233,7 +233,7 @@ rule, err := c.AuthorizeErrors.Add(ctx, auth0mock.AuthorizeError{
 if err != nil {
 	t.Fatal(err)
 }
-t.Cleanup(func() { _ = c.AuthorizeErrors.Delete(ctx, rule.ID) })
+t.Cleanup(func() { _ = c.AuthorizeErrors.Delete(context.Background(), rule.ID) })
 ```
 
 Match `prompt=none` with `login_required` to simulate a silent login with no session. `DELETE /admin0/authorize-errors` (or `/admin0/reset`) clears all rules.

@@ -42,6 +42,7 @@ func TestPostAuthorizeError_Rejects(t *testing.T) {
 	tests := []struct{ name, body, msg string }{
 		{"missing error", `{"match":{"a":"b"}}`, "error is required"},
 		{"bad error chars", `{"error":"a\"b"}`, "error contains characters"},
+		{"empty match value", `{"error":"x","match":{"a":""}}`, "match values must not be empty"},
 		{"unknown field", `{"error":"x","description":"y"}`, "description"},
 		{"malformed json", `{"error":`, "decode body"},
 		{"match not strings", `{"error":"x","match":{"a":1}}`, "decode body"},

@@ -212,7 +212,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
 | `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
-| `/authorize` | GET | 302 with `code` (or implicit token); stashes PKCE challenge if present |
+| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code` / implicit token, or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
 | `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |

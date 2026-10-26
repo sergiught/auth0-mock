@@ -669,7 +669,7 @@ components:
       properties:
         match:
           type: object
-          description: /authorize query parameters that must all be present with these values. Omit to match every request.
+          description: /authorize query parameters that must all be present with these values (values must be non-empty). Omit to match every request.
           additionalProperties: { type: string }
         error: { type: string, description: OAuth error code returned to the redirect_uri. }
         error_description: { type: string }

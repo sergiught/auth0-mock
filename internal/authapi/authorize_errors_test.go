@@ -140,4 +140,16 @@ func TestAuthorize_RuleNeverFiresOnBadRedirect(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "allow-list")
 	assert.Empty(t, w.Header().Get("Location"))
+
+	w = getAuthorize(r, "client_id=a&redirect_uri=%25zz")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid redirect_uri")
+	assert.Empty(t, w.Header().Get("Location"))
+}
+
+func TestAuthorize_FormPostFallsBackForNonHTTPScheme(t *testing.T) {
+	r, _, _ := newAuthRouterWithErrors(t)
+	loc := location(t, getAuthorize(r, "client_id=a&redirect_uri=com.example.app%3A%2Fcb&response_type=code&response_mode=form_post"))
+	assert.Equal(t, "com.example.app", loc.Scheme)
+	assert.NotEmpty(t, loc.Query().Get("code"))
 }
