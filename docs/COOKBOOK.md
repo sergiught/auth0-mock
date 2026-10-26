@@ -11,6 +11,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Inject a custom claim into every minted token](#inject-a-custom-claim-into-every-minted-token)
 - [Mint per-request claims from token-request parameters](#mint-per-request-claims-from-token-request-parameters)
 - [Test a PKCE flow end-to-end](#test-a-pkce-flow-end-to-end)
+- [Test login errors](#test-login-errors)
 - [Test an MFA challenge flow](#test-an-mfa-challenge-flow)
 - [Test token expiry without sleeps](#test-token-expiry-without-sleeps)
 - [Test the password-realm grant](#test-the-password-realm-grant)
@@ -202,6 +203,36 @@ curl -s -X POST http://localhost:8080/oauth/token \
 ```
 
 Both `S256` and `plain` are supported. `plain` is the default when `code_challenge_method` is omitted (per RFC 7636).
+
+## Test login errors
+
+Make `/authorize` send the user back to your app with an OAuth error, so you can test cancelled logins and failed silent auth.
+
+```bash
+curl -s -X POST http://localhost:8080/admin0/authorize-errors \
+  -H 'Content-Type: application/json' \
+  -d '{"match":{"client_id":"my-app"},"error":"access_denied","error_description":"User cancelled login"}'
+```
+
+Matching `/authorize` requests now redirect to:
+
+```
+https://app/cb?error=access_denied&error_description=User+cancelled+login&state=...
+```
+
+The error is delivered per `response_mode`: in the query by default for `response_type=code`, in the fragment for `response_type=token`, and as an auto-submitting form for `form_post`. Problems with `redirect_uri` itself still return a 400 page, since there is nowhere safe to redirect.
+
+From Go:
+
+```go
+rule, err := c.AuthorizeErrors.Add(ctx, auth0mock.AuthorizeError{
+	Match:            map[string]string{"client_id": "my-app"},
+	Error:            "access_denied",
+	ErrorDescription: "User cancelled login",
+})
+```
+
+Match `prompt=none` with `login_required` to simulate a silent login with no session. `DELETE /admin0/authorize-errors` (or `/admin0/reset`) clears all rules.
 
 ## Test an MFA challenge flow
 

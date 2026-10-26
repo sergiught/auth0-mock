@@ -46,6 +46,10 @@ type Client struct {
 	// grants behind an MFA step-up.
 	MFA *MFAClient
 
+	// AuthorizeErrors is the typed entry point for /admin0/authorize-errors
+	// — rules that make /authorize redirect back with an OAuth error.
+	AuthorizeErrors *AuthorizeErrorsClient
+
 	// Clock is the typed entry point for /admin0/clock — runtime
 	// control over the mock's perception of time (freeze, offset,
 	// advance) that drives JWT iat/exp on mint and the bearer
@@ -259,6 +263,7 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	c.Claims = &ClaimsClient{c: c, Mappings: &ClaimMappingsClient{c: c}}
 	c.Permissions = &PermissionsClient{c: c}
 	c.MFA = &MFAClient{c: c}
+	c.AuthorizeErrors = &AuthorizeErrorsClient{c: c}
 	c.Clock = &ClockClient{c: c}
 	c.Events = &EventsClient{c: c}
 	c.Journal = &JournalClient{c: c}

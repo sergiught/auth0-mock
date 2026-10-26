@@ -588,6 +588,7 @@ What's covered:
 | `Claims` | `Get` | `Set` | `Clear` | — |
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
+| `AuthorizeErrors` | `List` | `Add` | `Clear`, `Delete(id)` | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
 | `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | `ExpireEvents` / `ExpireEventsBefore(ctx, cursor)` age out replay cursors so a resume gets `410 event_aged_out`; top-level `Reset` drains subscribers + replay buffer | — |
 | `Journal` | `List(ctx, JournalFilter)`, `Unmatched(ctx, JournalFilter)`; `auth0mocktest.MustFindCall(t, c, method, path)` returns the newest matching call | — | `Clear` | — |
