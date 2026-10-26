@@ -307,7 +307,7 @@ func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (
 	}, clientID)
 }
 
-// recordCode stores the per-code authorization state (nonce, login_hint and,
+// recordCode stores the per-code authorization state (nonce, the resolved subject and auth_time and,
 // when sent, the validated PKCE challenge) for /oauth/token. Only meaningful
 // for the "code" response type.
 func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode, subject string, authTime time.Time) {

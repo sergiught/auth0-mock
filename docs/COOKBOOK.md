@@ -221,7 +221,7 @@ Matching `/authorize` requests now redirect to:
 https://app/cb?error=access_denied&error_description=User+cancelled+login&state=...
 ```
 
-The error is delivered per `response_mode`: in the query by default for `response_type=code`, in the fragment for every other `response_type` (anything but plain `code`), and as an auto-submitting form for `form_post`. Problems with `redirect_uri` itself still return a 400 JSON error with no redirect, since there is nowhere safe to redirect.
+The error is delivered per `response_mode`: in the query by default for `response_type=code`, in the fragment for every other `response_type` (anything but plain `code`), and as an auto-submitting form for `form_post`, and as a postMessage page for `web_message`. Problems with `redirect_uri` itself still return a 400 JSON error with no redirect, since there is nowhere safe to redirect.
 
 From Go:
 
@@ -257,6 +257,8 @@ const token = await auth0.getTokenSilently({ cacheMode: 'off' }); // prompt=none
 Sign in as a specific user with `login_hint`. `/v2/logout`, `/oidc/logout` and `/admin0/reset` end the session, so the next silent request gets `login_required`. `auth_time` stays at the original login instant, so you can freeze and advance the [clock](#test-token-expiry-without-sleeps) to test re-authentication windows.
 
 The hidden iframe is cross-site when your app and the mock are on different sites, and browsers only send the cookie there if it is `SameSite=None; Secure`. The mock sets that only over HTTPS, so run it on HTTPS for cross-site iframes (see [Run against HTTPS with a trusted cert](#run-against-https-with-a-trusted-cert)). Over plain HTTP the cookie is `SameSite=Lax`, which works for same-site setups and for HTTP clients with a cookie jar.
+
+Two more caveats. First, auth0-spa-js always uses `https://<domain>`, so an `http://localhost` app is cross-site with the mock by scheme, and even `SameSite=None; Secure` only works where third-party cookies are allowed. Safari, Firefox with Total Cookie Protection and Chrome with third-party cookies blocked do not send it, so they get `login_required`, as with real Auth0 without a custom domain. Serve the app on `https://localhost` to be same-site with the mock. Second, behind a TLS-terminating proxy the mock sees plain HTTP, so the cookie is `SameSite=Lax`.
 
 ## Test an MFA challenge flow
 

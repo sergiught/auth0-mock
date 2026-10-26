@@ -41,15 +41,16 @@ type Entry struct {
 	Redirect  string
 	// Nonce is the /authorize nonce, echoed into the id_token. May be empty.
 	Nonce string
-	// LoginHint is the /authorize login_hint, used as the id_token subject
-	// when non-empty. May be empty.
+	// LoginHint is the subject /authorize resolved for the login: the session
+	// user, the login_hint, or DefaultSubject. It becomes the id_token subject.
 	LoginHint string
 	// Audience and Scope are the /authorize audience and scope. When set,
 	// the code exchange uses them, as Auth0 does. May be empty.
 	Audience string
 	Scope    string
-	// AuthTime is when the code was issued, stamped by Store.Put from the
-	// store clock unless the caller preset it. It becomes the id_token auth_time claim.
+	// AuthTime is the login instant, set by /authorize (a reused session keeps
+	// its original one). Store.Put stamps the store clock only when it is
+	// zero. It becomes the id_token auth_time claim.
 	AuthTime  time.Time
 	expiresAt time.Time
 }
