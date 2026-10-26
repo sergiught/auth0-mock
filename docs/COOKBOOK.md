@@ -220,7 +220,7 @@ Matching `/authorize` requests now redirect to:
 https://app/cb?error=access_denied&error_description=User+cancelled+login&state=...
 ```
 
-The error is delivered per `response_mode`: in the query by default for `response_type=code`, in the fragment for `response_type=token`, and as an auto-submitting form for `form_post`. Problems with `redirect_uri` itself still return a 400 page, since there is nowhere safe to redirect.
+The error is delivered per `response_mode`: in the query by default for `response_type=code`, in the fragment for `response_type=token`, and as an auto-submitting form for `form_post`. Problems with `redirect_uri` itself still return a 400 JSON error with no redirect, since there is nowhere safe to redirect.
 
 From Go:
 
@@ -230,6 +230,10 @@ rule, err := c.AuthorizeErrors.Add(ctx, auth0mock.AuthorizeError{
 	Error:            "access_denied",
 	ErrorDescription: "User cancelled login",
 })
+if err != nil {
+	t.Fatal(err)
+}
+t.Cleanup(func() { _ = c.AuthorizeErrors.Delete(ctx, rule.ID) })
 ```
 
 Match `prompt=none` with `login_required` to simulate a silent login with no session. `DELETE /admin0/authorize-errors` (or `/admin0/reset`) clears all rules.
