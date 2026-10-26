@@ -97,3 +97,19 @@ func TestAuthorizeErrors_Add_ServerError(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 	assert.Equal(t, "invalid_body", apiErr.ErrorCode)
 }
+
+func TestAuthorizeErrors_List_ServerError(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	rec.respond = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","message":"boom"}`))
+	}
+
+	rules, err := c.AuthorizeErrors.List(t.Context())
+	var apiErr *auth0mock.APIError
+	require.True(t, errors.As(err, &apiErr))
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+	assert.Nil(t, rules)
+}
