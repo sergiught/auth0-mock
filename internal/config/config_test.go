@@ -130,6 +130,11 @@ func TestLoad_BlankDefaultAudience(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", spec.DefaultAudience)
 
+	t.Setenv("DEFAULT_AUDIENCE", "  ")
+	spec, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, "", spec.DefaultAudience)
+
 	require.NoError(t, os.Unsetenv("DEFAULT_AUDIENCE"))
 	spec, err = Load()
 	require.NoError(t, err)

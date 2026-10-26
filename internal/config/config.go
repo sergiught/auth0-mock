@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -13,16 +14,15 @@ import (
 
 // Specification holds all runtime settings.
 type Specification struct {
-	HTTPAddress    string         `env:"HTTP_ADDR" envDefault:"127.0.0.1:8080"`
-	HTTPSAddress   string         `env:"HTTPS_ADDR" envDefault:"127.0.0.1:8443"`
-	TLS            tlscert.Config // Nested: env tags live on tlscert.Config itself.
-	SigningKeyFile string         `env:"SIGNING_KEY_FILE"`
-	IssuerURL      string         `env:"ISSUER_URL" envDefault:"https://localhost:8443/"`
-	// DefaultAudience is blank when there is none; /authorize then issues opaque access tokens.
-	DefaultAudience string        `env:"DEFAULT_AUDIENCE" envDefault:"https://localhost:8443/api/v2/"`
-	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
-	IDTokenTTL      time.Duration `env:"ID_TOKEN_TTL" envDefault:"24h"`
-	LogLevel        string        `env:"LOG_LEVEL" envDefault:"info"`
+	HTTPAddress     string         `env:"HTTP_ADDR" envDefault:"127.0.0.1:8080"`
+	HTTPSAddress    string         `env:"HTTPS_ADDR" envDefault:"127.0.0.1:8443"`
+	TLS             tlscert.Config // Nested: env tags live on tlscert.Config itself.
+	SigningKeyFile  string         `env:"SIGNING_KEY_FILE"`
+	IssuerURL       string         `env:"ISSUER_URL" envDefault:"https://localhost:8443/"`
+	DefaultAudience string         `env:"DEFAULT_AUDIENCE" envDefault:"https://localhost:8443/api/v2/"` // Blank: no default audience.
+	AccessTokenTTL  time.Duration  `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
+	IDTokenTTL      time.Duration  `env:"ID_TOKEN_TTL" envDefault:"24h"`
+	LogLevel        string         `env:"LOG_LEVEL" envDefault:"info"`
 	// Debug turns on the request/response dump middleware. Off by default;
 	// enables full method/path/query/headers/body logging for every
 	// request + response at INFO level. Authorization + Cookie headers are
@@ -96,8 +96,9 @@ func Load() (*Specification, error) {
 	if err := env.Parse(&spec); err != nil {
 		return nil, fmt.Errorf("env parse: %w", err)
 	}
-	// The env library swaps an empty value for envDefault; blank must mean "no default audience".
-	if v, set := os.LookupEnv("DEFAULT_AUDIENCE"); set && v == "" {
+	// The env library swaps an empty value for envDefault; blank must mean
+	// "no default audience", so /authorize issues opaque access tokens.
+	if v, set := os.LookupEnv("DEFAULT_AUDIENCE"); set && strings.TrimSpace(v) == "" {
 		spec.DefaultAudience = ""
 	}
 	if err := spec.Validate(); err != nil {
