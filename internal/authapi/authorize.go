@@ -224,6 +224,9 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode st
 		}
 		h.Token.rememberProfile(subject, idExtra)
 		params.Set("id_token", id)
+	} else {
+		// Token-only clients read the profile from /userinfo.
+		h.Token.rememberProfile(subject, deriveProfile(subject))
 	}
 	return true
 }
@@ -256,6 +259,8 @@ func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode string) {
 		Redirect:  q.Get("redirect_uri"),
 		Nonce:     q.Get("nonce"),
 		LoginHint: q.Get("login_hint"),
+		Audience:  strings.TrimSpace(q.Get("audience")),
+		Scope:     q.Get("scope"),
 	}
 	if challenge := q.Get("code_challenge"); challenge != "" {
 		entry.Challenge = challenge

@@ -235,3 +235,50 @@ func TestAuthorize_TokenWithoutScopeOmitsScope(t *testing.T) {
 	assert.NotEmpty(t, frag.Get("access_token"))
 	assert.False(t, frag.Has("scope"))
 }
+
+func TestAuthorize_TokenOnlyRemembersProfile(t *testing.T) {
+	r, _, _, _, _ := newRefreshRouterWithSessions(t)
+	frag := fragmentOf(t, r, implicitBase+"response_type=token&login_hint=alice@example.com")
+	info := getUserinfo(t, r, frag.Get("access_token"))
+	assert.Equal(t, "alice@example.com", info["email"])
+	assert.Equal(t, "alice", info["nickname"])
+}
+
+func TestAuthorize_OpaqueTokenOnlyRemembersProfile(t *testing.T) {
+	r, _, _, _ := newNoAudienceRouter(t)
+	frag := fragmentOf(t, r, implicitBase+"response_type=token&login_hint=carol@example.com")
+	assert.Equal(t, "carol@example.com", getUserinfo(t, r, frag.Get("access_token"))["email"])
+}
+
+func TestAuthorize_CodeExchangeKeepsAuthorizeAudienceAndScope(t *testing.T) {
+	for _, rt := range []string{"code", "code%20token"} {
+		t.Run(rt, func(t *testing.T) {
+			r, ks, _, _ := newNoAudienceRouter(t)
+			loc := location(t, getAuthorize(r, implicitBase+"response_type="+rt+"&audience=https%3A%2F%2Fapi%2F&scope=openid%20read"))
+			params := loc.Query()
+			if loc.Fragment != "" {
+				var err error
+				params, err = url.ParseQuery(loc.Fragment)
+				require.NoError(t, err)
+			}
+			resp := tokenBody(t, exchangeCode(r, params.Get("code"), ""))
+			access := verified(t, ks, resp.AccessToken)
+			assert.Contains(t, access.Audience, "https://api/")
+			assert.Equal(t, "openid read", access.Scope)
+			assert.Equal(t, "openid read", resp.Scope)
+		})
+	}
+}
+
+func TestAuthorize_CodeExchangeWithoutAuthorizeAudienceUsesRequest(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	code := location(t, getAuthorize(r, implicitBase+"response_type=code")).Query().Get("code")
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {"demo"}, "code": {code},
+		"redirect_uri": {"https://app/cb"}, "audience": {"https://other/"}, "scope": {"openid"},
+	}
+	resp := tokenBody(t, postTokenForm(r, form))
+	access := verified(t, ks, resp.AccessToken)
+	assert.Contains(t, access.Audience, "https://other/")
+	assert.Equal(t, "openid", access.Scope)
+}

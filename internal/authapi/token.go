@@ -635,10 +635,11 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	if hasEntry && entry.LoginHint != "" {
 		subject = entry.LoginHint
 	}
+	aud, scope := codeAudienceScope(entry, aud, req.Scope)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
-		Scope:    req.Scope,
+		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud, req.Params),
 	}, req.ClientID)
@@ -670,9 +671,22 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
+		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
-		Scope:        req.Scope,
+		Scope:        scope,
 	})
+}
+
+// codeAudienceScope returns the audience and scope for a code exchange. The
+// code carries the /authorize audience and scope, which win over the token
+// request's, as on Auth0. A zero entry (no stored code) keeps the request's.
+func codeAudienceScope(entry pkce.Entry, aud, scope string) (string, string) {
+	if entry.Audience != "" {
+		aud = entry.Audience
+	}
+	if entry.Scope != "" {
+		scope = entry.Scope
+	}
+	return aud, scope
 }
