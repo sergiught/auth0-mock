@@ -118,3 +118,46 @@ func TestProfileOf_PicksOnlyProfileKeys(t *testing.T) {
 	})
 	assert.Equal(t, map[string]any{"email": "a@x", "name": "A", "picture": "p"}, got)
 }
+
+func TestUserinfo_ClientCredentialsTokenGetsNoProfile(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	// A user logs in so a profile is remembered.
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"}, "password": {"x"},
+	})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = postTokenForm(r, url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"demo"}, "client_secret": {"s"},
+		"audience": {"https://api/"},
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	tok := accessTokenOf(t, w)
+	got := getUserinfo(t, r, tok)
+	for _, k := range []string{"email", "email_verified", "name", "nickname", "picture"} {
+		assert.NotContains(t, got, k)
+	}
+
+	plain := chi.NewRouter()
+	Mount(Deps{Router: plain, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/", Log: zerolog.Nop()})
+	assert.Equal(t, getUserinfo(t, plain, tok), got)
+}
+
+func TestUserinfo_NilSessionsReturnsOnlyTokenClaims(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/", Log: zerolog.Nop()})
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"}, "password": {"x"},
+	})
+	require.Equal(t, http.StatusOK, w.Code)
+	tok := accessTokenOf(t, w)
+	c, err := ks.Verify(tok, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	want := map[string]any{"sub": c.Subject}
+	for k, v := range c.Extra {
+		want[k] = v
+	}
+	assert.Equal(t, want, getUserinfo(t, r, tok))
+}

@@ -30,6 +30,16 @@ Feature: Authentication API endpoints
     And the response JSON path "nickname" equals "alice"
     And the response JSON path "email" equals "alice@example.com"
 
+  Scenario: /userinfo returns the password-grant user's profile
+    When I POST "/oauth/token" with body:
+      """
+      {"grant_type":"password","client_id":"demo","username":"alice@example.com","password":"pw"}
+      """
+    And I save the access_token as my bearer
+    And I send "GET /userinfo" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "nickname" equals "alice"
+
   Scenario: /admin0/reset forgets remembered profiles
     When I start /authorize with login_hint "alice@example.com"
     And I exchange code without verifier

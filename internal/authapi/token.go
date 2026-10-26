@@ -50,12 +50,11 @@ type TokenHandler struct {
 }
 
 // rememberProfile records the profile claims of an id_token's extra for
-// /userinfo and returns extra unchanged.
-func (h *TokenHandler) rememberProfile(subject string, extra map[string]any) map[string]any {
+// /userinfo. Call it only after the id_token minted successfully.
+func (h *TokenHandler) rememberProfile(subject string, extra map[string]any) {
 	if h.Sessions != nil {
 		h.Sessions.RememberProfile(subject, profileOf(extra))
 	}
-	return extra
 }
 
 // mfaChallengeResponse is the body returned alongside the 403 mfa_required.
@@ -178,23 +177,25 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	idExtra := fillProfile(map[string]any{
+		"email":          subject,
+		"email_verified": true,
+		"name":           subject,
+		"connection":     req.Realm,
+		"azp":            req.ClientID,
+		"auth_time":      h.Keys.Cfg().Now().Unix(),
+	}, subject)
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: h.rememberProfile(subject, fillProfile(map[string]any{
-			"email":          subject,
-			"email_verified": true,
-			"name":           subject,
-			"connection":     req.Realm,
-			"azp":            req.ClientID,
-			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		}, subject)),
+		Extra:    idExtra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
@@ -356,22 +357,24 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	idExtra := fillProfile(map[string]any{
+		"email":          subject,
+		"email_verified": true,
+		"name":           subject,
+		"azp":            req.ClientID,
+		"auth_time":      h.Keys.Cfg().Now().Unix(),
+	}, subject)
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: h.rememberProfile(subject, fillProfile(map[string]any{
-			"email":          subject,
-			"email_verified": true,
-			"name":           subject,
-			"azp":            req.ClientID,
-			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		}, subject)),
+		Extra:    idExtra,
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
@@ -445,7 +448,6 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		return
 	}
 	idExtra := deriveProfile(subject)
-	h.rememberProfile(subject, idExtra)
 	idExtra["azp"] = req.ClientID
 	if hasEntry {
 		idExtra["auth_time"] = entry.AuthTime.Unix()
@@ -465,6 +467,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
