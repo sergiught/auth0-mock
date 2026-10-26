@@ -97,7 +97,7 @@ func Load() (*Specification, error) {
 		return nil, fmt.Errorf("env parse: %w", err)
 	}
 	// The env library swaps an empty value for envDefault; blank must mean
-	// "no default audience", so /authorize issues opaque access tokens.
+	// "no default audience", so user logins get opaque access tokens.
 	if v, set := os.LookupEnv("DEFAULT_AUDIENCE"); set && strings.TrimSpace(v) == "" {
 		spec.DefaultAudience = ""
 	}

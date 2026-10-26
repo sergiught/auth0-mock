@@ -227,7 +227,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 
 | `grant_type` | Notes |
 |---|---|
-| `client_credentials` | M2M flow, returns `access_token` only |
+| `client_credentials` | M2M flow, returns `access_token` only; 403 `access_denied` when there is no `audience` and `DEFAULT_AUDIENCE` is blank |
 | `password` | Returns access + id + refresh; gates on the MFA flag |
 | `refresh_token` | A refresh token the mock issued returns the same user: new `access_token` and `id_token` (same profile and `auth_time`) plus a new `refresh_token`; the old one keeps working. `audience`/`scope` default to the login's. Unknown tokens still work and get just a new `access_token` (subject `<client_id>@refresh`) |
 | `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |

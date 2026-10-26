@@ -152,7 +152,7 @@ The clock is the one store whose state affects *protocol output*: the same insta
 
 There is **no persistence** anywhere. Each process restart is a clean slate. That's a deliberate design choice: tests get isolation for free; you don't need a teardown step beyond `POST /admin0/reset` (which is also called automatically between godog scenarios via the scenario harness).
 
-There are also **almost no per-store size caps** — the session store is the exception, holding at most `session.MaxEntries` profiles and refresh grants. The expectations store, MFA token store, PKCE store, and per-audience permissions map all grow without bound as you register more entries. The MFA and PKCE stores sweep their own expired entries on every write (TTL-bounded), but the expectations and permissions stores grow until the process restarts or `/admin0/reset` is called. This is fine for a test harness where each scenario starts clean; it's a footgun if you point the mock at long-lived synthetic load. Treat `/admin0/reset` as your teardown contract.
+There are also **almost no per-store size caps** — the session store is the exception, holding at most `session.MaxEntries` profiles, opaque access tokens and refresh grants. The expectations store, MFA token store, PKCE store, and per-audience permissions map all grow without bound as you register more entries. The MFA and PKCE stores sweep their own expired entries on every write (TTL-bounded), but the expectations and permissions stores grow until the process restarts or `/admin0/reset` is called. This is fine for a test harness where each scenario starts clean; it's a footgun if you point the mock at long-lived synthetic load. Treat `/admin0/reset` as your teardown contract.
 
 ## Token claim composition
 
@@ -161,7 +161,7 @@ When `/oauth/token` mints a token, the payload is built in this order, **last wr
 1. **Reserved claims** built by the grant handler:
    - `iss` (issuer from config)
    - `sub` (depends on grant: `<client_id>@clients` for client_credentials, the username for password, etc.)
-   - `aud` (from request, falls back to `DefaultAudience`)
+   - `aud` (from request, falls back to `DefaultAudience`; with neither, user logins get an opaque access token and `client_credentials` gets 403 `access_denied`)
    - `iat`, `exp` (now + `ACCESS_TOKEN_TTL`)
    - `scope` (echoed from request)
    - `azp` (client_id)
