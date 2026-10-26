@@ -106,6 +106,8 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 			"email":          ctx.Subject,
 			"email_verified": true,
 			"name":           ctx.Subject,
+			"azp":            ctx.ClientID,
+			"auth_time":      h.Keys.Cfg().Now().Unix(),
 		},
 	})
 	if err != nil {

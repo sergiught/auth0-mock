@@ -42,6 +42,10 @@ Feature: OIDC discovery and JWKS publication
         "id_token_signing_alg_values_supported": ["RS256"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
         "scopes_supported":                      ["openid", "profile", "email", "offline_access"],
-        "grant_types_supported":                 ["client_credentials", "password", "refresh_token", "authorization_code"]
+        "grant_types_supported":                 ["client_credentials", "password", "refresh_token", "authorization_code"],
+        "code_challenge_methods_supported":      ["S256", "plain"],
+        "claims_supported": [
+          "aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"
+        ]
       }
       """

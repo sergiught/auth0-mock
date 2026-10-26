@@ -51,3 +51,11 @@ Feature: PKCE validation on authorization_code grant
       """
     Then I receive a 400 response
     And the response JSON path "error" equals "invalid_grant"
+
+  Scenario: The /authorize nonce is echoed into the id_token
+    When I start /authorize with nonce "n-0S6_WzA2Mj"
+    Then I receive a 302 response
+    When I exchange the code without a verifier
+    Then I receive a 200 response
+    And the id_token claim "nonce" equals "n-0S6_WzA2Mj"
+    And the id_token claim "azp" equals "demo"

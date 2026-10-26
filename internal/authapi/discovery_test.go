@@ -30,3 +30,15 @@ func TestDiscovery_PublishesIssuerAndEndpoints(t *testing.T) {
 	algs, _ := doc["id_token_signing_alg_values_supported"].([]any)
 	assert.Contains(t, algs, "RS256")
 }
+
+func TestDiscovery_AdvertisesPKCEMethodsAndClaims(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/.well-known/openid-configuration", nil))
+	require.Equal(t, 200, w.Code)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, []any{"S256", "plain"}, doc["code_challenge_methods_supported"])
+	assert.Equal(t, []any{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"}, doc["claims_supported"])
+}
