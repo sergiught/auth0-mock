@@ -318,3 +318,19 @@ func TestFluent_ThenAfterMarshalErrorKeepsFirstError(t *testing.T) {
 	assert.Contains(t, err.Error(), "Respond.JSON")
 	assert.Equal(t, 0, len(rec.calls))
 }
+
+// TestFluent_ReusedBuilderDropsStaleThen guards against a second Apply
+// on the same ExpectationBuilder re-sending the first chain's "then".
+func TestFluent_ReusedBuilderDropsStaleThen(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	b := c.ExpectGet("/p")
+	_, err := b.Respond(429).Then(200).Apply(t.Context())
+	require.NoError(t, err)
+	_, err = b.Respond(200).Apply(t.Context())
+	require.NoError(t, err)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &raw))
+	assert.NotContains(t, raw, "then")
+}

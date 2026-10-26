@@ -287,9 +287,17 @@ func TestStore_SequenceConcurrentPositions(t *testing.T) {
 func TestStore_GetByIDAndListCarryThen(t *testing.T) {
 	t.Parallel()
 	s := NewStore()
-	stored := s.Put(Expectation{Method: "GET", Path: "/api/v2/users/1", Kind: KindExact, Response: resp(429, `{}`), Then: []ResponseDef{resp(200, `{}`), resp(200, `{}`)}})
-	assert.Len(t, s.GetByID(stored.ID).Then, 2)
+	stored := s.Put(Expectation{Method: "GET", Path: "/api/v2/users/1", Kind: KindExact, Response: resp(429, `{}`), Then: []ResponseDef{resp(503, `{}`), resp(200, `{}`)}})
+	statuses := func(e Expectation) []int {
+		var out []int
+		for _, r := range e.Then {
+			out = append(out, r.Status)
+		}
+		return out
+	}
+	assert.Equal(t, []int{503, 200}, statuses(*s.GetByID(stored.ID)))
 	list := s.List()
-	assert.Len(t, list, 1)
-	assert.Len(t, list[0].Then, 2)
+	if assert.Len(t, list, 1) {
+		assert.Equal(t, []int{503, 200}, statuses(list[0]))
+	}
 }

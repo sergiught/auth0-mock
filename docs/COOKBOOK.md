@@ -350,12 +350,12 @@ The Go SDK equivalent:
 
 ```go
 _, err := c.ExpectGet("/api/v2/users/auth0|x").
-    Respond(429).Header("Retry-After", "0").JSON(rateLimitBody).
+    Respond(429).Header("Retry-After", "0").JSON(map[string]any{"statusCode": 429, "error": "Too Many Requests", "message": "Rate limit exceeded"}).
     Then(200).JSON(map[string]any{"user_id": "auth0|x", "email": "x@example.com"}).
     Apply(ctx)
 ```
 
-go-auth0 retries 429 responses, so `Retry-After: 0` keeps the test fast.
+go-auth0 retries a 429 up to twice and waits at least 1s; `Retry-After: 0` keeps each wait at that floor.
 
 ## Reset state between tests
 

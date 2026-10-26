@@ -133,7 +133,8 @@ func (b *ExpectationBuilder) Respond(status int) *ResponseBuilder {
 
 // ResponseBuilder is the response-side phase. Chain JSON / Body /
 // Header to populate the canned response, then Apply to send the
-// registration to the mock.
+// registration to the mock. Then(status) starts the next answer in a
+// sequence.
 type ResponseBuilder struct {
 	builder *ExpectationBuilder
 	// Answer sequence. The last element is the one JSON / Body /
@@ -208,8 +209,8 @@ func (r *ResponseBuilder) Apply(ctx context.Context) (*RegisteredExpectation, er
 		return nil, r.builder.err
 	}
 	r.builder.exp.Response = r.responses[0]
-	if len(r.responses) > 1 {
-		r.builder.exp.Then = r.responses[1:]
-	}
+	// Always assigned so a reused builder never re-sends a stale list;
+	// omitempty drops it when empty.
+	r.builder.exp.Then = r.responses[1:]
 	return r.builder.client.Expectations.Add(ctx, r.builder.exp)
 }
