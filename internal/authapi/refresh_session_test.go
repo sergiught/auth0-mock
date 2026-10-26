@@ -253,3 +253,17 @@ func TestRefresh_ConcurrentSameTokenKeepsUser(t *testing.T) {
 		assert.Equal(t, "alice@example.com", access.Subject)
 	}
 }
+
+func TestRefresh_UpdatesRememberedProfile(t *testing.T) {
+	r, _, _ := newNonceRouter(t)
+	login := passwordLogin(t, r, url.Values{"username": {"alice"}})
+	require.NotEmpty(t, login.RefreshToken)
+	// A code-flow login for the same subject remembers a different profile.
+	code := authorizeCode(t, r, url.Values{"login_hint": {"alice"}})
+	require.Equal(t, http.StatusOK, exchangeCode(r, code, "").Code)
+
+	w := refreshWith(r, login.RefreshToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	body := getUserinfo(t, r, decodeToken(t, w).AccessToken)
+	assert.Equal(t, "alice", body["email"])
+}

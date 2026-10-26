@@ -37,7 +37,9 @@ func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make(map[string]any, len(claims.Extra)+1)
 	out["sub"] = claims.Subject
-	if h.Sessions != nil {
+	// Machine tokens have no user, even when "<client_id>@clients" happens
+	// to match a remembered subject.
+	if h.Sessions != nil && claims.Extra["gty"] != "client-credentials" {
 		if profile, ok := h.Sessions.Profile(claims.Subject); ok {
 			maps.Copy(out, profile)
 		}

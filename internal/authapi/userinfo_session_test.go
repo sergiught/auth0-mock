@@ -161,3 +161,23 @@ func TestUserinfo_NilSessionsReturnsOnlyTokenClaims(t *testing.T) {
 	}
 	assert.Equal(t, want, getUserinfo(t, r, tok))
 }
+
+func TestUserinfo_ClientCredentialsSubjectCollisionGetsNoProfile(t *testing.T) {
+	r, _, _ := newNonceRouter(t)
+	// A user whose subject equals the machine token's "<client_id>@clients".
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"demo@clients"}, "password": {"x"},
+	})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = postTokenForm(r, url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"demo"}, "client_secret": {"s"},
+		"audience": {"https://api/"},
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	got := getUserinfo(t, r, accessTokenOf(t, w))
+	assert.Equal(t, "demo@clients", got["sub"])
+	for _, k := range []string{"email", "email_verified", "name", "nickname", "picture"} {
+		assert.NotContains(t, got, k)
+	}
+}

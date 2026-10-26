@@ -457,6 +457,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
+	h.rememberProfile(grant.Subject, idExtra)
 	grant.Audience, grant.Scope, grant.ClientID = aud, scope, clientID
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
