@@ -53,8 +53,9 @@ type Deps struct {
 	// MaxRequestBodyBytes caps every incoming request body. Zero or negative
 	// disables the cap.
 	MaxRequestBodyBytes int64
-	// LogoutAllowedURLs is the allow-list of absolute returnTo URLs that
-	// /v2/logout will redirect to. Relative URLs are always allowed.
+	// LogoutAllowedURLs is the allow-list of absolute URLs that /v2/logout
+	// (returnTo) and /oidc/logout (post_logout_redirect_uri) will redirect to.
+	// Relative URLs are always allowed.
 	LogoutAllowedURLs []string
 	// AuthorizeAllowedRedirectURIs is the allow-list of absolute
 	// redirect_uri values that /authorize will 302 to. Same threat model

@@ -215,7 +215,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code` / implicit token, or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
 | `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
-| `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint` |
+| `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
 | `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer |
 | `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |

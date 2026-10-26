@@ -35,7 +35,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │   /.well-known/openid-configuration         OIDC discovery               │
 │                                                                          │
 │   /oauth/* /authorize /userinfo             Auth API (hand-coded)        │
-│   /v2/logout                                - mints real RS256 JWTs      │
+│   /v2/logout, /oidc/logout                  - mints real RS256 JWTs      │
 │   /dbconnections/{signup,change_password}                                │
 │   /passwordless/{start,verify}                                           │
 │                                                                          │

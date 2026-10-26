@@ -138,6 +138,9 @@ paths:
           description: Redirect to `post_logout_redirect_uri` with `state`.
         "400":
           description: Invalid hint, missing client, or redirect not allowed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
     post:
       tags: ["OAuth & OIDC"]
       summary: End the session (OIDC RP-initiated logout, form post).
@@ -165,6 +168,9 @@ paths:
           description: Redirect to `post_logout_redirect_uri` with `state`.
         "400":
           description: Invalid hint, missing client, or redirect not allowed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /oauth/revoke:
     post:
       tags: ["OAuth & OIDC"]

@@ -35,6 +35,10 @@ type OIDCLogoutHandler struct {
 }
 
 func (h *OIDCLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		badLogout(w, "invalid form body: "+err.Error())
+		return
+	}
 	hint := r.FormValue("id_token_hint")
 	clientID := r.FormValue("client_id")
 	target := r.FormValue("post_logout_redirect_uri")
@@ -76,9 +80,12 @@ func (h *OIDCLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if state != "" {
-		q := u.Query()
-		q.Set("state", state)
-		u.RawQuery = q.Encode()
+		// Append rather than re-encode, so the caller's query survives verbatim.
+		if u.RawQuery == "" {
+			u.RawQuery = "state=" + url.QueryEscape(state)
+		} else {
+			u.RawQuery += "&state=" + url.QueryEscape(state)
+		}
 	}
 	w.Header().Set("Location", u.String())
 	w.WriteHeader(http.StatusFound)

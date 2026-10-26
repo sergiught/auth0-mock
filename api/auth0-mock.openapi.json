@@ -53922,7 +53922,7 @@
       "name": "auth0-mock",
       "url": "https://github.com/sergiught/auth0-mock"
     },
-    "description": "**auth0-mock** is a drop-in mock of Auth0's Authentication and Management APIs. Run it locally and point your application's `AUTH0_DOMAIN` at it — your code calls auth0-mock the same way it calls Auth0, with real signed JWTs verifiable against the JWKS published at `/.well-known/jwks.json`.\n\nThis document covers every HTTP surface the mock exposes:\n\n- **Authentication API** — `/oauth/token`, `/authorize`, `/userinfo`, `/v2/logout`, `/dbconnections/*`, `/passwordless/*`.\n- **Management API** — every endpoint under `/api/v2` from the upstream Auth0 spec.\n- **admin0** — control plane under `/admin0/*` for direct manipulation of in-memory state (registered matches, claim overlay, per-audience permissions, MFA-required flag).\n- **service** — `/healthz`, `/.well-known/jwks.json`, `/openapi.json`, `/openapi.yaml`, `/docs`.\n\nThe **Try it** panel on this page is preloaded with a freshly-minted `client_credentials` token, so Management API calls succeed without any manual setup. The token's audience defaults to `DEFAULT_AUDIENCE` (`https://localhost:8443/api/v2/`) — override per-request from the auth selector if your test needs a different one.\n\nProject source: \u003chttps://github.com/sergiught/auth0-mock\u003e",
+    "description": "**auth0-mock** is a drop-in mock of Auth0's Authentication and Management APIs. Run it locally and point your application's `AUTH0_DOMAIN` at it — your code calls auth0-mock the same way it calls Auth0, with real signed JWTs verifiable against the JWKS published at `/.well-known/jwks.json`.\n\nThis document covers every HTTP surface the mock exposes:\n\n- **Authentication API** — `/oauth/token`, `/authorize`, `/userinfo`, `/v2/logout`, `/oidc/logout`, `/dbconnections/*`, `/passwordless/*`.\n- **Management API** — every endpoint under `/api/v2` from the upstream Auth0 spec.\n- **admin0** — control plane under `/admin0/*` for direct manipulation of in-memory state (registered matches, claim overlay, per-audience permissions, MFA-required flag).\n- **service** — `/healthz`, `/.well-known/jwks.json`, `/openapi.json`, `/openapi.yaml`, `/docs`.\n\nThe **Try it** panel on this page is preloaded with a freshly-minted `client_credentials` token, so Management API calls succeed without any manual setup. The token's audience defaults to `DEFAULT_AUDIENCE` (`https://localhost:8443/api/v2/`) — override per-request from the auth selector if your test needs a different one.\n\nProject source: \u003chttps://github.com/sergiught/auth0-mock\u003e",
     "license": {
       "name": "MIT",
       "url": "https://github.com/sergiught/auth0-mock/blob/main/LICENSE"
@@ -79996,6 +79996,13 @@
             "description": "Redirect to `post_logout_redirect_uri` with `state`."
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
             "description": "Invalid hint, missing client, or redirect not allowed."
           }
         },
@@ -80053,6 +80060,13 @@
             "description": "Redirect to `post_logout_redirect_uri` with `state`."
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
             "description": "Invalid hint, missing client, or redirect not allowed."
           }
         },

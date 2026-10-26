@@ -29,7 +29,8 @@ func TestVerify_AllowExpiredStillChecksSignatureAndIssuer(t *testing.T) {
 	tok, err := sameIssuer.Mint(MintOpts{Subject: "x", Audience: []string{"a"}, TTL: time.Hour})
 	require.NoError(t, err)
 	_, err = ks.Verify(tok, VerifyOpts{AllowExpired: true})
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "signature")
 
 	other, err := NewKeySet(Config{Issuer: "https://other/", AccessTokenTTL: time.Hour})
 	require.NoError(t, err)
@@ -53,5 +54,6 @@ func TestVerify_AllowExpiredStillChecksAudience(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = ks.Verify(tok, VerifyOpts{AllowExpired: true, RequireAudience: "nope"})
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "audience")
 }

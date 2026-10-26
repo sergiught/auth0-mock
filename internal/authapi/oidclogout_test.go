@@ -130,3 +130,62 @@ func TestOIDCLogout_PostForm(t *testing.T) {
 	require.Equal(t, http.StatusFound, w.Code)
 	assert.Equal(t, "https://app/bye?state=s1", w.Header().Get("Location"))
 }
+
+func newPermissiveLogoutRouter(t *testing.T) http.Handler {
+	t.Helper()
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{Router: r, Keys: ks, Issuer: "https://mock/", Log: zerolog.Nop()})
+	return r
+}
+
+func TestOIDCLogout_StateKeepsExistingQueryVerbatim(t *testing.T) {
+	r := newPermissiveLogoutRouter(t)
+	w := logoutGet(t, r, "client_id=demo&state=s1&post_logout_redirect_uri="+url.QueryEscape("https://app/bye?b=2&a=1&flag#frag"))
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://app/bye?b=2&a=1&flag&state=s1#frag", w.Header().Get("Location"))
+}
+
+func TestOIDCLogout_RejectsUnparseableRedirect(t *testing.T) {
+	r := newPermissiveLogoutRouter(t)
+	requireLogoutError(t, logoutGet(t, r, "client_id=demo&post_logout_redirect_uri=https%3A%2F%2Fapp%2F%25zz"),
+		"post_logout_redirect_uri is not a valid URL")
+}
+
+func TestOIDCLogout_HintWithMatchingClientID(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	w := logoutGet(t, r, "client_id=demo&id_token_hint="+mintHint(t, ks, time.Hour, nil)+"&post_logout_redirect_uri="+bye)
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://app/bye", w.Header().Get("Location"))
+}
+
+func TestOIDCLogout_ValidHintNoRedirectRendersPage(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	w := logoutGet(t, r, "id_token_hint="+mintHint(t, ks, time.Hour, nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, loggedOutPage, w.Body.String())
+}
+
+func TestOIDCLogout_PostFormHint(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	req := httptest.NewRequest("POST", "/oidc/logout",
+		strings.NewReader("id_token_hint="+mintHint(t, ks, time.Hour, nil)+"&post_logout_redirect_uri="+bye))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://app/bye", w.Header().Get("Location"))
+}
+
+func TestOIDCLogout_MalformedFormBody(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	req := httptest.NewRequest("POST", "/oidc/logout", strings.NewReader("%zz"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.True(t, strings.HasPrefix(body["error_description"], "invalid form body: "))
+}
