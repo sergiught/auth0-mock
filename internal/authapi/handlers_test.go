@@ -50,9 +50,11 @@ func TestAuthorize_RejectsShortCodeChallenge(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("GET",
 		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=code"+
 			"&code_challenge="+short+"&code_challenge_method=S256", nil))
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "code_challenge")
-	assert.Contains(t, w.Body.String(), "RFC 7636")
+	loc := location(t, w)
+	assert.Equal(t, "app", loc.Host)
+	assert.Equal(t, "invalid_request", loc.Query().Get("error"))
+	assert.Equal(t, "code_challenge must be 43..128 characters (RFC 7636 section 4.1), got 42", loc.Query().Get("error_description"))
+	assert.False(t, loc.Query().Has("code"))
 }
 
 func TestAuthorize_RejectsLongCodeChallenge(t *testing.T) {
@@ -62,7 +64,11 @@ func TestAuthorize_RejectsLongCodeChallenge(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("GET",
 		"/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=code"+
 			"&code_challenge="+long+"&code_challenge_method=S256", nil))
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	loc := location(t, w)
+	assert.Equal(t, "app", loc.Host)
+	assert.Equal(t, "invalid_request", loc.Query().Get("error"))
+	assert.Equal(t, "code_challenge must be 43..128 characters (RFC 7636 section 4.1), got 129", loc.Query().Get("error_description"))
+	assert.False(t, loc.Query().Has("code"))
 }
 
 func TestUserinfo_ReturnsClaims(t *testing.T) {

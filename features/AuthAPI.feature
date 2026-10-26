@@ -9,6 +9,33 @@ Feature: Authentication API endpoints
     And the response Location header contains "code="
     And the response Location header contains "state=s1"
 
+  Scenario: A registered authorize error is sent back to redirect_uri
+    Given I POST "/admin0/authorize-errors" with body:
+      """
+      {"match":{"client_id":"abc"},"error":"access_denied","error_description":"User cancelled"}
+      """
+    And I receive a 201 response
+    When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&response_type=code" without a bearer
+    Then I receive a 302 response
+    And the response Location header contains "error=access_denied"
+    And the response Location header contains "state=s1"
+
+  Scenario: form_post delivers the error as an auto-submitting form
+    Given I POST "/admin0/authorize-errors" with body:
+      """
+      {"match":{"client_id":"abc"},"error":"access_denied","error_description":"User cancelled"}
+      """
+    And I receive a 201 response
+    When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&response_type=code&response_mode=form_post" without a bearer
+    Then I receive a 200 response
+    And the response body contains "document.forms[0].submit()"
+    And the response body contains "access_denied"
+
+  Scenario: Implicit tokens arrive in the fragment
+    When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=token" without a bearer
+    Then I receive a 302 response
+    And the response Location header contains "#access_token="
+
   Scenario: /authorize without redirect_uri is 400
     When I send "GET /authorize?client_id=abc" without a bearer
     Then I receive a 400 response

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
+	"github.com/sergiught/auth0-mock/internal/authorizeerr"
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/mfa"
@@ -33,6 +34,8 @@ type Deps struct {
 	Sessions                     *session.Store
 	LogoutAllowedURLs            []string
 	AuthorizeAllowedRedirectURIs []string
+	// AuthorizeErrors may be nil (no /authorize failure rules).
+	AuthorizeErrors *authorizeerr.Store
 }
 
 // Mount registers all Auth API endpoints on d.Router.
@@ -52,6 +55,7 @@ func Mount(d Deps) {
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
 		PKCE:                d.PKCE,
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
+		Errors:              d.AuthorizeErrors,
 	})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", NewDiscoveryHandler(d.Issuer))

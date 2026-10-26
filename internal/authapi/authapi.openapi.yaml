@@ -63,9 +63,15 @@ paths:
         - { name: audience,             in: query, required: false, schema: { type: string } }
         - { name: code_challenge,       in: query, required: false, schema: { type: string } }
         - { name: code_challenge_method,in: query, required: false, schema: { type: string, enum: [S256, plain] } }
+        - { name: response_mode,       in: query, required: false, schema: { type: string, enum: [query, fragment, form_post, web_message] } }
       responses:
         "302":
-          description: Redirect to `redirect_uri` with `code` and `state` query parameters.
+          description: Redirect to `redirect_uri` with the result (`code`/`access_token` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`.
+        "200":
+          description: "form_post: auto-submitting form to `redirect_uri`"
+          content:
+            text/html:
+              schema: { type: string }
         "400":
           description: Missing or invalid `redirect_uri`.
           content:

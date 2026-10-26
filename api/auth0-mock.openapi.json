@@ -79629,11 +79629,34 @@
               ],
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "response_mode",
+            "schema": {
+              "enum": [
+                "query",
+                "fragment",
+                "form_post",
+                "web_message"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "form_post: auto-submitting form to `redirect_uri`"
+          },
           "302": {
-            "description": "Redirect to `redirect_uri` with `code` and `state` query parameters."
+            "description": "Redirect to `redirect_uri` with the result (`code`/`access_token` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`."
           },
           "400": {
             "content": {

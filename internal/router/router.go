@@ -184,6 +184,7 @@ func New(d Deps) (http.Handler, error) {
 		MFA:                          d.MFA,
 		LogoutAllowedURLs:            d.LogoutAllowedURLs,
 		AuthorizeAllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
+		AuthorizeErrors:              d.AuthorizeErrors,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{
