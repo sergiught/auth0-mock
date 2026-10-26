@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // AuthorizeHandler handles OIDC authorization requests.
@@ -34,6 +37,9 @@ type AuthorizeHandler struct {
 	Errors *authorizeerr.Store
 	// Token mints the access and id tokens for response types other than code; required for those types.
 	Token *TokenHandler
+	// Sessions holds the login sessions behind the auth0 cookie; nil means no
+	// sessions, so prompt=none always answers login_required.
+	Sessions *session.Store
 }
 
 // responseTypes is the parsed response_type set.
@@ -105,6 +111,26 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	subject, authTime, reuse, ok := h.resolveLogin(r, q)
+	if !ok {
+		deliver(w, u, mode, errorParams("login_required", "Login required", state))
+		return
+	}
+
+	params, ok := h.issue(w, u, mode, q, rt, state, subject, authTime)
+	if !ok {
+		return
+	}
+	if !reuse && h.Sessions != nil {
+		h.startSession(w, r, subject, authTime)
+	}
+
+	deliver(w, u, mode, params)
+}
+
+// issue builds the success parameters: the code, any tokens, and state. It
+// delivers the error itself and returns false when minting fails.
+func (h *AuthorizeHandler) issue(w http.ResponseWriter, u *url.URL, mode string, q url.Values, rt responseTypes, state, subject string, authTime time.Time) (url.Values, bool) {
 	params := url.Values{}
 	var issuedCode string
 	if rt.code {
@@ -112,16 +138,50 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		params.Set("code", issuedCode)
 	}
 	if rt.token || rt.idToken {
-		if !h.mintTokens(w, u, mode, q, rt, issuedCode, state, params) {
-			return
+		if !h.mintTokens(w, u, mode, q, rt, issuedCode, state, subject, authTime, params) {
+			return nil, false
 		}
 	}
-	h.recordCode(q, issuedCode)
+	h.recordCode(q, issuedCode, subject, authTime)
 	if state != "" {
 		params.Set("state", state)
 	}
+	return params, true
+}
 
-	deliver(w, u, mode, params)
+// now is the mock clock: the key set's when tokens are minted, else wall time.
+func (h *AuthorizeHandler) now() time.Time {
+	if h.Token != nil {
+		return h.Token.Keys.Cfg().Now()
+	}
+	return time.Now()
+}
+
+// resolveLogin decides who is logging in and when they authenticated.
+// Reuse reports that the request's live session stays as is. Ok is false when
+// prompt=none finds no live session, which is a login_required error.
+func (h *AuthorizeHandler) resolveLogin(r *http.Request, q url.Values) (subject string, authTime time.Time, reuse, ok bool) {
+	_, login, live := currentLogin(r, h.Sessions)
+	prompts := strings.Fields(q.Get("prompt"))
+	if slices.Contains(prompts, "none") {
+		return login.Subject, login.AuthTime, true, live
+	}
+	if hint := q.Get("login_hint"); hint != "" {
+		return hint, h.now(), false, true
+	}
+	if live && !slices.Contains(prompts, "login") {
+		return login.Subject, login.AuthTime, true, true
+	}
+	return DefaultSubject, h.now(), false, true
+}
+
+// startSession replaces the request's login session, if any, with a new one
+// for subject and sets its cookie.
+func (h *AuthorizeHandler) startSession(w http.ResponseWriter, r *http.Request, subject string, authTime time.Time) {
+	if old, _, live := currentLogin(r, h.Sessions); live {
+		h.Sessions.EndLogin(old)
+	}
+	setLoginCookie(w, r, h.Sessions.StartLogin(subject, authTime))
 }
 
 // vetRedirect parses redirect and applies the allow-list, writing the 400
@@ -173,17 +233,13 @@ func validateResponseType(q url.Values, raw string, rt responseTypes, valid bool
 // mintTokens adds the access_token / id_token parameters for the requested
 // response types to params. It delivers a server_error and returns false when
 // minting fails.
-func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode string, q url.Values, rt responseTypes, issuedCode, state string, params url.Values) bool {
+func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode string, q url.Values, rt responseTypes, issuedCode, state, subject string, authTime time.Time, params url.Values) bool {
 	fail := func(desc string) bool {
 		deliver(w, u, mode, errorParams("server_error", desc, state))
 		return false
 	}
 	if h.Token == nil {
 		return fail("token minting is not configured")
-	}
-	subject := DefaultSubject
-	if hint := q.Get("login_hint"); hint != "" {
-		subject = hint
 	}
 	clientID := q.Get("client_id")
 	cfg := h.Token.Keys.Cfg()
@@ -206,7 +262,7 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode st
 		idExtra := deriveProfile(subject)
 		idExtra["azp"] = clientID
 		idExtra["nonce"] = q.Get("nonce")
-		idExtra["auth_time"] = cfg.Now().Unix()
+		idExtra["auth_time"] = authTime.Unix()
 		if access != "" {
 			idExtra["at_hash"] = tokenHash(access)
 		}
@@ -250,7 +306,7 @@ func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (
 // recordCode stores the per-code authorization state (nonce, login_hint and,
 // when sent, the validated PKCE challenge) for /oauth/token. Only meaningful
 // for the "code" response type.
-func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode string) {
+func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode, subject string, authTime time.Time) {
 	if h.PKCE == nil || issuedCode == "" {
 		return
 	}
@@ -258,7 +314,8 @@ func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode string) {
 		ClientID:  q.Get("client_id"),
 		Redirect:  q.Get("redirect_uri"),
 		Nonce:     q.Get("nonce"),
-		LoginHint: q.Get("login_hint"),
+		LoginHint: subject,
+		AuthTime:  authTime,
 		Audience:  strings.TrimSpace(q.Get("audience")),
 		Scope:     q.Get("scope"),
 	}

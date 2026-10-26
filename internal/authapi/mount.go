@@ -58,6 +58,7 @@ func Mount(d Deps) {
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
 		Errors:              d.AuthorizeErrors,
 		Token:               tok,
+		Sessions:            d.Sessions,
 	})
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", NewDiscoveryHandler(d.Issuer))
