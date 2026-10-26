@@ -206,6 +206,8 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 
 ### 🎫 Authentication API (hand-coded, fully functional)
 
+Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_ALLOWED_ORIGINS`).
+
 | Endpoint | Method | Notes |
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
@@ -312,7 +314,7 @@ until [ "$(curl -s http://localhost:8080/admin0/events/subscribers | jq .active)
 From Go tests, skip the hand-rolled loop: `c.Events.Subscribers(ctx)` returns the typed `{Active, Total}` counts, and `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until `active` settles (or fatals on timeout).
 
 > [!NOTE]
-> The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. The mock has no CORS support — browser `EventSource` clients on a different origin will be blocked by the browser's same-origin policy; run the mock on the page's origin or front it with a CORS-enabling proxy.
+> The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. `/api/v2/events` sends CORS headers like every other route, but the browser's native `EventSource` cannot send an `Authorization` header and the stream needs a bearer, so use a fetch-based SSE client from a browser.
 
 See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKBOOK.md#drive-an-event-stream-consumer-from-a-test) for the SDK-driven workflow.
 
@@ -419,6 +421,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
 | `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
 | `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |
+| `CORS_ALLOWED_ORIGINS` | _empty_ | Comma-separated allow-list of browser origins that get CORS headers. Empty (default) = any origin, so a browser app can call the mock with no setup. Entries are exact origins (`http://localhost:3000`) or `https://*.example.com` (matches exactly one subdomain level; scheme and port must match). `*` = any origin. Unlisted origins get no CORS headers and their preflights get 403. Default ports (`:443`/`:80`) are normalised; userinfo and empty ports are rejected. Invalid entries fail startup. Mirrors Auth0's per-application "Allowed Web Origins" / "Allowed Origins (CORS)" settings. |
 | `BEARER_REQUIRE_AUDIENCE` | _empty_ | When set, the Mgmt-API bearer middleware rejects tokens whose `aud` claim doesn't contain this value (mirrors Auth0's tenant-API-audience binding). Empty keeps the "echoed, not enforced" default so tests can swap audiences freely. |
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>

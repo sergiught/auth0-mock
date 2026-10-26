@@ -19,6 +19,7 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, "https://localhost:8443/api/v2/", spec.DefaultAudience)
 	assert.True(t, spec.SpecValidationStrict)
 	assert.Equal(t, []string{"localhost", "127.0.0.1", "::1"}, spec.TLS.Hostnames)
+	assert.Empty(t, spec.CORSAllowedOrigins)
 }
 
 func TestLoad_OverridesFromEnv(t *testing.T) {
@@ -26,11 +27,13 @@ func TestLoad_OverridesFromEnv(t *testing.T) {
 	t.Setenv("HTTP_ADDR", ":9000")
 	t.Setenv("SPEC_VALIDATION_STRICT", "false")
 	t.Setenv("TLS_CACHE_DIR", "/tmp/tls")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://*.example.com")
 	spec, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, ":9000", spec.HTTPAddress)
 	assert.False(t, spec.SpecValidationStrict)
 	assert.Equal(t, "/tmp/tls", spec.TLS.CacheDir)
+	assert.Equal(t, []string{"http://localhost:3000", "https://*.example.com"}, spec.CORSAllowedOrigins)
 }
 
 func TestLoad_RejectsBothListenersOff(t *testing.T) {
@@ -69,6 +72,7 @@ func clearEnv(t *testing.T) {
 		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
 		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT", "REQUEST_JOURNAL_SIZE",
+		"CORS_ALLOWED_ORIGINS",
 	} {
 		_ = os.Unsetenv(k)
 	}

@@ -57,6 +57,10 @@ type Deps struct {
 	// as LogoutAllowedURLs but on the higher-value endpoint (it carries
 	// `code` / `access_token` in the URL). Empty = no enforcement.
 	AuthorizeAllowedRedirectURIs []string
+	// CORSAllowedOrigins is the allow-list of browser origins that get CORS
+	// headers. Empty (or a "*" entry) allows any origin; see
+	// middleware.CORS for the entry syntax. An invalid entry makes New fail.
+	CORSAllowedOrigins []string
 	// BearerRequireAudience, when non-empty, makes the Mgmt-API bearer
 	// middleware reject tokens whose `aud` claim doesn't contain this
 	// value. Opt-in to preserve the documented test-friendly default.
@@ -96,6 +100,13 @@ func New(d Deps) (http.Handler, error) {
 	}
 	r.Use(middleware.RequestID)
 	r.Use(middleware.MaxBodyBytes(d.MaxRequestBodyBytes))
+	// CORS precedes the journal, logging and spec validation so preflights
+	// are answered before any of them runs.
+	cors, err := middleware.CORS(d.CORSAllowedOrigins)
+	if err != nil {
+		return nil, fmt.Errorf("cors: %w", err)
+	}
+	r.Use(cors)
 	// Recovery sits inside the journal so a recovered panic's 500 is
 	// recorded too.
 	r.Use(d.Journal.Middleware)

@@ -116,6 +116,11 @@ func (h *GenericHandler) respond(ctx context.Context, w http.ResponseWriter, exp
 	}
 	// 4. Write the registered response.
 	for k, v := range exp.Response.Headers {
+		// Vary is additive so the CORS middleware's Vary: Origin survives.
+		if http.CanonicalHeaderKey(k) == "Vary" {
+			w.Header().Add(k, v)
+			continue
+		}
 		w.Header().Set(k, v)
 	}
 	if w.Header().Get("Content-Type") == "" {

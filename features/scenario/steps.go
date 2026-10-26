@@ -253,6 +253,38 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the response header "([^"]+)" does not exist$`, func(name string) error {
+		if vals := c.LastResp.Header.Values(name); len(vals) > 0 {
+			return fmt.Errorf("header %s: got %q, want it absent", name, vals)
+		}
+		return nil
+	})
+
+	sc.Step(`^I send "([^"]+)" with headers:$`, func(target string, table *godog.Table) error {
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		req, err := http.NewRequest(method, c.BaseURL+path, nil)
+		if err != nil {
+			return err
+		}
+		for _, row := range table.Rows {
+			if len(row.Cells) != 2 {
+				return fmt.Errorf("header rows need a name and a value, got %d cells", len(row.Cells))
+			}
+			req.Header.Set(row.Cells[0].Value, row.Cells[1].Value)
+		}
+		resp, err := nonFollowingClient.Do(req)
+		if err != nil {
+			return err
+		}
+		c.LastResp = resp
+		c.LastBody, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil
+	})
+
 	sc.Step(`^the response Location header contains "([^"]+)"$`, func(needle string) error {
 		loc := c.LastResp.Header.Get("Location")
 		if !strings.Contains(loc, needle) {
