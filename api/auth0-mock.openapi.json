@@ -79925,11 +79925,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MFARequiredError"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MFARequiredError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OAuthError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "MFA required."
+            "description": "MFA required, or access_denied for client_credentials with no audience and no default audience configured."
           }
         },
         "summary": "Exchange credentials for an access token.",

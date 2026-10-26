@@ -78,7 +78,7 @@ The container is configured via environment variables. The most common ones:
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_               | If both set → load; else auto-gen    |
 | `TLS_CACHE_DIR` | _empty_                                | Persist auto-gen cert across restarts |
 | `ISSUER_URL`    | `https://localhost:8443/`              | `iss` claim and OIDC discovery base  |
-| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/`    | Default `aud` if request omits one   |
+| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/`    | Default `aud` if request omits one; blank = none (opaque user-login tokens, `client_credentials` gets 403) |
 | `LOG_LEVEL`     | `info`                                 | `debug` / `info` / `warn` / `error`  |
 | `WRITE_TIMEOUT` | `30s`                                  | `http.Server.WriteTimeout` — slow-write defence |
 | `IDLE_TIMEOUT`  | `120s`                                 | `http.Server.IdleTimeout` — keep-alive cap      |

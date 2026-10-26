@@ -46,10 +46,13 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
         "403":
-          description: MFA required.
+          description: MFA required, or access_denied for client_credentials with no audience and no default audience configured.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MFARequiredError" }
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/MFARequiredError" }
+                  - { $ref: "#/components/schemas/OAuthError" }
   /authorize:
     get:
       tags: ["OAuth & OIDC"]
