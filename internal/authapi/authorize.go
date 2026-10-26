@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/sergiught/auth0-mock/internal/authorizeerr"
 	"github.com/sergiught/auth0-mock/internal/httperr"
+	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 )
 
@@ -29,6 +32,37 @@ type AuthorizeHandler struct {
 	AllowedRedirectURIs []string
 	// Errors holds the failure rules; nil means no rules.
 	Errors *authorizeerr.Store
+	// Token mints the access and id tokens for response types other than code; required for those types.
+	Token *TokenHandler
+}
+
+// responseTypes is the parsed response_type set.
+type responseTypes struct {
+	code, token, idToken bool
+}
+
+// parseResponseTypes splits a space-separated response_type into a set.
+// Order and duplicates are irrelevant; an empty value means "code". The second
+// result is false when the value holds an unknown word.
+func parseResponseTypes(raw string) (responseTypes, bool) {
+	var rt responseTypes
+	words := strings.Fields(raw)
+	if len(words) == 0 {
+		return responseTypes{code: true}, true
+	}
+	for _, w := range words {
+		switch w {
+		case "code":
+			rt.code = true
+		case "token":
+			rt.token = true
+		case "id_token":
+			rt.idToken = true
+		default:
+			return responseTypes{}, false
+		}
+	}
+	return rt, true
 }
 
 func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -40,39 +74,31 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	state := q.Get("state")
 	responseType := q.Get("response_type")
-	if responseType == "" {
-		responseType = "code"
-	}
+	rt, validType := parseResponseTypes(responseType)
+	// Anything other than exactly {code} defaults to fragment delivery.
+	fragmentDefault := rt.token || rt.idToken
 
-	u, err := url.Parse(redirect)
-	if err != nil {
-		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "invalid redirect_uri")
+	u, ok := h.vetRedirect(w, redirect)
+	if !ok {
 		return
 	}
-	if !h.isRedirectAllowed(redirect) {
-		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request",
-			"redirect_uri is not in the configured allow-list (AUTHORIZE_ALLOWED_CALLBACKS); add it there to permit this redirect")
-		return
-	}
-	mode := resolveMode(q.Get("response_mode"), responseType == "token")
+	mode := resolveMode(q.Get("response_mode"), fragmentDefault)
 	// Go html/template rewrites a form action with a non-http(s) scheme to
 	// #ZgotmplZ, so fall back to the default mode for such redirect URIs.
 	if mode == modeFormPost && u.Scheme != "http" && u.Scheme != "https" {
-		mode = resolveMode("", responseType == "token")
+		mode = resolveMode("", fragmentDefault)
 	}
 
-	// Validate PKCE challenge length up-front. RFC 7636 §4.1 requires the
+	// Validation includes the PKCE challenge length, checked up-front. RFC 7636 §4.1 requires the
 	// code_verifier (and therefore the plain code_challenge, or the pre-hash
 	// for S256) to be 43..128 characters. Rejecting out-of-range values at
 	// /authorize gives the client a real error instead of a code that
 	// silently fails to exchange later. Validation runs even when the PKCE
 	// store isn't wired so client-side bugs surface either way.
-	if challenge := q.Get("code_challenge"); challenge != "" {
-		if n := len(challenge); n < 43 || n > 128 {
-			deliver(w, u, mode, errorParams("invalid_request",
-				fmt.Sprintf("code_challenge must be 43..128 characters (RFC 7636 section 4.1), got %d", n), state))
-			return
-		}
+
+	if code, desc := validateResponseType(q, responseType, rt, validType); code != "" {
+		deliver(w, u, mode, errorParams(code, desc, state))
+		return
 	}
 
 	// A registered failure rule wins over a normal login. It runs after the
@@ -87,21 +113,139 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	params := url.Values{}
 	var issuedCode string
-	switch responseType {
-	case "token":
-		params.Set("access_token", "mock-implicit-token-"+uuid.NewString())
-		params.Set("token_type", "Bearer")
-	default:
+	if rt.code {
 		issuedCode = uuid.NewString()
 		params.Set("code", issuedCode)
+		h.recordCode(q, issuedCode)
+	}
+	if rt.token || rt.idToken {
+		if !h.mintTokens(w, u, mode, q, rt, issuedCode, state, params) {
+			return
+		}
 	}
 	if state != "" {
 		params.Set("state", state)
 	}
 
-	h.recordCode(q, issuedCode)
-
 	deliver(w, u, mode, params)
+}
+
+// vetRedirect parses redirect and applies the allow-list, writing the 400
+// itself when the URI is unusable.
+func (h *AuthorizeHandler) vetRedirect(w http.ResponseWriter, redirect string) (*url.URL, bool) {
+	u, err := url.Parse(redirect)
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "invalid redirect_uri")
+		return nil, false
+	}
+	if !h.isRedirectAllowed(redirect) {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request",
+			"redirect_uri is not in the configured allow-list (AUTHORIZE_ALLOWED_CALLBACKS); add it there to permit this redirect")
+		return nil, false
+	}
+	return u, true
+}
+
+// validateResponseType returns the OAuth error code and description for a
+// request that cannot be served, or empty strings: a code_challenge outside
+// the RFC 7636 length range, an unknown response_type, or missing parameters
+// for a token-issuing one.
+func validateResponseType(q url.Values, raw string, rt responseTypes, valid bool) (code, description string) {
+	if challenge := q.Get("code_challenge"); challenge != "" {
+		if n := len(challenge); n < 43 || n > 128 {
+			return "invalid_request", fmt.Sprintf("code_challenge must be 43..128 characters (RFC 7636 section 4.1), got %d", n)
+		}
+	}
+	if !valid {
+		return "unsupported_response_type", "Unsupported response type: " + raw
+	}
+	if !rt.token && !rt.idToken {
+		return "", ""
+	}
+	if q.Get("client_id") == "" {
+		return "invalid_request", "Missing required parameter: client_id"
+	}
+	if rt.idToken && q.Get("nonce") == "" {
+		return "invalid_request", "nonce is required when response_type includes id_token"
+	}
+	return "", ""
+}
+
+// mintTokens adds the access_token / id_token parameters for the requested
+// response types to params. It delivers a server_error and returns false when
+// minting fails.
+func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode string, q url.Values, rt responseTypes, issuedCode, state string, params url.Values) bool {
+	fail := func(desc string) bool {
+		deliver(w, u, mode, errorParams("server_error", desc, state))
+		return false
+	}
+	if h.Token == nil {
+		return fail("token minting is not configured")
+	}
+	subject := DefaultSubject
+	if hint := q.Get("login_hint"); hint != "" {
+		subject = hint
+	}
+	clientID := q.Get("client_id")
+	cfg := h.Token.Keys.Cfg()
+
+	var access string
+	if rt.token {
+		var err error
+		access, err = h.accessToken(q, subject, clientID)
+		if err != nil {
+			return fail(err.Error())
+		}
+		params.Set("access_token", access)
+		params.Set("token_type", "Bearer")
+		params.Set("expires_in", strconv.FormatInt(int64(cfg.AccessTokenTTL.Seconds()), 10))
+		if scope := q.Get("scope"); scope != "" {
+			params.Set("scope", scope)
+		}
+	}
+	if rt.idToken {
+		idExtra := deriveProfile(subject)
+		idExtra["azp"] = clientID
+		idExtra["nonce"] = q.Get("nonce")
+		idExtra["auth_time"] = cfg.Now().Unix()
+		if access != "" {
+			idExtra["at_hash"] = tokenHash(access)
+		}
+		if issuedCode != "" {
+			idExtra["c_hash"] = tokenHash(issuedCode)
+		}
+		id, err := h.Token.Keys.Mint(jwks.MintOpts{
+			Subject:  subject,
+			Audience: []string{clientID},
+			TTL:      cfg.IDTokenTTL,
+			Extra:    idExtra,
+		})
+		if err != nil {
+			return fail(err.Error())
+		}
+		h.Token.rememberProfile(subject, idExtra)
+		params.Set("id_token", id)
+	}
+	return true
+}
+
+// accessToken mints the access token for a response type that includes token.
+func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (string, error) {
+	aud := q.Get("audience")
+	if aud == "" {
+		aud = h.Token.DefaultAudience
+	}
+	params := make(map[string]any, len(q))
+	for k := range q {
+		params[k] = q.Get(k)
+	}
+	return h.Token.Keys.Mint(jwks.MintOpts{
+		Subject:  subject,
+		Audience: []string{aud},
+		Scope:    q.Get("scope"),
+		TTL:      h.Token.Keys.Cfg().AccessTokenTTL,
+		Extra:    h.Token.augmentExtra(map[string]any{"azp": clientID}, aud, params),
+	})
 }
 
 // recordCode stores the per-code authorization state (nonce, login_hint and,
