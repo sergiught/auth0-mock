@@ -169,14 +169,14 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: map[string]any{
+		Extra: fillProfile(map[string]any{
 			"email":          subject,
 			"email_verified": true,
 			"name":           subject,
 			"connection":     req.Realm,
 			"azp":            req.ClientID,
 			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		},
+		}, subject),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -347,13 +347,13 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: map[string]any{
+		Extra: fillProfile(map[string]any{
 			"email":          subject,
 			"email_verified": true,
 			"name":           subject,
 			"azp":            req.ClientID,
 			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		},
+		}, subject),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -416,7 +416,10 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 			}
 		}
 	}
-	subject := "auth0|" + uuid.NewString()
+	subject := DefaultSubject
+	if hasEntry && entry.LoginHint != "" {
+		subject = entry.LoginHint
+	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
@@ -428,10 +431,8 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	idExtra := map[string]any{
-		"email": subject + "@example.com",
-		"azp":   req.ClientID,
-	}
+	idExtra := deriveProfile(subject)
+	idExtra["azp"] = req.ClientID
 	if hasEntry {
 		idExtra["auth_time"] = entry.AuthTime.Unix()
 		if entry.Nonce != "" {

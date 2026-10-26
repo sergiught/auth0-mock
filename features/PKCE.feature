@@ -59,3 +59,11 @@ Feature: PKCE validation on authorization_code grant
     Then I receive a 200 response
     And the id_token claim "nonce" equals "n-0S6_WzA2Mj"
     And the id_token claim "azp" equals "demo"
+
+  Scenario: The /authorize login_hint becomes the code-flow user
+    When I start /authorize with login_hint "alice@example.com"
+    Then I receive a 302 response
+    When I exchange the code without a verifier
+    Then I receive a 200 response
+    And the id_token claim "sub" equals "alice@example.com"
+    And the id_token claim "nickname" equals "alice"

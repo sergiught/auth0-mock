@@ -221,3 +221,43 @@ func pkceS256(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
+
+func TestAuthorizationCode_LoginHintBecomesSubjectAndProfile(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	code := authorizeCode(t, r, url.Values{"login_hint": {"alice@example.com"}})
+	c := idTokenClaims(t, ks, exchangeCode(r, code, ""))
+	assert.Equal(t, "alice@example.com", c.Subject)
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "alice@example.com", c.Extra["email"])
+	assert.Equal(t, "demo", c.Extra["azp"])
+	assert.NotNil(t, c.Extra["auth_time"])
+}
+
+func TestAuthorizationCode_DefaultSubjectWithoutLoginHint(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	code := authorizeCode(t, r, nil)
+	c := idTokenClaims(t, ks, exchangeCode(r, code, ""))
+	assert.Equal(t, DefaultSubject, c.Subject)
+	assert.Equal(t, "mock-user@example.com", c.Extra["email"])
+
+	c = idTokenClaims(t, ks, exchangeCode(r, "unknown-code", ""))
+	assert.Equal(t, DefaultSubject, c.Subject)
+}
+
+func TestPasswordGrants_IDTokenCarriesDerivedProfile(t *testing.T) {
+	r, ks, _ := newNonceRouter(t)
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"}, "password": {"x"},
+	})
+	c := idTokenClaims(t, ks, w)
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Contains(t, c.Extra, "picture")
+
+	w = postTokenForm(r, url.Values{
+		"grant_type": {"http://auth0.com/oauth/grant-type/password-realm"}, "client_id": {"demo"},
+		"username": {"alice@example.com"}, "password": {"x"}, "realm": {"db"},
+	})
+	c = idTokenClaims(t, ks, w)
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "alice@example.com", c.Extra["email"])
+}

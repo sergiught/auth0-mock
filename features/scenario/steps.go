@@ -335,6 +335,16 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I start /authorize with login_hint "([^"]+)"$`, func(hint string) error {
+		q := url.Values{}
+		q.Set("client_id", "demo")
+		q.Set("redirect_uri", "https://app/cb")
+		q.Set("response_type", "code")
+		q.Set("login_hint", hint)
+		c.Do("GET", "/authorize?"+q.Encode(), "", false)
+		return nil
+	})
+
 	sc.Step(`^the id_token claim "([^"]+)" equals "([^"]*)"$`, func(claim, want string) error {
 		got, err := claimValueFromToken(c.LastBody, "id_token", claim)
 		if err != nil {

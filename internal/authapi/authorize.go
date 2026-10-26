@@ -85,9 +85,10 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// "code" response type.
 	if h.PKCE != nil && issuedCode != "" {
 		entry := pkce.Entry{
-			ClientID: q.Get("client_id"),
-			Redirect: redirect,
-			Nonce:    q.Get("nonce"),
+			ClientID:  q.Get("client_id"),
+			Redirect:  redirect,
+			Nonce:     q.Get("nonce"),
+			LoginHint: q.Get("login_hint"),
 		}
 		if challenge := q.Get("code_challenge"); challenge != "" {
 			entry.Challenge = challenge
