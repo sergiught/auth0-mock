@@ -80177,6 +80177,9 @@
             "application/x-www-form-urlencoded": {
               "schema": {
                 "properties": {
+                  "audience": {
+                    "type": "string"
+                  },
                   "client_id": {
                     "type": "string"
                   },
@@ -80196,6 +80199,9 @@
                     ],
                     "type": "string"
                   },
+                  "scope": {
+                    "type": "string"
+                  },
                   "username": {
                     "type": "string"
                   }
@@ -80204,7 +80210,8 @@
                   "grant_type",
                   "client_id",
                   "username",
-                  "otp"
+                  "otp",
+                  "realm"
                 ],
                 "type": "object"
               }
@@ -80222,6 +80229,26 @@
               }
             },
             "description": "Token issued."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Invalid request or unsupported grant type."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Wrong verification code, or MFA required."
           }
         },
         "summary": "Verify a passwordless OTP and mint tokens.",

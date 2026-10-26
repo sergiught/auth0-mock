@@ -8,10 +8,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
 
-	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/httperr"
-	"github.com/sergiught/auth0-mock/internal/jwks"
-	"github.com/sergiught/auth0-mock/internal/permissions"
 )
 
 // The mock accepts only this fixed OTP. Tests can rely on it being constant.
@@ -57,54 +54,25 @@ func (h *PasswordlessStartHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// PasswordlessVerifyHandler verifies a passwordless OTP and mints a token.
+// PasswordlessVerifyHandler verifies a passwordless OTP and mints tokens. It
+// is a thin wrapper over the passwordless grant on /oauth/token.
 type PasswordlessVerifyHandler struct {
-	Keys            *jwks.KeySet
-	DefaultAudience string
-	Claims          *claims.Store
-	Permissions     *permissions.Store
+	Token *TokenHandler
 }
 
 func (h *PasswordlessVerifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	req, err := parseTokenRequest(r)
+	if err != nil {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	gt := strings.TrimSpace(r.PostForm.Get("grant_type"))
-	if gt != "http://auth0.com/oauth/grant-type/passwordless/otp" {
-		httperr.WriteAuth(w, http.StatusBadRequest, "unsupported_grant_type", gt)
+	if strings.TrimSpace(req.GrantType) != grantPasswordlessOTP {
+		httperr.WriteAuth(w, http.StatusBadRequest, "unsupported_grant_type", req.GrantType)
 		return
 	}
-	username := r.PostForm.Get("username")
-	clientID := r.PostForm.Get("client_id")
-	otp := r.PostForm.Get("otp")
-	if otp != acceptedPasswordlessOTP {
-		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong email or verification code")
-		return
+	aud := req.Audience
+	if aud == "" {
+		aud = h.Token.DefaultAudience
 	}
-
-	extra := map[string]any{"gty": "passwordless", "azp": clientID}
-	if h.Permissions != nil {
-		if perms := h.Permissions.Get(h.DefaultAudience); len(perms) > 0 {
-			extra["permissions"] = perms
-		}
-	}
-	if h.Claims != nil {
-		h.Claims.MergeInto(extra)
-	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
-		Subject:  username,
-		Audience: []string{h.DefaultAudience},
-		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    extra,
-	})
-	if err != nil {
-		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-	render.JSON(w, r, tokenResponse{
-		AccessToken: access,
-		TokenType:   "Bearer",
-		ExpiresIn:   int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
-	})
+	h.Token.respondPasswordless(w, r, req, aud)
 }

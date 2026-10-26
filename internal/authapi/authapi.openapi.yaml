@@ -262,13 +262,15 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               type: object
-              required: [grant_type, client_id, username, otp]
+              required: [grant_type, client_id, username, otp, realm]
               properties:
                 grant_type: { type: string, enum: ["http://auth0.com/oauth/grant-type/passwordless/otp"] }
                 client_id:  { type: string }
                 username:   { type: string }
                 otp:        { type: string }
                 realm:      { type: string, enum: [email, sms] }
+                audience:   { type: string }
+                scope:      { type: string }
       responses:
         "200":
           description: Token issued.
@@ -276,6 +278,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OAuthTokenResponse"
+        "400":
+          description: Invalid request or unsupported grant type.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "403":
+          description: Wrong verification code, or MFA required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
 components:
   securitySchemes:
     bearerAuth:

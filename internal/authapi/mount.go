@@ -40,7 +40,7 @@ type Deps struct {
 
 // Mount registers all Auth API endpoints on d.Router.
 func Mount(d Deps) {
-	d.Router.Method(http.MethodPost, "/oauth/token", &TokenHandler{
+	tok := &TokenHandler{
 		Keys:            d.Keys,
 		Issuer:          d.Issuer,
 		DefaultAudience: d.DefaultAudience,
@@ -51,7 +51,8 @@ func Mount(d Deps) {
 		PKCE:            d.PKCE,
 		MFA:             d.MFA,
 		Sessions:        d.Sessions,
-	})
+	}
+	d.Router.Method(http.MethodPost, "/oauth/token", tok)
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
 		PKCE:                d.PKCE,
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
@@ -67,10 +68,5 @@ func Mount(d Deps) {
 	d.Router.Method(http.MethodPost, "/dbconnections/signup", &DBConnectionsSignupHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/change_password", &DBConnectionsChangePasswordHandler{})
 	d.Router.Method(http.MethodPost, "/passwordless/start", &PasswordlessStartHandler{})
-	d.Router.Method(http.MethodPost, "/passwordless/verify", &PasswordlessVerifyHandler{
-		Keys:            d.Keys,
-		DefaultAudience: d.DefaultAudience,
-		Claims:          d.Claims,
-		Permissions:     d.Permissions,
-	})
+	d.Router.Method(http.MethodPost, "/passwordless/verify", &PasswordlessVerifyHandler{Token: tok})
 }
