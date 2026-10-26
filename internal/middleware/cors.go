@@ -14,6 +14,9 @@ type corsWildcard struct {
 	port   string
 }
 
+// corsDefaultPorts are the ports browsers omit from the Origin header.
+var corsDefaultPorts = map[string]string{"http": "80", "https": "443"}
+
 // CORS returns middleware that answers cross-origin browser requests. An empty
 // allow-list or a "*" entry allows any origin; otherwise entries are
 // scheme://host[:port] or scheme://*.host[:port], where the wildcard is exactly
@@ -31,6 +34,7 @@ func CORS(allowedOrigins []string) (func(http.Handler) http.Handler, error) {
 				next.ServeHTTP(w, r)
 				return
 			}
+			w.Header().Add("Vary", "Origin")
 			preflight := r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
 			if !m.allowed(origin) {
 				if preflight {
@@ -43,7 +47,6 @@ func CORS(allowedOrigins []string) (func(http.Handler) http.Handler, error) {
 			h := w.Header()
 			h.Set("Access-Control-Allow-Origin", origin)
 			h.Set("Access-Control-Allow-Credentials", "true")
-			h.Add("Vary", "Origin")
 			if !preflight {
 				next.ServeHTTP(w, r)
 				return
@@ -67,6 +70,18 @@ type corsMatcher struct {
 	wildcards []corsWildcard
 }
 
+// parseCORSEntry parses a lower-cased allow-list entry, rejecting shapes that
+// can never match a browser Origin.
+func parseCORSEntry(e string) (*url.URL, error) {
+	u, err := url.Parse(e)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" || u.User != nil ||
+		u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(e, "?#") ||
+		strings.HasSuffix(u.Host, ":") {
+		return nil, fmt.Errorf("invalid origin %q", e)
+	}
+	return u, nil
+}
+
 // newCORSMatcher parses and validates the allow-list entries once.
 func newCORSMatcher(entries []string) (*corsMatcher, error) {
 	m := &corsMatcher{anyOrigin: len(entries) == 0, exact: map[string]bool{}}
@@ -76,21 +91,28 @@ func newCORSMatcher(entries []string) (*corsMatcher, error) {
 			m.anyOrigin = true
 			continue
 		}
-		u, err := url.Parse(e)
-		if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" ||
-			u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(e, "?#") {
+		u, err := parseCORSEntry(e)
+		if err != nil {
 			return nil, fmt.Errorf("invalid CORS origin %q: want scheme://host[:port]", raw)
+		}
+		port := u.Port()
+		if port == corsDefaultPorts[u.Scheme] {
+			port = ""
 		}
 		host := u.Hostname()
 		if !strings.Contains(host, "*") {
-			m.exact[e] = true
+			key := u.Scheme + "://" + strings.TrimSuffix(u.Host, ":"+u.Port())
+			if port != "" {
+				key += ":" + port
+			}
+			m.exact[key] = true
 			continue
 		}
 		suffix, ok := strings.CutPrefix(host, "*.")
 		if !ok || suffix == "" || strings.Contains(suffix, "*") {
 			return nil, fmt.Errorf("invalid CORS origin %q: * must be the whole first host label", raw)
 		}
-		m.wildcards = append(m.wildcards, corsWildcard{scheme: u.Scheme, suffix: suffix, port: u.Port()})
+		m.wildcards = append(m.wildcards, corsWildcard{scheme: u.Scheme, suffix: suffix, port: port})
 	}
 	return m, nil
 }

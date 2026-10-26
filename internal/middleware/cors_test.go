@@ -20,6 +20,7 @@ func TestCORS_InvalidEntries(t *testing.T) {
 	for _, e := range []string{
 		"localhost:3000", "https://", "https://app.test/path",
 		"https://app.test?q=1", "https://a.*.com", "https://*foo.com", "https://app.*",
+		"https://u@app.test", "https://app.test:",
 	} {
 		_, err := CORS([]string{e})
 		require.Error(t, err, e)
@@ -50,6 +51,10 @@ func TestCORS_OriginMatching(t *testing.T) {
 		{[]string{"https://*.example.com"}, "https://app.example.com:8443", false},
 		{[]string{"https://*.example.com:8443"}, "https://app.example.com:8443", true},
 		{[]string{"http://localhost:3000"}, "null", false},
+		{[]string{"https://app.test:443"}, "https://app.test", true},
+		{[]string{"http://*.example.com:80"}, "http://a.example.com", true},
+		{[]string{"http://localhost:3000", "https://*.example.com"}, "http://localhost:3000", true},
+		{[]string{"http://localhost:3000", "https://*.example.com"}, "https://app.example.com", true},
 	}
 	for _, c := range cases {
 		mw, err := CORS(c.allowed)
@@ -131,6 +136,31 @@ func TestCORS_PreflightDisallowed(t *testing.T) {
 	for k := range w.Header() {
 		assert.NotContains(t, k, "Access-Control-")
 	}
+	assert.Contains(t, w.Header().Values("Vary"), "Origin")
+}
+
+func TestCORS_DisallowedSimpleRequestVaries(t *testing.T) {
+	mw, err := CORS([]string{"http://localhost:3000"})
+	require.NoError(t, err)
+	called := false
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/x", nil)
+	r.Header.Set("Origin", "http://evil.test")
+	mw(corsOK(&called)).ServeHTTP(w, r)
+	assert.True(t, called)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, w.Header().Values("Vary"), "Origin")
+}
+
+func TestCORS_UppercaseOriginEchoedVerbatim(t *testing.T) {
+	mw, err := CORS([]string{"http://localhost:3000"})
+	require.NoError(t, err)
+	called := false
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/x", nil)
+	r.Header.Set("Origin", "HTTP://LOCALHOST:3000")
+	mw(corsOK(&called)).ServeHTTP(w, r)
+	assert.Equal(t, "HTTP://LOCALHOST:3000", w.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestCORS_OptionsWithoutRequestMethodPassesThrough(t *testing.T) {
