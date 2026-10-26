@@ -193,3 +193,16 @@ func TestAuthorizeNilSessions(t *testing.T) {
 	w = silentAuthorize(r, nil, url.Values{"login_hint": {"auth0|alice"}})
 	assert.Equal(t, "auth0|alice", fragmentIDClaims(t, ks, w).Subject)
 }
+
+func TestAuthorizeWebMessageError(t *testing.T) {
+	r, _, _, _ := newSilentRouter(t, session.NewStore())
+	w := silentAuthorize(r, nil, url.Values{"prompt": {"none"}, "response_mode": {"web_message"}})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"error":"login_required"`)
+}
+
+func TestAuthorizeWebMessageRelativeRedirect(t *testing.T) {
+	r, _, _, _ := newSilentRouter(t, session.NewStore())
+	w := silentAuthorize(r, nil, url.Values{"redirect_uri": {"/cb"}, "response_mode": {"web_message"}})
+	assert.Equal(t, http.StatusFound, w.Code, w.Body.String())
+}
