@@ -12,6 +12,7 @@ import (
 
 	"github.com/sergiught/auth0-mock/internal/admin0"
 	"github.com/sergiught/auth0-mock/internal/authapi"
+	"github.com/sergiught/auth0-mock/internal/authorizeerr"
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/events"
@@ -36,7 +37,10 @@ type Deps struct {
 	// Sessions remembers each user's profile for /userinfo and each refresh
 	// token's grant for refresh_token requests. Nil is
 	// defaulted to a fresh store; /admin0/reset clears it.
-	Sessions             *session.Store
+	Sessions *session.Store
+	// AuthorizeErrors holds the /authorize failure rules. Nil is defaulted
+	// to an empty store; /admin0/reset clears it.
+	AuthorizeErrors      *authorizeerr.Store
 	Permissions          *permissions.Store
 	PKCE                 *pkce.Store
 	MFA                  *mfa.Store
@@ -145,17 +149,21 @@ func New(d Deps) (http.Handler, error) {
 	if d.Sessions == nil {
 		d.Sessions = session.NewStore()
 	}
+	if d.AuthorizeErrors == nil {
+		d.AuthorizeErrors = authorizeerr.NewStore()
+	}
 	admin0.Mount(r, admin0.Deps{
-		Matches:       d.Store,
-		Claims:        d.Claims,
-		ClaimMappings: d.ClaimMappings,
-		Sessions:      d.Sessions,
-		Permissions:   d.Permissions,
-		MFA:           d.MFA,
-		Validator:     d.Validator,
-		Clock:         d.Clock,
-		Events:        hub,
-		Journal:       d.Journal,
+		Matches:         d.Store,
+		Claims:          d.Claims,
+		ClaimMappings:   d.ClaimMappings,
+		Sessions:        d.Sessions,
+		AuthorizeErrors: d.AuthorizeErrors,
+		Permissions:     d.Permissions,
+		MFA:             d.MFA,
+		Validator:       d.Validator,
+		Clock:           d.Clock,
+		Events:          hub,
+		Journal:         d.Journal,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {
@@ -176,6 +184,7 @@ func New(d Deps) (http.Handler, error) {
 		MFA:                          d.MFA,
 		LogoutAllowedURLs:            d.LogoutAllowedURLs,
 		AuthorizeAllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
+		AuthorizeErrors:              d.AuthorizeErrors,
 	})
 
 	if err := mgmtapi.Mount(mgmtapi.MountOpts{

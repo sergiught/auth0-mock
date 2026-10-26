@@ -44,6 +44,7 @@ Feature: OIDC discovery and JWKS publication
         "scopes_supported":                      ["openid", "profile", "email", "offline_access"],
         "grant_types_supported":                 ["client_credentials", "password", "refresh_token", "authorization_code"],
         "code_challenge_methods_supported":      ["S256", "plain"],
+        "response_modes_supported":              ["query", "fragment", "form_post"],
         "claims_supported": [
           "aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"
         ]

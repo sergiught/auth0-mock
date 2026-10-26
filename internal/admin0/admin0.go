@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 
+	"github.com/sergiught/auth0-mock/internal/authorizeerr"
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/httperr"
@@ -28,11 +29,14 @@ type Deps struct {
 	Claims        *claims.Store
 	ClaimMappings *claims.MappingStore
 	// Sessions is cleared by /admin0/reset. Nil is fine.
-	Sessions    *session.Store
-	Permissions *permissions.Store
-	MFA         *mfa.Store
-	Validator   *spec.Validator
-	Clock       *clock.Controlled
+	Sessions *session.Store
+	// AuthorizeErrors holds the /authorize failure rules. Nil is defaulted
+	// to an empty store by Mount.
+	AuthorizeErrors *authorizeerr.Store
+	Permissions     *permissions.Store
+	MFA             *mfa.Store
+	Validator       *spec.Validator
+	Clock           *clock.Controlled
 	// Events is the SSE hub for POST /admin0/events. Nil is fine for
 	// admin0 tests that don't exercise the events surface — the route
 	// only registers when both Events and Validator are non-nil, and
@@ -59,6 +63,9 @@ func Mount(r chi.Router, d Deps) {
 	if d.ClaimMappings == nil {
 		d.ClaimMappings = claims.NewMappingStore()
 	}
+	if d.AuthorizeErrors == nil {
+		d.AuthorizeErrors = authorizeerr.NewStore()
+	}
 
 	r.Method(http.MethodGet, "/admin0/journal", &ListJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodGet, "/admin0/journal/unmatched", &ListUnmatchedJournalHandler{Journal: d.Journal})
@@ -79,6 +86,11 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodGet, "/admin0/claims/mappings", &GetClaimMappingsHandler{Store: d.ClaimMappings})
 	r.Method(http.MethodPut, "/admin0/claims/mappings", &PutClaimMappingsHandler{Store: d.ClaimMappings})
 	r.Method(http.MethodDelete, "/admin0/claims/mappings", &DeleteClaimMappingsHandler{Store: d.ClaimMappings})
+
+	r.Method(http.MethodPost, "/admin0/authorize-errors", &PostAuthorizeErrorHandler{Store: d.AuthorizeErrors})
+	r.Method(http.MethodGet, "/admin0/authorize-errors", &ListAuthorizeErrorsHandler{Store: d.AuthorizeErrors})
+	r.Method(http.MethodDelete, "/admin0/authorize-errors", &DeleteAuthorizeErrorsHandler{Store: d.AuthorizeErrors})
+	r.Method(http.MethodDelete, "/admin0/authorize-errors/{id}", &DeleteAuthorizeErrorByIDHandler{Store: d.AuthorizeErrors})
 
 	r.Method(http.MethodGet, "/admin0/permissions", &GetAllPermissionsHandler{Store: d.Permissions})
 	r.Method(http.MethodDelete, "/admin0/permissions", &DeleteAllPermissionsHandler{Store: d.Permissions})
@@ -109,7 +121,7 @@ func Mount(r chi.Router, d Deps) {
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
-// claims, claim mappings, remembered user sessions, per-audience permissions, and the MFA flag; it
+// claims, claim mappings, remembered user sessions, authorize error rules, per-audience permissions, and the MFA flag; it
 // also restores the clock to real mode and resets the SSE events hub
 // (drains subscribers, clears the replay buffer, zeroes counters).
 type ResetHandler struct {
@@ -128,6 +140,9 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Deps.Sessions != nil {
 		h.Deps.Sessions.Clear()
+	}
+	if h.Deps.AuthorizeErrors != nil {
+		h.Deps.AuthorizeErrors.Clear()
 	}
 	if h.Deps.Permissions != nil {
 		h.Deps.Permissions.Clear()

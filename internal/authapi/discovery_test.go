@@ -40,5 +40,6 @@ func TestDiscovery_AdvertisesPKCEMethodsAndClaims(t *testing.T) {
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	assert.Equal(t, []any{"S256", "plain"}, doc["code_challenge_methods_supported"])
+	assert.Equal(t, []any{"query", "fragment", "form_post"}, doc["response_modes_supported"])
 	assert.Equal(t, []any{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"}, doc["claims_supported"])
 }

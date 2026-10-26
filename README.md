@@ -212,7 +212,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
 | `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
-| `/authorize` | GET | 302 with `code` (or implicit token); stashes PKCE challenge if present |
+| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code` / implicit token, or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
 | `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
@@ -322,12 +322,13 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, authorize error rules, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses; an optional `then` list answers successive calls in sequence ([cookbook](docs/COOKBOOK.md#test-retries-429-then-200)) |
 | `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
 | `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/claims/mappings` | GET / PUT / DELETE | Request-parameter → claim projection: map a token-request body parameter (form or JSON) to a claim name and `/oauth/token` stamps that parameter's value into the minted access token — per request, overriding `/admin0/claims` for that key. Allowlist semantics; empty map (default) = off. Independent store: `DELETE /admin0/claims` doesn't touch it |
+| `/admin0/authorize-errors` | POST / GET / DELETE | Make /authorize fail on purpose: rules with an optional match on /authorize query params return an OAuth error to redirect_uri; newest match wins; DELETE /admin0/authorize-errors/{id} removes one |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
@@ -587,6 +588,7 @@ What's covered:
 | `Claims` | `Get` | `Set` | `Clear` | — |
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
+| `AuthorizeErrors` | `List` | `Add` | `Clear`, `Delete(id)` | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
 | `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | `ExpireEvents` / `ExpireEventsBefore(ctx, cursor)` age out replay cursors so a resume gets `410 event_aged_out`; top-level `Reset` drains subscribers + replay buffer | — |
 | `Journal` | `List(ctx, JournalFilter)`, `Unmatched(ctx, JournalFilter)`; `auth0mocktest.MustFindCall(t, c, method, path)` returns the newest matching call | — | `Clear` | — |

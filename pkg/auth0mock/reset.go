@@ -5,9 +5,9 @@ import (
 	"net/http"
 )
 
-// Reset clears every expectation, claim, claim mapping, permission, MFA
-// flag, remembered user and refresh token back to the mock's startup
-// defaults, and restores the clock to real mode.
+// Reset clears every expectation, claim, claim mapping, permission,
+// authorize error rule, MFA flag, remembered user and refresh token back
+// to the mock's startup defaults, and restores the clock to real mode.
 // Equivalent to restarting the mock process from the perspective of
 // registered state, but ~1000x faster — call this from t.Cleanup so
 // each test starts from a known-empty mock.
