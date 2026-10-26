@@ -442,7 +442,7 @@ func (h *TokenHandler) mintAccess(opts jwks.MintOpts, clientID string) (string, 
 
 func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	if aud == "" {
-		httperr.WriteAuth(w, http.StatusForbidden, "access_denied", "No audience parameter provided, no default audience been configured")
+		httperr.WriteAuth(w, http.StatusForbidden, "access_denied", "No audience parameter was provided, and no default audience has been configured")
 		return
 	}
 	access, err := h.Keys.Mint(jwks.MintOpts{

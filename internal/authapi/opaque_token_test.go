@@ -69,7 +69,7 @@ func TestToken_ClientCredentialsWithoutAudienceRefused(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, "access_denied", body["error"])
-	assert.Equal(t, "No audience parameter provided, no default audience been configured", body["error_description"])
+	assert.Equal(t, "No audience parameter was provided, and no default audience has been configured", body["error_description"])
 
 	form.Set("audience", "https://api/")
 	resp := tokenBody(t, postTokenForm(r, form))
