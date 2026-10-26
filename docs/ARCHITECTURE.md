@@ -143,7 +143,7 @@ The output, `api/auth0-mock.openapi.json`, is committed, `//go:embed`ed as `api.
 | [`internal/authorizeerr/`](../internal/authorizeerr/) | Ordered failure rules (optional `/authorize` query match + `error` / `error_description`); newest matching rule wins | `POST/DELETE /admin0/authorize-errors[/{id}]`, `POST /admin0/reset` | `AuthorizeHandler` |
 | [`internal/pkce/`](../internal/pkce/) | `code → {challenge, method, ...}` with 10-min TTL, single-use | `AuthorizeHandler` (writes), `TokenHandler.respondAuthorizationCode` (reads + consumes) | (none) |
 | [`internal/mfa/`](../internal/mfa/) | `mfa_token → Context` with 10-min TTL + atomic "required" flag | `PUT /admin0/mfa-required`, `POST /admin0/reset`, `TokenHandler.requireMFA` | `respondPassword`, `respondPasswordRealm`, `respondPasswordless`, `respondMFA*` |
-| [`internal/session/`](../internal/session/) | Remembered user profiles (per subject) and refresh-token grants (per token), capped at `session.MaxEntries` of each kind, oldest evicted first | `TokenHandler` (on every id_token / refresh token minted), `POST /admin0/reset` | `/userinfo`, `refresh_token` grant |
+| [`internal/session/`](../internal/session/) | Remembered user profiles (per subject), opaque access tokens (per token, consulted by `/userinfo`) and refresh-token grants (per token), capped at `session.MaxEntries` of each kind, oldest evicted first | `TokenHandler` (on every id_token / refresh token minted), `AuthorizeHandler` (via `TokenHandler`), `POST /admin0/reset` | `/userinfo`, `refresh_token` grant |
 | [`internal/clock/`](../internal/clock/) | Controllable time source — `real`, `frozen` (pinned instant), or `offset` (real + skew) mode | `PUT/POST/DELETE /admin0/clock[/advance]`, `POST /admin0/reset` | `jwks.Mint` (iat/exp), `jwks.Verify` (exp/nbf check), `pkce.Store` (code TTL), `mfa.Store` (mfa_token TTL) |
 
 Every store is mutex-protected and snapshot-isolating on reads (so the caller can mutate the returned slice/map without corrupting the store).
@@ -222,7 +222,7 @@ This mirrors Auth0's actual MFA flow shape end-to-end. The canned factors are th
 
 ## Authorize delivery
 
-Once `redirect_uri` passes validation, `AuthorizeHandler` delivers its result (a `code`/`access_token`, or an `error` from a PKCE length failure or a matching `authorizeerr` rule) according to `response_mode`: `query` (default for `code`), `fragment` (default for `token`), or `form_post` (a `200` auto-submitting HTML form). `web_message` and unknown values fall back to the default. Failures are sent to `redirect_uri` rather than rendered, and no code or PKCE state is minted for them. A bad or disallowed `redirect_uri` is still a `400` page.
+Once `redirect_uri` passes validation, `AuthorizeHandler` delivers its result (a `code`, `access_token` and/or `id_token`, minted through `TokenHandler`, or an `error` from a PKCE length failure or a matching `authorizeerr` rule) according to `response_mode`: `query` (default for `code`), `fragment` (default for every `response_type` except plain `code`), or `form_post` (a `200` auto-submitting HTML form). `web_message` and unknown values fall back to the default. Failures are sent to `redirect_uri` rather than rendered, and no code or PKCE state is minted for them. A bad or disallowed `redirect_uri` is still a `400` page.
 
 ## PKCE flow
 

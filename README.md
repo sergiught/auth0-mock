@@ -212,7 +212,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
 | `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
-| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code` / implicit token, or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
+| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code`, implicit tokens (`access_token`, `id_token`) or both for any `response_type` combination of `code` / `token` / `id_token` (fragment unless plain `code`), or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
 | `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
@@ -407,7 +407,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
 | `SIGNING_KEY_FILE` | _empty_ | PEM-encoded RSA key. Otherwise a fresh RS256 key is generated each boot |
 | `ISSUER_URL` | `https://localhost:8443/` | `iss` claim and OIDC discovery base |
-| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one |
+| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one; set it to empty for opaque access tokens from /authorize when no audience is sent, as on a tenant without a Default Audience |
 | `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
 | `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
 | `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
