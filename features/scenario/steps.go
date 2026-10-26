@@ -262,6 +262,20 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I keep cookies$`, func() error {
+		c.KeepCookies()
+		return nil
+	})
+
+	sc.Step(`^the response header "([^"]+)" contains "([^"]+)"$`, func(name, needle string) error {
+		for _, got := range c.LastResp.Header.Values(name) {
+			if strings.Contains(got, needle) {
+				return nil
+			}
+		}
+		return fmt.Errorf("header %s: %q does not contain %q", name, c.LastResp.Header.Values(name), needle)
+	})
+
 	sc.Step(`^the response header "([^"]+)" equals "([^"]+)"$`, func(name, want string) error {
 		got := c.LastResp.Header.Get(name)
 		if got != want {
@@ -292,7 +306,7 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 			}
 			req.Header.Set(row.Cells[0].Value, row.Cells[1].Value)
 		}
-		resp, err := nonFollowingClient.Do(req)
+		resp, err := c.client().Do(req)
 		if err != nil {
 			return err
 		}
@@ -607,7 +621,7 @@ func subscribeEvents(c *Context, query, header string, bearer, expect2xx bool) e
 			req.Header.Set(header[:i], header[i+2:])
 		}
 	}
-	resp, err := nonFollowingClient.Do(req) //nolint:bodyclose // SSE body stays open on 200; closed on non-2xx below or by the matching "delivers" step.
+	resp, err := c.client().Do(req) //nolint:bodyclose // SSE body stays open on 200; closed on non-2xx below or by the matching "delivers" step.
 	if err != nil {
 		return err
 	}
