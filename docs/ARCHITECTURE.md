@@ -19,8 +19,9 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 │     1. RequestID    (UUID per request, returned as X-Request-Id header)  │
 │     2. MaxBodyBytes (request body size limit)                            │
 │     3. CORS         (preflights answered here, origin allow-list)        │
-│     4. Recovery     (panic → 500)                                        │
-│     5. Logging      (zerolog: method, path, status, latency, request_id)│
+│     4. Journal      (request journal behind /admin0/journal)             │
+│     5. Recovery     (panic → 500)                                        │
+│     6. Logging      (zerolog: method, path, status, latency, request_id)│
 │                                                                          │
 │   /healthz                                  liveness                     │
 │   /readyz                                   readiness (same as /healthz) │

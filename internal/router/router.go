@@ -61,7 +61,6 @@ type Deps struct {
 	// headers. Empty (or a "*" entry) allows any origin; see
 	// middleware.CORS for the entry syntax. An invalid entry makes New fail.
 	CORSAllowedOrigins []string
-
 	// BearerRequireAudience, when non-empty, makes the Mgmt-API bearer
 	// middleware reject tokens whose `aud` claim doesn't contain this
 	// value. Opt-in to preserve the documented test-friendly default.

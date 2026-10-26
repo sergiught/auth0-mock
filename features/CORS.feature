@@ -26,3 +26,9 @@ Feature: CORS
       | Access-Control-Request-Method  | POST              |
     Then I receive a 403 response
     And the response header "Access-Control-Allow-Origin" does not exist
+
+  Scenario: A simple request from an unlisted origin gets no CORS headers
+    When I send "GET /.well-known/openid-configuration" with headers:
+      | Origin | https://evil.test |
+    Then I receive a 200 response
+    And the response header "Access-Control-Allow-Origin" does not exist
