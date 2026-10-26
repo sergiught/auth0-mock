@@ -29,14 +29,22 @@ type Claims struct {
 // value (matching Auth0's tenant-API-audience binding). Empty means
 // no audience check — keeps the deliberate "echoed, not enforced"
 // behavior the README describes for the /userinfo flow and tests.
+//
+// AllowExpired skips the exp, iat and nbf checks (and the exp-required
+// check) so an expired token can still be identified, as OIDC
+// RP-initiated logout permits for id_token_hint. Signature, algorithm,
+// issuer and RequireAudience are still enforced.
 type VerifyOpts struct {
 	RequireAudience string
+	AllowExpired    bool
 }
 
 // Verify parses and validates a JWT against this KeySet.
 // Checks: signature, exp (required), iss == ks.Issuer, iat value (if
 // present, with ±60s clock skew), nbf (if present, with skew), and
-// (when opts.RequireAudience is set) aud contains that value.
+// (when opts.RequireAudience is set) aud contains that value. With
+// opts.AllowExpired the exp, iat and nbf checks are skipped; signature,
+// alg, iss and aud are still checked.
 //
 // Note: jwt/v5's `WithIssuedAt()` validates the iat *value* against the
 // clock — it does not make iat presence-required. The mock's own Mint
@@ -45,6 +53,18 @@ type VerifyOpts struct {
 //
 //nolint:gocyclo // Security-critical; explicit aud/iss/exp/iat/sig branches are easier to audit inline than as a helper chain.
 func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
+	parserOpts := []jwt.ParserOption{jwt.WithValidMethods([]string{"RS256"})}
+	if opts.AllowExpired {
+		parserOpts = append(parserOpts, jwt.WithoutClaimsValidation())
+	} else {
+		parserOpts = append(parserOpts,
+			jwt.WithIssuer(k.cfg.Issuer),
+			jwt.WithExpirationRequired(),
+			jwt.WithIssuedAt(),
+			jwt.WithLeeway(verifyLeeway),
+			jwt.WithTimeFunc(k.cfg.Now),
+		)
+	}
 	parsed, err := jwt.Parse(
 		tokenStr,
 		func(t *jwt.Token) (any, error) {
@@ -53,12 +73,7 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 			}
 			return &k.priv.PublicKey, nil
 		},
-		jwt.WithValidMethods([]string{"RS256"}),
-		jwt.WithIssuer(k.cfg.Issuer),
-		jwt.WithExpirationRequired(),
-		jwt.WithIssuedAt(),
-		jwt.WithLeeway(verifyLeeway),
-		jwt.WithTimeFunc(k.cfg.Now),
+		parserOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
@@ -69,6 +84,12 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 	mc, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, errors.New("unexpected claims type")
+	}
+
+	if opts.AllowExpired {
+		if got, _ := mc["iss"].(string); got != k.cfg.Issuer {
+			return nil, fmt.Errorf("issuer %q does not match %q", got, k.cfg.Issuer)
+		}
 	}
 
 	out := &Claims{}

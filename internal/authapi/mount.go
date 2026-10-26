@@ -60,6 +60,9 @@ func Mount(d Deps) {
 	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", NewDiscoveryHandler(d.Issuer))
 	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{AllowedReturnURLs: d.LogoutAllowedURLs})
+	oidcLogout := &OIDCLogoutHandler{Keys: d.Keys, AllowedReturnURLs: d.LogoutAllowedURLs}
+	d.Router.Method(http.MethodGet, "/oidc/logout", oidcLogout)
+	d.Router.Method(http.MethodPost, "/oidc/logout", oidcLogout)
 	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/signup", &DBConnectionsSignupHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/change_password", &DBConnectionsChangePasswordHandler{})

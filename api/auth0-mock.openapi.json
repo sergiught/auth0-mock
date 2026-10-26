@@ -79927,6 +79927,141 @@
         ]
       }
     },
+    "/oidc/logout": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id_token_hint",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "post_logout_redirect_uri",
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "logout_hint",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ui_locales",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "federated",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Logged-out page."
+          },
+          "302": {
+            "description": "Redirect to `post_logout_redirect_uri` with `state`."
+          },
+          "400": {
+            "description": "Invalid hint, missing client, or redirect not allowed."
+          }
+        },
+        "summary": "End the session (OIDC RP-initiated logout).",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "federated": {
+                    "type": "string"
+                  },
+                  "id_token_hint": {
+                    "type": "string"
+                  },
+                  "logout_hint": {
+                    "type": "string"
+                  },
+                  "post_logout_redirect_uri": {
+                    "format": "uri",
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "ui_locales": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Logged-out page."
+          },
+          "302": {
+            "description": "Redirect to `post_logout_redirect_uri` with `state`."
+          },
+          "400": {
+            "description": "Invalid hint, missing client, or redirect not allowed."
+          }
+        },
+        "summary": "End the session (OIDC RP-initiated logout, form post).",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
     "/openapi.json": {
       "get": {
         "description": "Returns the same bytes as `api/auth0-mock.openapi.json` in the repo.\nImport this URL directly into Postman or Insomnia.\n",
