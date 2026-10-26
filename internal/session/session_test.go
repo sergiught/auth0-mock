@@ -83,6 +83,25 @@ func TestStore_Concurrent(t *testing.T) {
 	wg.Wait()
 }
 
+func TestStore_RefreshConcurrent(t *testing.T) {
+	s := NewStore()
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range 200 {
+				tok := fmt.Sprintf("t%d", (i+j)%5)
+				s.RememberRefresh(tok, Grant{Subject: "u", Profile: map[string]any{"j": j}})
+				if g, ok := s.Refresh(tok); ok {
+					g.Profile["mutated"] = true
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestStore_RefreshRoundTripAndCopy(t *testing.T) {
 	s := NewStore()
 	_, ok := s.Refresh("tok")
@@ -123,5 +142,19 @@ func TestStore_RefreshEvictsOldestAtCap(t *testing.T) {
 	_, ok = s.Refresh("t1")
 	assert.True(t, ok)
 	_, ok = s.Refresh(fmt.Sprintf("t%d", MaxEntries))
+	assert.True(t, ok)
+}
+
+func TestStore_ProfilesAndRefreshGrantsHaveSeparateCaps(t *testing.T) {
+	s := NewStore()
+	for i := 0; i < MaxEntries; i++ {
+		s.RememberProfile(fmt.Sprintf("p%d", i), map[string]any{"i": i})
+	}
+	for i := 0; i < MaxEntries; i++ {
+		s.RememberRefresh(fmt.Sprintf("t%d", i), Grant{Subject: "u"})
+	}
+	_, ok := s.Profile("p0")
+	assert.True(t, ok)
+	_, ok = s.Refresh("t0")
 	assert.True(t, ok)
 }

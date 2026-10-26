@@ -21,19 +21,26 @@ import (
 
 func newRefreshRouter(t *testing.T) (chi.Router, *jwks.KeySet, *steppedClock, *mfa.Store) {
 	t.Helper()
+	r, ks, clk, ms, _ := newRefreshRouterWithSessions(t)
+	return r, ks, clk, ms
+}
+
+func newRefreshRouterWithSessions(t *testing.T) (chi.Router, *jwks.KeySet, *steppedClock, *mfa.Store, *session.Store) {
+	t.Helper()
 	clk := &steppedClock{now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
 	ks, err := jwks.NewKeySet(jwks.Config{
 		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, Now: clk.Now,
 	})
 	require.NoError(t, err)
 	ms := mfa.NewStore()
+	sessions := session.NewStore()
 	r := chi.NewRouter()
 	Mount(Deps{
 		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
 		Log: zerolog.Nop(), PKCE: pkce.NewStore(pkce.WithNow(clk.Now)),
-		Sessions: session.NewStore(), MFA: ms,
+		Sessions: sessions, MFA: ms,
 	})
-	return r, ks, clk, ms
+	return r, ks, clk, ms, sessions
 }
 
 func decodeToken(t *testing.T, w *httptest.ResponseRecorder) tokenResponse {
@@ -177,4 +184,47 @@ func TestRefresh_UnknownTokenUnchanged(t *testing.T) {
 	assert.Empty(t, resp.IDToken)
 	assert.Empty(t, resp.RefreshToken)
 	assert.Empty(t, resp.Scope)
+}
+
+func TestRefresh_UnknownAfterClear(t *testing.T) {
+	r, ks, _, _, sessions := newRefreshRouterWithSessions(t)
+	login := passwordLogin(t, r, nil)
+	require.NotEmpty(t, login.RefreshToken)
+	sessions.Clear()
+
+	resp := decodeToken(t, refreshWith(r, login.RefreshToken, nil))
+	access, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "demo@refresh", access.Subject)
+	assert.Empty(t, resp.IDToken)
+	assert.Empty(t, resp.RefreshToken)
+	assert.Empty(t, resp.Scope)
+}
+
+func TestRefresh_EmptyStoredAudienceUsesDefault(t *testing.T) {
+	r, ks, _, _, sessions := newRefreshRouterWithSessions(t)
+	sessions.RememberRefresh("tok", session.Grant{Subject: "alice", ClientID: "demo"})
+
+	resp := decodeToken(t, refreshWith(r, "tok", nil))
+	access, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://mock/api/v2/"}, access.Audience)
+}
+
+func TestRefresh_NoAudienceLoginUsesDefaultAndIDTokenShape(t *testing.T) {
+	r, ks, _, _ := newRefreshRouter(t)
+	login := decodeToken(t, postTokenForm(r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"},
+		"username": {"alice@example.com"}, "password": {"x"},
+		"scope": {"openid offline_access"},
+	}))
+
+	resp := decodeToken(t, refreshWith(r, login.RefreshToken, nil))
+	access, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Contains(t, access.Audience, "https://mock/api/v2/")
+	id, err := ks.Verify(resp.IDToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"demo"}, id.Audience)
+	assert.NotContains(t, id.Extra, "connection")
 }
