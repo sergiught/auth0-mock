@@ -70,9 +70,5 @@ func (h *PasswordlessVerifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 		httperr.WriteAuth(w, http.StatusBadRequest, "unsupported_grant_type", req.GrantType)
 		return
 	}
-	aud := req.Audience
-	if aud == "" {
-		aud = h.Token.DefaultAudience
-	}
-	h.Token.respondPasswordless(w, r, req, aud)
+	h.Token.respondPasswordless(w, r, req, h.Token.resolveAudience(req.Audience))
 }

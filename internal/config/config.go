@@ -3,6 +3,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -17,7 +19,7 @@ type Specification struct {
 	TLS             tlscert.Config // Nested: env tags live on tlscert.Config itself.
 	SigningKeyFile  string         `env:"SIGNING_KEY_FILE"`
 	IssuerURL       string         `env:"ISSUER_URL" envDefault:"https://localhost:8443/"`
-	DefaultAudience string         `env:"DEFAULT_AUDIENCE" envDefault:"https://localhost:8443/api/v2/"`
+	DefaultAudience string         `env:"DEFAULT_AUDIENCE" envDefault:"https://localhost:8443/api/v2/"` // Blank: no default audience.
 	AccessTokenTTL  time.Duration  `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
 	IDTokenTTL      time.Duration  `env:"ID_TOKEN_TTL" envDefault:"24h"`
 	LogLevel        string         `env:"LOG_LEVEL" envDefault:"info"`
@@ -93,6 +95,11 @@ func Load() (*Specification, error) {
 	var spec Specification
 	if err := env.Parse(&spec); err != nil {
 		return nil, fmt.Errorf("env parse: %w", err)
+	}
+	// The env library swaps an empty value for envDefault; blank must mean
+	// "no default audience", so user logins get opaque access tokens.
+	if v, set := os.LookupEnv("DEFAULT_AUDIENCE"); set && strings.TrimSpace(v) == "" {
+		spec.DefaultAudience = ""
 	}
 	if err := spec.Validate(); err != nil {
 		return nil, err

@@ -88,13 +88,13 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 	if ctx.Realm != "" {
 		extra["connection"] = ctx.Realm
 	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  ctx.Subject,
 		Audience: []string{ctx.Audience},
 		Scope:    ctx.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(extra, ctx.Audience, params),
-	})
+	}, ctx.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return

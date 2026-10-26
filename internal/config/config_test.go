@@ -122,3 +122,21 @@ func TestLoad_RequestJournalSize_HonoursOverride(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 25, spec.RequestJournalSize)
 }
+
+func TestLoad_BlankDefaultAudience(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DEFAULT_AUDIENCE", "")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "", spec.DefaultAudience)
+
+	t.Setenv("DEFAULT_AUDIENCE", "  ")
+	spec, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, "", spec.DefaultAudience)
+
+	require.NoError(t, os.Unsetenv("DEFAULT_AUDIENCE"))
+	spec, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, "https://localhost:8443/api/v2/", spec.DefaultAudience)
+}

@@ -158,3 +158,24 @@ func TestStore_ProfilesAndRefreshGrantsHaveSeparateCaps(t *testing.T) {
 	_, ok = s.Refresh("t0")
 	assert.True(t, ok)
 }
+
+func TestStore_AccessRememberAndClear(t *testing.T) {
+	s := NewStore()
+	exp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	s.RememberAccess("a1", Access{Subject: "u", ClientID: "c", Scope: "openid", ExpiresAt: exp})
+	got, ok := s.Access("a1")
+	assert.True(t, ok)
+	assert.Equal(t, Access{Subject: "u", ClientID: "c", Scope: "openid", ExpiresAt: exp}, got)
+
+	s.Clear()
+	_, ok = s.Access("a1")
+	assert.False(t, ok)
+
+	for i := 0; i < MaxEntries+1; i++ {
+		s.RememberAccess(fmt.Sprintf("t%d", i), Access{Subject: "u"})
+	}
+	_, ok = s.Access("t0")
+	assert.False(t, ok)
+	_, ok = s.Access("t1")
+	assert.True(t, ok)
+}

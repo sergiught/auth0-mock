@@ -79567,10 +79567,7 @@
             "name": "response_type",
             "required": true,
             "schema": {
-              "enum": [
-                "code",
-                "token"
-              ],
+              "description": "Space-separated set of code, token and id_token, in any order (Auth0 lists code, token, id_token, code token, code id_token, token id_token, code token id_token).",
               "type": "string"
             }
           },
@@ -79601,6 +79598,20 @@
           {
             "in": "query",
             "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nonce",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "login_hint",
             "schema": {
               "type": "string"
             }
@@ -79656,7 +79667,7 @@
             "description": "form_post: auto-submitting form to `redirect_uri`"
           },
           "302": {
-            "description": "Redirect to `redirect_uri` with the result (`code`/`access_token` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`."
+            "description": "Redirect to `redirect_uri` with the result (`code`, `access_token`, `id_token`, `token_type`, `expires_in`, `scope` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`."
           },
           "400": {
             "content": {
@@ -79669,7 +79680,7 @@
             "description": "Missing or invalid `redirect_uri`."
           }
         },
-        "summary": "Start the Authorization Code flow.",
+        "summary": "Start an Authorization Code, Implicit or Hybrid flow.",
         "tags": [
           "OAuth \u0026 OIDC"
         ]
@@ -79914,11 +79925,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MFARequiredError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MFARequiredError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OAuthError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "MFA required."
+            "description": "MFA required, or access_denied for client_credentials with no audience and no default audience configured."
           }
         },
         "summary": "Exchange credentials for an access token.",

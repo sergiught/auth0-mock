@@ -35,6 +35,23 @@ Feature: Authentication API endpoints
     When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=token" without a bearer
     Then I receive a 302 response
     And the response Location header contains "#access_token="
+    And the response Location header contains "token_type=Bearer"
+
+  Scenario: An id_token arrives in the fragment with the nonce
+    When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=id_token%20token&nonce=n1" without a bearer
+    Then I receive a 302 response
+    And the response Location header contains "id_token="
+    And the redirect fragment id_token claim "nonce" equals "n1"
+
+  Scenario: An unknown response_type is an error
+    When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=cod" without a bearer
+    Then I receive a 302 response
+    And the response Location header contains "error=unsupported_response_type"
+
+  Scenario: An id_token without a nonce is refused
+    When I send "GET /authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&response_type=id_token" without a bearer
+    Then I receive a 302 response
+    And the response Location header contains "error=invalid_request"
 
   Scenario: /authorize without redirect_uri is 400
     When I send "GET /authorize?client_id=abc" without a bearer

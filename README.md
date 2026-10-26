@@ -212,8 +212,8 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
 | `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
-| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code` / implicit token, or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
-| `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
+| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code`, implicit tokens (`access_token`, `id_token`) or both for any `response_type` combination of `code` / `token` / `id_token` (fragment unless plain `code`), or an OAuth `error` (bad `code_challenge`, `unsupported_response_type`, `invalid_request` for a missing `client_id` on token types or a missing `nonce` with `id_token`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
+| `/userinfo` | GET | Returns claims from the bearer (a JWT, or an opaque access token until it expires or `/admin0/reset`), plus the logged-in user's profile (from their last login; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
@@ -227,10 +227,10 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 
 | `grant_type` | Notes |
 |---|---|
-| `client_credentials` | M2M flow, returns `access_token` only |
+| `client_credentials` | M2M flow, returns `access_token` only; 403 `access_denied` when there is no `audience` and `DEFAULT_AUDIENCE` is blank |
 | `password` | Returns access + id + refresh; gates on the MFA flag |
 | `refresh_token` | A refresh token the mock issued returns the same user: new `access_token` and `id_token` (same profile and `auth_time`) plus a new `refresh_token`; the old one keeps working. `audience`/`scope` default to the login's. Unknown tokens still work and get just a new `access_token` (subject `<client_id>@refresh`) |
-| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |
+| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `audience` and `scope` sent to `/authorize` win over the token request's; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |
 | `http://auth0.com/oauth/grant-type/password-realm` | Auth0 Native SDKs; same as password + `realm` field threaded into claims |
 | `http://auth0.com/oauth/grant-type/passwordless/otp` | Needs `client_id`, `username`, `otp=000000` and `realm` (`email` or `sms`); returns access + id + refresh for an Auth0-style user (`email\|…` / `sms\|…`, stable per username) with an email or phone profile; gates on the MFA flag |
 | `http://auth0.com/oauth/grant-type/mfa-otp` | Step 2 of MFA dance; accepts `otp=123456` |
@@ -407,7 +407,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
 | `SIGNING_KEY_FILE` | _empty_ | PEM-encoded RSA key. Otherwise a fresh RS256 key is generated each boot |
 | `ISSUER_URL` | `https://localhost:8443/` | `iss` claim and OIDC discovery base |
-| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one |
+| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one; blank or whitespace means no default audience, as on a tenant without one: user logins then get opaque access tokens that only `/userinfo` accepts, and `client_credentials` without an `audience` gets 403 `access_denied` |
 | `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
 | `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
 | `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |

@@ -46,27 +46,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
         "403":
-          description: MFA required.
+          description: MFA required, or access_denied for client_credentials with no audience and no default audience configured.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MFARequiredError" }
+              schema:
+                anyOf:
+                  - { $ref: "#/components/schemas/MFARequiredError" }
+                  - { $ref: "#/components/schemas/OAuthError" }
   /authorize:
     get:
       tags: ["OAuth & OIDC"]
-      summary: Start the Authorization Code flow.
+      summary: Start an Authorization Code, Implicit or Hybrid flow.
       parameters:
-        - { name: response_type,        in: query, required: true,  schema: { type: string, enum: [code, token] } }
+        - { name: response_type,        in: query, required: true,  schema: { type: string, description: "Space-separated set of code, token and id_token, in any order (Auth0 lists code, token, id_token, code token, code id_token, token id_token, code token id_token)." } }
         - { name: client_id,            in: query, required: true,  schema: { type: string } }
         - { name: redirect_uri,         in: query, required: true,  schema: { type: string, format: uri } }
         - { name: scope,                in: query, required: false, schema: { type: string } }
         - { name: state,                in: query, required: false, schema: { type: string } }
+        - { name: nonce,                in: query, required: false, schema: { type: string } }
+        - { name: login_hint,           in: query, required: false, schema: { type: string } }
         - { name: audience,             in: query, required: false, schema: { type: string } }
         - { name: code_challenge,       in: query, required: false, schema: { type: string } }
         - { name: code_challenge_method,in: query, required: false, schema: { type: string, enum: [S256, plain] } }
         - { name: response_mode,       in: query, required: false, schema: { type: string, enum: [query, fragment, form_post, web_message] } }
       responses:
         "302":
-          description: Redirect to `redirect_uri` with the result (`code`/`access_token` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`.
+          description: Redirect to `redirect_uri` with the result (`code`, `access_token`, `id_token`, `token_type`, `expires_in`, `scope` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`.
         "200":
           description: "form_post: auto-submitting form to `redirect_uri`"
           content:

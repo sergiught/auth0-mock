@@ -44,6 +44,10 @@ type Entry struct {
 	// LoginHint is the /authorize login_hint, used as the id_token subject
 	// when non-empty. May be empty.
 	LoginHint string
+	// Audience and Scope are the /authorize audience and scope. When set,
+	// the code exchange uses them, as Auth0 does. May be empty.
+	Audience string
+	Scope    string
 	// AuthTime is when the code was issued, stamped by Store.Put from the
 	// store clock. It becomes the id_token auth_time claim.
 	AuthTime  time.Time

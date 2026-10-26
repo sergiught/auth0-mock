@@ -310,6 +310,17 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the redirect fragment id_token claim "([^"]+)" equals "([^"]+)"$`, func(claim, want string) error {
+		got, err := fragmentIDTokenClaim(c, claim)
+		if err != nil {
+			return err
+		}
+		if got != want {
+			return fmt.Errorf("id_token claim %q = %q, want %q", claim, got, want)
+		}
+		return nil
+	})
+
 	sc.Step(`^the access_token verifies against the published JWKS$`, func() error {
 		tok := gjson.GetBytes(c.LastBody, "access_token").String()
 		if tok == "" {
@@ -770,6 +781,34 @@ func codeFromLastLocation(c *Context) (string, error) {
 		return "", fmt.Errorf("location %q has no code param", loc)
 	}
 	return code, nil
+}
+
+// fragmentIDTokenClaim reads the id_token from the fragment of the last
+// response's Location header, decodes its payload without verifying, and
+// returns the named claim as a string.
+func fragmentIDTokenClaim(c *Context, claim string) (string, error) {
+	loc := c.LastResp.Header.Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		return "", fmt.Errorf("parse Location: %w", err)
+	}
+	frag, err := url.ParseQuery(u.EscapedFragment())
+	if err != nil {
+		return "", fmt.Errorf("parse fragment: %w", err)
+	}
+	tok := frag.Get("id_token")
+	if tok == "" {
+		return "", fmt.Errorf("location %q has no id_token in its fragment", loc)
+	}
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("id_token is not a JWT")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("decode payload: %w", err)
+	}
+	return gjson.GetBytes(payload, claim).String(), nil
 }
 
 // pkceS256Challenge returns the base64url(sha256(verifier)) S256 challenge for
