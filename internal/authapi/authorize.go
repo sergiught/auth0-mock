@@ -80,7 +80,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Record per-code authorization state (nonce, auth time and, when sent,
+	// Record per-code authorization state (nonce, login_hint, auth time and, when sent,
 	// the validated PKCE challenge) for /oauth/token. Only meaningful for the
 	// "code" response type.
 	if h.PKCE != nil && issuedCode != "" {

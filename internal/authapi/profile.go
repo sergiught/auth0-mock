@@ -20,7 +20,7 @@ func deriveProfile(subject string) map[string]any {
 	if !strings.Contains(subject, "@") {
 		email = local + "@example.com"
 	}
-	initials := local
+	initials := []rune(strings.ToLower(local))
 	if len(initials) > 2 {
 		initials = initials[:2]
 	}
@@ -29,7 +29,7 @@ func deriveProfile(subject string) map[string]any {
 		"email_verified": true,
 		"name":           email,
 		"nickname":       local,
-		"picture":        "https://cdn.auth0.com/avatars/" + initials + ".png",
+		"picture":        "https://cdn.auth0.com/avatars/" + string(initials) + ".png",
 	}
 }
 

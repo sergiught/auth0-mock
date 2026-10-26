@@ -11,6 +11,8 @@ func TestDeriveProfile(t *testing.T) {
 		{"alice@example.com", "alice@example.com", "alice", "https://cdn.auth0.com/avatars/al.png"},
 		{"auth0|mock-user", "mock-user@example.com", "mock-user", "https://cdn.auth0.com/avatars/mo.png"},
 		{"google-oauth2|123", "123@example.com", "123", "https://cdn.auth0.com/avatars/12.png"},
+		{"élodie@example.com", "élodie@example.com", "élodie", "https://cdn.auth0.com/avatars/él.png"},
+		{"Bob@example.com", "Bob@example.com", "Bob", "https://cdn.auth0.com/avatars/bo.png"},
 		{"x", "x@example.com", "x", "https://cdn.auth0.com/avatars/x.png"},
 	}
 	for _, tt := range tests {

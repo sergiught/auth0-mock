@@ -215,6 +215,10 @@ func TestMFAGrant_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
 	c := idTokenClaims(t, ks, w)
 	assert.Equal(t, "abc", c.Extra["azp"])
 	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+	assert.Equal(t, "alice", c.Extra["email"])
+	assert.Equal(t, "alice", c.Extra["name"])
+	assert.Equal(t, "alice", c.Extra["nickname"])
+	assert.Equal(t, "https://cdn.auth0.com/avatars/al.png", c.Extra["picture"])
 }
 
 func pkceS256(verifier string) string {
@@ -251,7 +255,7 @@ func TestPasswordGrants_IDTokenCarriesDerivedProfile(t *testing.T) {
 	})
 	c := idTokenClaims(t, ks, w)
 	assert.Equal(t, "alice", c.Extra["nickname"])
-	assert.Contains(t, c.Extra, "picture")
+	assert.Equal(t, "https://cdn.auth0.com/avatars/al.png", c.Extra["picture"])
 
 	w = postTokenForm(r, url.Values{
 		"grant_type": {"http://auth0.com/oauth/grant-type/password-realm"}, "client_id": {"demo"},
