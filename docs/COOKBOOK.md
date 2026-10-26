@@ -12,6 +12,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Mint per-request claims from token-request parameters](#mint-per-request-claims-from-token-request-parameters)
 - [Test a PKCE flow end-to-end](#test-a-pkce-flow-end-to-end)
 - [Test login errors](#test-login-errors)
+- [Test silent login](#test-silent-login)
 - [Test an MFA challenge flow](#test-an-mfa-challenge-flow)
 - [Test token expiry without sleeps](#test-token-expiry-without-sleeps)
 - [Test the password-realm grant](#test-the-password-realm-grant)
@@ -236,7 +237,26 @@ if err != nil {
 t.Cleanup(func() { _ = c.AuthorizeErrors.Delete(context.Background(), rule.ID) })
 ```
 
-Match `prompt=none` with `login_required` to simulate a silent login with no session. `DELETE /admin0/authorize-errors` (or `/admin0/reset`) clears all rules.
+To force a failure that a real session would not produce, match `prompt=none` with `login_required` or `consent_required`. A rule wins over a live session. `DELETE /admin0/authorize-errors` (or `/admin0/reset`) clears all rules.
+
+## Test silent login
+
+The mock keeps a real login session. A successful `/authorize` sets an `auth0` cookie, and a later `prompt=none` request answers from it. With no session the answer is `login_required`. This is the flow `getTokenSilently` in auth0-spa-js uses:
+
+```js
+const auth0 = await createAuth0Client({
+  domain: 'localhost:8443',
+  clientId: 'my-app',
+  authorizationParams: { redirect_uri: window.location.origin },
+});
+
+await auth0.loginWithPopup(); // sets the session cookie
+const token = await auth0.getTokenSilently({ cacheMode: 'off' }); // prompt=none in a hidden iframe
+```
+
+Sign in as a specific user with `login_hint`. `/v2/logout`, `/oidc/logout` and `/admin0/reset` end the session, so the next silent request gets `login_required`. `auth_time` stays at the original login instant, so you can freeze and advance the [clock](#test-token-expiry-without-sleeps) to test re-authentication windows.
+
+The hidden iframe is cross-site when your app and the mock are on different sites, and browsers only send the cookie there if it is `SameSite=None; Secure`. The mock sets that only over HTTPS, so run it on HTTPS for cross-site iframes (see [Run against HTTPS with a trusted cert](#run-against-https-with-a-trusted-cert)). Over plain HTTP the cookie is `SameSite=Lax`, which works for same-site setups and for HTTP clients with a cookie jar.
 
 ## Test an MFA challenge flow
 
