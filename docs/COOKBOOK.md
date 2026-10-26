@@ -20,6 +20,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Run against HTTPS with a trusted cert](#run-against-https-with-a-trusted-cert)
 - [Drive an event-stream consumer from a test](#drive-an-event-stream-consumer-from-a-test)
 - [Use a Go test that boots the mock in-process](#use-a-go-test-that-boots-the-mock-in-process)
+- [Call the mock from a browser app](#call-the-mock-from-a-browser-app)
 - [Trust the self-signed cert system-wide](#trusting-the-self-signed-cert)
 
 ---
@@ -592,6 +593,18 @@ On `GET /api/v2/events`, one unparseable pair rejects the whole request. Go's pa
 For stub registration, claim injection, permission setup, and clock control from Go test code, use [`pkg/auth0mock`](../pkg/auth0mock) — a typed client over `/admin0/*` that removes the JSON-marshalling boilerplate. See the [Go SDK section of the README](../README.md#-go-sdk) for the API surface and [`examples/sdk/`](../examples/sdk/) for a worked end-to-end walk-through.
 
 For booting the mock itself: subprocess from `TestMain` (see [`examples/consumer/main.go`](../examples/consumer/main.go)) or in-process on a random port (see [`features/scenario/context.go`](../features/scenario/context.go), the pattern the godog suite uses).
+
+## Call the mock from a browser app
+
+Point the SPA SDK's `domain` at the mock (for example `localhost:8443`). Every route answers CORS preflights and echoes the caller's `Origin`, so there is nothing to configure by default.
+
+To test how your app behaves when its origin is blocked, restrict the allow-list:
+
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://*.example.com auth0-mock
+```
+
+Requests from any other origin get no CORS headers, and their preflights get a 403.
 
 ## Trusting the self-signed cert
 
