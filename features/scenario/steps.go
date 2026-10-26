@@ -164,6 +164,23 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I send "([^"]+)" with the id_token from the response as id_token_hint$`, func(target string) error {
+		tok := gjson.GetBytes(c.LastBody, "id_token").String()
+		if tok == "" {
+			return fmt.Errorf("no id_token in response")
+		}
+		sep := "?"
+		if strings.Contains(target, "?") {
+			sep = "&"
+		}
+		method, path, err := splitTarget(target + sep + "id_token_hint=" + url.QueryEscape(tok))
+		if err != nil {
+			return err
+		}
+		c.Do(method, path, "", false)
+		return nil
+	})
+
 	sc.Step(`^I send "([^"]+)" with body and a valid bearer:$`, func(target string, body *godog.DocString) error {
 		method, path, err := splitTarget(target)
 		if err != nil {

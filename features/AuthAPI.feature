@@ -85,6 +85,23 @@ Feature: Authentication API endpoints
     Then I receive a 302 response
     And the response Location header contains "https://app/bye"
 
+  Scenario: /oidc/logout after login redirects with state
+    When I start /authorize with code_verifier "the-quick-brown-fox-jumps-over-the-lazy-dog-43"
+    And I exchange the code with verifier "the-quick-brown-fox-jumps-over-the-lazy-dog-43"
+    And I send "GET /oidc/logout?post_logout_redirect_uri=https%3A%2F%2Fapp%2Fbye&state=s1" with the id_token from the response as id_token_hint
+    Then I receive a 302 response
+    And the response Location header contains "https://app/bye?state=s1"
+
+  Scenario: /oidc/logout without a redirect shows the logged-out page
+    When I send "GET /oidc/logout" without a bearer
+    Then I receive a 200 response
+    And the response body contains "You have been logged out."
+
+  Scenario: /oidc/logout refuses a redirect without a client
+    When I send "GET /oidc/logout?post_logout_redirect_uri=https%3A%2F%2Fapp%2Fbye" without a bearer
+    Then I receive a 400 response
+    And the response JSON path "error_description" equals "post_logout_redirect_uri requires client_id or id_token_hint"
+
   Scenario: /oauth/revoke is a no-op 200
     When I send "POST /oauth/revoke" without a bearer
     Then I receive a 200 response

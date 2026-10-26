@@ -32,7 +32,7 @@ Feature: OIDC discovery and JWKS publication
         "token_endpoint":         "${BASE_URL}/oauth/token",
         "userinfo_endpoint":      "${BASE_URL}/userinfo",
         "jwks_uri":               "${BASE_URL}/.well-known/jwks.json",
-        "end_session_endpoint":   "${BASE_URL}/v2/logout",
+        "end_session_endpoint":   "${BASE_URL}/oidc/logout",
         "revocation_endpoint":    "${BASE_URL}/oauth/revoke",
         "response_types_supported": [
           "code", "token", "id_token",

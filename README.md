@@ -170,7 +170,7 @@ The mock ships a merged OpenAPI 3.1 document that covers every HTTP surface
 it exposes:
 
 - The Auth0 **Authentication API** (`/oauth/token`, `/authorize`,
-  `/userinfo`, `/v2/logout`, `/dbconnections/*`, `/passwordless/*`).
+  `/userinfo`, `/v2/logout`, `/oidc/logout`, `/dbconnections/*`, `/passwordless/*`).
 - The Auth0 **Management API** (everything under `/api/v2`). Canned responses
   are programmed centrally via `POST /admin0/expectations`.
 - The **admin0** control plane (`/admin0/*`).
@@ -215,6 +215,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code` / implicit token, or an OAuth `error` (bad `code_challenge`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
 | `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
+| `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint` |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
 | `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer |
 | `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
@@ -420,7 +421,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `REQUEST_JOURNAL_SIZE` | `1000` | Cap of the in-memory request journal behind `/admin0/journal` (oldest entries are evicted). `<= 0` disables recording: the endpoints return `{"entries":[]}`. The `; closest stub differed on …` hint on `no_match` 404s is unaffected. |
 | `EVENTS_RECONNECT_HINT` | `3s` | The SSE `retry:` reconnect-delay hint sent to `/api/v2/events` subscribers on connect (mirrors Auth0). Clients wait this long before reconnecting after a disconnect. `0` omits the hint, so clients use their built-in default. |
 | `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
-| `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute `returnTo` URLs that `/v2/logout` will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
+| `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute URLs that `/v2/logout` (`returnTo`) and `/oidc/logout` (`post_logout_redirect_uri`) will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
 | `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |
 | `CORS_ALLOWED_ORIGINS` | _empty_ | Comma-separated allow-list of browser origins that get CORS headers. Empty (default) = any origin, so a browser app can call the mock with no setup. Entries are exact origins (`http://localhost:3000`) or `https://*.example.com` (matches exactly one subdomain level; scheme and port must match). `*` = any origin. Unlisted origins get no CORS headers and their preflights get 403. Default ports (`:443`/`:80`) are normalised; userinfo and empty ports are rejected. Invalid entries fail startup. Mirrors Auth0's per-application "Allowed Web Origins" / "Allowed Origins (CORS)" settings. |
 | `BEARER_REQUIRE_AUDIENCE` | _empty_ | When set, the Mgmt-API bearer middleware rejects tokens whose `aud` claim doesn't contain this value (mirrors Auth0's tenant-API-audience binding). Empty keeps the "echoed, not enforced" default so tests can swap audiences freely. |
@@ -516,7 +517,7 @@ chi router
   ├── /admin0/{reset, expectations, claims, claims/mappings, permissions/*, mfa-required}
   │                                          control plane (no auth)
   ├── /.well-known/{jwks.json, openid-configuration}
-  ├── /oauth/* /authorize /userinfo /v2/logout
+  ├── /oauth/* /authorize /userinfo /v2/logout /oidc/logout
   │   /dbconnections/* /passwordless/*
   │                                          Auth API (hand-coded, functional)
   └── /api/v2/*                              Management API (spec-driven; one generic handler)
