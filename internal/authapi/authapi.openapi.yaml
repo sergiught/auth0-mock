@@ -116,6 +116,61 @@ paths:
       responses:
         "302":
           description: Redirect to `returnTo`.
+  /oidc/logout:
+    get:
+      tags: ["OAuth & OIDC"]
+      summary: End the session (OIDC RP-initiated logout).
+      parameters:
+        - { name: id_token_hint, in: query, required: false, schema: { type: string } }
+        - { name: client_id, in: query, required: false, schema: { type: string } }
+        - { name: post_logout_redirect_uri, in: query, required: false, schema: { type: string, format: uri } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: logout_hint, in: query, required: false, schema: { type: string } }
+        - { name: ui_locales, in: query, required: false, schema: { type: string } }
+        - { name: federated, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Logged-out page.
+          content:
+            text/html:
+              schema: { type: string }
+        "302":
+          description: Redirect to `post_logout_redirect_uri` with `state`.
+        "400":
+          description: Invalid hint, missing client, or redirect not allowed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: End the session (OIDC RP-initiated logout, form post).
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                id_token_hint: { type: string }
+                client_id: { type: string }
+                post_logout_redirect_uri: { type: string, format: uri }
+                state: { type: string }
+                logout_hint: { type: string }
+                ui_locales: { type: string }
+                federated: { type: string }
+      responses:
+        "200":
+          description: Logged-out page.
+          content:
+            text/html:
+              schema: { type: string }
+        "302":
+          description: Redirect to `post_logout_redirect_uri` with `state`.
+        "400":
+          description: Invalid hint, missing client, or redirect not allowed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /oauth/revoke:
     post:
       tags: ["OAuth & OIDC"]

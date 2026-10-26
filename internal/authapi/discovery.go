@@ -24,7 +24,7 @@ func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
 		"token_endpoint":                        base + "/oauth/token",
 		"userinfo_endpoint":                     base + "/userinfo",
 		"jwks_uri":                              base + "/.well-known/jwks.json",
-		"end_session_endpoint":                  base + "/v2/logout",
+		"end_session_endpoint":                  base + "/oidc/logout",
 		"revocation_endpoint":                   base + "/oauth/revoke",
 		"response_types_supported":              []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"},
 		"subject_types_supported":               []string{"public"},

@@ -52,7 +52,8 @@ type Specification struct {
 	EventsReconnectHint time.Duration `env:"EVENTS_RECONNECT_HINT" envDefault:"3s"`
 
 	// LogoutAllowedURLs is the comma-separated allow-list of absolute
-	// returnTo URLs that /v2/logout will redirect to. Relative URLs are
+	// URLs that /v2/logout (returnTo) and /oidc/logout
+	// (post_logout_redirect_uri) will redirect to. Relative URLs are
 	// always allowed (they can't escape the mock's origin). Mirrors
 	// Auth0's "Allowed Logout URLs" tenant setting.
 	LogoutAllowedURLs []string `env:"LOGOUT_ALLOWED_URLS" envSeparator:","`

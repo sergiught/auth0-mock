@@ -256,7 +256,7 @@ const docsDescription = "" +
 	"JWTs verifiable against the JWKS published at `/.well-known/jwks.json`.\n\n" +
 	"This document covers every HTTP surface the mock exposes:\n\n" +
 	"- **Authentication API** — `/oauth/token`, `/authorize`, `/userinfo`, " +
-	"`/v2/logout`, `/dbconnections/*`, `/passwordless/*`.\n" +
+	"`/v2/logout`, `/oidc/logout`, `/dbconnections/*`, `/passwordless/*`.\n" +
 	"- **Management API** — every endpoint under `/api/v2` from the upstream " +
 	"Auth0 spec.\n" +
 	"- **admin0** — control plane under `/admin0/*` for direct manipulation " +

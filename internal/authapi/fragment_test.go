@@ -21,6 +21,8 @@ func TestAuthAPIFragmentDescribesEveryMountedRoute(t *testing.T) {
 		"GET /userinfo":                         "OAuth & OIDC",
 		"GET /.well-known/openid-configuration": "OAuth & OIDC",
 		"GET /v2/logout":                        "OAuth & OIDC",
+		"GET /oidc/logout":                      "OAuth & OIDC",
+		"POST /oidc/logout":                     "OAuth & OIDC",
 		"POST /oauth/revoke":                    "OAuth & OIDC",
 		"POST /dbconnections/signup":            "Database Connections",
 		"POST /dbconnections/change_password":   "Database Connections",

@@ -26,6 +26,7 @@ func TestDiscovery_PublishesIssuerAndEndpoints(t *testing.T) {
 	assert.Contains(t, doc["token_endpoint"].(string), "/oauth/token")
 	assert.Contains(t, doc["authorization_endpoint"].(string), "/authorize")
 	assert.Contains(t, doc["userinfo_endpoint"].(string), "/userinfo")
+	assert.Equal(t, "https://mock/oidc/logout", doc["end_session_endpoint"])
 
 	algs, _ := doc["id_token_signing_alg_values_supported"].([]any)
 	assert.Contains(t, algs, "RS256")
