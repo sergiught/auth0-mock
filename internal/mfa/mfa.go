@@ -40,11 +40,14 @@ const (
 // step 2 (the MFA grant exchange) so the second request can mint a token
 // equivalent to what the first would have produced.
 type Context struct {
-	ClientID  string
-	Audience  string
-	Scope     string
-	Subject   string
-	Realm     string // Empty for plain password grant.
+	ClientID string
+	Audience string
+	Scope    string
+	Subject  string
+	Realm    string // Empty for plain password grant.
+	// Profile, when set, is the id_token profile to use after step-up instead
+	// of one derived from Subject.
+	Profile   map[string]any
 	expiresAt time.Time
 }
 

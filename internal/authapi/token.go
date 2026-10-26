@@ -23,6 +23,9 @@ import (
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
+// grantPasswordlessOTP is Auth0's passwordless OTP grant type.
+const grantPasswordlessOTP = "http://auth0.com/oauth/grant-type/passwordless/otp" //nolint:gosec // grant-type URI, not a credential
+
 // TokenHandler handles OAuth token requests.
 type TokenHandler struct {
 	Keys            *jwks.KeySet
@@ -141,6 +144,8 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.respondPassword(w, r, req, aud)
 	case "http://auth0.com/oauth/grant-type/password-realm":
 		h.respondPasswordRealm(w, r, req, aud)
+	case grantPasswordlessOTP:
+		h.respondPasswordless(w, r, req, aud)
 	case "refresh_token":
 		h.respondRefreshToken(w, r, req, aud)
 	case "authorization_code":
@@ -200,6 +205,77 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		"azp":            req.ClientID,
 		"auth_time":      authTime.Unix(),
 	}, subject)
+	id, err := h.Keys.Mint(jwks.MintOpts{
+		Subject:  subject,
+		Audience: []string{req.ClientID},
+		TTL:      h.Keys.Cfg().IDTokenTTL,
+		Extra:    idExtra,
+	})
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	h.rememberProfile(subject, idExtra)
+	render.JSON(w, r, tokenResponse{
+		AccessToken:  access,
+		IDToken:      id,
+		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
+		TokenType:    "Bearer",
+		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
+		Scope:        req.Scope,
+	})
+}
+
+// respondPasswordless handles Auth0's passwordless OTP grant: the user proves
+// an email address or phone number with the fixed mock OTP and gets tokens for
+// a stable user derived from that identifier.
+func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	for _, p := range []struct{ name, value string }{
+		{"client_id", req.ClientID}, {"username", req.Username}, {"otp", req.OTP}, {"realm", req.Realm},
+	} {
+		if p.value == "" {
+			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: "+p.name)
+			return
+		}
+	}
+	if req.Realm != "email" && req.Realm != "sms" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", `realm must be "email" or "sms"`)
+		return
+	}
+	if req.OTP != acceptedPasswordlessOTP {
+		desc := "Wrong email or verification code."
+		if req.Realm == "sms" {
+			desc = "Wrong phone number or verification code."
+		}
+		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", desc)
+		return
+	}
+	subject, profile := passwordlessUser(req.Realm, req.Username)
+	if h.requireMFA(w, r, mfa.Context{
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm, Profile: profile,
+	}) {
+		return
+	}
+	access, err := h.Keys.Mint(jwks.MintOpts{
+		Subject:  subject,
+		Audience: []string{aud},
+		Scope:    req.Scope,
+		TTL:      h.Keys.Cfg().AccessTokenTTL,
+		Extra: h.augmentExtra(map[string]any{
+			"gty":        "passwordless",
+			"azp":        req.ClientID,
+			"connection": req.Realm,
+		}, aud, req.Params),
+	})
+	if err != nil {
+		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	authTime := h.Keys.Cfg().Now()
+	idExtra := maps.Clone(profile)
+	idExtra["azp"] = req.ClientID
+	idExtra["auth_time"] = authTime.Unix()
+	idExtra["connection"] = req.Realm
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{req.ClientID},
