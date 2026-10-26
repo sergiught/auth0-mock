@@ -70,8 +70,8 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 			"invalid_match")
 		return
 	}
-	if msg := h.validateThen(op, p.Then); msg != "" {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", msg, "invalid_match")
+	if msg, code := h.validateThen(op, p.Then); msg != "" {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", msg, code)
 		return
 	}
 	// Normalize an empty request matcher to a nil catch-all so a catch-all has
@@ -117,21 +117,22 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 }
 
 // validateThen checks every sequence entry like the primary response and
-// returns the first problem as a message naming the entry, or "" when valid.
-func (h *PostExpectationHandler) validateThen(op spec.Operation, then []matches.ResponseDef) string {
+// returns the first problem as a message naming the entry plus its error
+// code, or "" when valid.
+func (h *PostExpectationHandler) validateThen(op spec.Operation, then []matches.ResponseDef) (msg, code string) {
 	for i, t := range then {
 		at := "then[" + strconv.Itoa(i) + "]"
 		switch {
 		case t.Status == 0:
-			return at + ".status required"
+			return at + ".status is required", "invalid_body"
 		case op.Op.OperationID == spec.SubscribeEventsOperationID && t.Status < http.StatusBadRequest:
-			return at + ": GET /api/v2/events accepts only error stubs (status >= 400); push events with POST /admin0/events instead"
+			return "GET /api/v2/events accepts only error stubs (status >= 400); " + at + " has status " + strconv.Itoa(t.Status), "invalid_match"
 		}
 		if err := h.Validator.ValidateRegistration(op, t.Status, t.Body); err != nil {
-			return at + " violates schema for status " + strconv.Itoa(t.Status) + ": " + err.Error()
+			return "registered " + at + " violates schema for status " + strconv.Itoa(t.Status) + ": " + err.Error(), "invalid_match"
 		}
 	}
-	return ""
+	return "", ""
 }
 
 type listExpectationsResponse struct {

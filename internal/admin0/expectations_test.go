@@ -163,7 +163,7 @@ func TestPostExpectation_Rejects(t *testing.T) {
 		{"request matcher mistyped field", `{"method":"POST","path":"/api/v2/widgets","request":{"body":{"size":"big"}},"response":{"status":201,"body":{"id":"x"}}}`, "invalid_request_match", 400},
 		{"request matcher unknown query param", `{"method":"GET","path":"/api/v2/widgets/abc","request":{"query":{"nope":"x"}},"response":{"status":200,"body":{"id":"x"}}}`, "invalid_request_match", 400},
 		{"request body matcher on bodyless op", `{"method":"GET","path":"/api/v2/widgets/abc","request":{"body":{"id":"x"}},"response":{"status":200,"body":{"id":"x"}}}`, "invalid_request_match", 400},
-		{"missing then status", `{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"x"}},"then":[{}]}`, "then[0].status required", 400},
+		{"missing then status", `{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"x"}},"then":[{}]}`, "invalid_body", 400},
 		{"then schema violation", `{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"x"}},"then":[{"status":200,"body":{"id":"x"}},{"status":200,"body":"not-an-object"}]}`, "then[1]", 400},
 		{"then undeclared status", `{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"x"}},"then":[{"status":418,"body":{"id":"x"}}]}`, "then[0]", 400},
 		{"then success on event stream", `{"method":"GET","path":"/api/v2/events","response":{"status":403,"body":{"statusCode":403,"error":"Forbidden","message":"m"}},"then":[{"status":200}]}`, "then[0]", 400},
@@ -336,4 +336,13 @@ func TestPostExpectation_SequenceEchoedInList(t *testing.T) {
 			assert.False(t, it.Get("then").Exists(), it.Raw)
 		}
 	}
+}
+
+func TestPostExpectation_ThenStatusRequiredMessage(t *testing.T) {
+	r, _ := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/abc","response":{"status":200,"body":{"id":"x"}},"then":[{}]}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "invalid_body", gjson.Get(rec.Body.String(), "errorCode").String(), rec.Body.String())
+	assert.Contains(t, gjson.Get(rec.Body.String(), "message").String(), "then[0].status is required")
 }
