@@ -29,12 +29,14 @@ func CORS(allowedOrigins []string) (func(http.Handler) http.Handler, error) {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Vary even without an Origin, so a shared cache never serves an
+			// originless response to a cross-origin caller.
+			w.Header().Add("Vary", "Origin")
 			origin := r.Header.Get("Origin")
 			if origin == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
-			w.Header().Add("Vary", "Origin")
 			preflight := r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
 			if !m.allowed(origin) {
 				if preflight {
@@ -74,7 +76,7 @@ type corsMatcher struct {
 // can never match a browser Origin.
 func parseCORSEntry(e string) (*url.URL, error) {
 	u, err := url.Parse(e)
-	if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" || u.User != nil ||
+	if err != nil || u.Scheme == "" || u.Hostname() == "" || u.Path != "" || u.User != nil ||
 		u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(e, "?#") ||
 		strings.HasSuffix(u.Host, ":") {
 		return nil, fmt.Errorf("invalid origin %q", e)

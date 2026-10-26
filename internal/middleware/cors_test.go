@@ -20,7 +20,7 @@ func TestCORS_InvalidEntries(t *testing.T) {
 	for _, e := range []string{
 		"localhost:3000", "https://", "https://app.test/path",
 		"https://app.test?q=1", "https://a.*.com", "https://*foo.com", "https://app.*",
-		"https://u@app.test", "https://app.test:",
+		"https://u@app.test", "https://app.test:", "http://:3000", "https://:443",
 	} {
 		_, err := CORS([]string{e})
 		require.Error(t, err, e)
@@ -76,7 +76,7 @@ func TestCORS_OriginMatching(t *testing.T) {
 	}
 }
 
-func TestCORS_NoOriginUntouched(t *testing.T) {
+func TestCORS_NoOriginGetsOnlyVary(t *testing.T) {
 	mw, err := CORS(nil)
 	require.NoError(t, err)
 	called := false
@@ -86,7 +86,7 @@ func TestCORS_NoOriginUntouched(t *testing.T) {
 	for k := range w.Header() {
 		assert.NotContains(t, k, "Access-Control-")
 	}
-	assert.Empty(t, w.Header().Values("Vary"))
+	assert.Equal(t, []string{"Origin"}, w.Header().Values("Vary"))
 }
 
 func preflight(origin string, reqHeaders string) *http.Request {
