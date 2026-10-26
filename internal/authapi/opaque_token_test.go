@@ -136,3 +136,33 @@ func TestToken_WhitespaceAudienceFallsBack(t *testing.T) {
 	frag := fragmentOf(t, r, implicitBase+"response_type=token&audience=%20")
 	assert.Contains(t, verified(t, ks, frag.Get("access_token")).Audience, "https://mock/api/v2/")
 }
+
+func refreshForm(refresh, audience string) url.Values {
+	return url.Values{
+		"grant_type": {"refresh_token"}, "client_id": {"demo"},
+		"refresh_token": {refresh}, "audience": {audience},
+	}
+}
+
+func TestToken_RefreshWithAudienceMintsJWT(t *testing.T) {
+	r, ks, _ := newNoAudienceMFARouter(t)
+	first := tokenBody(t, postTokenForm(r, passwordForm()))
+	resp := tokenBody(t, postTokenForm(r, refreshForm(first.RefreshToken, "https://api/")))
+	assert.Contains(t, verified(t, ks, resp.AccessToken).Audience, "https://api/")
+}
+
+func TestToken_RefreshWhitespaceAudienceFallsBack(t *testing.T) {
+	r, ks, _, _, _ := newRefreshRouterWithSessions(t)
+	first := tokenBody(t, postTokenForm(r, passwordForm()))
+	resp := tokenBody(t, postTokenForm(r, refreshForm(first.RefreshToken, "  ")))
+	assert.Contains(t, verified(t, ks, resp.AccessToken).Audience, "https://mock/api/v2/")
+}
+
+func TestPasswordless_VerifyWhitespaceAudienceFallsBack(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	w := postForm(r, "/passwordless/verify", url.Values{
+		"grant_type": {grantPasswordlessOTP}, "client_id": {"abc"}, "realm": {"email"},
+		"username": {"alice@example.com"}, "otp": {"000000"}, "audience": {"  "},
+	})
+	assert.Contains(t, verified(t, ks, tokenBody(t, w).AccessToken).Audience, "https://mock/api/v2/")
+}

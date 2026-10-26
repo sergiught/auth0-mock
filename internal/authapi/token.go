@@ -527,7 +527,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 	// Request values win; an omitted audience/scope falls back to the stored
 	// one when non-empty (not the defaulted aud, which would always shadow it);
 	// otherwise the already-defaulted aud stands.
-	if req.Audience != "" {
+	if strings.TrimSpace(req.Audience) != "" {
 		aud = req.Audience
 	} else if grant.Audience != "" {
 		aud = grant.Audience
