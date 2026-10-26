@@ -1476,6 +1476,53 @@
         ],
         "type": "string"
       },
+      "AuthorizeErrorRule": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "error_description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "match": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "error"
+        ],
+        "type": "object"
+      },
+      "AuthorizeErrorRuleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "description": "OAuth error code returned to the redirect_uri.",
+            "type": "string"
+          },
+          "error_description": {
+            "type": "string"
+          },
+          "match": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "/authorize query parameters that must all be present with these values. Omit to match every request.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
       "BotDetectionAllowlist": {
         "items": {
           "$ref": "#/components/schemas/BotDetectionIPAddressOrCidrBlock"
@@ -53936,6 +53983,102 @@
         ]
       }
     },
+    "/admin0/authorize-errors": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Rules cleared."
+          }
+        },
+        "summary": "Remove every rule.",
+        "tags": [
+          "Authorize errors"
+        ]
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "rules": {
+                      "items": {
+                        "$ref": "#/components/schemas/AuthorizeErrorRule"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "rules"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Registered rules (an empty list when none)."
+          }
+        },
+        "summary": "List rules in registration order.",
+        "tags": [
+          "Authorize errors"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizeErrorRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeErrorRule"
+                }
+              }
+            },
+            "description": "Rule registered."
+          },
+          "400": {
+            "description": "Body could not be parsed, has unknown fields, or error is missing or contains characters OAuth does not allow."
+          }
+        },
+        "summary": "Register a rule that makes /authorize return an OAuth error.",
+        "tags": [
+          "Authorize errors"
+        ]
+      }
+    },
+    "/admin0/authorize-errors/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Rule removed (or never existed)."
+          }
+        },
+        "summary": "Remove one rule. An unknown id is a no-op.",
+        "tags": [
+          "Authorize errors"
+        ]
+      }
+    },
     "/admin0/claims": {
       "delete": {
         "responses": {
@@ -54671,7 +54814,7 @@
             "description": "Reset complete."
           }
         },
-        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events, journal).",
+        "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, authorize error rules, permissions, mfa-required, clock, events, journal).",
         "tags": [
           "Expectations"
         ]
@@ -80071,6 +80214,10 @@
       "name": "Claim Mappings"
     },
     {
+      "description": "Rules that make `/authorize` fail on purpose. A rule carries an optional\n`match` on `/authorize` query parameters (subset match; empty matches\nevery request) and returns the OAuth `error` (and optional\n`error_description`) to the `redirect_uri`. The newest matching rule\nwins. `POST /admin0/reset` clears them.\n",
+      "name": "Authorize errors"
+    },
+    {
       "description": "Per-audience RBAC permission overlays. Lets tests pre-seed the\npermissions a token carries for a given API identifier.\n",
       "name": "Permissions"
     },
@@ -80110,6 +80257,7 @@
         "Actions",
         "Anomaly",
         "Attack Protection",
+        "Authorize errors",
         "Branding",
         "Claim Mappings",
         "Client Grants",

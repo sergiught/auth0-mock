@@ -322,12 +322,13 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
+| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, authorize error rules, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses; an optional `then` list answers successive calls in sequence ([cookbook](docs/COOKBOOK.md#test-retries-429-then-200)) |
 | `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
 | `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
 | `/admin0/claims/mappings` | GET / PUT / DELETE | Request-parameter → claim projection: map a token-request body parameter (form or JSON) to a claim name and `/oauth/token` stamps that parameter's value into the minted access token — per request, overriding `/admin0/claims` for that key. Allowlist semantics; empty map (default) = off. Independent store: `DELETE /admin0/claims` doesn't touch it |
+| `/admin0/authorize-errors` | POST / GET / DELETE | Make /authorize fail on purpose: rules with an optional match on /authorize query params return an OAuth error to redirect_uri; newest match wins; DELETE /admin0/authorize-errors/{id} removes one |
 | `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
 | `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
 | `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |

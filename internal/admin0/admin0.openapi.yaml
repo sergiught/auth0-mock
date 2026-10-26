@@ -20,6 +20,13 @@ tags:
       Despite living under the `/admin0/claims` path, this is an
       independent store: `DELETE /admin0/claims` leaves the mappings in
       place (and vice versa). `POST /admin0/reset` clears both.
+  - name: Authorize errors
+    description: |
+      Rules that make `/authorize` fail on purpose. A rule carries an optional
+      `match` on `/authorize` query parameters (subset match; empty matches
+      every request) and returns the OAuth `error` (and optional
+      `error_description`) to the `redirect_uri`. The newest matching rule
+      wins. `POST /admin0/reset` clears them.
   - name: Permissions
     description: |
       Per-audience RBAC permission overlays. Lets tests pre-seed the
@@ -64,7 +71,7 @@ paths:
   /admin0/reset:
     post:
       tags: [Expectations]
-      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, permissions, mfa-required, clock, events, journal).
+      summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, authorize error rules, permissions, mfa-required, clock, events, journal).
       responses:
         "204": { description: Reset complete. }
   /admin0/expectations:
@@ -126,6 +133,50 @@ paths:
       responses:
         "204": { description: Expectation(s) cleared. }
         "400": { description: Body was present but could not be parsed or was missing method/path. }
+  /admin0/authorize-errors:
+    post:
+      tags: [Authorize errors]
+      summary: Register a rule that makes /authorize return an OAuth error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeErrorRuleRequest" }
+      responses:
+        "201":
+          description: Rule registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthorizeErrorRule" }
+        "400": { description: "Body could not be parsed, has unknown fields, or error is missing or contains characters OAuth does not allow." }
+    get:
+      tags: [Authorize errors]
+      summary: List rules in registration order.
+      responses:
+        "200":
+          description: Registered rules (an empty list when none).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rules]
+                properties:
+                  rules:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuthorizeErrorRule" }
+    delete:
+      tags: [Authorize errors]
+      summary: Remove every rule.
+      responses:
+        "204": { description: Rules cleared. }
+  /admin0/authorize-errors/{id}:
+    delete:
+      tags: [Authorize errors]
+      summary: Remove one rule. An unknown id is a no-op.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Rule removed (or never existed). }
   /admin0/journal:
     get:
       tags: [Journal]
@@ -611,6 +662,27 @@ paths:
             (no `?before=`) has no cursor to look up and never 404s.
 components:
   schemas:
+    AuthorizeErrorRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        match:
+          type: object
+          description: /authorize query parameters that must all be present with these values. Omit to match every request.
+          additionalProperties: { type: string }
+        error: { type: string, description: OAuth error code returned to the redirect_uri. }
+        error_description: { type: string }
+    AuthorizeErrorRule:
+      type: object
+      required: [id, error]
+      properties:
+        id: { type: string }
+        match:
+          type: object
+          additionalProperties: { type: string }
+        error: { type: string }
+        error_description: { type: string }
     JournalEntries:
       type: object
       required: [entries]
