@@ -211,7 +211,7 @@ hand-edited file. To pull in a newer Auth0 Management API spec, run
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
 | `/oauth/revoke` | POST | 200 no-op (mock doesn't track refresh state) |
 | `/authorize` | GET | 302 with `code` (or implicit token); stashes PKCE challenge if present |
-| `/userinfo` | GET | Returns claims from the bearer |
+| `/userinfo` | GET | Returns claims from the bearer, plus the logged-in user's profile (from their last id_token; token claims win) |
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
 | `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer |

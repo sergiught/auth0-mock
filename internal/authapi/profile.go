@@ -6,6 +6,17 @@ import "strings"
 // /authorize carries no login_hint.
 const DefaultSubject = "auth0|mock-user"
 
+// profileOf picks the five profile keys present in an id_token Extra.
+func profileOf(extra map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, k := range []string{"email", "email_verified", "name", "nickname", "picture"} {
+		if v, ok := extra[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // deriveProfile builds a deterministic id_token profile from a subject, so the
 // same user always looks the same across flows.
 func deriveProfile(subject string) map[string]any {

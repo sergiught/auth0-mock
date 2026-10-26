@@ -19,6 +19,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // TokenHandler handles OAuth token requests.
@@ -43,6 +44,18 @@ type TokenHandler struct {
 	// of minting; the three Auth0 mfa-* grants then trade the mfa_token plus
 	// a fixed canned challenge for an access_token.
 	MFA *mfa.Store
+	// Sessions may be nil. When set, the profile of every id_token minted
+	// is remembered per subject so /userinfo can return it.
+	Sessions *session.Store
+}
+
+// rememberProfile records the profile claims of an id_token's extra for
+// /userinfo and returns extra unchanged.
+func (h *TokenHandler) rememberProfile(subject string, extra map[string]any) map[string]any {
+	if h.Sessions != nil {
+		h.Sessions.RememberProfile(subject, profileOf(extra))
+	}
+	return extra
 }
 
 // mfaChallengeResponse is the body returned alongside the 403 mfa_required.
@@ -169,14 +182,14 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: fillProfile(map[string]any{
+		Extra: h.rememberProfile(subject, fillProfile(map[string]any{
 			"email":          subject,
 			"email_verified": true,
 			"name":           subject,
 			"connection":     req.Realm,
 			"azp":            req.ClientID,
 			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		}, subject),
+		}, subject)),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -347,13 +360,13 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: fillProfile(map[string]any{
+		Extra: h.rememberProfile(subject, fillProfile(map[string]any{
 			"email":          subject,
 			"email_verified": true,
 			"name":           subject,
 			"azp":            req.ClientID,
 			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		}, subject),
+		}, subject)),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -432,6 +445,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		return
 	}
 	idExtra := deriveProfile(subject)
+	h.rememberProfile(subject, idExtra)
 	idExtra["azp"] = req.ClientID
 	if hasEntry {
 		idExtra["auth_time"] = entry.AuthTime.Unix()

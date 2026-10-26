@@ -16,6 +16,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 func newRouter(d Deps) chi.Router {
@@ -29,6 +30,7 @@ func newDeps() Deps {
 		Matches:       matches.NewStore(),
 		Claims:        claims.NewStore(),
 		ClaimMappings: claims.NewMappingStore(),
+		Sessions:      session.NewStore(),
 		Permissions:   permissions.NewStore(),
 		MFA:           mfa.NewStore(),
 		Clock:         clock.NewControlled(),
@@ -40,6 +42,7 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate, Response: matches.ResponseDef{Status: 200}})
 	d.Claims.Set(map[string]any{"role": "admin"})
 	d.ClaimMappings.Set(map[string]string{"resource": "https://example.com/resource"})
+	d.Sessions.RememberProfile("alice", map[string]any{"name": "Alice"})
 	d.Permissions.Set("api", []string{"read:users"})
 	d.MFA.SetRequired(true)
 	d.Clock.Freeze(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -52,6 +55,8 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	assert.Empty(t, d.Matches.List())
 	assert.Empty(t, d.Claims.Get())
 	assert.Empty(t, d.ClaimMappings.Get())
+	_, remembered := d.Sessions.Profile("alice")
+	assert.False(t, remembered)
 	assert.Empty(t, d.Permissions.All())
 	assert.False(t, d.MFA.IsRequired())
 	mode, _ := d.Clock.State()

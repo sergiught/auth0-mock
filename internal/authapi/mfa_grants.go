@@ -102,13 +102,13 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		Subject:  ctx.Subject,
 		Audience: []string{ctx.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
-		Extra: fillProfile(map[string]any{
+		Extra: h.rememberProfile(ctx.Subject, fillProfile(map[string]any{
 			"email":          ctx.Subject,
 			"email_verified": true,
 			"name":           ctx.Subject,
 			"azp":            ctx.ClientID,
 			"auth_time":      h.Keys.Cfg().Now().Unix(),
-		}, ctx.Subject),
+		}, ctx.Subject)),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())

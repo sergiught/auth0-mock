@@ -14,20 +14,23 @@ import (
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // Deps is the parameter object for Mount.
 type Deps struct {
-	Router                       chi.Router
-	Keys                         *jwks.KeySet
-	Issuer                       string
-	DefaultAudience              string
-	Log                          zerolog.Logger
-	Claims                       *claims.Store
-	ClaimMappings                *claims.MappingStore
-	Permissions                  *permissions.Store
-	PKCE                         *pkce.Store
-	MFA                          *mfa.Store
+	Router          chi.Router
+	Keys            *jwks.KeySet
+	Issuer          string
+	DefaultAudience string
+	Log             zerolog.Logger
+	Claims          *claims.Store
+	ClaimMappings   *claims.MappingStore
+	Permissions     *permissions.Store
+	PKCE            *pkce.Store
+	MFA             *mfa.Store
+	// Sessions may be nil (no remembered profiles).
+	Sessions                     *session.Store
 	LogoutAllowedURLs            []string
 	AuthorizeAllowedRedirectURIs []string
 }
@@ -44,12 +47,13 @@ func Mount(d Deps) {
 		Permissions:     d.Permissions,
 		PKCE:            d.PKCE,
 		MFA:             d.MFA,
+		Sessions:        d.Sessions,
 	})
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
 		PKCE:                d.PKCE,
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
 	})
-	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys})
+	d.Router.Method(http.MethodGet, "/userinfo", &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions})
 	d.Router.Method(http.MethodGet, "/.well-known/openid-configuration", NewDiscoveryHandler(d.Issuer))
 	d.Router.Method(http.MethodGet, "/v2/logout", &LogoutHandler{AllowedReturnURLs: d.LogoutAllowedURLs})
 	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{})

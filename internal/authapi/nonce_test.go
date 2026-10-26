@@ -20,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 const nonceTestVerifier = "the-quick-brown-fox-jumps-over-the-lazy-dog-43"
@@ -55,8 +56,9 @@ func newNonceRouter(t *testing.T) (chi.Router, *jwks.KeySet, *steppedClock) {
 	Mount(Deps{
 		Router: r, Keys: ks,
 		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
-		Log:  zerolog.Nop(),
-		PKCE: pkce.NewStore(pkce.WithNow(clk.Now)),
+		Log:      zerolog.Nop(),
+		PKCE:     pkce.NewStore(pkce.WithNow(clk.Now)),
+		Sessions: session.NewStore(),
 	})
 	return r, ks, clk
 }

@@ -221,6 +221,13 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the response JSON path "([^"]+)" does not exist$`, func(path string) error {
+		if gjson.GetBytes(c.LastBody, path).Exists() {
+			return fmt.Errorf("JSON path %s exists (body=%s)", path, string(c.LastBody))
+		}
+		return nil
+	})
+
 	// Match the entire response body against a JSON shape. Use "<<PRESENCE>>"
 	// for fields whose values are truly runtime-random (signed JWTs, UUIDs).
 	// Use "${BASE_URL}" inside string values to refer to the live server's

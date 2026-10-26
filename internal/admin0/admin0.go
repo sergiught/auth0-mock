@@ -18,6 +18,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/session"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
@@ -26,10 +27,12 @@ type Deps struct {
 	Matches       *matches.Store
 	Claims        *claims.Store
 	ClaimMappings *claims.MappingStore
-	Permissions   *permissions.Store
-	MFA           *mfa.Store
-	Validator     *spec.Validator
-	Clock         *clock.Controlled
+	// Sessions is cleared by /admin0/reset. Nil is fine.
+	Sessions    *session.Store
+	Permissions *permissions.Store
+	MFA         *mfa.Store
+	Validator   *spec.Validator
+	Clock       *clock.Controlled
 	// Events is the SSE hub for POST /admin0/events. Nil is fine for
 	// admin0 tests that don't exercise the events surface — the route
 	// only registers when both Events and Validator are non-nil, and
@@ -106,7 +109,7 @@ func Mount(r chi.Router, d Deps) {
 }
 
 // ResetHandler wipes every store admin0 governs: registered matches, custom
-// claims, claim mappings, per-audience permissions, and the MFA flag; it
+// claims, claim mappings, remembered user sessions, per-audience permissions, and the MFA flag; it
 // also restores the clock to real mode and resets the SSE events hub
 // (drains subscribers, clears the replay buffer, zeroes counters).
 type ResetHandler struct {
@@ -122,6 +125,9 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Deps.ClaimMappings != nil {
 		h.Deps.ClaimMappings.Clear()
+	}
+	if h.Deps.Sessions != nil {
+		h.Deps.Sessions.Clear()
 	}
 	if h.Deps.Permissions != nil {
 		h.Deps.Permissions.Clear()

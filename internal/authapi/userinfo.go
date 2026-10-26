@@ -9,11 +9,15 @@ import (
 	"github.com/sergiught/auth0-mock/internal/bearer"
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // UserInfoHandler returns claims for the authenticated user.
 type UserInfoHandler struct {
 	Keys *jwks.KeySet
+	// Sessions may be nil. When set, the profile remembered for the token's
+	// subject is added beneath the token's own claims.
+	Sessions *session.Store
 }
 
 func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +37,11 @@ func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make(map[string]any, len(claims.Extra)+1)
 	out["sub"] = claims.Subject
+	if h.Sessions != nil {
+		if profile, ok := h.Sessions.Profile(claims.Subject); ok {
+			maps.Copy(out, profile)
+		}
+	}
 	maps.Copy(out, claims.Extra)
 	render.JSON(w, r, out)
 }
