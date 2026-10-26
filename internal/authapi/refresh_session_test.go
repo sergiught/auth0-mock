@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -227,4 +228,28 @@ func TestRefresh_NoAudienceLoginUsesDefaultAndIDTokenShape(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"demo"}, id.Audience)
 	assert.NotContains(t, id.Extra, "connection")
+}
+
+func TestRefresh_ConcurrentSameTokenKeepsUser(t *testing.T) {
+	r, ks, _, _ := newRefreshRouter(t)
+	login := passwordLogin(t, r, nil)
+
+	const workers = 8
+	results := make([]*httptest.ResponseRecorder, workers)
+	var wg sync.WaitGroup
+	for i := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = refreshWith(r, login.RefreshToken, nil)
+		}()
+	}
+	wg.Wait()
+
+	for _, w := range results {
+		resp := decodeToken(t, w)
+		access, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+		require.NoError(t, err)
+		assert.Equal(t, "alice@example.com", access.Subject)
+	}
 }

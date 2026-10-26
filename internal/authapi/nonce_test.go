@@ -185,6 +185,8 @@ func TestPasswordGrants_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
 	c := idTokenClaims(t, ks, w)
 	assert.Equal(t, "demo", c.Extra["azp"])
 	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+	assert.Equal(t, "alice", c.Extra["email"])
+	assert.Equal(t, "alice", c.Extra["name"])
 
 	w = postTokenForm(r, url.Values{
 		"grant_type": {"http://auth0.com/oauth/grant-type/password-realm"}, "client_id": {"demo"},
@@ -193,6 +195,30 @@ func TestPasswordGrants_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {
 	c = idTokenClaims(t, ks, w)
 	assert.Equal(t, "demo", c.Extra["azp"])
 	assert.EqualValues(t, clk.Now().Unix(), c.Extra["auth_time"])
+	assert.Equal(t, "alice", c.Extra["email"])
+	assert.Equal(t, "alice", c.Extra["name"])
+}
+
+func TestMFAGrant_IDTokenCarriesRealmConnection(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	mfaStore := mfa.NewStore()
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), MFA: mfaStore,
+	})
+	tok := mfaStore.Issue(mfa.Context{
+		ClientID: "abc", Audience: "https://api/", Scope: "openid", Subject: "alice", Realm: "db",
+	})
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"http://auth0.com/oauth/grant-type/mfa-otp"}, "client_id": {"abc"},
+		"mfa_token": {tok}, "otp": {mfa.AcceptedOTP},
+	})
+	c := idTokenClaims(t, ks, w)
+	assert.Equal(t, "db", c.Extra["connection"])
 }
 
 func TestMFAGrant_IDTokenCarriesAuthTimeAndAzp(t *testing.T) {

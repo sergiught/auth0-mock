@@ -106,6 +106,9 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		"azp":            ctx.ClientID,
 		"auth_time":      authTime.Unix(),
 	}, ctx.Subject)
+	if ctx.Realm != "" {
+		idExtra["connection"] = ctx.Realm
+	}
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  ctx.Subject,
 		Audience: []string{ctx.ClientID},
