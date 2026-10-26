@@ -140,3 +140,9 @@ func TestAuthorize_ErrorRuleBeatsImplicit(t *testing.T) {
 	assert.Equal(t, "access_denied", frag.Get("error"))
 	assert.False(t, frag.Has("access_token"))
 }
+
+func TestAuthorize_UnknownResponseTypeBeatsBadChallenge(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	u := location(t, getAuthorize(r, implicitBase+"response_type=cod&code_challenge=short"))
+	assert.Equal(t, "unsupported_response_type", u.Query().Get("error"))
+}

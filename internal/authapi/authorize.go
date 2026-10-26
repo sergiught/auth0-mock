@@ -89,13 +89,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mode = resolveMode("", fragmentDefault)
 	}
 
-	// Validation includes the PKCE challenge length, checked up-front. RFC 7636 §4.1 requires the
-	// code_verifier (and therefore the plain code_challenge, or the pre-hash
-	// for S256) to be 43..128 characters. Rejecting out-of-range values at
-	// /authorize gives the client a real error instead of a code that
-	// silently fails to exchange later. Validation runs even when the PKCE
-	// store isn't wired so client-side bugs surface either way.
-
+	// Reject unservable requests before anything is minted or recorded.
 	if code, desc := validateResponseType(q, responseType, rt, validType); code != "" {
 		deliver(w, u, mode, errorParams(code, desc, state))
 		return
@@ -116,13 +110,13 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rt.code {
 		issuedCode = uuid.NewString()
 		params.Set("code", issuedCode)
-		h.recordCode(q, issuedCode)
 	}
 	if rt.token || rt.idToken {
 		if !h.mintTokens(w, u, mode, q, rt, issuedCode, state, params) {
 			return
 		}
 	}
+	h.recordCode(q, issuedCode)
 	if state != "" {
 		params.Set("state", state)
 	}
@@ -147,17 +141,22 @@ func (h *AuthorizeHandler) vetRedirect(w http.ResponseWriter, redirect string) (
 }
 
 // validateResponseType returns the OAuth error code and description for a
-// request that cannot be served, or empty strings: a code_challenge outside
-// the RFC 7636 length range, an unknown response_type, or missing parameters
-// for a token-issuing one.
+// request that cannot be served, or empty strings: an unknown response_type,
+// a code_challenge outside the RFC 7636 length range, or missing parameters
+// for a token-issuing one. RFC 7636 section 4.1 requires the code_verifier
+// (and therefore the plain code_challenge, or the pre-hash for S256) to be
+// 43..128 characters. Rejecting out-of-range values at /authorize gives the
+// client a real error instead of a code that silently fails to exchange
+// later. It runs even when the PKCE store isn't wired so client-side bugs
+// surface either way.
 func validateResponseType(q url.Values, raw string, rt responseTypes, valid bool) (code, description string) {
+	if !valid {
+		return "unsupported_response_type", "Unsupported response type: " + raw
+	}
 	if challenge := q.Get("code_challenge"); challenge != "" {
 		if n := len(challenge); n < 43 || n > 128 {
 			return "invalid_request", fmt.Sprintf("code_challenge must be 43..128 characters (RFC 7636 section 4.1), got %d", n)
 		}
-	}
-	if !valid {
-		return "unsupported_response_type", "Unsupported response type: " + raw
 	}
 	if !rt.token && !rt.idToken {
 		return "", ""
