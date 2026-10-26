@@ -29,12 +29,19 @@ func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
 		"response_types_supported":              []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
-		"grant_types_supported":                 []string{"client_credentials", "password", "refresh_token", "authorization_code"},
-		"code_challenge_methods_supported":      []string{"S256", "plain"},
-		"response_modes_supported":              []string{"query", "fragment", "form_post"},
-		"claims_supported":                      []string{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nonce", "sub"},
+		"grant_types_supported": []string{
+			"client_credentials", "authorization_code", "refresh_token", "password", "implicit",
+			"http://auth0.com/oauth/grant-type/password-realm",
+			"http://auth0.com/oauth/grant-type/passwordless/otp",
+			"http://auth0.com/oauth/grant-type/mfa-oob",
+			"http://auth0.com/oauth/grant-type/mfa-otp",
+			"http://auth0.com/oauth/grant-type/mfa-recovery-code",
+		},
+		"code_challenge_methods_supported": []string{"S256", "plain"},
+		"response_modes_supported":         []string{"query", "fragment", "form_post"},
+		"claims_supported":                 []string{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nickname", "nonce", "phone_number", "phone_number_verified", "picture", "sub"},
 	}
 	// Match render.JSON's encoding (HTML-escaped, trailing newline) so the wire
 	// output is byte-identical to the previous per-request render. A map of

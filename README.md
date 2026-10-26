@@ -217,7 +217,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `/v2/logout` | GET | 302 to `returnTo` |
 | `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
-| `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer |
+| `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer; lists only the grants, claims and auth methods the mock serves |
 | `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
 | `/dbconnections/change_password` | POST | Returns the canned reset-email message |
 | `/passwordless/start` | POST | Returns `{_id, email, phone_number}` |
