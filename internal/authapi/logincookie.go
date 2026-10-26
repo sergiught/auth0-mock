@@ -47,3 +47,12 @@ func currentLogin(r *http.Request, s *session.Store) (string, session.Login, boo
 	}
 	return c.Value, l, true
 }
+
+// endLogin ends the request's login session, if any, and always sends the
+// cleared cookie.
+func endLogin(w http.ResponseWriter, r *http.Request, s *session.Store) {
+	if id, _, ok := currentLogin(r, s); ok {
+		s.EndLogin(id)
+	}
+	clearLoginCookie(w, r)
+}
