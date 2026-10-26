@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,6 +178,28 @@ func TestRouter_CORSOnErrorResponses(t *testing.T) {
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "http://localhost:3000", w.Header().Get("Access-Control-Allow-Origin"))
+}
+
+// TestRouter_CORSStubVaryKeepsOrigin pins that a registered Vary header is
+// merged with, not replacing, the Vary: Origin the CORS middleware sets.
+func TestRouter_CORSStubVaryKeepsOrigin(t *testing.T) {
+	t.Parallel()
+	h, _, tok := newCORSRouter(t, nil)
+
+	stub := `{"method":"GET","path":"/api/v2/users/auth0|v","response":{"status":200,` +
+		`"headers":{"Vary":"Accept-Encoding"},"body":{"user_id":"auth0|v"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/admin0/expectations", strings.NewReader(stub))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Less(t, w.Code, 300, w.Body.String())
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v2/users/auth0|v", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.ElementsMatch(t, []string{"Origin", "Accept-Encoding"}, w.Header().Values("Vary"))
 }
 
 // TestRouter_CORSEventsStillStream pins that the CORS middleware does not
