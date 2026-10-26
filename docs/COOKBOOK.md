@@ -15,6 +15,7 @@ Practical recipes for using auth0-mock in tests. Each recipe is self-contained: 
 - [Test token expiry without sleeps](#test-token-expiry-without-sleeps)
 - [Test the password-realm grant](#test-the-password-realm-grant)
 - [Stub an error response (400, 429, 500)](#stub-an-error-response-400-429-500)
+- [Test retries: 429, then 200](#test-retries-429-then-200)
 - [Reset state between tests](#reset-state-between-tests)
 - [Inspect what's currently registered](#inspect-whats-currently-registered)
 - [Run against HTTPS with a trusted cert](#run-against-https-with-a-trusted-cert)
@@ -333,6 +334,28 @@ curl -i -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/v2/users/a
 ```
 
 Registered headers come through on the response, so you can test client-side rate-limit handling realistically.
+
+## Test retries: 429, then 200
+
+Add an optional `then` list to answer successive calls differently: call 1 gets `response`, call 2 gets `then[0]`, and so on, and the last entry repeats once the list runs out. `Hits` counts every call, and re-registering the stub restarts the sequence. Each entry is validated at registration like `response`; an error names the entry, for example `then[0]`.
+
+```bash
+# First call is rate-limited, every call after that succeeds
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"GET","path":"/api/v2/users/auth0|x","response":{"status":429,"headers":{"Retry-After":"0"},"body":{"statusCode":429,"error":"Too Many Requests","message":"Rate limit exceeded"}},"then":[{"status":200,"body":{"user_id":"auth0|x","email":"x@example.com"}}]}'
+```
+
+The Go SDK equivalent:
+
+```go
+_, err := c.ExpectGet("/api/v2/users/auth0|x").
+    Respond(429).Header("Retry-After", "0").JSON(map[string]any{"statusCode": 429, "error": "Too Many Requests", "message": "Rate limit exceeded"}).
+    Then(200).JSON(map[string]any{"user_id": "auth0|x", "email": "x@example.com"}).
+    Apply(ctx)
+```
+
+go-auth0 retries a 429 up to twice and waits at least 1s; `Retry-After: 0` keeps each wait at that floor.
 
 ## Reset state between tests
 

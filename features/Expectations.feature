@@ -154,3 +154,31 @@ Feature: Expectation registration and lookup
     When I send "GET /api/v2/users?q=email:found@x" with a valid bearer
     Then I receive a 200 response
     And the response JSON path "0.user_id" equals "auth0|found"
+
+  Scenario: A sequenced stub answers in order and repeats its last answer
+    Given the mock is running
+    And I have a valid bearer token
+    And I register the expectation "GET /api/v2/users/auth0|retry":
+      """
+      {"response":{"status":429,"headers":{"Retry-After":"0"},"body":{"statusCode":429,"error":"Too Many Requests","message":"slow down"}},"then":[{"status":429,"body":{"statusCode":429,"error":"Too Many Requests","message":"slow down"}},{"status":200,"body":{"user_id":"auth0|retry","email":"r@x"}}]}
+      """
+    When I send "GET /api/v2/users/auth0|retry" with a valid bearer
+    Then I receive a 429 response
+    And the response header "Retry-After" equals "0"
+    When I send "GET /api/v2/users/auth0|retry" with a valid bearer
+    Then I receive a 429 response
+    And the response header "Retry-After" does not exist
+    When I send "GET /api/v2/users/auth0|retry" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "user_id" equals "auth0|retry"
+    When I send "GET /api/v2/users/auth0|retry" with a valid bearer
+    Then I receive a 200 response
+
+  Scenario: A sequence entry that violates the schema is rejected
+    Given the mock is running
+    When I attempt to register the expectation "GET /api/v2/users/auth0|badseq":
+      """
+      {"response":{"status":200,"body":{"user_id":"auth0|badseq","email":"b@x"}},"then":[{"status":200,"body":"not-an-object"}]}
+      """
+    Then I receive a 400 response
+    And the response body contains "then[0]"

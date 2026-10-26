@@ -27,3 +27,18 @@ func TestKindOf(t *testing.T) {
 		})
 	}
 }
+
+func TestServed_PicksByHits(t *testing.T) {
+	t.Parallel()
+	e := Expectation{Response: ResponseDef{Status: 429}, Then: []ResponseDef{{Status: 503}, {Status: 200}}}
+	for hits, want := range map[int64]int{0: 429, 1: 429, 2: 503, 3: 200, 4: 200, 10: 200} {
+		e.Hits = hits
+		assert.Equal(t, want, e.Served().Status, "hits=%d", hits)
+	}
+}
+
+func TestServed_EmptyThenIsSingle(t *testing.T) {
+	t.Parallel()
+	e := Expectation{Response: ResponseDef{Status: 429}, Then: []ResponseDef{}, Hits: 5}
+	assert.Equal(t, 429, e.Served().Status)
+}

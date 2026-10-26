@@ -700,6 +700,16 @@ components:
           $ref: "#/components/schemas/RequestMatcher"
         response:
           $ref: "#/components/schemas/ResponseDef"
+        then:
+          type: array
+          description: |
+            Optional answers served after `response`, in order: call 1 gets
+            `response`, call 2 gets `then[0]`, call 3 gets `then[1]`, and so on.
+            The last entry repeats once the list is exhausted. Each entry is
+            validated against the operation's schema like `response`.
+            Re-registering the stub restarts the sequence.
+          items:
+            $ref: "#/components/schemas/ResponseDef"
     RequestMatcher:
       type: object
       description: |

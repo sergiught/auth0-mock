@@ -101,11 +101,12 @@ func noMatchMessage(method, path, opTemplate string, nm []matches.NearMiss) stri
 // respond writes a matched expectation's canned response.
 func (h *GenericHandler) respond(ctx context.Context, w http.ResponseWriter, exp *matches.Expectation) {
 	journal.MarkMatched(ctx, exp.ID)
+	res := exp.Served()
 	// 3. Defense-in-depth response validation.
-	if err := h.Validator.ValidateResponse(h.Op, exp.Response.Status, exp.Response.Headers, exp.Response.Body); err != nil {
+	if err := h.Validator.ValidateResponse(h.Op, res.Status, res.Headers, res.Body); err != nil {
 		h.Log.Error().
 			Str("op", h.Op.Op.OperationID).
-			Int("status", exp.Response.Status).
+			Int("status", res.Status).
 			Err(err).
 			Msg("registered match violates response schema")
 		if h.Strict {
@@ -115,7 +116,7 @@ func (h *GenericHandler) respond(ctx context.Context, w http.ResponseWriter, exp
 		}
 	}
 	// 4. Write the registered response.
-	for k, v := range exp.Response.Headers {
+	for k, v := range res.Headers {
 		// Vary is additive so the CORS middleware's Vary: Origin survives.
 		if http.CanonicalHeaderKey(k) == "Vary" {
 			w.Header().Add(k, v)
@@ -126,8 +127,8 @@ func (h *GenericHandler) respond(ctx context.Context, w http.ResponseWriter, exp
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
 	}
-	w.WriteHeader(exp.Response.Status)
-	if _, err := w.Write(exp.Response.Body); err != nil { //nolint:gosec // exp.Response.Body is operator-supplied stub content registered via /admin0/expectations; faithfully echoing it is the entire point of the mock
+	w.WriteHeader(res.Status)
+	if _, err := w.Write(res.Body); err != nil { //nolint:gosec // res.Body is operator-supplied stub content registered via /admin0/expectations; faithfully echoing it is the entire point of the mock
 		h.Log.Debug().
 			Err(err).
 			Str("op", h.Op.Op.OperationID).

@@ -26338,6 +26338,13 @@
           },
           "response": {
             "$ref": "#/components/schemas/ResponseDef"
+          },
+          "then": {
+            "description": "Optional answers served after `response`, in order: call 1 gets\n`response`, call 2 gets `then[0]`, call 3 gets `then[1]`, and so on.\nThe last entry repeats once the list is exhausted. Each entry is\nvalidated against the operation's schema like `response`.\nRe-registering the stub restarts the sequence.\n",
+            "items": {
+              "$ref": "#/components/schemas/ResponseDef"
+            },
+            "type": "array"
           }
         },
         "required": [

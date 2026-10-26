@@ -323,7 +323,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
-| `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses |
+| `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses; an optional `then` list answers successive calls in sequence ([cookbook](docs/COOKBOOK.md#test-retries-429-then-200)) |
 | `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
 | `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |
 | `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
@@ -583,7 +583,7 @@ What's covered:
 
 | Resource | Read | Write | Wipe | Verify |
 |---|---|---|---|---|
-| `Expectations` | `List` | `Add`, fluent `ExpectGet/Post/Put/Patch/Delete(...).Respond(...).JSON(...).Apply(ctx)` | `Clear`, `ClearOp(method, path)` | `Verify(ctx)`; per-stub: `Hits(ctx)`, `Times(n)`, `AtLeast(n)`, `AtMost(n)`, `AnyTimes()` |
+| `Expectations` | `List` | `Add`, fluent `ExpectGet/Post/Put/Patch/Delete(...).Respond(...).JSON(...).Then(...).Apply(ctx)` | `Clear`, `ClearOp(method, path)` | `Verify(ctx)`; per-stub: `Hits(ctx)`, `Times(n)`, `AtLeast(n)`, `AtMost(n)`, `AnyTimes()` |
 | `Claims` | `Get` | `Set` | `Clear` | — |
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
 | `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |

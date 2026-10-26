@@ -266,3 +266,71 @@ func TestFluent_WithBodyAndRegisteredMetadata(t *testing.T) {
 	assert.Equal(t, "/api/v2/users/abc", re.Path())
 	assert.NotEmpty(t, re.RegisteredAt())
 }
+
+// TestFluent_ThenBuildsSequence locks the sequencing wire shape: the
+// first Respond is "response", each Then appends to "then", and
+// JSON / Header apply to the most recent entry only.
+func TestFluent_ThenBuildsSequence(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	_, err := c.ExpectGet("/api/v2/users").
+		Respond(429).Header("Retry-After", "0").
+		Then(429).
+		Then(200).JSON([]any{}).
+		Apply(t.Context())
+	require.NoError(t, err)
+
+	var sent auth0mock.Expectation
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &sent))
+	assert.Equal(t, 429, sent.Response.Status)
+	assert.Equal(t, "0", sent.Response.Headers["Retry-After"])
+	assert.Empty(t, sent.Response.Body)
+	require.Len(t, sent.Then, 2)
+	assert.Equal(t, 429, sent.Then[0].Status)
+	assert.Nil(t, sent.Then[0].Headers, "the first entry's header must not leak into later ones")
+	assert.Equal(t, 200, sent.Then[1].Status)
+	assert.JSONEq(t, `[]`, string(sent.Then[1].Body))
+}
+
+// TestFluent_NoThenOmitsField keeps old payloads byte-compatible: a
+// chain without Then sends no "then" key.
+func TestFluent_NoThenOmitsField(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	_, err := c.ExpectGet("/p").Respond(200).JSON(map[string]any{"ok": true}).Apply(t.Context())
+	require.NoError(t, err)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &raw))
+	assert.NotContains(t, raw, "then")
+}
+
+// TestFluent_ThenAfterMarshalErrorKeepsFirstError extends the
+// first-error-wins contract across Then.
+func TestFluent_ThenAfterMarshalErrorKeepsFirstError(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	_, err := c.ExpectGet("/p").
+		Respond(200).JSON(make(chan int)).
+		Then(200).JSON(map[string]any{"ok": true}).
+		Apply(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Respond.JSON")
+	assert.Equal(t, 0, len(rec.calls))
+}
+
+// TestFluent_ReusedBuilderDropsStaleThen guards against a second Apply
+// on the same ExpectationBuilder re-sending the first chain's "then".
+func TestFluent_ReusedBuilderDropsStaleThen(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	b := c.ExpectGet("/p")
+	_, err := b.Respond(429).Then(200).Apply(t.Context())
+	require.NoError(t, err)
+	_, err = b.Respond(200).Apply(t.Context())
+	require.NoError(t, err)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &raw))
+	assert.NotContains(t, raw, "then")
+}
