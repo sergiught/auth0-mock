@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -80,4 +81,47 @@ func TestStore_Concurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestStore_RefreshRoundTripAndCopy(t *testing.T) {
+	s := NewStore()
+	_, ok := s.Refresh("tok")
+	assert.False(t, ok)
+
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	g := Grant{Subject: "alice", ClientID: "demo", Audience: "api", Scope: "openid", Realm: "db", AuthTime: at,
+		Profile: map[string]any{"name": "Alice"}}
+	s.RememberRefresh("tok", g)
+	g.Profile["name"] = "mutated-input"
+
+	got, ok := s.Refresh("tok")
+	assert.True(t, ok)
+	assert.Equal(t, "alice", got.Subject)
+	assert.Equal(t, at, got.AuthTime)
+	assert.Equal(t, "Alice", got.Profile["name"])
+
+	got.Profile["name"] = "mutated-output"
+	again, _ := s.Refresh("tok")
+	assert.Equal(t, "Alice", again.Profile["name"])
+}
+
+func TestStore_ClearForgetsRefreshGrants(t *testing.T) {
+	s := NewStore()
+	s.RememberRefresh("tok", Grant{Subject: "alice"})
+	s.Clear()
+	_, ok := s.Refresh("tok")
+	assert.False(t, ok)
+}
+
+func TestStore_RefreshEvictsOldestAtCap(t *testing.T) {
+	s := NewStore()
+	for i := 0; i < MaxEntries+1; i++ {
+		s.RememberRefresh(fmt.Sprintf("t%d", i), Grant{Subject: "u"})
+	}
+	_, ok := s.Refresh("t0")
+	assert.False(t, ok)
+	_, ok = s.Refresh("t1")
+	assert.True(t, ok)
+	_, ok = s.Refresh(fmt.Sprintf("t%d", MaxEntries))
+	assert.True(t, ok)
 }

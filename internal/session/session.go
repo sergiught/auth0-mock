@@ -6,6 +6,7 @@ package session
 import (
 	"maps"
 	"sync"
+	"time"
 )
 
 // MaxEntries bounds how many user profiles the store keeps; the oldest
@@ -17,11 +18,22 @@ type Store struct {
 	mu       sync.Mutex
 	profiles map[string]map[string]any
 	order    []string // subjects in insertion order, oldest first
+
+	refresh      map[string]Grant
+	refreshOrder []string // refresh tokens in insertion order, oldest first
+}
+
+// Grant is what the mock remembers about a refresh token it issued, so the
+// refresh_token grant can return the same user.
+type Grant struct {
+	Subject, ClientID, Audience, Scope, Realm string
+	AuthTime                                  time.Time
+	Profile                                   map[string]any
 }
 
 // NewStore returns an empty Store.
 func NewStore() *Store {
-	return &Store{profiles: map[string]map[string]any{}}
+	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]Grant{}}
 }
 
 // RememberProfile stores a copy of profile for subject; last write wins.
@@ -55,4 +67,34 @@ func (s *Store) Clear() {
 	defer s.mu.Unlock()
 	s.profiles = map[string]map[string]any{}
 	s.order = nil
+	s.refresh = map[string]Grant{}
+	s.refreshOrder = nil
+}
+
+// RememberRefresh stores a copy of g under the refresh token. It is bounded
+// by MaxEntries like profiles, evicting the oldest token first.
+func (s *Store) RememberRefresh(token string, g Grant) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.refresh[token]; !exists {
+		if len(s.refreshOrder) >= MaxEntries {
+			delete(s.refresh, s.refreshOrder[0])
+			s.refreshOrder = s.refreshOrder[1:]
+		}
+		s.refreshOrder = append(s.refreshOrder, token)
+	}
+	g.Profile = maps.Clone(g.Profile)
+	s.refresh[token] = g
+}
+
+// Refresh returns a copy of the grant remembered for the refresh token.
+func (s *Store) Refresh(token string) (Grant, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.refresh[token]
+	if !ok {
+		return Grant{}, false
+	}
+	g.Profile = maps.Clone(g.Profile)
+	return g, true
 }
