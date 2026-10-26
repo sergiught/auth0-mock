@@ -179,3 +179,46 @@ func TestStore_AccessRememberAndClear(t *testing.T) {
 	_, ok = s.Access("t1")
 	assert.True(t, ok)
 }
+
+func TestLoginStartLookupEnd(t *testing.T) {
+	s := NewStore()
+	t0 := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	id := s.StartLogin("auth0|a", t0)
+	assert.Len(t, id, 43)
+
+	l, ok := s.Login(id)
+	assert.True(t, ok)
+	assert.Equal(t, "auth0|a", l.Subject)
+	assert.True(t, t0.Equal(l.AuthTime))
+
+	s.EndLogin(id)
+	_, ok = s.Login(id)
+	assert.False(t, ok)
+	s.EndLogin("unknown")
+}
+
+func TestLoginIDsUnique(t *testing.T) {
+	s := NewStore()
+	assert.NotEqual(t, s.StartLogin("a", time.Now()), s.StartLogin("a", time.Now()))
+}
+
+func TestLoginClear(t *testing.T) {
+	s := NewStore()
+	id := s.StartLogin("a", time.Now())
+	s.Clear()
+	_, ok := s.Login(id)
+	assert.False(t, ok)
+}
+
+func TestLoginEvictsOldest(t *testing.T) {
+	s := NewStore()
+	first := s.StartLogin("first", time.Now())
+	var last string
+	for i := 0; i < MaxEntries; i++ {
+		last = s.StartLogin("u", time.Now())
+	}
+	_, ok := s.Login(first)
+	assert.False(t, ok)
+	_, ok = s.Login(last)
+	assert.True(t, ok)
+}

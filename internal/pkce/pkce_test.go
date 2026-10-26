@@ -174,3 +174,15 @@ func TestStore_PutStampsAuthTimeFromClock(t *testing.T) {
 	assert.Equal(t, "n-1", e.Nonce)
 	assert.True(t, fixed.Equal(e.AuthTime))
 }
+
+func TestStore_PutKeepsPresetAuthTime(t *testing.T) {
+	t.Parallel()
+	fixed := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	preset := fixed.Add(-time.Hour)
+	s := NewStore(WithNow(func() time.Time { return fixed }))
+	s.Put("code-1", Entry{AuthTime: preset})
+
+	e, ok := s.Consume("code-1")
+	require.True(t, ok)
+	assert.True(t, preset.Equal(e.AuthTime))
+}

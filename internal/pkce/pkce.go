@@ -49,7 +49,7 @@ type Entry struct {
 	Audience string
 	Scope    string
 	// AuthTime is when the code was issued, stamped by Store.Put from the
-	// store clock. It becomes the id_token auth_time claim.
+	// store clock unless the caller preset it. It becomes the id_token auth_time claim.
 	AuthTime  time.Time
 	expiresAt time.Time
 }
@@ -97,7 +97,9 @@ func (s *Store) Put(code string, e Entry) {
 	defer s.mu.Unlock()
 	s.sweepLocked()
 	now := s.now()
-	e.AuthTime = now
+	if e.AuthTime.IsZero() {
+		e.AuthTime = now
+	}
 	e.expiresAt = now.Add(s.ttl)
 	s.entries[code] = e
 }

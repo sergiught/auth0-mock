@@ -4,7 +4,10 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 )
@@ -25,6 +28,16 @@ type Store struct {
 
 	access      map[string]Access
 	accessOrder []string // Opaque access tokens in insertion order, oldest first.
+
+	logins     map[string]Login
+	loginOrder []string // Login ids in insertion order, oldest first.
+}
+
+// Login is a mock login session: who signed in and when, kept server-side
+// behind the auth0 cookie so a later prompt=none request can answer for them.
+type Login struct {
+	Subject  string
+	AuthTime time.Time
 }
 
 // Access is what the mock remembers about an opaque access token, issued when
@@ -44,7 +57,7 @@ type Grant struct {
 
 // NewStore returns an empty Store.
 func NewStore() *Store {
-	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]Grant{}, access: map[string]Access{}}
+	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]Grant{}, access: map[string]Access{}, logins: map[string]Login{}}
 }
 
 // RememberProfile stores a copy of profile for subject; last write wins.
@@ -82,6 +95,8 @@ func (s *Store) Clear() {
 	s.refreshOrder = nil
 	s.access = map[string]Access{}
 	s.accessOrder = nil
+	s.logins = map[string]Login{}
+	s.loginOrder = nil
 }
 
 // RememberRefresh stores a copy of g under the refresh token. It is bounded
@@ -133,4 +148,45 @@ func (s *Store) Access(token string) (Access, bool) {
 	defer s.mu.Unlock()
 	a, ok := s.access[token]
 	return a, ok
+}
+
+// StartLogin records a login session for subject and returns its random id.
+// It is bounded by MaxEntries like the other maps, evicting the oldest first.
+func (s *Store) StartLogin(subject string, authTime time.Time) string {
+	// The system random source does not fail on supported platforms.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	id := base64.RawURLEncoding.EncodeToString(b)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.loginOrder) >= MaxEntries {
+		delete(s.logins, s.loginOrder[0])
+		s.loginOrder = s.loginOrder[1:]
+	}
+	s.loginOrder = append(s.loginOrder, id)
+	s.logins[id] = Login{Subject: subject, AuthTime: authTime}
+	return id
+}
+
+// Login returns the login session with the given id.
+func (s *Store) Login(id string) (Login, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, ok := s.logins[id]
+	return l, ok
+}
+
+// EndLogin forgets the login session with the given id; unknown ids are ignored.
+func (s *Store) EndLogin(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.logins[id]; !ok {
+		return
+	}
+	delete(s.logins, id)
+	if i := slices.Index(s.loginOrder, id); i >= 0 {
+		s.loginOrder = slices.Delete(s.loginOrder, i, i+1)
+	}
 }
