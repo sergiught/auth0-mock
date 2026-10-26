@@ -168,6 +168,9 @@ func (h *AuthorizeHandler) resolveLogin(r *http.Request, q url.Values) (subject 
 		return login.Subject, login.AuthTime, true, live
 	}
 	if hint := q.Get("login_hint"); hint != "" {
+		if live && hint == login.Subject && !slices.Contains(prompts, "login") {
+			return login.Subject, login.AuthTime, true, true
+		}
 		return hint, h.now(), false, true
 	}
 	if live && !slices.Contains(prompts, "login") {

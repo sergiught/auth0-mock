@@ -160,6 +160,18 @@ func TestAuthorizeLoginHintReplacesSession(t *testing.T) {
 	requireLoginRequired(t, silentAuthorize(r, old, url.Values{"prompt": {"none"}}), "login_required")
 }
 
+func TestAuthorizeSameLoginHintKeepsSession(t *testing.T) {
+	r, ks, clk, _ := newSilentRouter(t, session.NewStore())
+	t0 := clk.Now()
+	c := aliceLogin(t, r)
+	clk.Advance(time.Hour)
+	w := silentAuthorize(r, c, url.Values{"login_hint": {"auth0|alice"}})
+	claims := fragmentIDClaims(t, ks, w)
+	assert.Equal(t, "auth0|alice", claims.Subject)
+	assert.EqualValues(t, t0.Unix(), claims.Extra["auth_time"])
+	assert.Empty(t, w.Header().Values("Set-Cookie"))
+}
+
 func TestAuthorizePromptLoginIgnoresSession(t *testing.T) {
 	r, ks, _, _ := newSilentRouter(t, session.NewStore())
 	old := aliceLogin(t, r)
