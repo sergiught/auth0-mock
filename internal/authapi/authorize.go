@@ -1,8 +1,6 @@
 package authapi
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,7 +13,6 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/pkce"
-	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // AuthorizeHandler handles OIDC authorization requests.
@@ -233,43 +230,18 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode st
 
 // accessToken mints the access token for a response type that includes token.
 func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (string, error) {
-	aud := q.Get("audience")
-	if aud == "" {
-		aud = h.Token.DefaultAudience
-	}
-	if strings.TrimSpace(aud) == "" {
-		return h.opaqueAccessToken(q, subject, clientID)
-	}
+	aud := h.Token.resolveAudience(q.Get("audience"))
 	params := make(map[string]any, len(q))
 	for k := range q {
 		params[k] = q.Get(k)
 	}
-	return h.Token.Keys.Mint(jwks.MintOpts{
+	return h.Token.mintAccess(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    q.Get("scope"),
 		TTL:      h.Token.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.Token.augmentExtra(map[string]any{"azp": clientID}, aud, params),
-	})
-}
-
-// opaqueAccessToken issues a random access token for when there is no
-// audience, as an Auth0 tenant without a default audience does. Only
-// /userinfo accepts it, via the session store.
-func (h *AuthorizeHandler) opaqueAccessToken(q url.Values, subject, clientID string) (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	token := base64.RawURLEncoding.EncodeToString(buf)
-	if sessions := h.Token.Sessions; sessions != nil {
-		cfg := h.Token.Keys.Cfg()
-		sessions.RememberAccess(token, session.Access{
-			Subject: subject, ClientID: clientID, Scope: q.Get("scope"),
-			ExpiresAt: cfg.Now().Add(cfg.AccessTokenTTL),
-		})
-	}
-	return token, nil
+	}, clientID)
 }
 
 // recordCode stores the per-code authorization state (nonce, login_hint and,

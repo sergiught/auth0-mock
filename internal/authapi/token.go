@@ -1,6 +1,7 @@
 package authapi
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -132,10 +133,7 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aud := req.Audience
-	if aud == "" {
-		aud = h.DefaultAudience
-	}
+	aud := h.resolveAudience(req.Audience)
 
 	switch req.GrantType {
 	case "client_credentials":
@@ -180,7 +178,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 	}) {
 		return
 	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
@@ -191,7 +189,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 			"connection":              req.Realm,
 			"https://auth0.com/realm": req.Realm,
 		}, aud, req.Params),
-	})
+	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -256,7 +254,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 	}) {
 		return
 	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
@@ -266,7 +264,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 			"azp":        req.ClientID,
 			"connection": req.Realm,
 		}, aud, req.Params),
-	})
+	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -407,7 +405,46 @@ func parseTokenBody(r *http.Request) (*tokenRequest, error) {
 	}, nil
 }
 
+// resolveAudience falls back to the default audience when the requested one is
+// blank, and normalises a still-blank result to "".
+func (h *TokenHandler) resolveAudience(requested string) string {
+	aud := requested
+	if strings.TrimSpace(aud) == "" {
+		aud = h.DefaultAudience
+	}
+	if strings.TrimSpace(aud) == "" {
+		return ""
+	}
+	return aud
+}
+
+// mintAccess mints an access token. With no audience it returns an opaque
+// token, as an Auth0 tenant without a default audience does: 32 random bytes,
+// remembered in the session store so only /userinfo accepts it. Otherwise it
+// returns a signed JWT.
+func (h *TokenHandler) mintAccess(opts jwks.MintOpts, clientID string) (string, error) {
+	if len(opts.Audience) > 0 && strings.TrimSpace(opts.Audience[0]) != "" {
+		return h.Keys.Mint(opts)
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	token := base64.RawURLEncoding.EncodeToString(buf)
+	if h.Sessions != nil {
+		h.Sessions.RememberAccess(token, session.Access{
+			Subject: opts.Subject, ClientID: clientID, Scope: opts.Scope,
+			ExpiresAt: h.Keys.Cfg().Now().Add(opts.TTL),
+		})
+	}
+	return token, nil
+}
+
 func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	if aud == "" {
+		httperr.WriteAuth(w, http.StatusForbidden, "access_denied", "No audience parameter provided, no default audience been configured")
+		return
+	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Subject:  req.ClientID + "@clients",
 		Audience: []string{aud},
@@ -437,13 +474,13 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 	}) {
 		return
 	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "password", "azp": req.ClientID}, aud, req.Params),
-	})
+	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -503,13 +540,13 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 	if clientID == "" {
 		clientID = grant.ClientID
 	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  grant.Subject,
 		Audience: []string{aud},
 		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": clientID}, aud, req.Params),
-	})
+	}, clientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -548,12 +585,12 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 // respondUnknownRefreshToken keeps the lenient behaviour for refresh tokens
 // the mock did not issue: an access_token for "<client_id>@refresh".
 func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": req.ClientID}, aud, req.Params),
-	})
+	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
@@ -598,13 +635,13 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	if hasEntry && entry.LoginHint != "" {
 		subject = entry.LoginHint
 	}
-	access, err := h.Keys.Mint(jwks.MintOpts{
+	access, err := h.mintAccess(jwks.MintOpts{
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud, req.Params),
-	})
+	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return

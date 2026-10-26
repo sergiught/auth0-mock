@@ -222,3 +222,16 @@ func TestUserInfo_OpaqueTokenExpiresAndResets(t *testing.T) {
 	sessions.Clear()
 	assert.Equal(t, http.StatusUnauthorized, userInfoWith(r, at).Code)
 }
+
+func TestAuthorize_HybridNeedsNonce(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	frag := fragmentOf(t, r, implicitBase+"response_type=code%20id_token")
+	assert.Equal(t, "invalid_request", frag.Get("error"))
+}
+
+func TestAuthorize_TokenWithoutScopeOmitsScope(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	frag := fragmentOf(t, r, implicitBase+"response_type=token")
+	assert.NotEmpty(t, frag.Get("access_token"))
+	assert.False(t, frag.Has("scope"))
+}
