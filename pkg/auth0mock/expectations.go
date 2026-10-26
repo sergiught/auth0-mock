@@ -22,6 +22,10 @@ import (
 // Callers leave it empty when constructing an Expectation for Add;
 // the SDK returns the server-assigned ID via *RegisteredExpectation.
 //
+// Then lists further answers served in order after Response (call 2
+// gets Then[0], and so on); the last entry repeats once the list runs
+// out. Re-registering the stub restarts the sequence.
+//
 // Hits is populated by List() — the count of incoming requests this
 // expectation has matched and served. Use [Client.Expectations.List] for
 // snapshot assertions or [RegisteredExpectation.Hits] for fresh
@@ -39,6 +43,7 @@ type Expectation struct {
 	Path     string          `json:"path"`
 	Request  *RequestMatcher `json:"request,omitempty"`
 	Response ResponseDef     `json:"response"`
+	Then     []ResponseDef   `json:"then,omitempty"`
 	Hits     int64           `json:"hits,omitempty"`
 }
 

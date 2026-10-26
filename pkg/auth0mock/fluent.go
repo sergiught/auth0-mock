@@ -126,8 +126,8 @@ func (b *ExpectationBuilder) ensureRequest() {
 // server returns 400 invalid_body for a stub with status 0.
 func (b *ExpectationBuilder) Respond(status int) *ResponseBuilder {
 	return &ResponseBuilder{
-		builder:  b,
-		response: ResponseDef{Status: status},
+		builder:   b,
+		responses: []ResponseDef{{Status: status}},
 	}
 }
 
@@ -135,8 +135,24 @@ func (b *ExpectationBuilder) Respond(status int) *ResponseBuilder {
 // Header to populate the canned response, then Apply to send the
 // registration to the mock.
 type ResponseBuilder struct {
-	builder  *ExpectationBuilder
-	response ResponseDef
+	builder *ExpectationBuilder
+	// Answer sequence. The last element is the one JSON / Body /
+	// Header currently write to.
+	responses []ResponseDef
+}
+
+// cur returns the entry under construction.
+func (r *ResponseBuilder) cur() *ResponseDef {
+	return &r.responses[len(r.responses)-1]
+}
+
+// Then closes the current answer and starts the next one with status.
+// Later JSON / Body / Header calls apply to it. Answers are served in
+// order, one per matching call; the last one repeats once the list
+// runs out. Re-registering the stub restarts the sequence.
+func (r *ResponseBuilder) Then(status int) *ResponseBuilder {
+	r.responses = append(r.responses, ResponseDef{Status: status})
+	return r
 }
 
 // JSON sets the response body by marshalling v with json.Marshal.
@@ -152,7 +168,7 @@ func (r *ResponseBuilder) JSON(v any) *ResponseBuilder {
 		r.builder.err = fmt.Errorf("auth0mock: Respond.JSON: %w", err)
 		return r
 	}
-	r.response.Body = raw
+	r.cur().Body = raw
 	return r
 }
 
@@ -163,17 +179,17 @@ func (r *ResponseBuilder) JSON(v any) *ResponseBuilder {
 // status (see ExpectationsClient.Add). Registered bytes are then
 // returned verbatim.
 func (r *ResponseBuilder) Body(raw json.RawMessage) *ResponseBuilder {
-	r.response.Body = raw
+	r.cur().Body = raw
 	return r
 }
 
 // Header sets a response header. Repeated calls add more headers;
 // later values for the same key overwrite earlier ones.
 func (r *ResponseBuilder) Header(key, value string) *ResponseBuilder {
-	if r.response.Headers == nil {
-		r.response.Headers = map[string]string{}
+	if r.cur().Headers == nil {
+		r.cur().Headers = map[string]string{}
 	}
-	r.response.Headers[key] = value
+	r.cur().Headers[key] = value
 	return r
 }
 
@@ -191,6 +207,9 @@ func (r *ResponseBuilder) Apply(ctx context.Context) (*RegisteredExpectation, er
 	if r.builder.err != nil {
 		return nil, r.builder.err
 	}
-	r.builder.exp.Response = r.response
+	r.builder.exp.Response = r.responses[0]
+	if len(r.responses) > 1 {
+		r.builder.exp.Then = r.responses[1:]
+	}
 	return r.builder.client.Expectations.Add(ctx, r.builder.exp)
 }
