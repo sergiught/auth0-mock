@@ -32,6 +32,17 @@ func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Matches real Auth0's /userinfo behaviour.
 	claims, err := h.Keys.Verify(token, jwks.VerifyOpts{})
 	if err != nil {
+		if h.Sessions != nil {
+			if a, found := h.Sessions.Access(token); found && h.Keys.Cfg().Now().Before(a.ExpiresAt) {
+				out := map[string]any{}
+				if profile, ok := h.Sessions.Profile(a.Subject); ok {
+					maps.Copy(out, profile)
+				}
+				out["sub"] = a.Subject
+				render.JSON(w, r, out)
+				return
+			}
+		}
 		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", err.Error())
 		return
 	}

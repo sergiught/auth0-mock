@@ -1,14 +1,21 @@
 package authapi
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 const implicitBase = "client_id=demo&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&"
@@ -145,4 +152,73 @@ func TestAuthorize_UnknownResponseTypeBeatsBadChallenge(t *testing.T) {
 	r, _ := newAuthRouter(t)
 	u := location(t, getAuthorize(r, implicitBase+"response_type=cod&code_challenge=short"))
 	assert.Equal(t, "unsupported_response_type", u.Query().Get("error"))
+}
+
+// newNoAudienceRouter mirrors newRefreshRouterWithSessions with no default
+// audience, like an Auth0 tenant that has none configured.
+func newNoAudienceRouter(t *testing.T) (chi.Router, *jwks.KeySet, *steppedClock, *session.Store) {
+	t.Helper()
+	clk := &steppedClock{now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, Now: clk.Now,
+	})
+	require.NoError(t, err)
+	sessions := session.NewStore()
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "",
+		Log: zerolog.Nop(), PKCE: pkce.NewStore(pkce.WithNow(clk.Now)),
+		Sessions: sessions,
+	})
+	return r, ks, clk, sessions
+}
+
+func userInfoWith(r chi.Router, token string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestAuthorize_OpaqueTokenWithoutAudience(t *testing.T) {
+	r, ks, _, _ := newNoAudienceRouter(t)
+	frag := fragmentOf(t, r, implicitBase+"response_type=id_token%20token&nonce=n1&login_hint=carol@example.com")
+	at := frag.Get("access_token")
+	require.NotEmpty(t, at)
+	assert.NotContains(t, at, ".")
+	_, err := ks.Verify(at, jwks.VerifyOpts{})
+	assert.Error(t, err)
+
+	id := verified(t, ks, frag.Get("id_token"))
+	assert.Equal(t, tokenHash(at), id.Extra["at_hash"])
+
+	w := userInfoWith(r, at)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "carol@example.com", body["sub"])
+	assert.Equal(t, "carol@example.com", body["email"])
+}
+
+func TestAuthorize_AudienceStillGivesJWT(t *testing.T) {
+	r, ks, _, _ := newNoAudienceRouter(t)
+	frag := fragmentOf(t, r, implicitBase+"response_type=token&audience=https%3A%2F%2Fapi%2F")
+	c := verified(t, ks, frag.Get("access_token"))
+	assert.Contains(t, c.Audience, "https://api/")
+}
+
+func TestUserInfo_OpaqueTokenExpiresAndResets(t *testing.T) {
+	r, _, clk, sessions := newNoAudienceRouter(t)
+	q := implicitBase + "response_type=token&login_hint=carol@example.com"
+	at := fragmentOf(t, r, q).Get("access_token")
+	require.Equal(t, http.StatusOK, userInfoWith(r, at).Code)
+	clk.Advance(2 * time.Hour)
+	w := userInfoWith(r, at)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid_token")
+
+	at = fragmentOf(t, r, q).Get("access_token")
+	sessions.Clear()
+	assert.Equal(t, http.StatusUnauthorized, userInfoWith(r, at).Code)
 }

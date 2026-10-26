@@ -1,6 +1,8 @@
 package authapi
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // AuthorizeHandler handles OIDC authorization requests.
@@ -234,6 +237,9 @@ func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (
 	if aud == "" {
 		aud = h.Token.DefaultAudience
 	}
+	if strings.TrimSpace(aud) == "" {
+		return h.opaqueAccessToken(q, subject, clientID)
+	}
 	params := make(map[string]any, len(q))
 	for k := range q {
 		params[k] = q.Get(k)
@@ -245,6 +251,25 @@ func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (
 		TTL:      h.Token.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.Token.augmentExtra(map[string]any{"azp": clientID}, aud, params),
 	})
+}
+
+// opaqueAccessToken issues a random access token for when there is no
+// audience, as an Auth0 tenant without a default audience does. Only
+// /userinfo accepts it, via the session store.
+func (h *AuthorizeHandler) opaqueAccessToken(q url.Values, subject, clientID string) (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	token := base64.RawURLEncoding.EncodeToString(buf)
+	if sessions := h.Token.Sessions; sessions != nil {
+		cfg := h.Token.Keys.Cfg()
+		sessions.RememberAccess(token, session.Access{
+			Subject: subject, ClientID: clientID, Scope: q.Get("scope"),
+			ExpiresAt: cfg.Now().Add(cfg.AccessTokenTTL),
+		})
+	}
+	return token, nil
 }
 
 // recordCode stores the per-code authorization state (nonce, login_hint and,
