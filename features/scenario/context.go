@@ -103,6 +103,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		SpecValidationStrict: true,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
+		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},
 		EventsReplayBuffer:   50, // small but functional in scenario tests
 		Journal:              journal.New(100),
 	})

@@ -107,6 +107,7 @@ func run() error {
 		MaxRequestBodyBytes:          cfg.MaxRequestBodyBytes,
 		LogoutAllowedURLs:            cfg.LogoutAllowedURLs,
 		AuthorizeAllowedRedirectURIs: cfg.AuthorizeAllowedCallbacks,
+		CORSAllowedOrigins:           cfg.CORSAllowedOrigins,
 		BearerRequireAudience:        cfg.BearerRequireAudience,
 		Debug:                        cfg.Debug,
 		EventsReplayBuffer:           cfg.EventsReplayBuffer,

@@ -67,6 +67,14 @@ type Specification struct {
 	// register any callback).
 	AuthorizeAllowedCallbacks []string `env:"AUTHORIZE_ALLOWED_CALLBACKS" envSeparator:","`
 
+	// CORSAllowedOrigins is the comma-separated allow-list of browser
+	// origins (scheme://host[:port]) that may call the mock cross-origin.
+	// `*.` as the first host label (https://*.example.com) matches exactly
+	// one subdomain level; `*` alone allows any origin. Mirrors Auth0's
+	// per-application "Allowed Web Origins" / "Allowed Origins (CORS)"
+	// settings. Empty = any origin is allowed (the test-friendly default).
+	CORSAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS" envSeparator:","`
+
 	// BearerRequireAudience opts the Mgmt-API bearer middleware into Auth0-
 	// like strict audience binding. When non-empty, tokens whose `aud`
 	// claim doesn't contain this value get a 401. Empty (default) keeps
