@@ -1,6 +1,7 @@
 package authapi
 
 import (
+	"maps"
 	"net/http"
 
 	"github.com/go-chi/render"
@@ -99,13 +100,20 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		return
 	}
 	authTime := h.Keys.Cfg().Now()
-	idExtra := fillProfile(map[string]any{
-		"email":          ctx.Subject,
-		"email_verified": true,
-		"name":           ctx.Subject,
-		"azp":            ctx.ClientID,
-		"auth_time":      authTime.Unix(),
-	}, ctx.Subject)
+	var idExtra map[string]any
+	if ctx.Profile != nil {
+		idExtra = maps.Clone(ctx.Profile)
+		idExtra["azp"] = ctx.ClientID
+		idExtra["auth_time"] = authTime.Unix()
+	} else {
+		idExtra = fillProfile(map[string]any{
+			"email":          ctx.Subject,
+			"email_verified": true,
+			"name":           ctx.Subject,
+			"azp":            ctx.ClientID,
+			"auth_time":      authTime.Unix(),
+		}, ctx.Subject)
+	}
 	if ctx.Realm != "" {
 		idExtra["connection"] = ctx.Realm
 	}

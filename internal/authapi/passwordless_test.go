@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sergiught/auth0-mock/internal/jwks"
 )
 
 func TestPasswordless_StartEmail_200(t *testing.T) {
@@ -92,4 +94,47 @@ func TestPasswordless_Verify_WrongOTP_403(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func postForm(r http.Handler, path string, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestPasswordless_VerifyMatchesTokenGrant(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	form := url.Values{
+		"grant_type": {grantPasswordlessOTP},
+		"client_id":  {"abc"},
+		"realm":      {"email"},
+		"username":   {"alice@example.com"},
+		"otp":        {"000000"},
+	}
+
+	verify := postForm(r, "/passwordless/verify", form)
+	token := postForm(r, "/oauth/token", form)
+
+	var subs []string
+	for _, w := range []*httptest.ResponseRecorder{verify, token} {
+		resp := decodeToken(t, w)
+		require.NotEmpty(t, resp.IDToken)
+		require.NotEmpty(t, resp.RefreshToken)
+		c, err := ks.Verify(resp.IDToken, jwks.VerifyOpts{})
+		require.NoError(t, err)
+		subs = append(subs, c.Subject)
+	}
+	assert.Equal(t, subs[0], subs[1])
+}
+
+func TestPasswordless_Verify_RejectsOtherGrant(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	w := postForm(r, "/passwordless/verify", url.Values{
+		"grant_type": {"password"}, "username": {"a"}, "password": {"b"}, "client_id": {"demo"},
+	})
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "unsupported_grant_type")
 }

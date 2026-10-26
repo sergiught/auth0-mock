@@ -221,7 +221,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
 | `/dbconnections/change_password` | POST | Returns the canned reset-email message |
 | `/passwordless/start` | POST | Returns `{_id, email, phone_number}` |
-| `/passwordless/verify` | POST | Mints token if `otp=000000` |
+| `/passwordless/verify` | POST | Same as the passwordless grant on `/oauth/token` |
 
 ### 🔑 OAuth grants supported
 
@@ -232,7 +232,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `refresh_token` | A refresh token the mock issued returns the same user: new `access_token` and `id_token` (same profile and `auth_time`) plus a new `refresh_token`; the old one keeps working. `audience`/`scope` default to the login's. Unknown tokens still work and get just a new `access_token` (subject `<client_id>@refresh`) |
 | `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |
 | `http://auth0.com/oauth/grant-type/password-realm` | Auth0 Native SDKs; same as password + `realm` field threaded into claims |
-| `http://auth0.com/oauth/grant-type/passwordless/otp` | Mints if `otp=000000` |
+| `http://auth0.com/oauth/grant-type/passwordless/otp` | Needs `client_id`, `username`, `otp=000000` and `realm` (`email` or `sms`); returns access + id + refresh for an Auth0-style user (`email\|…` / `sms\|…`, stable per username) with an email or phone profile; gates on the MFA flag |
 | `http://auth0.com/oauth/grant-type/mfa-otp` | Step 2 of MFA dance; accepts `otp=123456` |
 | `http://auth0.com/oauth/grant-type/mfa-oob` | Push/SMS step-up; accepts `binding_code=123456` |
 | `http://auth0.com/oauth/grant-type/mfa-recovery-code` | Recovery flow; accepts `recovery_code=ABCDEFGHIJKLMNOP` |
