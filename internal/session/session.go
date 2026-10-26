@@ -18,10 +18,10 @@ const MaxEntries = 10000
 type Store struct {
 	mu       sync.Mutex
 	profiles map[string]map[string]any
-	order    []string // subjects in insertion order, oldest first
+	order    []string // Subjects in insertion order, oldest first.
 
 	refresh      map[string]Grant
-	refreshOrder []string // refresh tokens in insertion order, oldest first
+	refreshOrder []string // Refresh tokens in insertion order, oldest first.
 }
 
 // Grant is what the mock remembers about a refresh token it issued, so the

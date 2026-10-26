@@ -22,7 +22,7 @@ Feature: Authentication API endpoints
 
   Scenario: /userinfo returns the code-flow user's profile
     When I start /authorize with login_hint "alice@example.com"
-    And I exchange code without verifier
+    And I exchange the code without a verifier
     And I save the access_token as my bearer
     And I send "GET /userinfo" with a valid bearer
     Then I receive a 200 response
@@ -42,7 +42,7 @@ Feature: Authentication API endpoints
 
   Scenario: /admin0/reset forgets remembered profiles
     When I start /authorize with login_hint "alice@example.com"
-    And I exchange code without verifier
+    And I exchange the code without a verifier
     And I save the access_token as my bearer
     And I reset all mock state
     And I send "GET /userinfo" with a valid bearer
