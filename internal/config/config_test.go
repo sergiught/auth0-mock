@@ -166,18 +166,21 @@ func TestValidate_RejectsNegativeTokenLeeway(t *testing.T) {
 
 func TestIsRemoteAddr(t *testing.T) {
 	tests := map[string]bool{
-		":8080":            true,
-		"0.0.0.0:8080":     true,
-		"[::]:8443":        true,
-		"192.168.1.5:8080": true,
-		"myhost:8080":      true,
-		"example.com:443":  true,
-		"127.0.0.1:8080":   false,
-		"127.0.0.2:8080":   false,
-		"[::1]:8080":       false,
-		"localhost:8080":   false,
-		"LOCALHOST:8080":   false,
-		"not-an-address":   false,
+		":8080":                   true,
+		"0.0.0.0:8080":            true,
+		"[::]:8443":               true,
+		"192.168.1.5:8080":        true,
+		"myhost:8080":             true,
+		"example.com:443":         true,
+		"127.0.0.1:8080":          false,
+		"127.0.0.2:8080":          false,
+		"[::1]:8080":              false,
+		"localhost:8080":          false,
+		"LOCALHOST:8080":          false,
+		"not-an-address":          false,
+		"[::1%lo0]:8080":          false,
+		"[fe80::1%eth0]:8080":     true,
+		"[::ffff:127.0.0.1]:8080": false,
 	}
 	for addr, want := range tests {
 		t.Run(addr, func(t *testing.T) {

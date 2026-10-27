@@ -342,7 +342,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 | `/admin0/events/expire` | POST | Age out replay cursors so a reconnect gets `410 event_aged_out`. `?before=<offset>` expires only what is older than that cursor. Leaves live subscribers and every other store alone. See [Event streams](#-event-streams). |
 
 > [!WARNING]
-> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary. The mock won't start on such an address unless `ADMIN_ALLOW_REMOTE=true`, and logs a warning when it does.
+> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary. The mock won't start on an address other machines can reach unless `ADMIN_ALLOW_REMOTE=true`, and logs a warning when it does.
 
 ### 🩺 Operations
 
@@ -413,7 +413,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one; blank or whitespace means no default audience, as on a tenant without one: user logins then get opaque access tokens that only `/userinfo` accepts, and `client_credentials` without an `audience` gets 403 `access_denied` |
 | `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
 | `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
-| `TOKEN_LEEWAY` | `0s` | Clock-skew grace on token exp, nbf and iat checks. `0s` means a token expires exactly when its lifetime ends; set e.g. `60s` for CI runners with skewed clocks |
+| `TOKEN_LEEWAY` | `0s` | Clock-skew grace on JWT exp, nbf and iat checks. `0s` means a token expires exactly when its lifetime ends; set e.g. `60s` for CI runners with skewed clocks |
 | `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
 | `LOG_LEVEL` | `info` | zerolog levels |
 | `DEBUG` | `false` | When `true`, every request and response is logged in full at INFO level: method, path, query, headers (Authorization / Cookie redacted), and body (truncated at 8 KiB). Off by default — turn on only while debugging an SDK trace; adds an allocation and a synchronous log write per request. |

@@ -77,6 +77,7 @@ The container is configured via environment variables. The most common ones:
 |-----------------|----------------------------------------|--------------------------------------|
 | `HTTP_ADDR`     | `0.0.0.0:8080`                         | HTTP listener; empty to disable      |
 | `HTTPS_ADDR`    | `0.0.0.0:8443`                         | HTTPS listener; empty to disable     |
+| `ADMIN_ALLOW_REMOTE` | `false` | Must be `true` for the image's `0.0.0.0` defaults; the mock refuses non-loopback binds otherwise, because `/admin0` is unauthenticated |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_               | If both set → load; else auto-gen    |
 | `TLS_CACHE_DIR` | _empty_                                | Persist auto-gen cert across restarts |
 | `ISSUER_URL`    | `https://localhost:8443/`              | `iss` claim and OIDC discovery base  |
