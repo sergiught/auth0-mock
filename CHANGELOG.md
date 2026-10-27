@@ -3,6 +3,14 @@
 ## [0.233.0](https://github.com/sergiught/auth0-mock/compare/v0.232.0...v0.233.0) (2026-10-27)
 
 
+### ⚠️ Upgrade notes
+
+* **Docker needs `-e ADMIN_ALLOW_REMOTE=true`.** The mock now refuses to start on an address other machines can reach, because `/admin0` is unauthenticated and can mint tokens. The images bind `0.0.0.0`, so add `-e ADMIN_ALLOW_REMOTE=true` to `docker run`, or `ADMIN_ALLOW_REMOTE: "true"` to a compose service. Without it the container exits at startup with an error that names the fix. ([#96](https://github.com/sergiught/auth0-mock/issues/96))
+* **Tokens expire exactly at `exp`.** The 60-second verification grace is gone. Set `TOKEN_LEEWAY=60s` to get it back. ([#96](https://github.com/sergiught/auth0-mock/issues/96))
+* **Event and stream ids need 22 characters** after `evt_` / `est_` (was 16), as in Auth0's current schema. `auth0mock.NewEventID()` and `NewStreamID()` already produce the new length. ([#97](https://github.com/sergiught/auth0-mock/issues/97))
+* **`GET` and `DELETE /api/v2/users/{id}/federated-connections-tokensets` are gone**, because Auth0 no longer lists them. Request bodies are validated against Auth0's current schemas, which add stricter id patterns. ([#97](https://github.com/sergiught/auth0-mock/issues/97))
+
+
 ### Features
 
 * answer CORS on every route, with an optional CORS_ALLOWED_ORIGINS allow-list ([#88](https://github.com/sergiught/auth0-mock/issues/88)) ([4c6363e](https://github.com/sergiught/auth0-mock/commit/4c6363e9133395212cdfa7f594b84bb4b624af23))
