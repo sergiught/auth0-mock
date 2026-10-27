@@ -96,7 +96,8 @@ func TestRunStripDropsRefSiblingDescriptions(t *testing.T) {
   "components": {"schemas": {
     "Mode": {"type": "string"},
     "Config": {"type": "object", "properties": {
-      "mode": {"$ref": "#/components/schemas/Mode", "description": "Auth0 sibling prose"}
+      "mode": {"$ref": "#/components/schemas/Mode", "description": "Auth0 sibling prose"},
+      "choice": {"oneOf": [{"$ref": "#/components/schemas/Mode", "description": "Auth0 array sibling prose"}]}
     }}
   }}
 }`), 0o600))
@@ -107,7 +108,33 @@ func TestRunStripDropsRefSiblingDescriptions(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(body), "Auth0 sibling prose",
 		"a description written next to $ref is Auth0 prose too")
+	assert.NotContains(t, string(body), "Auth0 array sibling prose",
+		"a $ref inside oneOf/allOf lists must be stripped as well")
 	assert.Contains(t, string(body), `"$ref": "#/components/schemas/Mode"`)
+}
+
+func TestRunStripReportsBadInput(t *testing.T) {
+	dir := t.TempDir()
+	notJSON := filepath.Join(dir, "not-json.json")
+	require.NoError(t, os.WriteFile(notJSON, []byte(`{"openapi":`), 0o600))
+	valid := filepath.Join(dir, "valid.json")
+	require.NoError(t, os.WriteFile(valid, []byte(
+		`{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{}}`), 0o600))
+
+	tests := []struct {
+		name, raw, out, wantErr string
+	}{
+		{"missing raw file", filepath.Join(dir, "missing.json"), filepath.Join(dir, "out.json"), "read raw spec"},
+		{"raw file is not JSON", notJSON, filepath.Join(dir, "out.json"), "parse raw spec"},
+		{"output directory missing", valid, filepath.Join(dir, "no-such-dir", "out.json"), "write "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runStrip(tt.raw, tt.out)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }
 
 func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {
