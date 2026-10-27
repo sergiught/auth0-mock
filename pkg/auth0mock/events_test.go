@@ -26,7 +26,7 @@ func TestEventsClient_Push_SendsPayloadVerbatim(t *testing.T) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"evt_aaaaaaaaaaaaaaaa"}`))
+		_, _ = w.Write([]byte(`{"id":"evt_aaaaaaaaaaaaaaaa000000"}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -35,7 +35,7 @@ func TestEventsClient_Push_SendsPayloadVerbatim(t *testing.T) {
 
 	payload := json.RawMessage(`{
 	  "type":"user.created","offset":"0",
-	  "event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z","a0tenant":"t","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}
+	  "event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_aaaaaaaaaaaaaaaa000000","time":"2026-05-19T00:00:00Z","a0tenant":"t","a0stream":"est_aaaaaaaaaaaaaaaa000000","data":{"object":{"user_id":"u","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}
 	}`)
 	err = c.Events.Push(t.Context(), payload)
 	require.NoError(t, err)
@@ -101,12 +101,12 @@ func TestEventsClient_Subscribers_PropagatesServerError(t *testing.T) {
 }
 
 func TestNewEventID_MatchesSchemaPattern(t *testing.T) {
-	// The OpenAPI schema requires `evt_[a-zA-Z0-9]{16}` exactly.
+	// The OpenAPI schema requires `evt_[a-zA-Z0-9]{22}` exactly.
 	// NewEventID uses hex (lowercase a-f + 0-9), which is a subset
 	// of the allowed alphabet. Pin both shape and uniqueness so a
 	// future "let's switch to base32" change can't quietly break
 	// downstream pushes.
-	re := regexp.MustCompile(`^evt_[a-zA-Z0-9]{16}$`)
+	re := regexp.MustCompile(`^evt_[a-zA-Z0-9]{22}$`)
 	seen := make(map[string]bool, 100)
 	for range 100 {
 		id := auth0mock.NewEventID()
@@ -117,7 +117,7 @@ func TestNewEventID_MatchesSchemaPattern(t *testing.T) {
 }
 
 func TestNewStreamID_MatchesSchemaPattern(t *testing.T) {
-	re := regexp.MustCompile(`^est_[a-zA-Z0-9]{16}$`)
+	re := regexp.MustCompile(`^est_[a-zA-Z0-9]{22}$`)
 	for range 100 {
 		id := auth0mock.NewStreamID()
 		assert.True(t, re.MatchString(id), "NewStreamID() = %q, want match for %s", id, re)

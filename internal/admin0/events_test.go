@@ -98,10 +98,10 @@ const validUserCreatedBody = `{
     "specversion":"1.0",
     "type":"user.created",
     "source":"https://auth0.local/",
-    "id":"evt_aaaaaaaaaaaaaaaa",
+    "id":"evt_aaaaaaaaaaaaaaaa000000",
     "time":"2026-05-19T00:00:00Z",
     "a0tenant":"my-tenant",
-    "a0stream":"est_aaaaaaaaaaaaaaaa",
+    "a0stream":"est_aaaaaaaaaaaaaaaa000000",
     "data":{"object":{
       "user_id":"u-1",
       "email":"u@x.test",

@@ -283,7 +283,7 @@ func TestMount_SubscribeEvents_ErrorStubWinsOverStream(t *testing.T) {
 
 	const gone = `{"statusCode":410,"error":"Gone","message":"cursor expired"}`
 	store.Put(matches.Expectation{Method: "GET", Path: "/api/v2/events", Kind: matches.KindExact,
-		Request:  &matches.RequestMatcher{Headers: map[string]string{"Last-Event-ID": "evt_0000000000000001"}},
+		Request:  &matches.RequestMatcher{Headers: map[string]string{"Last-Event-ID": "evt_0000000000000001000000"}},
 		Response: matches.ResponseDef{Status: http.StatusGone, Body: json.RawMessage(gone)}})
 
 	subscribe := func(lastEventID string) *httptest.ResponseRecorder {
@@ -297,7 +297,7 @@ func TestMount_SubscribeEvents_ErrorStubWinsOverStream(t *testing.T) {
 		return rec
 	}
 
-	rec := subscribe("evt_0000000000000001")
+	rec := subscribe("evt_0000000000000001000000")
 	assert.Equal(t, http.StatusGone, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.JSONEq(t, gone, rec.Body.String())

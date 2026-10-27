@@ -59,7 +59,7 @@ A walkthrough of how auth0-mock is put together, written for contributors and cu
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The two halves work very differently. The Auth API is **hand-coded** because the mock must *do something*: sign JWTs, redirect with real codes, return discovery docs. The Management API is **spec-driven** because all ~400 operations behave the same way (return a registered stub or 404), so one generic handler serves them all.
+The two halves work very differently. The Auth API is **hand-coded** because the mock must *do something*: sign JWTs, redirect with real codes, return discovery docs. The Management API is **spec-driven** because all ~480 operations behave the same way (return a registered stub or 404), so one generic handler serves them all.
 
 ## Two halves, two strategies
 

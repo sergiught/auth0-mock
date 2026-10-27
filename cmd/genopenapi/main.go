@@ -67,6 +67,10 @@ func runStrip(rawPath, out string) error {
 	if err != nil {
 		return fmt.Errorf("read raw spec: %w", err)
 	}
+	raw, err = dropRefSiblingDescriptions(raw)
+	if err != nil {
+		return fmt.Errorf("parse raw spec: %w", err)
+	}
 	doc, err := openapi3.NewLoader().LoadFromData(raw)
 	if err != nil {
 		return fmt.Errorf("parse raw spec: %w", err)
@@ -80,6 +84,35 @@ func runStrip(rawPath, out string) error {
 		return fmt.Errorf("write %s: %w", out, err)
 	}
 	return nil
+}
+
+// dropRefSiblingDescriptions removes every `description` written next to a
+// `$ref` in the raw spec. OpenAPI 3.1 allows that sibling, and kin-openapi
+// keeps it in an unexported field that stripUpstreamProse can't reach, so it
+// is dropped from the JSON before the document is loaded.
+func dropRefSiblingDescriptions(raw []byte) ([]byte, error) {
+	var tree any
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		return nil, err
+	}
+	var walk func(any)
+	walk = func(node any) {
+		switch v := node.(type) {
+		case map[string]any:
+			if _, ok := v["$ref"]; ok {
+				delete(v, "description")
+			}
+			for _, child := range v {
+				walk(child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(child)
+			}
+		}
+	}
+	walk(tree)
+	return json.Marshal(tree)
 }
 
 // bundle stitches together the base Mgmt API spec and the per-package

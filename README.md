@@ -58,7 +58,7 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 A self-contained Go service that looks and behaves like Auth0 to a calling client:
 
 - 🎫 **Mints real RS256 JWTs** signed with an in-process key, and publishes the matching JWKS at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally — no `InsecureSkipVerify`, no fake-token kludges.
-- 📦 **Covers the whole Management API** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~400 operations: paths, methods, and schemas; Auth0's prose removed) and routing every endpoint through one generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`, and the OpenAPI schema validates the stubbed body at registration time. An optional `request` matcher lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier).
+- 📦 **Covers the whole Management API** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~480 operations: paths, methods, and schemas; Auth0's prose removed) and routing every endpoint through one generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`, and the OpenAPI schema validates the stubbed body at registration time. An optional `request` matcher lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier).
 - 🛠 **Shapes runtime state over HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a small Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
 
@@ -262,7 +262,7 @@ Client credentials may also be sent via HTTP Basic (`client_secret_basic`); if b
 > [!IMPORTANT]
 > **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
 
-### 📦 Management API (spec-driven, ~400 endpoints)
+### 📦 Management API (spec-driven, ~480 endpoints)
 
 Every operation in the embedded Auth0 Management API skeleton is mounted. Default response is `404 no_match`. Tests register stubs:
 
@@ -301,8 +301,8 @@ curl -X POST http://localhost:8080/admin0/events \
     "type":"user.created","offset":"0",
     "event":{
       "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
-      "id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z",
-      "a0tenant":"my-tenant","a0stream":"est_aaaaaaaaaaaaaaaa",
+      "id":"evt_aaaaaaaaaaaaaaaa000000","time":"2026-05-19T00:00:00Z",
+      "a0tenant":"my-tenant","a0stream":"est_aaaaaaaaaaaaaaaa000000",
       "data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}
     }
   }'

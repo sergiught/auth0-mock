@@ -182,7 +182,7 @@ To pull in a newer Auth0 spec:
 2. Run `make refresh-spec`. It strips the raw file into the committed skeleton and regenerates the merged `api/auth0-mock.openapi.json`.
 3. Run `make test`, review the skeleton diff, and open a PR. The repo will drift from upstream between refreshes — that's expected; the mock's behaviour is pinned by tests, not by being current.
 
-If you need to **change the generic handler's behaviour** (e.g. inject latency, log differently), edit `internal/mgmtapi/handler.go`, but keep in mind it serves all ~400 endpoints uniformly.
+If you need to **change the generic handler's behaviour** (e.g. inject latency, log differently), edit `internal/mgmtapi/handler.go`, but keep in mind it serves all ~480 endpoints uniformly.
 
 ### A new test recipe
 
