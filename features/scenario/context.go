@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"testing"
@@ -48,6 +49,9 @@ type Context struct {
 	// body without conflicting with assertions against LastResp.
 	SSEResp    *http.Response
 	cancelBoot context.CancelFunc
+	// jarClient is set by the "I keep cookies" step; nil means requests use
+	// nonFollowingClient and carry no cookies.
+	jarClient *http.Client
 }
 
 // nonFollowingClient is used by all step requests so the tests can assert on
@@ -56,6 +60,24 @@ var nonFollowingClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
+}
+
+// client returns the cookie-keeping client once "I keep cookies" ran, and the
+// shared cookieless nonFollowingClient otherwise.
+func (c *Context) client() *http.Client {
+	if c.jarClient != nil {
+		return c.jarClient
+	}
+	return nonFollowingClient
+}
+
+// KeepCookies makes this scenario's later requests share one cookie jar.
+func (c *Context) KeepCookies() {
+	jar, _ := cookiejar.New(nil)
+	c.jarClient = &http.Client{
+		Jar:           jar,
+		CheckRedirect: nonFollowingClient.CheckRedirect,
+	}
 }
 
 // New constructs a fresh Context, boots the service in-process on a random
@@ -157,7 +179,7 @@ func (c *Context) MintBearer() {
 	body := strings.NewReader("grant_type=client_credentials&client_id=test&client_secret=x&audience=" + c.BaseURL + "/api/v2/")
 	req, _ := http.NewRequest("POST", c.BaseURL+"/oauth/token", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := nonFollowingClient.Do(req)
+	resp, err := c.client().Do(req)
 	if err != nil {
 		c.t.Fatalf("mint bearer: %v", err)
 	}
@@ -186,7 +208,7 @@ func (c *Context) DoFormWithAuthorization(method, path string, form url.Values, 
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}
-	resp, err := nonFollowingClient.Do(req)
+	resp, err := c.client().Do(req)
 	if err != nil {
 		c.t.Fatalf("do form: %v", err)
 	}
@@ -221,7 +243,7 @@ func (c *Context) Do(method, path string, body string, withBearer bool) {
 	if withBearer {
 		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
 	}
-	resp, err := nonFollowingClient.Do(req)
+	resp, err := c.client().Do(req)
 	if err != nil {
 		c.t.Fatalf("do: %v", err)
 	}

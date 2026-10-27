@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // LogoutHandler 302-redirects to the returnTo query parameter (or "/" when
@@ -18,6 +19,8 @@ import (
 // Never expose the mock to untrusted networks — see the README disclaimer.
 type LogoutHandler struct {
 	AllowedReturnURLs []string
+	// Sessions may be nil; the login cookie is then cleared without ending a session.
+	Sessions *session.Store
 }
 
 func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +33,7 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"returnTo is not in the configured allow-list (LOGOUT_ALLOWED_URLS); add it there to permit this redirect")
 		return
 	}
+	endLogin(w, r, h.Sessions)
 	w.Header().Set("Location", ret)
 	w.WriteHeader(http.StatusFound)
 }

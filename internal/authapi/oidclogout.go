@@ -7,6 +7,7 @@ import (
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 const loggedOutPage = `<!doctype html>
@@ -32,6 +33,8 @@ const loggedOutPage = `<!doctype html>
 type OIDCLogoutHandler struct {
 	Keys              *jwks.KeySet
 	AllowedReturnURLs []string
+	// Sessions may be nil; the login cookie is then cleared without ending a session.
+	Sessions *session.Store
 }
 
 func (h *OIDCLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +64,7 @@ func (h *OIDCLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if target == "" {
+		endLogin(w, r, h.Sessions)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(loggedOutPage))
@@ -87,6 +91,7 @@ func (h *OIDCLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			u.RawQuery += "&state=" + url.QueryEscape(state)
 		}
 	}
+	endLogin(w, r, h.Sessions)
 	w.Header().Set("Location", u.String())
 	w.WriteHeader(http.StatusFound)
 }

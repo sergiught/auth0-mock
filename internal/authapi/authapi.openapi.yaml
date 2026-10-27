@@ -69,11 +69,12 @@ paths:
         - { name: code_challenge,       in: query, required: false, schema: { type: string } }
         - { name: code_challenge_method,in: query, required: false, schema: { type: string, enum: [S256, plain] } }
         - { name: response_mode,       in: query, required: false, schema: { type: string, enum: [query, fragment, form_post, web_message] } }
+        - { name: prompt,              in: query, required: false, description: "`none` answers from the session cookie or returns `login_required`; `login` ignores the session. Other values are ignored.", schema: { type: string } }
       responses:
         "302":
           description: Redirect to `redirect_uri` with the result (`code`, `access_token`, `id_token`, `token_type`, `expires_in`, `scope` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`.
         "200":
-          description: "form_post: auto-submitting form to `redirect_uri`"
+          description: "form_post: auto-submitting form to `redirect_uri`; web_message: page that posts the response to `window.opener` or `window.parent`"
           content:
             text/html:
               schema: { type: string }

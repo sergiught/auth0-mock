@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,8 +24,6 @@ func TestResolveMode(t *testing.T) {
 		{"query", true, "query"},
 		{"fragment", false, "fragment"},
 		{"form_post", false, "form_post"},
-		{"web_message", false, "query"},
-		{"web_message", true, "fragment"},
 		{"bogus", false, "query"},
 	}
 	for _, tc := range tests {
@@ -82,4 +81,30 @@ func TestDeliver_FormPost(t *testing.T) {
 	}
 	assert.Equal(t, "x", fields["code"])
 	assert.Equal(t, "<script>&\"", fields["state"])
+}
+
+func TestResolveModeWebMessage(t *testing.T) {
+	assert.Equal(t, "web_message", resolveMode("web_message", false))
+	assert.Equal(t, "web_message", resolveMode("web_message", true))
+}
+
+func TestDeliverWebMessage(t *testing.T) {
+	w := deliverTo(t, "https://app.example:3000/cb", "web_message", url.Values{"code": {"c1"}, "state": {"s1"}})
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/html; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+	assert.Empty(t, w.Header().Get("Location"))
+	body := w.Body.String()
+	assert.Contains(t, body, `"authorization_response"`)
+	assert.Contains(t, body, `"https://app.example:3000"`)
+	assert.Contains(t, body, `"code":"c1"`)
+	assert.Contains(t, body, `"state":"s1"`)
+	assert.Contains(t, body, "window.opener")
+}
+
+func TestDeliverWebMessageEscapesState(t *testing.T) {
+	w := deliverTo(t, "https://app/cb", "web_message", url.Values{"state": {"</script><script>alert(1)</script>"}})
+	body := w.Body.String()
+	assert.Equal(t, 1, strings.Count(body, "</script>"), body)
+	assert.NotContains(t, body, "<script>alert")
 }

@@ -79653,6 +79653,14 @@
               ],
               "type": "string"
             }
+          },
+          {
+            "description": "`none` answers from the session cookie or returns `login_required`; `login` ignores the session. Other values are ignored.",
+            "in": "query",
+            "name": "prompt",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -79664,7 +79672,7 @@
                 }
               }
             },
-            "description": "form_post: auto-submitting form to `redirect_uri`"
+            "description": "form_post: auto-submitting form to `redirect_uri`; web_message: page that posts the response to `window.opener` or `window.parent`"
           },
           "302": {
             "description": "Redirect to `redirect_uri` with the result (`code`, `access_token`, `id_token`, `token_type`, `expires_in`, `scope` and `state`, or `error`/`error_description`/`state`) in the query or fragment per `response_mode`."

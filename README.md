@@ -179,6 +179,24 @@ it exposes:
 - The **service** endpoints (`/healthz`, `/.well-known/jwks.json`,
   `/openapi.json`, `/openapi.yaml`).
 
+### Silent login
+
+A successful `/authorize` sets an `auth0` session cookie (`HttpOnly`,
+`Path=/`; `SameSite=Lax` over HTTP, `SameSite=None; Secure` over HTTPS).
+`prompt=none` then answers from that session, or returns `login_required`
+when there is none, and `response_mode=web_message` delivers the result with
+`postMessage`, so `getTokenSilently` works against the mock. `/v2/logout`,
+`/oidc/logout` and `/admin0/reset` end the session.
+
+Behaviour change for clients that keep cookies (browsers, cookie jars): a
+second `/authorize` without `login_hint` now returns the earlier user, not
+`auth0|mock-user`. Use `prompt=login` or a `login_hint` to pick a user.
+
+Also, `prompt=none` without a live session now returns `login_required`.
+Before, `/authorize` ignored `prompt`, so `prompt=none` always succeeded as
+`auth0|mock-user` (or the `login_hint` user). Log in first in the same cookie
+jar, or drop `prompt=none`, to get tokens.
+
 ### Importing
 
 - **From the repo:** import `api/auth0-mock.openapi.json` directly.
@@ -214,10 +232,10 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 |---|---|---|
 | `/oauth/token` | POST | All Auth0 grants (see table below) |
 | `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
-| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code`, implicit tokens (`access_token`, `id_token`) or both for any `response_type` combination of `code` / `token` / `id_token` (fragment unless plain `code`), or an OAuth `error` (bad `code_challenge`, `unsupported_response_type`, `invalid_request` for a missing `client_id` on token types or a missing `nonce` with `id_token`, or an `/admin0/authorize-errors` rule); stashes PKCE challenge if present |
+| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code`, implicit tokens (`access_token`, `id_token`) or both for any `response_type` combination of `code` / `token` / `id_token` (fragment unless plain `code`), or an OAuth `error` (bad `code_challenge`, `unsupported_response_type`, `invalid_request` for a missing `client_id` on token types or a missing `nonce` with `id_token`, or an `/admin0/authorize-errors` rule); `prompt=none` answers from the `auth0` session cookie (or `login_required`), `response_mode=web_message` returns a 200 postMessage page; sets the session cookie on success; stashes PKCE challenge if present |
 | `/userinfo` | GET | Returns claims from the bearer (a JWT, or an opaque access token until it expires or `/admin0/reset`), plus the logged-in user's profile (from their last login; token claims win) |
-| `/v2/logout` | GET | 302 to `returnTo` |
-| `/oidc/logout` | GET, POST | OIDC logout: checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
+| `/v2/logout` | GET | 302 to `returnTo`; ends the login session and expires the `auth0` cookie |
+| `/oidc/logout` | GET, POST | OIDC logout (also ends the login session and expires the `auth0` cookie): checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
 | `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer; lists only the grants, claims and auth methods the mock serves |
 | `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
