@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -22,7 +23,12 @@ type Specification struct {
 	DefaultAudience string         `env:"DEFAULT_AUDIENCE" envDefault:"https://localhost:8443/api/v2/"` // Blank: no default audience.
 	AccessTokenTTL  time.Duration  `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
 	IDTokenTTL      time.Duration  `env:"ID_TOKEN_TTL" envDefault:"24h"`
-	LogLevel        string         `env:"LOG_LEVEL" envDefault:"info"`
+	// AdminAllowRemote lets the mock listen on an address other machines can
+	// reach. Off by default because /admin0 is unauthenticated.
+	AdminAllowRemote bool `env:"ADMIN_ALLOW_REMOTE" envDefault:"false"`
+	// TokenLeeway is the clock skew tolerated on exp/nbf/iat checks.
+	TokenLeeway time.Duration `env:"TOKEN_LEEWAY" envDefault:"0s"`
+	LogLevel    string        `env:"LOG_LEVEL" envDefault:"info"`
 	// Debug turns on the request/response dump middleware. Off by default;
 	// enables full method/path/query/headers/body logging for every
 	// request + response at INFO level. Authorization + Cookie headers are
@@ -118,7 +124,49 @@ func (s *Specification) Validate() error {
 	if listenerOff(s.HTTPAddress) && listenerOff(s.HTTPSAddress) {
 		return fmt.Errorf("HTTP_ADDR and HTTPS_ADDR are both disabled — at least one must be a bind address (use \"off\" on only one to run single-protocol)")
 	}
+	if s.TokenLeeway < 0 {
+		return fmt.Errorf("TOKEN_LEEWAY must not be negative, got %s", s.TokenLeeway)
+	}
+	if remote := s.RemoteListeners(); len(remote) > 0 && !s.AdminAllowRemote {
+		return fmt.Errorf("%s can be reached from other machines, but /admin0 is unauthenticated and can mint tokens; bind to 127.0.0.1, or set ADMIN_ALLOW_REMOTE=true to accept the risk (Docker needs this)", strings.Join(remote, " and "))
+	}
 	return nil
+}
+
+// RemoteListeners returns the enabled listeners that other machines can
+// reach, as NAME=value entries with HTTP first.
+func (s *Specification) RemoteListeners() []string {
+	var remote []string
+	if !listenerOff(s.HTTPAddress) && isRemoteAddr(s.HTTPAddress) {
+		remote = append(remote, "HTTP_ADDR="+s.HTTPAddress)
+	}
+	if !listenerOff(s.HTTPSAddress) && isRemoteAddr(s.HTTPSAddress) {
+		remote = append(remote, "HTTPS_ADDR="+s.HTTPSAddress)
+	}
+	return remote
+}
+
+// isRemoteAddr reports whether a host:port listener address can be reached
+// from other machines. No DNS lookup; an address that does not parse is not
+// flagged (the listener reports its own error).
+func isRemoteAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		host = host[:i]
+	}
+	if host == "" {
+		return true
+	}
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !ip.IsLoopback()
+	}
+	return true
 }
 
 // listenerOff returns true when an HTTP_ADDR / HTTPS_ADDR value means

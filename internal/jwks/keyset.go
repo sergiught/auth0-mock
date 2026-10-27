@@ -29,6 +29,9 @@ type Config struct {
 	KeyFile        string
 	AccessTokenTTL time.Duration // Default TTL for mint.
 	IDTokenTTL     time.Duration
+	// Leeway is the clock skew tolerated on exp/nbf/iat checks in
+	// Verify. Zero means tokens expire exactly at exp.
+	Leeway time.Duration
 	// Now returns the time used for protocol-output timestamps
 	// (iat/exp on Mint; exp/nbf/iat checks on Verify). Nil means
 	// time.Now. Wire to clock.Controlled.Now to get runtime control

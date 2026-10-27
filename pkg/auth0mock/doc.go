@@ -15,7 +15,7 @@
 // The SDK assumes an auth0-mock instance is already reachable. Start
 // one with Docker or the binary before any SDK call:
 //
-//	docker run --rm -p 8080:8080 ghcr.io/sergiught/auth0-mock:latest
+//	docker run --rm -p 8080:8080 -e ADMIN_ALLOW_REMOTE=true ghcr.io/sergiught/auth0-mock:latest
 //	# or, from a source checkout: make watch
 //
 // # Quick start

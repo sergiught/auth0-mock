@@ -131,6 +131,8 @@ docker compose up -d --build
 docker compose logs -f auth0-mock
 ```
 
+> **Changed:** the mock now refuses to listen on `0.0.0.0` (as it does inside Docker) unless `ADMIN_ALLOW_REMOTE=true`. `.env.example` sets it for the compose stack; add `-e ADMIN_ALLOW_REMOTE=true` to `docker run`, and add it to an existing `.env`.
+
 `docker compose` builds from the local dev `Dockerfile` (Go toolchain + source) for fast `--build` iteration. The release pipeline uses a separate slim `Dockerfile.release` (binary-only, fed by goreleaser) — `ghcr.io/sergiught/auth0-mock:vX.Y.Z` and `docker.io/sergiught/auth0-mock:vX.Y.Z` are what hits Docker Hub.
 
 ### Smoke test
@@ -340,7 +342,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 | `/admin0/events/expire` | POST | Age out replay cursors so a reconnect gets `410 event_aged_out`. `?before=<offset>` expires only what is older than that cursor. Leaves live subscribers and every other store alone. See [Event streams](#-event-streams). |
 
 > [!WARNING]
-> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
+> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary. The mock won't start on an address other machines can reach unless `ADMIN_ALLOW_REMOTE=true`, and logs a warning when it does.
 
 ### 🩺 Operations
 
@@ -400,8 +402,9 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 | Variable | Default | Notes |
 |---|---|---|
-| `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does). To run HTTPS-only, set this to `off`. |
-| `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does). To run HTTP-only, set this to `off`. |
+| `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTPS-only, set this to `off`. |
+| `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTP-only, set this to `off`. |
+| `ADMIN_ALLOW_REMOTE` | `false` | The mock refuses to start when `HTTP_ADDR` or `HTTPS_ADDR` can be reached from other machines (`0.0.0.0`, `::`, a LAN IP, a hostname other than `localhost`), because `/admin0` is unauthenticated. Set `true` to allow it; Docker needs this |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |
 | `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
@@ -410,6 +413,7 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one; blank or whitespace means no default audience, as on a tenant without one: user logins then get opaque access tokens that only `/userinfo` accepts, and `client_credentials` without an `audience` gets 403 `access_denied` |
 | `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
 | `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
+| `TOKEN_LEEWAY` | `0s` | Clock-skew grace on JWT exp, nbf and iat checks. `0s` means a token expires exactly when its lifetime ends; set e.g. `60s` for CI runners with skewed clocks |
 | `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
 | `LOG_LEVEL` | `info` | zerolog levels |
 | `DEBUG` | `false` | When `true`, every request and response is logged in full at INFO level: method, path, query, headers (Authorization / Cookie redacted), and body (truncated at 8 KiB). Off by default — turn on only while debugging an SDK trace; adds an allocation and a synchronous log write per request. |
@@ -425,6 +429,8 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 | `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |
 | `CORS_ALLOWED_ORIGINS` | _empty_ | Comma-separated allow-list of browser origins that get CORS headers. Empty (default) = any origin, so a browser app can call the mock with no setup. Entries are exact origins (`http://localhost:3000`) or `https://*.example.com` (matches exactly one subdomain level; scheme and port must match). `*` = any origin. Unlisted origins get no CORS headers and their preflights get 403. Default ports (`:443`/`:80`) are normalised; userinfo and empty ports are rejected. Invalid entries fail startup. Mirrors Auth0's per-application "Allowed Web Origins" / "Allowed Origins (CORS)" settings. |
 | `BEARER_REQUIRE_AUDIENCE` | _empty_ | When set, the Mgmt-API bearer middleware rejects tokens whose `aud` claim doesn't contain this value (mirrors Auth0's tenant-API-audience binding). Empty keeps the "echoed, not enforced" default so tests can swap audiences freely. |
+
+> **Changed:** tokens used to stay valid for 60 seconds past their lifetime. They now expire exactly on time, so moving `/admin0/clock` past the TTL gives a 401 at once. Set `TOKEN_LEEWAY=60s` for the old behaviour.
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
@@ -443,7 +449,7 @@ The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `T
 mkcert -install                                                # one-time per workstation
 mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
 
-docker run -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
+docker run -e ADMIN_ALLOW_REMOTE=true -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
   -v "$PWD:/certs" auth0-mock
 ```
 
@@ -452,7 +458,7 @@ docker run -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
 Pick a path; the mock writes its auto-generated cert there on first boot and reuses it on subsequent restarts. Trust the cert once and trust persists:
 
 ```bash
-docker compose run --rm -e TLS_CACHE_DIR=/data/tls \
+docker compose run --rm -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
   -v auth0-mock-tls:/data/tls auth0-mock
 ```
 
