@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,6 +83,31 @@ func TestBundleStripsUpstreamProse(t *testing.T) {
 	// OAuth grant-type URNs are protocol identifiers, not prose — kept.
 	assert.Contains(t, body, "http://auth0.com/oauth/grant-type/",
 		"grant-type URNs are protocol identifiers and must survive")
+}
+
+func TestRunStripDropsRefSiblingDescriptions(t *testing.T) {
+	dir := t.TempDir()
+	raw := filepath.Join(dir, "raw.json")
+	out := filepath.Join(dir, "out.json")
+	require.NoError(t, os.WriteFile(raw, []byte(`{
+  "openapi": "3.1.0",
+  "info": {"title": "Auth0 Management API", "version": "2.0"},
+  "paths": {},
+  "components": {"schemas": {
+    "Mode": {"type": "string"},
+    "Config": {"type": "object", "properties": {
+      "mode": {"$ref": "#/components/schemas/Mode", "description": "Auth0 sibling prose"}
+    }}
+  }}
+}`), 0o600))
+
+	require.NoError(t, runStrip(raw, out))
+
+	body, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "Auth0 sibling prose",
+		"a description written next to $ref is Auth0 prose too")
+	assert.Contains(t, string(body), `"$ref": "#/components/schemas/Mode"`)
 }
 
 func TestBundleRewritesInfoForAuth0Mock(t *testing.T) {
