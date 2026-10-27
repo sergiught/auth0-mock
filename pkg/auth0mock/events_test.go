@@ -26,7 +26,7 @@ func TestEventsClient_Push_SendsPayloadVerbatim(t *testing.T) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"evt_aaaaaaaaaaaaaaaa"}`))
+		_, _ = w.Write([]byte(`{"id":"evt_aaaaaaaaaaaaaaaa000000"}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -35,7 +35,7 @@ func TestEventsClient_Push_SendsPayloadVerbatim(t *testing.T) {
 
 	payload := json.RawMessage(`{
 	  "type":"user.created","offset":"0",
-	  "event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_aaaaaaaaaaaaaaaa","time":"2026-05-19T00:00:00Z","a0tenant":"t","a0stream":"est_aaaaaaaaaaaaaaaa","data":{"object":{"user_id":"u","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}
+	  "event":{"specversion":"1.0","type":"user.created","source":"x","id":"evt_aaaaaaaaaaaaaaaa000000","time":"2026-05-19T00:00:00Z","a0tenant":"t","a0stream":"est_aaaaaaaaaaaaaaaa000000","data":{"object":{"user_id":"u","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}}
 	}`)
 	err = c.Events.Push(t.Context(), payload)
 	require.NoError(t, err)
