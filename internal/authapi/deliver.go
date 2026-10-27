@@ -30,6 +30,21 @@ func resolveMode(responseMode string, issuesToken bool) string {
 	return modeQuery
 }
 
+// modeCanDeliver reports whether mode can deliver to redirect. Go
+// html/template rewrites a form action with a non-http(s) scheme to
+// #ZgotmplZ, and web_message needs an origin (scheme and host) to post to;
+// callers fall back to the default mode when it can't.
+func modeCanDeliver(mode string, redirect *url.URL) bool {
+	httpScheme := redirect.Scheme == "http" || redirect.Scheme == "https"
+	switch mode {
+	case modeFormPost:
+		return httpScheme
+	case modeWebMessage:
+		return httpScheme && redirect.Host != ""
+	}
+	return true
+}
+
 // deliver writes params to redirect per mode: a 302 Location for query and
 // fragment, an auto-submitting HTML form for form_post, a postMessage page for
 // web_message.

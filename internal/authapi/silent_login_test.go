@@ -218,3 +218,11 @@ func TestAuthorizeWebMessageRelativeRedirect(t *testing.T) {
 	w := silentAuthorize(r, nil, url.Values{"redirect_uri": {"/cb"}, "response_mode": {"web_message"}})
 	assert.Equal(t, http.StatusFound, w.Code, w.Body.String())
 }
+
+func TestAuthorizeWebMessageHostlessRedirect(t *testing.T) {
+	r, _, _, _ := newSilentRouter(t, session.NewStore())
+	for _, redirect := range []string{"https:/cb", "https:cb"} {
+		w := silentAuthorize(r, nil, url.Values{"redirect_uri": {redirect}, "response_mode": {"web_message"}})
+		assert.Equal(t, http.StatusFound, w.Code, redirect)
+	}
+}

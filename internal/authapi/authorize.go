@@ -89,10 +89,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := resolveMode(q.Get("response_mode"), fragmentDefault)
-	// Go html/template rewrites a form action with a non-http(s) scheme to
-	// #ZgotmplZ, and web_message needs an origin to post to, so fall back to
-	// the default mode for such redirect URIs.
-	if (mode == modeFormPost || mode == modeWebMessage) && u.Scheme != "http" && u.Scheme != "https" {
+	if !modeCanDeliver(mode, u) {
 		mode = resolveMode("", fragmentDefault)
 	}
 
