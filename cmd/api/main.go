@@ -68,6 +68,7 @@ func run() error {
 		KeyFile:        cfg.SigningKeyFile,
 		AccessTokenTTL: cfg.AccessTokenTTL,
 		IDTokenTTL:     cfg.IDTokenTTL,
+		Leeway:         cfg.TokenLeeway,
 		Now:            clk.Now,
 	})
 	if err != nil {

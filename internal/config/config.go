@@ -22,7 +22,9 @@ type Specification struct {
 	DefaultAudience string         `env:"DEFAULT_AUDIENCE" envDefault:"https://localhost:8443/api/v2/"` // Blank: no default audience.
 	AccessTokenTTL  time.Duration  `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
 	IDTokenTTL      time.Duration  `env:"ID_TOKEN_TTL" envDefault:"24h"`
-	LogLevel        string         `env:"LOG_LEVEL" envDefault:"info"`
+	// TokenLeeway is the clock skew tolerated on exp/nbf/iat checks.
+	TokenLeeway time.Duration `env:"TOKEN_LEEWAY" envDefault:"0s"`
+	LogLevel    string        `env:"LOG_LEVEL" envDefault:"info"`
 	// Debug turns on the request/response dump middleware. Off by default;
 	// enables full method/path/query/headers/body logging for every
 	// request + response at INFO level. Authorization + Cookie headers are
@@ -117,6 +119,9 @@ func (s *Specification) Validate() error {
 	// instead of leaving the operator guessing why nothing's listening.
 	if listenerOff(s.HTTPAddress) && listenerOff(s.HTTPSAddress) {
 		return fmt.Errorf("HTTP_ADDR and HTTPS_ADDR are both disabled — at least one must be a bind address (use \"off\" on only one to run single-protocol)")
+	}
+	if s.TokenLeeway < 0 {
+		return fmt.Errorf("TOKEN_LEEWAY must not be negative, got %s", s.TokenLeeway)
 	}
 	return nil
 }

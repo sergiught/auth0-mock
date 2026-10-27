@@ -176,7 +176,7 @@ func TestVerify_UsesConfigNow_RejectsExpiredAfterAdvance(t *testing.T) {
 	_, err = ks.Verify(tok, VerifyOpts{})
 	require.NoError(t, err)
 
-	// Advance verifier's clock past exp + leeway (verifyLeeway = 60s).
+	// Advance verifier's clock past exp (the test Config has no Leeway).
 	verifyNow = mintAt.Add(time.Hour + 5*time.Minute)
 	_, err = ks.Verify(tok, VerifyOpts{})
 	require.Error(t, err)

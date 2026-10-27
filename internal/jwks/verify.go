@@ -4,16 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-// verifyLeeway is the time-skew leeway applied to exp / nbf / iat checks.
-// One minute matches what the major OIDC providers (Auth0, Okta, Google)
-// allow and gives clock-skewed CI runners breathing room without
-// meaningfully widening the replay window.
-const verifyLeeway = 60 * time.Second
 
 // Claims is the parsed token payload exposed to callers.
 type Claims struct {
@@ -41,7 +34,7 @@ type VerifyOpts struct {
 
 // Verify parses and validates a JWT against this KeySet.
 // Checks: signature, exp (required), iss == ks.Issuer, iat value (if
-// present, with ±60s clock skew), nbf (if present, with skew), and
+// present, with Config.Leeway clock skew), nbf (if present, with skew), and
 // (when opts.RequireAudience is set) aud contains that value. With
 // opts.AllowExpired the exp, iat and nbf checks are skipped; signature,
 // alg, iss and aud are still checked.
@@ -61,7 +54,7 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 			jwt.WithIssuer(k.cfg.Issuer),
 			jwt.WithExpirationRequired(),
 			jwt.WithIssuedAt(),
-			jwt.WithLeeway(verifyLeeway),
+			jwt.WithLeeway(k.cfg.Leeway),
 			jwt.WithTimeFunc(k.cfg.Now),
 		)
 	}

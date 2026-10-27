@@ -131,3 +131,52 @@ Feature: Clock control
     And I send "GET /api/v2/users/auth0|alice" with a valid bearer
     Then I receive a 401 response
     And the response body contains "invalid_bearer"
+
+  Scenario: Frozen clock drives the validator — token still valid just before expiry
+    Given I register the expectation "GET /api/v2/users/auth0|alice":
+      """
+      {"response":{"status":200,"body":{"user_id":"auth0|alice","email":"alice@example.com"}}}
+      """
+    And I PUT "/admin0/clock" with body:
+      """
+      {"now":"2030-01-01T00:00:00Z"}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=client_credentials
+      client_id=demo
+      client_secret=x
+      audience=https://api.example.com/
+      """
+    And I save the access_token as my bearer
+    When I POST "/admin0/clock/advance" with body:
+      """
+      {"by":"59m59s"}
+      """
+    And I send "GET /api/v2/users/auth0|alice" with a valid bearer
+    Then I receive a 200 response
+
+  Scenario: Frozen clock drives the validator — token rejected just after expiry
+    Given I register the expectation "GET /api/v2/users/auth0|alice":
+      """
+      {"response":{"status":200,"body":{"user_id":"auth0|alice","email":"alice@example.com"}}}
+      """
+    And I PUT "/admin0/clock" with body:
+      """
+      {"now":"2030-01-01T00:00:00Z"}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=client_credentials
+      client_id=demo
+      client_secret=x
+      audience=https://api.example.com/
+      """
+    And I save the access_token as my bearer
+    When I POST "/admin0/clock/advance" with body:
+      """
+      {"by":"1h0m1s"}
+      """
+    And I send "GET /api/v2/users/auth0|alice" with a valid bearer
+    Then I receive a 401 response
+    And the response body contains "invalid_bearer"

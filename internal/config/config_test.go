@@ -69,7 +69,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		"HTTP_ADDR", "HTTPS_ADDR", "TLS_CERT_FILE", "TLS_KEY_FILE",
 		"TLS_CACHE_DIR", "TLS_HOSTNAMES", "SIGNING_KEY_FILE", "ISSUER_URL",
-		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "LOG_LEVEL",
+		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "TOKEN_LEEWAY", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
 		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT", "REQUEST_JOURNAL_SIZE",
 		"CORS_ALLOWED_ORIGINS",
@@ -139,4 +139,25 @@ func TestLoad_BlankDefaultAudience(t *testing.T) {
 	spec, err = Load()
 	require.NoError(t, err)
 	assert.Equal(t, "https://localhost:8443/api/v2/", spec.DefaultAudience)
+}
+
+func TestLoad_TokenLeeway_DefaultsToZero(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), spec.TokenLeeway)
+}
+
+func TestLoad_TokenLeeway_HonoursOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("TOKEN_LEEWAY", "60s")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 60*time.Second, spec.TokenLeeway)
+}
+
+func TestValidate_RejectsNegativeTokenLeeway(t *testing.T) {
+	err := (&Specification{HTTPAddress: "127.0.0.1:8080", HTTPSAddress: "off", TokenLeeway: -time.Second}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "TOKEN_LEEWAY must not be negative")
 }
