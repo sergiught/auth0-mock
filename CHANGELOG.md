@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.233.0](https://github.com/sergiught/auth0-mock/compare/v0.232.0...v0.233.0) (2026-10-27)
+
+
+### ⚠️ Upgrade notes
+
+* **Docker needs `-e ADMIN_ALLOW_REMOTE=true`.** The mock now refuses to start on an address other machines can reach, because `/admin0` is unauthenticated and can mint tokens. The images bind `0.0.0.0`, so add `-e ADMIN_ALLOW_REMOTE=true` to `docker run`, or `ADMIN_ALLOW_REMOTE: "true"` to a compose service. Without it the container exits at startup with an error that names the fix. ([#96](https://github.com/sergiught/auth0-mock/issues/96))
+* **Tokens expire exactly at `exp`.** The 60-second verification grace is gone. Set `TOKEN_LEEWAY=60s` to get it back. ([#96](https://github.com/sergiught/auth0-mock/issues/96))
+* **Event and stream ids need 22 characters** after `evt_` / `est_` (was 16), as in Auth0's current schema. `auth0mock.NewEventID()` and `NewStreamID()` already produce the new length. ([#97](https://github.com/sergiught/auth0-mock/issues/97))
+* **`GET` and `DELETE /api/v2/users/{id}/federated-connections-tokensets` are gone**, because Auth0 no longer lists them. Request bodies are validated against Auth0's current schemas, which add stricter id patterns. ([#97](https://github.com/sergiught/auth0-mock/issues/97))
+
+
+### Features
+
+* answer CORS on every route, with an optional CORS_ALLOWED_ORIGINS allow-list ([#88](https://github.com/sergiught/auth0-mock/issues/88)) ([4c6363e](https://github.com/sergiught/auth0-mock/commit/4c6363e9133395212cdfa7f594b84bb4b624af23))
+* **authapi:** accept Auth0's passwordless OTP grant on /oauth/token ([#92](https://github.com/sergiught/auth0-mock/issues/92)) ([3384951](https://github.com/sergiught/auth0-mock/commit/3384951d1da44d7160022dba867ff3db3a6dcb0b))
+* **authapi:** accept client_secret_basic and a case-insensitive Bearer scheme ([#85](https://github.com/sergiught/auth0-mock/issues/85)) ([adce1e7](https://github.com/sergiught/auth0-mock/commit/adce1e7a180904d816e8d2674f31c15a7d3fa957))
+* **authapi:** add OIDC logout at /oidc/logout and advertise it in discovery ([#91](https://github.com/sergiught/auth0-mock/issues/91)) ([e5d41b1](https://github.com/sergiught/auth0-mock/commit/e5d41b17eaf4c15d2190c720aea903cc07dcdb2b))
+* **authapi:** advertise every served grant, claim and auth method in discovery ([#93](https://github.com/sergiught/auth0-mock/issues/93)) ([33cf221](https://github.com/sergiught/auth0-mock/commit/33cf22112d0c5937ba2aafd4093ae7db0a7f1eae))
+* **authapi:** echo the /authorize nonce and add auth_time/azp to id_tokens ([#86](https://github.com/sergiught/auth0-mock/issues/86)) ([eb119a9](https://github.com/sergiught/auth0-mock/commit/eb119a9c38a8c293c15517a4fd9c71a43a976022))
+* **authapi:** keep a stable user across login, userinfo and refresh ([#87](https://github.com/sergiught/auth0-mock/issues/87)) ([8925358](https://github.com/sergiught/auth0-mock/commit/8925358506aeae624d5952303711946e1651202a))
+* **authapi:** real implicit and hybrid flows on /authorize, with opaque tokens when there is no audience ([#94](https://github.com/sergiught/auth0-mock/issues/94)) ([9965957](https://github.com/sergiught/auth0-mock/commit/996595706f7b6e469b9f88371cd7ca3c710c7924))
+* **authapi:** send /authorize errors to redirect_uri per response_mode, with test-controlled error rules ([#90](https://github.com/sergiught/auth0-mock/issues/90)) ([0faa9e7](https://github.com/sergiught/auth0-mock/commit/0faa9e723848ecb419d3cbb59fed850b30e7fcaf))
+* **authapi:** silent login with prompt=none and web_message, backed by a mock session cookie ([#95](https://github.com/sergiught/auth0-mock/issues/95)) ([465b76d](https://github.com/sergiught/auth0-mock/commit/465b76d510bba4c6132caab985ac3b90f591c72f))
+* **events:** allow error stubs on GET /api/v2/events ([#83](https://github.com/sergiught/auth0-mock/issues/83)) ([d79cad9](https://github.com/sergiught/auth0-mock/commit/d79cad9325a895c286295f0c59b6279f0581b216))
+* **expectations:** answer successive calls in order with an optional then list ([#89](https://github.com/sergiught/auth0-mock/issues/89)) ([657ae92](https://github.com/sergiught/auth0-mock/commit/657ae9200b4de803c29889f4f3946893414d860a))
+* **journal:** record Management API calls and explain near misses ([#84](https://github.com/sergiught/auth0-mock/issues/84)) ([528b2e8](https://github.com/sergiught/auth0-mock/commit/528b2e894109a2aab84082d36fec90c6738bfa73))
+* **mgmtapi:** refresh the Auth0 Management API skeleton to the current spec ([#97](https://github.com/sergiught/auth0-mock/issues/97)) ([d5466d2](https://github.com/sergiught/auth0-mock/commit/d5466d2893db5697fce092b4086235721ecc4dc4))
+* refuse non-loopback listeners without ADMIN_ALLOW_REMOTE and make token leeway configurable ([#96](https://github.com/sergiught/auth0-mock/issues/96)) ([b942468](https://github.com/sergiught/auth0-mock/commit/b94246836c09681c91d131350c8a1f04abe0c858))
+
+
+### Bug fixes
+
+* **release:** sign checksums as a Sigstore bundle for cosign v3 ([#77](https://github.com/sergiught/auth0-mock/issues/77)) ([271c441](https://github.com/sergiught/auth0-mock/commit/271c441eee451f60c0c8de7fed8ae035f7ceddb4))
+
 ## [0.232.0](https://github.com/sergiught/auth0-mock/compare/v0.231.0...v0.232.0) (2026-08-26)
 
 
