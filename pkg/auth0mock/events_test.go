@@ -101,12 +101,12 @@ func TestEventsClient_Subscribers_PropagatesServerError(t *testing.T) {
 }
 
 func TestNewEventID_MatchesSchemaPattern(t *testing.T) {
-	// The OpenAPI schema requires `evt_[a-zA-Z0-9]{16}` exactly.
+	// The OpenAPI schema requires `evt_[a-zA-Z0-9]{22}` exactly.
 	// NewEventID uses hex (lowercase a-f + 0-9), which is a subset
 	// of the allowed alphabet. Pin both shape and uniqueness so a
 	// future "let's switch to base32" change can't quietly break
 	// downstream pushes.
-	re := regexp.MustCompile(`^evt_[a-zA-Z0-9]{16}$`)
+	re := regexp.MustCompile(`^evt_[a-zA-Z0-9]{22}$`)
 	seen := make(map[string]bool, 100)
 	for range 100 {
 		id := auth0mock.NewEventID()
@@ -117,7 +117,7 @@ func TestNewEventID_MatchesSchemaPattern(t *testing.T) {
 }
 
 func TestNewStreamID_MatchesSchemaPattern(t *testing.T) {
-	re := regexp.MustCompile(`^est_[a-zA-Z0-9]{16}$`)
+	re := regexp.MustCompile(`^est_[a-zA-Z0-9]{22}$`)
 	for range 100 {
 		id := auth0mock.NewStreamID()
 		assert.True(t, re.MatchString(id), "NewStreamID() = %q, want match for %s", id, re)

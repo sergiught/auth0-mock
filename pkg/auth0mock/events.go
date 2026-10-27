@@ -12,23 +12,23 @@ import (
 )
 
 // NewEventID returns a fresh event ID conforming to Auth0's
-// event-stream `id` pattern (`evt_` + 16 alphanumeric chars). Tests
+// event-stream `id` pattern (`evt_` + 22 alphanumeric chars). Tests
 // that don't need a specific id value can call this instead of
-// hand-rolling a 16-character placeholder — the schema validator
+// hand-rolling a 22-character placeholder — the schema validator
 // rejects anything that doesn't match the pattern, and a too-short
 // or too-long literal is the most common paste-and-go mistake.
 func NewEventID() string {
-	b := make([]byte, 8)
+	b := make([]byte, 11)
 	_, _ = rand.Read(b)
 	return "evt_" + hex.EncodeToString(b)
 }
 
 // NewStreamID returns a fresh event-stream ID conforming to Auth0's
-// `est_` + 16 alphanumeric chars pattern. Same rationale as
-// NewEventID — saves callers from re-deriving "I need exactly 16
+// `est_` + 22 alphanumeric chars pattern. Same rationale as
+// NewEventID — saves callers from re-deriving "I need exactly 22
 // chars after the prefix" by trial and error.
 func NewStreamID() string {
-	b := make([]byte, 8)
+	b := make([]byte, 11)
 	_, _ = rand.Read(b)
 	return "est_" + hex.EncodeToString(b)
 }

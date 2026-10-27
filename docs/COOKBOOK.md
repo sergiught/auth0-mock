@@ -513,7 +513,7 @@ func TestConsumer_ReactsToUserCreated(t *testing.T) {
     // OpenAPI text/event-stream schema; misshapen bodies surface
     // as APIError("invalid_event") with a one-line reason. Use
     // auth0mock.NewEventID() to get a fresh ID that conforms to the
-    // `evt_` + 16-char pattern — the schema rejects literals of the
+    // `evt_` + 22-char pattern — the schema rejects literals of the
     // wrong length, and hand-counting is a common paste-and-go trap.
     eventID := auth0mock.NewEventID()
     streamID := auth0mock.NewStreamID()
