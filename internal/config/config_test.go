@@ -25,12 +25,14 @@ func TestLoad_Defaults(t *testing.T) {
 func TestLoad_OverridesFromEnv(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("HTTP_ADDR", ":9000")
+	t.Setenv("ADMIN_ALLOW_REMOTE", "true")
 	t.Setenv("SPEC_VALIDATION_STRICT", "false")
 	t.Setenv("TLS_CACHE_DIR", "/tmp/tls")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://*.example.com")
 	spec, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, ":9000", spec.HTTPAddress)
+	assert.True(t, spec.AdminAllowRemote)
 	assert.False(t, spec.SpecValidationStrict)
 	assert.Equal(t, "/tmp/tls", spec.TLS.CacheDir)
 	assert.Equal(t, []string{"http://localhost:3000", "https://*.example.com"}, spec.CORSAllowedOrigins)
@@ -69,7 +71,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		"HTTP_ADDR", "HTTPS_ADDR", "TLS_CERT_FILE", "TLS_KEY_FILE",
 		"TLS_CACHE_DIR", "TLS_HOSTNAMES", "SIGNING_KEY_FILE", "ISSUER_URL",
-		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "TOKEN_LEEWAY", "LOG_LEVEL",
+		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "TOKEN_LEEWAY", "ADMIN_ALLOW_REMOTE", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
 		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT", "REQUEST_JOURNAL_SIZE",
 		"CORS_ALLOWED_ORIGINS",
@@ -160,4 +162,60 @@ func TestValidate_RejectsNegativeTokenLeeway(t *testing.T) {
 	err := (&Specification{HTTPAddress: "127.0.0.1:8080", HTTPSAddress: "off", TokenLeeway: -time.Second}).Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "TOKEN_LEEWAY must not be negative")
+}
+
+func TestIsRemoteAddr(t *testing.T) {
+	tests := map[string]bool{
+		":8080":            true,
+		"0.0.0.0:8080":     true,
+		"[::]:8443":        true,
+		"192.168.1.5:8080": true,
+		"myhost:8080":      true,
+		"example.com:443":  true,
+		"127.0.0.1:8080":   false,
+		"127.0.0.2:8080":   false,
+		"[::1]:8080":       false,
+		"localhost:8080":   false,
+		"LOCALHOST:8080":   false,
+		"not-an-address":   false,
+	}
+	for addr, want := range tests {
+		t.Run(addr, func(t *testing.T) {
+			assert.Equal(t, want, isRemoteAddr(addr))
+		})
+	}
+}
+
+func TestRemoteListeners(t *testing.T) {
+	spec := &Specification{HTTPAddress: "0.0.0.0:8080", HTTPSAddress: "off"}
+	assert.Equal(t, []string{"HTTP_ADDR=0.0.0.0:8080"}, spec.RemoteListeners())
+
+	spec = &Specification{HTTPAddress: "0.0.0.0:8080", HTTPSAddress: "0.0.0.0:8443"}
+	assert.Equal(t, []string{"HTTP_ADDR=0.0.0.0:8080", "HTTPS_ADDR=0.0.0.0:8443"}, spec.RemoteListeners())
+
+	spec = &Specification{HTTPAddress: "127.0.0.1:8080", HTTPSAddress: "[::1]:8443"}
+	assert.Empty(t, spec.RemoteListeners())
+}
+
+func TestValidate_RejectsRemoteListenerWithoutFlag(t *testing.T) {
+	err := (&Specification{HTTPAddress: "0.0.0.0:8080", HTTPSAddress: "0.0.0.0:8443"}).Validate()
+	assert.EqualError(t, err, "HTTP_ADDR=0.0.0.0:8080 and HTTPS_ADDR=0.0.0.0:8443 can be reached from other machines, but /admin0 is unauthenticated and can mint tokens; bind to 127.0.0.1, or set ADMIN_ALLOW_REMOTE=true to accept the risk (Docker needs this)")
+}
+
+func TestValidate_RemoteListenerAllowedWithFlag(t *testing.T) {
+	spec := &Specification{HTTPAddress: "0.0.0.0:8080", HTTPSAddress: "0.0.0.0:8443", AdminAllowRemote: true}
+	assert.NoError(t, spec.Validate())
+}
+
+func TestValidate_OneRemoteListenerStillRejected(t *testing.T) {
+	err := (&Specification{HTTPAddress: "off", HTTPSAddress: ":8443"}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTPS_ADDR=:8443")
+}
+
+func TestLoad_AdminAllowRemote_DefaultsToFalse(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.False(t, spec.AdminAllowRemote)
 }

@@ -131,6 +131,8 @@ docker compose up -d --build
 docker compose logs -f auth0-mock
 ```
 
+> **Changed:** the mock now refuses to listen on `0.0.0.0` (as it does inside Docker) unless `ADMIN_ALLOW_REMOTE=true`. `.env.example` sets it for the compose stack; add `-e ADMIN_ALLOW_REMOTE=true` to `docker run`, and add it to an existing `.env`.
+
 `docker compose` builds from the local dev `Dockerfile` (Go toolchain + source) for fast `--build` iteration. The release pipeline uses a separate slim `Dockerfile.release` (binary-only, fed by goreleaser) — `ghcr.io/sergiught/auth0-mock:vX.Y.Z` and `docker.io/sergiught/auth0-mock:vX.Y.Z` are what hits Docker Hub.
 
 ### Smoke test
@@ -340,7 +342,7 @@ See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKB
 | `/admin0/events/expire` | POST | Age out replay cursors so a reconnect gets `410 event_aged_out`. `?before=<offset>` expires only what is older than that cursor. Leaves live subscribers and every other store alone. See [Event streams](#-event-streams). |
 
 > [!WARNING]
-> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary.
+> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary. The mock won't start on such an address unless `ADMIN_ALLOW_REMOTE=true`, and logs a warning when it does.
 
 ### 🩺 Operations
 
@@ -400,8 +402,9 @@ Environment variables (see [`.env.example`](.env.example) for the full template)
 
 | Variable | Default | Notes |
 |---|---|---|
-| `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does). To run HTTPS-only, set this to `off`. |
-| `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does). To run HTTP-only, set this to `off`. |
+| `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTPS-only, set this to `off`. |
+| `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTP-only, set this to `off`. |
+| `ADMIN_ALLOW_REMOTE` | `false` | The mock refuses to start when `HTTP_ADDR` or `HTTPS_ADDR` can be reached from other machines (`0.0.0.0`, `::`, a LAN IP, a hostname other than `localhost`), because `/admin0` is unauthenticated. Set `true` to allow it; Docker needs this |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |
 | `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
@@ -446,7 +449,7 @@ The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `T
 mkcert -install                                                # one-time per workstation
 mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
 
-docker run -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
+docker run -e ADMIN_ALLOW_REMOTE=true -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
   -v "$PWD:/certs" auth0-mock
 ```
 
@@ -455,7 +458,7 @@ docker run -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
 Pick a path; the mock writes its auto-generated cert there on first boot and reuses it on subsequent restarts. Trust the cert once and trust persists:
 
 ```bash
-docker compose run --rm -e TLS_CACHE_DIR=/data/tls \
+docker compose run --rm -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
   -v auth0-mock-tls:/data/tls auth0-mock
 ```
 

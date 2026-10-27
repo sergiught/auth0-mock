@@ -25,8 +25,10 @@ keeps running unchanged.
 ## Quick start
 
 ```bash
-docker run --rm -p 8080:8080 -p 8443:8443 sergiught/auth0-mock:latest
+docker run --rm -p 8080:8080 -p 8443:8443 -e ADMIN_ALLOW_REMOTE=true sergiught/auth0-mock:latest
 ```
+
+`ADMIN_ALLOW_REMOTE=true` is needed because the container listens on `0.0.0.0`, and the mock refuses that unless you opt in: `/admin0` is unauthenticated and can mint tokens.
 
 Mint a token, register a stubbed Management API response, and call it:
 

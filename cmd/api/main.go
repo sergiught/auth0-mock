@@ -57,6 +57,9 @@ func run() error {
 		Str("commit", version.Commit).
 		Str("date", version.Date).
 		Msg("auth0-mock starting")
+	if remote := cfg.RemoteListeners(); len(remote) > 0 {
+		log.Warn().Strs("listeners", remote).Msg("/admin0 can be reached from other machines; it is unauthenticated, so anyone who can reach it can mint tokens")
+	}
 
 	// Controllable clock — drives JWT iat/exp, PKCE code TTLs, MFA token
 	// TTLs, and bearer exp/nbf validation. Mounted at /admin0/clock so
