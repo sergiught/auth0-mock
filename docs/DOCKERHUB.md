@@ -52,19 +52,19 @@ curl -H "Authorization: Bearer ${TOKEN}" \
 | Tag             | Points to                              |
 |-----------------|----------------------------------------|
 | `latest`        | latest stable release                  |
-| `vX.Y.Z`        | a specific release (immutable)         |
+| `X.Y.Z`         | a specific release (immutable)         |
 
 All tags are multi-arch manifests covering `linux/amd64` and `linux/arm64`.
 
 ### Provenance
 
-Every `ghcr.io/sergiught/auth0-mock:vX.Y.Z` image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). The Docker Hub mirror (`sergiught/auth0-mock:vX.Y.Z`) is a publish-only convenience: pull the equivalent GHCR digest to verify provenance. Replace `vX.Y.Z` below with the tag you want to verify, e.g. `v0.227.0`:
+Every `ghcr.io/sergiught/auth0-mock:X.Y.Z` image is signed with [Cosign](https://github.com/sigstore/cosign) keylessly from the GitHub Actions release workflow (no shared secret). The Docker Hub mirror (`sergiught/auth0-mock:X.Y.Z`) is a publish-only convenience: pull the equivalent GHCR digest to verify provenance. Replace `X.Y.Z` below with the tag you want to verify, e.g. `0.227.0`:
 
 ```bash
 cosign verify \
   --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/sergiught/auth0-mock:vX.Y.Z
+  ghcr.io/sergiught/auth0-mock:X.Y.Z
 ```
 
 SPDX-JSON SBOMs for each release archive live alongside the binaries on the [GitHub Releases page](https://github.com/sergiught/auth0-mock/releases).
@@ -75,8 +75,8 @@ The container is configured via environment variables. The most common ones:
 
 | Variable        | Default                                | Purpose                              |
 |-----------------|----------------------------------------|--------------------------------------|
-| `HTTP_ADDR`     | `0.0.0.0:8080`                         | HTTP listener; empty to disable      |
-| `HTTPS_ADDR`    | `0.0.0.0:8443`                         | HTTPS listener; empty to disable     |
+| `HTTP_ADDR`     | `0.0.0.0:8080`                         | HTTP listener; `off` to disable      |
+| `HTTPS_ADDR`    | `0.0.0.0:8443`                         | HTTPS listener; `off` to disable     |
 | `ADMIN_ALLOW_REMOTE` | `false` | Must be `true` for the image's `0.0.0.0` defaults; the mock refuses non-loopback binds otherwise, because `/admin0` is unauthenticated |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_               | If both set → load; else auto-gen    |
 | `TLS_CACHE_DIR` | _empty_                                | Persist auto-gen cert across restarts |
