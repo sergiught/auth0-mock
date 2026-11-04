@@ -36,7 +36,7 @@ Other tools use their own setting:
 - Python: `SSL_CERT_FILE`
 - Go: pass the certificate in the client's `RootCAs` pool
 
-See [HTTPS / TLS](https://github.com/sergiught/auth0-mock/blob/main/README.md#-https--tls) in the README.
+See [HTTPS / TLS](/auth0-mock/guides/https-tls/#https--tls) in the HTTPS guide.
 
 ## Point your code at the mock
 
