@@ -4,10 +4,16 @@ set -euo pipefail
 
 BIN="${AUTH0_MOCK_BIN:-bin/auth0-mock}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+if [ ! -x "$BIN" ]; then
+  echo "ERROR: $BIN is not executable; run make build" >&2
+  exit 1
+fi
 
 for port in 8443 8080; do
   if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
-    echo "==> ERROR: localhost:$port is already in use. Stop the listener and re-run." >&2
+    echo "ERROR: localhost:$port is already in use. Stop the listener and re-run." >&2
     exit 1
   fi
 done
