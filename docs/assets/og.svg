@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Social preview card, 1280x640. Source for docs/site/public/og.png.
+  Font: Liberation Sans (Bold + Regular), JetBrains Mono for the URL; the PNG is the artifact.
+  Render: rsvg-convert -w 1280 -h 640 docs/assets/og.svg -o docs/site/public/og.png
+  Safe margin: all text sits inside an 80 px inset (GitHub crops the edges).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050814"/>
+      <stop offset="1" stop-color="#052f46"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff4fd8"/>
+      <stop offset="0.5" stop-color="#a98cf0"/>
+      <stop offset="1" stop-color="#5ed5f8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <!-- lock motif -->
+  <g transform="translate(134 75) scale(0.88)" fill="none" stroke="#5ed5f8" stroke-linejoin="round" stroke-linecap="round" opacity="0.22">
+    <path d="M900 290V230a120 120 0 0 1 240 0v60" stroke-width="22"/>
+    <rect x="840" y="290" width="360" height="250" rx="40" stroke-width="22"/>
+    <circle cx="1020" cy="395" r="26" stroke-width="18"/>
+    <path d="M1020 421v50" stroke-width="18"/>
+  </g>
+  <text x="80" y="300" font-family="Liberation Sans, Arial, sans-serif" font-weight="700" font-size="132" fill="url(#title)">auth0-mock</text>
+  <text x="80" y="370" font-family="Liberation Sans, Arial, sans-serif" font-size="38" fill="#e6f4fb">Drop-in mock of the Auth0 HTTP API</text>
+  <text x="80" y="420" font-family="Liberation Sans, Arial, sans-serif" font-size="38" fill="#e6f4fb">for tests and local development</text>
+  <text x="80" y="480" font-family="Liberation Sans, Arial, sans-serif" font-size="28" fill="#5ed5f8">real RS256 JWTs  ·  400+ endpoints</text>
+  <text x="80" y="560" font-family="JetBrains Mono, monospace" font-size="26" fill="#8fb6c8">sergiu.dev/auth0-mock</text>
+</svg>
