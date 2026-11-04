@@ -24,25 +24,7 @@ it exposes:
 - The **service** endpoints (`/healthz`, `/.well-known/jwks.json`,
   `/openapi.json`, `/openapi.yaml`).
 
-### Silent login
-
-A successful `/authorize` sets an `auth0` session cookie (`HttpOnly`,
-`Path=/`; `SameSite=Lax` over HTTP, `SameSite=None; Secure` over HTTPS).
-`prompt=none` then answers from that session, or returns `login_required`
-when there is none, and `response_mode=web_message` delivers the result with
-`postMessage`, so `getTokenSilently` works against the mock. `/v2/logout`,
-`/oidc/logout` and `/admin0/reset` end the session.
-
-Behaviour change for clients that keep cookies (browsers, cookie jars): a
-second `/authorize` without `login_hint` now returns the earlier user, not
-`auth0|mock-user`. Use `prompt=login` or a `login_hint` to pick a user.
-
-Also, `prompt=none` without a live session now returns `login_required`.
-Before, `/authorize` ignored `prompt`, so `prompt=none` always succeeded as
-`auth0|mock-user` (or the `login_hint` user). Log in first in the same cookie
-jar, or drop `prompt=none`, to get tokens.
-
-### Importing
+## Importing
 
 - **From the repo:** import `api/auth0-mock.openapi.json` directly.
 - **From a running instance:** point your client at
@@ -52,7 +34,7 @@ Both Postman and Insomnia will create a folder per tag (`auth-api`,
 `admin0`, `service`, plus the Management API's existing tags) and
 fill in request bodies from the schemas.
 
-### Regenerating the spec
+## Regenerating the spec
 
 The merged JSON is committed and checked for drift in CI. Re-run
 `make openapi` after editing any of the auth0-mock-authored fragments:

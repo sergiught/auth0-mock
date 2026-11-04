@@ -100,6 +100,6 @@ to describe what this project mocks.
 
 - **Source & issues:** <https://github.com/sergiught/auth0-mock>
 - **Architecture deep-dive:** <https://sergiu.dev/auth0-mock/reference/architecture/>
-- **Recipes (claim injection, RBAC, MFA, TLS trusting, SDK integration):** <https://sergiu.dev/auth0-mock/guides/stubbing/>
+- **Guides (stubbing, tokens and claims, login flows, event streams, TLS, Go SDK):** <https://sergiu.dev/auth0-mock/guides/stubbing/>
 - **Working SDK example:** <https://github.com/sergiught/auth0-mock/tree/main/examples/consumer>
 - **License:** MIT (see [`LICENSE`](https://github.com/sergiught/auth0-mock/blob/main/LICENSE) and [`NOTICE`](https://github.com/sergiught/auth0-mock/blob/main/NOTICE))

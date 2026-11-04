@@ -5,6 +5,11 @@ sidebar:
   order: 2
 ---
 
+```bash
+docker run --rm -p 127.0.0.1:8080:8080 -e ADMIN_ALLOW_REMOTE=true ghcr.io/sergiught/auth0-mock:latest
+```
+
+Then, in another terminal:
 
 ```bash
 # 1. Mint a real signed access token

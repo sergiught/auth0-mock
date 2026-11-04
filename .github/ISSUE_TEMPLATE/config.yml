@@ -5,7 +5,7 @@ contact_links:
     about: Quickstart, supported endpoints, environment variables, and TLS setup.
   - name: 🧑‍🍳 Cookbook
     url: https://sergiu.dev/auth0-mock/guides/stubbing/
-    about: Recipes for claim injection, RBAC setup, MFA testing, trusting the TLS cert, and SDK integration.
+    about: "Guides: stubbing, tokens and claims, login flows, event streams, TLS, Go SDK."
   - name: 🏛️ Architecture
     url: https://sergiu.dev/auth0-mock/reference/architecture/
     about: Handler architecture, dependency injection, and request flow if you want to contribute or extend the mock.

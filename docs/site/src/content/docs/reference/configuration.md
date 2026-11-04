@@ -12,7 +12,7 @@ Environment variables (see [`.env.example`](https://github.com/sergiught/auth0-m
 | `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTPS-only, set this to `off`. |
 | `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTP-only, set this to `off`. |
 | `ADMIN_ALLOW_REMOTE` | `false` | The mock refuses to start when `HTTP_ADDR` or `HTTPS_ADDR` can be reached from other machines (`0.0.0.0`, `::`, a LAN IP, a hostname other than `localhost`), because `/admin0` is unauthenticated. Set `true` to allow it; Docker needs this |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see [HTTPS / TLS](/auth0-mock/guides/https-tls/)) |
 | `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
 | `SIGNING_KEY_FILE` | _empty_ | PEM-encoded RSA key. Otherwise a fresh RS256 key is generated each boot |

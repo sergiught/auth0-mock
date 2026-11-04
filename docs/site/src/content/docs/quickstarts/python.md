@@ -214,3 +214,4 @@ With `--rm` this also removes the container.
 
 - [curl quickstart](/auth0-mock/quickstarts/http/)
 - [Node.js quickstart](/auth0-mock/quickstarts/node/)
+- [Go SDK](/auth0-mock/guides/go-sdk/)

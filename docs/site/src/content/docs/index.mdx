@@ -2,8 +2,11 @@
 title: auth0-mock
 description: Drop-in mock of the Auth0 HTTP API for tests and local development, with real RS256 JWTs and 400+ Management API endpoints.
 template: splash
+head:
+  - tag: title
+    content: "auth0-mock: drop-in Auth0 API mock for tests and local dev"
 hero:
-  tagline: Drop-in mock Auth0 HTTP API for tests and local dev. Real RS256 JWTs, 400+ Management API endpoints, no code changes required.
+  tagline: Drop-in mock of the Auth0 HTTP API for tests and local dev. Real RS256 JWTs, 400+ Management API endpoints, no code changes required.
   actions:
     - text: Get started
       link: /auth0-mock/getting-started/installation/
@@ -74,8 +77,7 @@ BIN_DIR="$HOME/.local/bin" bash <(curl -fsSL https://raw.githubusercontent.com/s
   </TabItem>
   <TabItem label="Docker">
 ```bash
-docker compose up -d --build
-docker compose logs -f auth0-mock
+docker run --rm -p 127.0.0.1:8080:8080 -e ADMIN_ALLOW_REMOTE=true ghcr.io/sergiught/auth0-mock:latest
 ```
   </TabItem>
   <TabItem label="go install">
@@ -93,3 +95,4 @@ $(go env GOPATH)/bin/api -version    # installs as `api`, not `auth0-mock`
 <LinkCard title="Node.js quickstart" description="Test a Node API and a Management API client." href="/auth0-mock/quickstarts/node/" />
 <LinkCard title="Python quickstart" description="Test a Python API and a Management API client." href="/auth0-mock/quickstarts/python/" />
 <LinkCard title="Stubbing guide" description="Stub Management API responses, errors and retries in tests." href="/auth0-mock/guides/stubbing/" />
+<LinkCard title="Go SDK" description="Typed Go client and in-process test helpers." href="/auth0-mock/guides/go-sdk/" />

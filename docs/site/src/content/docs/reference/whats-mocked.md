@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-### Authentication API (hand-coded, fully functional)
+## Authentication API (hand-coded, fully functional)
 
 Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_ALLOWED_ORIGINS`).
 
@@ -24,7 +24,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `/passwordless/start` | POST | Returns `{_id, email, phone_number}` |
 | `/passwordless/verify` | POST | Same as the passwordless grant on `/oauth/token` |
 
-### OAuth grants supported
+## OAuth grants supported
 
 | `grant_type` | Notes |
 |---|---|
@@ -44,7 +44,7 @@ Client credentials may also be sent via HTTP Basic (`client_secret_basic`); if b
 **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
 :::
 
-### Management API (spec-driven, ~480 endpoints)
+## Management API (spec-driven, ~480 endpoints)
 
 Every operation in the embedded Auth0 Management API skeleton is mounted. Default response is `404 no_match`. Tests register stubs:
 
@@ -64,7 +64,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
 Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier). `response.body` is validated against the operation's response schema at registration time. Invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
 :::
 
-### Event streams
+## Event streams
 
 `GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>`, and the buffer fills in what they missed.
 
@@ -123,7 +123,7 @@ The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/
 
 See [Event streams guide → Drive an event-stream consumer from a test](/auth0-mock/guides/event-streams/#drive-an-event-stream-consumer-from-a-test) for the SDK-driven workflow.
 
-### Admin surface (no auth, JSON-driven)
+## Admin surface (no auth, JSON-driven)
 
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -147,7 +147,7 @@ See [Event streams guide → Drive an event-stream consumer from a test](/auth0-
 **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary. The mock won't start on an address other machines can reach unless `ADMIN_ALLOW_REMOTE=true`, and logs a warning when it does.
 :::
 
-### Operations
+## Operations
 
 | Endpoint | Notes |
 |---|---|

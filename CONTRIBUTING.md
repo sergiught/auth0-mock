@@ -29,7 +29,7 @@ auth0-mock/
 │   └── router/                     # composes everything into http.Handler
 ├── features/                       # godog acceptance tests
 ├── examples/consumer/              # end-to-end Go consumer example
-└── docs/                           # public docs (ARCHITECTURE, COOKBOOK, COMPARISON)
+└── docs/                           # public docs: Starlight site in docs/site/, plus redirect stubs
 ```
 
 `internal/` is private to the module. Every handler is a struct holding its dependencies as fields and implementing `ServeHTTP`. JSON responses go through `go-chi/render`. Errors go through `internal/httperr` (Mgmt-shape vs Auth-shape).
@@ -46,6 +46,8 @@ cd auth0-mock
 make build                   # builds ./bin/auth0-mock
 ./bin/auth0-mock             # runs on :8080 + :8443
 ```
+
+To preview the docs site, run `cd docs/site && npm ci && npm run dev` (Node 24 needed). `make docs-site` runs the same production build CI does. The build fails on relative or broken links, so write links between pages as absolute `/auth0-mock/...` paths.
 
 Day-to-day iteration uses **`make watch`**, it installs [`air`](https://github.com/air-verse/air) into `./bin` on first run, then watches `cmd/` + `internal/` + `api/` and rebuilds + restarts the binary on every save. Sub-second loop; no docker.
 

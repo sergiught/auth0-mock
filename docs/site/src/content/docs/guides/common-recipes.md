@@ -5,7 +5,7 @@ sidebar:
   order: 9
 ---
 
-→ See the [stubbing guide](/auth0-mock/guides/stubbing/) for full recipes. Highlights:
+→ See the [tokens and claims](/auth0-mock/guides/tokens-and-claims/) and [login flows](/auth0-mock/guides/login-flows/) guides for the full versions. Highlights:
 
 ```bash
 # Inject a custom claim into every token

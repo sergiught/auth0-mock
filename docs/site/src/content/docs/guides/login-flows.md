@@ -89,6 +89,24 @@ The hidden iframe is cross-site when your app and the mock are on different site
 
 Two more caveats. First, auth0-spa-js always uses `https://<domain>`, so an `http://localhost` app is cross-site with the mock by scheme, and even `SameSite=None; Secure` only works where third-party cookies are allowed. Safari, Firefox with Total Cookie Protection and Chrome with third-party cookies blocked do not send it, so they get `login_required`, as with real Auth0 without a custom domain. Serve the app on `https://localhost` to be same-site with the mock. Second, behind a TLS-terminating proxy the mock sees plain HTTP, so the cookie is `SameSite=Lax`.
 
+### How silent login works
+
+A successful `/authorize` sets an `auth0` session cookie (`HttpOnly`,
+`Path=/`; `SameSite=Lax` over HTTP, `SameSite=None; Secure` over HTTPS).
+`prompt=none` then answers from that session, or returns `login_required`
+when there is none, and `response_mode=web_message` delivers the result with
+`postMessage`, so `getTokenSilently` works against the mock. `/v2/logout`,
+`/oidc/logout` and `/admin0/reset` end the session.
+
+Behaviour change for clients that keep cookies (browsers, cookie jars): a
+second `/authorize` without `login_hint` now returns the earlier user, not
+`auth0|mock-user`. Use `prompt=login` or a `login_hint` to pick a user.
+
+Also, `prompt=none` without a live session now returns `login_required`.
+Before, `/authorize` ignored `prompt`, so `prompt=none` always succeeded as
+`auth0|mock-user` (or the `login_hint` user). Log in first in the same cookie
+jar, or drop `prompt=none`, to get tokens.
+
 ## Test an MFA challenge flow
 
 Two steps: enable MFA, then perform the full dance.

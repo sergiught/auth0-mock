@@ -110,3 +110,4 @@ With `--rm` this also removes the container.
 
 - [Node.js quickstart](/auth0-mock/quickstarts/node/)
 - [Python quickstart](/auth0-mock/quickstarts/python/)
+- [Go SDK](/auth0-mock/guides/go-sdk/)

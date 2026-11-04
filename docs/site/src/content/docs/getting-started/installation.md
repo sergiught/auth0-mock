@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-### From a release (recommended)
+## From a release (recommended)
 
 ```bash
 # latest stable
@@ -22,13 +22,13 @@ The script downloads the goreleaser-built archive, verifies its sha256 against
 the release's `checksums.txt`, and installs the binary as `auth0-mock`. Source
 is at [`install.sh`](https://github.com/sergiught/auth0-mock/blob/main/install.sh) — review before piping to bash if that bothers you.
 
-### From source
+## From source
 
 ```bash
 make build && ./bin/auth0-mock
 ```
 
-### Via `go install`
+## Via `go install`
 
 ```bash
 go install github.com/sergiught/auth0-mock/cmd/api@latest
@@ -41,7 +41,7 @@ stamp the binary with `version` / `commit` / `date` (visible via
 for Go developers who'd rather rebuild from source every time and don't
 mind the cmd-package naming.
 
-### Live-reload dev loop (`air`)
+## Live-reload dev loop (`air`)
 
 Sub-second rebuild on every save under `cmd/` or `internal/`, no docker, no bind-mounts, no flakiness:
 
@@ -49,7 +49,7 @@ Sub-second rebuild on every save under `cmd/` or `internal/`, no docker, no bind
 make watch     # installs air into ./bin on first run
 ```
 
-### Docker
+## Docker
 
 ```bash
 docker compose up -d --build
