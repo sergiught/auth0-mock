@@ -1,0 +1,16 @@
+{
+  "name": "auth0-mock-node-quickstart",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "auth0": "^7.7.0",
+    "express": "^5.3.0",
+    "express-oauth2-jwt-bearer": "^1.11.0"
+  }
+}
