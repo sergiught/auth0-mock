@@ -1,0 +1,11 @@
+/* Accents taken from the cyan in docs/assets/banner.webp. */
+:root {
+  --sl-color-accent-low: #052f46;
+  --sl-color-accent: #1a8fc0;
+  --sl-color-accent-high: #5ed5f8;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d6f1fb;
+  --sl-color-accent: #0a7aa8;
+  --sl-color-accent-high: #052f46;
+}

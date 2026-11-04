@@ -45,6 +45,12 @@
       "groupName": "docker base images"
     },
     {
+      "description": "Group docs-site npm updates into one PR. Starlight and its plugins share transitive dependencies and must move together.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["docs/site/**"],
+      "groupName": "docs site npm"
+    },
+    {
       "description": "Major bumps always get their own PR for human review",
       "matchUpdateTypes": ["major"],
       "labels": ["dependencies", "major-bump"],

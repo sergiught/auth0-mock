@@ -333,3 +333,7 @@ demo-sdk: build ## Run the pkg/auth0mock SDK + go-auth0 round-trip against a thr
 .PHONY: test-examples
 test-examples: build ## Run the curl/Node/Python quickstart examples against a throwaway mock
 	@examples/run-all.sh
+
+.PHONY: docs-site
+docs-site: ## Build the Starlight docs site into docs/site/dist
+	@cd docs/site && npm ci && npm run build
