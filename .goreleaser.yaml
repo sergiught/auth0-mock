@@ -258,7 +258,7 @@ docker_manifests:
 #   cosign verify \
 #     --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#     ghcr.io/sergiught/auth0-mock:vX.Y.Z
+#     ghcr.io/sergiught/auth0-mock:X.Y.Z
 docker_signs:
   - cmd: cosign
     artifacts: manifests

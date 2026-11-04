@@ -133,7 +133,7 @@ docker compose logs -f auth0-mock
 
 > **Changed:** the mock now refuses to listen on `0.0.0.0` (as it does inside Docker) unless `ADMIN_ALLOW_REMOTE=true`. `.env.example` sets it for the compose stack; add `-e ADMIN_ALLOW_REMOTE=true` to `docker run`, and add it to an existing `.env`.
 
-`docker compose` builds from the local dev `Dockerfile` (Go toolchain + source) for fast `--build` iteration. The release pipeline uses a separate slim `Dockerfile.release` (binary-only, fed by goreleaser) — `ghcr.io/sergiught/auth0-mock:vX.Y.Z` and `docker.io/sergiught/auth0-mock:vX.Y.Z` are what hits Docker Hub.
+`docker compose` builds from the local dev `Dockerfile` (Go toolchain + source) for fast `--build` iteration. The release pipeline uses a separate slim `Dockerfile.release` (binary-only, fed by goreleaser) — `ghcr.io/sergiught/auth0-mock:X.Y.Z` and `docker.io/sergiught/auth0-mock:X.Y.Z` are what hits Docker Hub.
 
 ### Smoke test
 
@@ -508,13 +508,13 @@ The godog harness boots the service in-process on a random port and exercises ev
 
 Every tagged release ships with a Cosign signature on each Docker image and an SPDX-JSON SBOM per release archive. Both are produced by GitHub-hosted CI and uploaded as part of the same workflow that publishes the binaries.
 
-**Verify a Docker image** (keyless signing — no shared secret required). Replace `vX.Y.Z` with the tag you want to verify, e.g. `v0.227.0`:
+**Verify a Docker image** (keyless signing — no shared secret required). Replace `X.Y.Z` with the tag you want to verify, e.g. `0.227.0`:
 
 ```bash
 cosign verify \
   --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/sergiught/auth0-mock:vX.Y.Z
+  ghcr.io/sergiught/auth0-mock:X.Y.Z
 ```
 
 > [!NOTE]
