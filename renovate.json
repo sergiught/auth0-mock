@@ -6,15 +6,6 @@
     ":semanticCommitTypeAll(chore)",
     ":enableVulnerabilityAlertsWithLabel(security)"
   ],
-  "ignorePaths": [
-    "**/node_modules/**",
-    "**/bower_components/**",
-    "**/vendor/**",
-    "**/__tests__/**",
-    "**/test/**",
-    "**/tests/**",
-    "**/__fixtures__/**"
-  ],
   "schedule": ["before 6am on monday"],
   "timezone": "Europe/Madrid",
   "rangeStrategy": "bump",
@@ -46,12 +37,6 @@
       "groupName": "github-actions",
       "pinDigests": true,
       "automerge": false
-    },
-    {
-      "description": "Group quickstart example dependencies into one PR",
-      "matchFileNames": ["examples/node/**", "examples/python/**"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "quickstart examples"
     },
     {
       "description": "Docker base image updates run on their own cadence",
