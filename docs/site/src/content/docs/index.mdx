@@ -13,3 +13,82 @@ hero:
       icon: external
       variant: minimal
 ---
+
+import { Card, CardGrid, Tabs, TabItem, LinkCard } from '@astrojs/starlight/components';
+
+A self-contained Go service that looks and behaves like Auth0 to a calling client.
+
+<CardGrid>
+  <Card title="Mints real RS256 JWTs" icon="approve-check">
+    Signed with an in-process key, and the matching JWKS is published at `/.well-known/jwks.json`. Consumer SDKs validate signatures normally — no `InsecureSkipVerify`, no fake-token kludges.
+  </Card>
+  <Card title="Covers the whole Management API" icon="puzzle">
+    It embeds a stripped skeleton of Auth0's OpenAPI 3.1 document (~480 operations: paths, methods, and schemas; Auth0's prose removed) and routes every endpoint through one generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`, and the OpenAPI schema validates the stubbed body at registration time. An optional `request` matcher lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier).
+  </Card>
+  <Card title="Shapes runtime state over HTTP" icon="setting">
+    Custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
+  </Card>
+  <Card title="Ships as a single static binary" icon="rocket">
+    About 13 MB, or a small Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
+  </Card>
+</CardGrid>
+
+## Who is this for?
+
+Anyone whose service talks to Auth0 in tests or local dev:
+
+<CardGrid>
+  <Card title="CI pipelines" icon="random">
+    Deterministic Auth0 responses without burning rate limit on a real tenant.
+  </Card>
+  <Card title="Local dev loops" icon="laptop">
+    You don't want to share an Auth0 tenant or wait on its latency.
+  </Card>
+  <Card title="Integration test suites" icon="seti:checkbox">
+    For Auth0 SPA / native / API SDKs (auth0-react, auth0-js, auth0-spa-js, auth0-android, auth0-swift, auth0-react-native, etc.).
+  </Card>
+  <Card title="Resilience tests" icon="warning">
+    For code paths that hit `/api/v2/users`, `/api/v2/clients`, `/api/v2/roles`, etc.
+  </Card>
+  <Card title="Service-to-service" icon="forward-slash">
+    Flows using `client_credentials`, with realistic scopes and `permissions` claim shapes.
+  </Card>
+</CardGrid>
+
+It is not for: production traffic, replacing your IdP, or anything that needs a real RBAC engine.
+
+## Install
+
+<Tabs>
+  <TabItem label="Release">
+```bash
+# latest stable
+curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash
+
+# pinned version
+curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.227.0
+
+# install to a user-writable dir (no sudo)
+BIN_DIR="$HOME/.local/bin" bash <(curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh)
+```
+  </TabItem>
+  <TabItem label="Docker">
+```bash
+docker compose up -d --build
+docker compose logs -f auth0-mock
+```
+  </TabItem>
+  <TabItem label="go install">
+```bash
+go install github.com/sergiught/auth0-mock/cmd/api@latest
+$(go env GOPATH)/bin/api -version    # installs as `api`, not `auth0-mock`
+```
+  </TabItem>
+</Tabs>
+
+## Next steps
+
+<LinkCard title="Installation" description="All the ways to install and run the mock." href="/auth0-mock/getting-started/installation/" />
+<LinkCard title="curl quickstart" description="Call the mock with plain curl." href="/auth0-mock/quickstarts/http/" />
+<LinkCard title="Node.js quickstart" description="Test a Node API and a Management API client." href="/auth0-mock/quickstarts/node/" />
+<LinkCard title="Python quickstart" description="Test a Python API and a Management API client." href="/auth0-mock/quickstarts/python/" />
