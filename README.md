@@ -157,6 +157,14 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 
 Your code calls auth0-mock the same way it calls Auth0. No SDK shims, no monkey-patching.
 
+### Quickstarts
+
+Step-by-step guides, each backed by an example that CI runs against a mock built from source.
+
+| Language | Guide | Example |
+|---|---|---|
+| curl | [`docs/quickstarts/http.md`](docs/quickstarts/http.md) | [`examples/http/`](examples/http/quickstart.sh) |
+
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 📮 Calling the API from Postman or Insomnia
@@ -661,6 +669,7 @@ PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code styl
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Everyone | Community standards and enforcement |
 | [`CHANGELOG.md`](CHANGELOG.md) | Everyone | What changed between versions |
 | [`examples/consumer/README.md`](examples/consumer/README.md) | Test authors | Worked end-to-end example |
+| [`docs/quickstarts/`](docs/quickstarts/) | Test authors | Copy-paste quickstarts per language |
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
