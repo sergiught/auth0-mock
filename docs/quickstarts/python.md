@@ -6,35 +6,41 @@ Test a Python API and a Management API client against the mock, using `PyJWT` an
 
 ```bash
 mkdir -p .auth0-mock
-docker run -d --name auth0-mock --user "$(id -u):$(id -g)" \
+docker run -d --rm --name auth0-mock --user "$(id -u):$(id -g)" \
   -p 127.0.0.1:8443:8443 -p 127.0.0.1:8080:8080 \
   -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/tls -v "$PWD/.auth0-mock:/tls" \
   ghcr.io/sergiught/auth0-mock:latest
-until curl -sf -o /dev/null --cacert .auth0-mock/tls.crt https://localhost:8443/healthz; do sleep 0.5; done
+until [ -s .auth0-mock/tls.crt ] && curl -sf -o /dev/null --cacert .auth0-mock/tls.crt https://localhost:8443/healthz; do sleep 0.5; done
 ```
 
 The `--user` flag lets the container write the certificate into your `.auth0-mock/` folder.
 Run `mkdir -p .auth0-mock` first, otherwise Docker creates the folder as root and the mock cannot write to it.
+If the loop never finishes, check `docker logs auth0-mock`.
+Add `.auth0-mock/` to your own `.gitignore`: it holds the mock's private key.
 
 ## Different port
 
-If you map a different host port (for example `-p 127.0.0.1:9443:8443`), also set `-e ISSUER_URL=https://localhost:9443/` and `AUTH0_MOCK_URL=https://localhost:9443/`. Otherwise the `iss` claim in tokens will not match the URL you call.
+If you map a different host port (for example `-p 127.0.0.1:9443:8443`), also set `-e ISSUER_URL=https://localhost:9443/` and `AUTH0_MOCK_URL=https://localhost:9443/`. Otherwise the `iss` claim in tokens will not match the URL you call. Use that port in the commands below too.
 
 ## Trust its certificate
 
-The mock serves HTTPS with a self-signed certificate. Tell Python to trust it:
+The mock serves HTTPS with a self-signed certificate. Run `uv sync` / `pip install` first, then tell Python to trust it:
 
 ```bash
-export SSL_CERT_FILE=.auth0-mock/tls.crt
+export SSL_CERT_FILE="$PWD/.auth0-mock/tls.crt"
 ```
 
 Without it, the first call to the mock fails with `CERTIFICATE_VERIFY_FAILED` (`self-signed certificate`).
 
-`SSL_CERT_FILE` replaces Python's trust store instead of adding to it, so other HTTPS calls in the same process (and tools like `uv` or `pip`) fail while it is set. If your tests also call real HTTPS services, build a combined bundle and point `SSL_CERT_FILE` at that instead:
+Install first because `SSL_CERT_FILE` replaces Python's trust store instead of adding to it, so other HTTPS calls in the same process (and tools like `uv` or `pip`) fail while it is set.
+
+If your code calls the mock through `requests`, also set `REQUESTS_CA_BUNDLE` to the same file, because `requests` ignores `SSL_CERT_FILE`.
+
+If your tests also call real HTTPS services, build a combined bundle and point `SSL_CERT_FILE` at that instead. Run this in the test environment, since `certifi` comes in with `auth0-python`:
 
 ```bash
-cat "$(python -m certifi)" .auth0-mock/tls.crt > bundle.pem
-export SSL_CERT_FILE=bundle.pem
+cat "$(uv run python -m certifi)" .auth0-mock/tls.crt > bundle.pem
+export SSL_CERT_FILE="$PWD/bundle.pem"
 ```
 
 ## Your API checks tokens
@@ -61,7 +67,23 @@ def verify_token(token, *, issuer, audience):
     )
 ```
 
-Failures raise `jwt.PyJWTError` subclasses such as `jwt.InvalidAudienceError`. The tests get a token from the mock with `mint_token` in [`examples/python/conftest.py`](../../examples/python/conftest.py):
+Failures raise `jwt.PyJWTError` subclasses such as `jwt.InvalidAudienceError`. The tests share fixtures in [`examples/python/conftest.py`](../../examples/python/conftest.py). The top of the file reads the mock's URL:
+
+```python
+import json
+import os
+import urllib.request
+from urllib.parse import urljoin
+
+import pytest
+
+
+@pytest.fixture
+def mock_url():
+    return os.environ.get("AUTH0_MOCK_URL", "https://localhost:8443/")
+```
+
+The tests get a token from the mock with `mint_token`:
 
 ```python
 @pytest.fixture
@@ -130,7 +152,7 @@ def stub(mock_url):
     return add
 ```
 
-Then call it through `ManagementClient` ([`examples/python/test_management.py`](../../examples/python/test_management.py)):
+Then call it through `ManagementClient` ([`examples/python/test_management.py`](../../examples/python/test_management.py)). The client fetches its own token from the mock using the client ID and secret:
 
 ```python
 from urllib.parse import urlparse
@@ -138,7 +160,7 @@ from urllib.parse import urlparse
 from auth0.management import ManagementClient
 
 
-def test_management_client_reads_stubbed_user(mock_url, stub):
+def test_sdk_reads_stubbed_user(mock_url, stub):
     stub(
         {
             "method": "GET",
@@ -163,7 +185,7 @@ def test_management_client_reads_stubbed_user(mock_url, stub):
 
 ## Run the example
 
-Install the dependencies once, then run the tests. CI does the same with `make test-examples`.
+From a clone of this repo: install the dependencies once, then run the tests. CI does the same with `make test-examples`.
 
 ```bash
 cd examples/python
@@ -174,6 +196,14 @@ SSL_CERT_FILE=../../.auth0-mock/tls.crt uv run --locked pytest
 Without `uv`, install `pyjwt[crypto]`, `auth0-python` and `pytest` into a virtual environment and run `SSL_CERT_FILE=../../.auth0-mock/tls.crt pytest`.
 
 The full files are in [`examples/python/`](../../examples/python/).
+
+## Stop the mock
+
+```bash
+docker stop auth0-mock
+```
+
+With `--rm` this also removes the container.
 
 ## Other languages
 

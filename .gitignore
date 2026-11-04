@@ -63,3 +63,7 @@ build-errors.log
 # `make refresh-spec` and CONTRIBUTING.md.
 /api/*.raw.json
 cmd/api/godog-report.xml
+
+# Certificate cache and combined CA bundle from the quickstarts (hold a private key).
+/.auth0-mock/
+bundle.pem

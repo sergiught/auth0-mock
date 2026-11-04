@@ -6,6 +6,15 @@
     ":semanticCommitTypeAll(chore)",
     ":enableVulnerabilityAlertsWithLabel(security)"
   ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**"
+  ],
   "schedule": ["before 6am on monday"],
   "timezone": "Europe/Madrid",
   "rangeStrategy": "bump",
@@ -39,8 +48,8 @@
       "automerge": false
     },
     {
-      "description": "Group quickstart example dependencies one PR",
-      "matchFileNames": ["examples/node/**","examples/python/**"],
+      "description": "Group quickstart example dependencies into one PR",
+      "matchFileNames": ["examples/node/**", "examples/python/**"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "quickstart examples"
     },

@@ -31,6 +31,11 @@ echo "ok: token has aud=$aud sub=$sub"
 # 3. Stub a Management API response, then call it with the token.
 call -X POST "${URL}admin0/expectations" -H 'Content-Type: application/json' \
   -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@example.com"}}}' >/dev/null
-email=$(call "${URL}api/v2/users/auth0%7C123" -H "Authorization: Bearer ${token}" | jq -r .email)
+# The Management API token has no audience parameter, so it gets the default (${URL}api/v2/).
+mgmt_token=$(call -X POST "${URL}oauth/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=client_credentials&client_id=demo&client_secret=x' \
+  | jq -r .access_token)
+email=$(call "${URL}api/v2/users/auth0%7C123" -H "Authorization: Bearer ${mgmt_token}" | jq -r .email)
 [ "$email" = "alice@example.com" ] || fail "stubbed user email is '$email', expected 'alice@example.com'"
 echo "ok: stubbed user returned $email"
