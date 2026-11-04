@@ -20,6 +20,11 @@ LABEL org.opencontainers.image.url="https://github.com/sergiught/auth0-mock"
 # wget: docker-compose / orchestrator healthchecks against /healthz.
 RUN apk add --no-cache ca-certificates tini wget
 
+# TLS_CACHE_DIR=/data/tls needs a directory that UID 65534 can write. A named
+# volume mounted here copies this owner on first use; without it the volume
+# is root-owned and the mock can't save its cert.
+RUN mkdir -p /data/tls && chown 65534:65534 /data/tls
+
 COPY auth0-mock /usr/local/bin/auth0-mock
 
 # Ship the project license, NOTICE, and the bundled-dependency license texts

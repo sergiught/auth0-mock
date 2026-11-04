@@ -477,16 +477,19 @@ The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `T
 mkcert -install                                                # one-time per workstation
 mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
 
-docker run -e ADMIN_ALLOW_REMOTE=true -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
-  -v "$PWD:/certs" auth0-mock
+docker run --rm --user "$(id -u):$(id -g)" -p 127.0.0.1:8443:8443 -p 127.0.0.1:8080:8080 \
+  -e ADMIN_ALLOW_REMOTE=true -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
+  -v "$PWD:/certs" ghcr.io/sergiught/auth0-mock:latest
 ```
+
+`mkcert` makes `tls.key` readable only by you. `--user` runs the container as you so it can read the key.
 
 ### 2. `TLS_CACHE_DIR` (recommended for `docker compose` without mkcert)
 
 Pick a path; the mock writes its auto-generated cert there on first boot and reuses it on subsequent restarts. Trust the cert once and trust persists:
 
 ```bash
-docker compose run --rm -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
+docker compose run --rm --service-ports -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
   -v auth0-mock-tls:/data/tls auth0-mock
 ```
 

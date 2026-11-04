@@ -466,9 +466,9 @@ For local dev, use [`mkcert`](https://github.com/FiloSottile/mkcert):
 mkcert -install                                                  # one-time
 mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
 
-docker run -p 8443:8443 -e ADMIN_ALLOW_REMOTE=true \
+docker run --rm --user "$(id -u):$(id -g)" -p 127.0.0.1:8443:8443 -e ADMIN_ALLOW_REMOTE=true \
   -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
-  -v "$PWD:/certs" auth0-mock
+  -v "$PWD:/certs" ghcr.io/sergiught/auth0-mock:latest   # --user: mkcert's key is owner-only
 
 curl https://localhost:8443/.well-known/openid-configuration   # no -k needed
 ```
