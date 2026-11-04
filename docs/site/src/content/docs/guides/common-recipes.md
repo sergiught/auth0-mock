@@ -5,7 +5,7 @@ sidebar:
   order: 9
 ---
 
-→ See [`docs/COOKBOOK.md`](/auth0-mock/guides/stubbing/) for full recipes. Highlights:
+→ See the [stubbing guide](/auth0-mock/guides/stubbing/) for full recipes. Highlights:
 
 ```bash
 # Inject a custom claim into every token

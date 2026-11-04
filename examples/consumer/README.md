@@ -146,7 +146,7 @@ this for you.
 
 For real deployments (CI, shared dev clusters), prefer trusting the
 cert via the OS trust store; see the
-[TLS section of the repo README](../../README.md#-https--tls).
+[HTTPS / TLS guide](https://sergiu.dev/auth0-mock/guides/https-tls/).
 
 ## Flags
 

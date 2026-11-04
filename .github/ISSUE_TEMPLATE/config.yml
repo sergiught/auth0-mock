@@ -1,13 +1,13 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 📖 README
-    url: https://github.com/sergiught/auth0-mock/blob/main/README.md
+  - name: 📖 Docs
+    url: https://sergiu.dev/auth0-mock/
     about: Quickstart, supported endpoints, environment variables, and TLS setup.
   - name: 🧑‍🍳 Cookbook
-    url: https://github.com/sergiught/auth0-mock/blob/main/docs/COOKBOOK.md
+    url: https://sergiu.dev/auth0-mock/guides/stubbing/
     about: Recipes for claim injection, RBAC setup, MFA testing, trusting the TLS cert, and SDK integration.
   - name: 🏛️ Architecture
-    url: https://github.com/sergiught/auth0-mock/blob/main/docs/ARCHITECTURE.md
+    url: https://sergiu.dev/auth0-mock/reference/architecture/
     about: Handler architecture, dependency injection, and request flow if you want to contribute or extend the mock.
   - name: 💬 Discussions
     url: https://github.com/sergiught/auth0-mock/discussions

@@ -12,7 +12,7 @@ The mock serves HTTPS with a self-signed cert by default; this guide covers trus
 The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). TLS behaviour is the same on macOS and Linux, but the cert is self-signed, so clients reject it unless told otherwise. Three options:
 
 :::caution
-**macOS gotcha:** Go on macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR` (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](/auth0-mock/guides/https-tls/#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
+**macOS gotcha:** Go on macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR` (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [Trusting the self-signed cert](/auth0-mock/guides/https-tls/#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
 :::
 
 ### 1. `mkcert` (recommended for local dev)
@@ -49,7 +49,7 @@ curl -k https://localhost:8443/.well-known/openid-configuration
 # Go: &tls.Config{InsecureSkipVerify: true}
 ```
 
-To install the mock's cert into your OS trust store (after option 2 so it's stable across boots), see [`docs/COOKBOOK.md`](/auth0-mock/guides/https-tls/#trusting-the-self-signed-cert).
+To install the mock's cert into your OS trust store (after option 2 so it's stable across boots), see [Trusting the self-signed cert](/auth0-mock/guides/https-tls/#trusting-the-self-signed-cert).
 
 ## Run against HTTPS with a trusted cert
 

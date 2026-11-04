@@ -87,7 +87,7 @@ The container is configured via environment variables. The most common ones:
 | `IDLE_TIMEOUT`  | `120s`                                 | `http.Server.IdleTimeout` — keep-alive cap      |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB)             | Per-request body cap; oversize requests get a 400 |
 
-The full list lives in the [repository README](https://github.com/sergiught/auth0-mock#-configuration).
+The full list lives in the [configuration reference](https://sergiu.dev/auth0-mock/reference/configuration/).
 
 ## Disclaimer
 
@@ -99,7 +99,7 @@ to describe what this project mocks.
 ## More
 
 - **Source & issues:** <https://github.com/sergiught/auth0-mock>
-- **Architecture deep-dive:** <https://github.com/sergiught/auth0-mock/blob/main/docs/ARCHITECTURE.md>
-- **Recipes (claim injection, RBAC, MFA, TLS trusting, SDK integration):** <https://github.com/sergiught/auth0-mock/blob/main/docs/COOKBOOK.md>
+- **Architecture deep-dive:** <https://sergiu.dev/auth0-mock/reference/architecture/>
+- **Recipes (claim injection, RBAC, MFA, TLS trusting, SDK integration):** <https://sergiu.dev/auth0-mock/guides/stubbing/>
 - **Working SDK example:** <https://github.com/sergiught/auth0-mock/tree/main/examples/consumer>
 - **License:** MIT (see [`LICENSE`](https://github.com/sergiught/auth0-mock/blob/main/LICENSE) and [`NOTICE`](https://github.com/sergiught/auth0-mock/blob/main/NOTICE))

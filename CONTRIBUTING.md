@@ -34,7 +34,7 @@ auth0-mock/
 
 `internal/` is private to the module. Every handler is a struct holding its dependencies as fields and implementing `ServeHTTP`. JSON responses go through `go-chi/render`. Errors go through `internal/httperr` (Mgmt-shape vs Auth-shape).
 
-For the canonical deep-dive, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+For the canonical deep-dive, see [Architecture](https://sergiu.dev/auth0-mock/reference/architecture/) (source: `docs/site/src/content/docs/reference/architecture.md`).
 
 ## 🔧 Local setup
 
@@ -128,7 +128,7 @@ Standard Go formatting plus a few specific conventions:
 - JSON responses use `render.JSON(w, r, body)`. Use `render.Status(r, code)` before `render.JSON` for non-200.
 - Error responses use `httperr.WriteMgmt(...)` for `/api/v2/*` and `/admin0/*`, `httperr.WriteAuth(...)` for `/oauth/*`, `/authorize`, `/dbconnections/*`, `/passwordless/*`.
 - Each new package gets a one-paragraph doc comment on its `package` line explaining its purpose.
-- New env vars are added to `internal/config/config.go` AND `.env.example` AND the README's Configuration table.
+- New env vars are added to `internal/config/config.go` AND `.env.example` AND the Configuration page (`docs/site/src/content/docs/reference/configuration.md`).
 
 ### Commit messages
 
@@ -186,14 +186,14 @@ If you need to **change the generic handler's behaviour** (e.g. inject latency, 
 
 ### A new test recipe
 
-If your work surfaces a recipe other users will want (e.g. "how do I test refresh-token rotation"), add a section to [`docs/COOKBOOK.md`](docs/COOKBOOK.md).
+If your work surfaces a recipe other users will want (e.g. "how do I test refresh-token rotation"), add a section to the matching guide under [`docs/site/src/content/docs/guides/`](docs/site/src/content/docs/guides/).
 
 ## 🚦 PR workflow
 
 1. Open an issue first for anything non-trivial, saves rework if the maintainers think differently about the design.
 2. Branch from `main`. One coherent change per PR; smaller is better.
 3. **Don't hand-edit `CHANGELOG.md`** — release-please owns it. Just write a conventional-commit subject and body that explains the *why*; the next Release PR derives entries from those automatically.
-4. If you add a new env var, endpoint, or grant: update **README** and **`docs/ARCHITECTURE.md`** alongside the code.
+4. If you add a new env var, endpoint, or grant: update the docs site (**`docs/site/src/content/docs/`**) alongside the code.
 5. CI must pass: `make lint`, `make test`, `make test-features`, `make vuln`, and `make lint-commits` on PR commits.
 6. Squash-merge is the default. Keep the commit subject conventional-commit shaped.
 
