@@ -28,6 +28,11 @@ LABEL org.opencontainers.image.source="https://github.com/sergiught/auth0-mock"
 # a separate probe binary (~250 KB extra).
 RUN apk add --no-cache ca-certificates tini wget
 
+# TLS_CACHE_DIR=/data/tls needs a directory that UID 65534 can write. A named
+# volume mounted here copies this owner on first use; without it the volume
+# is root-owned and the mock can't save its cert.
+RUN mkdir -p /data/tls && chown 65534:65534 /data/tls
+
 COPY --from=build /out/auth0-mock /usr/local/bin/auth0-mock
 
 EXPOSE 8080 8443
