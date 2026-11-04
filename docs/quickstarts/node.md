@@ -40,9 +40,14 @@ export function createApp({ issuerBaseURL, audience }) {
   app.get("/private", auth({ issuerBaseURL, audience }), (req, res) => {
     res.json({ sub: req.auth.payload.sub });
   });
+  app.use((err, req, res, next) => {
+    res.status(err.status ?? 500).json({ error: err.code ?? "server_error" });
+  });
   return app;
 }
 ```
+
+The error handler turns the library's errors (which carry a `status`) into a JSON response without logging a stack trace.
 
 The tests get a token from the mock with `mintToken` in [`examples/node/mock.mjs`](../../examples/node/mock.mjs):
 
@@ -65,11 +70,21 @@ export async function mintToken(audience) {
 }
 ```
 
-Point the API at the mock and check both a good and a wrong audience ([`examples/node/api.test.mjs`](../../examples/node/api.test.mjs)):
+Point the API at the mock and check the good, missing and wrong-audience cases ([`examples/node/api.test.mjs`](../../examples/node/api.test.mjs)):
 
 ```js
 const AUDIENCE = "https://my-api.example.com";
-const app = createApp({ issuerBaseURL: MOCK_URL, audience: AUDIENCE });
+let server;
+let base;
+
+before(async () => {
+  const app = createApp({ issuerBaseURL: MOCK_URL, audience: AUDIENCE });
+  server = app.listen(0);
+  await new Promise((resolve) => server.once("listening", resolve));
+  base = `http://localhost:${server.address().port}`;
+});
+
+after(() => server.close());
 
 test("token from the mock is accepted", async () => {
   const token = await mintToken(AUDIENCE);
@@ -80,7 +95,12 @@ test("token from the mock is accepted", async () => {
   assert.equal((await res.json()).sub, "demo@clients");
 });
 
-test("token for another audience is rejected", async () => {
+test("missing token is rejected", async () => {
+  const res = await fetch(`${base}/private`);
+  assert.equal(res.status, 401);
+});
+
+test("token for another API is rejected", async () => {
   const token = await mintToken("https://other.example.com");
   const res = await fetch(`${base}/private`, {
     headers: { Authorization: `Bearer ${token}` },

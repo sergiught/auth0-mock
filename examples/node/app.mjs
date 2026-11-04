@@ -6,5 +6,8 @@ export function createApp({ issuerBaseURL, audience }) {
   app.get("/private", auth({ issuerBaseURL, audience }), (req, res) => {
     res.json({ sub: req.auth.payload.sub });
   });
+  app.use((err, req, res, next) => {
+    res.status(err.status ?? 500).json({ error: err.code ?? "server_error" });
+  });
   return app;
 }

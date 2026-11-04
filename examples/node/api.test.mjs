@@ -25,7 +25,12 @@ test("token from the mock is accepted", async () => {
   assert.equal((await res.json()).sub, "demo@clients");
 });
 
-test("token for another audience is rejected", async () => {
+test("missing token is rejected", async () => {
+  const res = await fetch(`${base}/private`);
+  assert.equal(res.status, 401);
+});
+
+test("token for another API is rejected", async () => {
   const token = await mintToken("https://other.example.com");
   const res = await fetch(`${base}/private`, {
     headers: { Authorization: `Bearer ${token}` },
