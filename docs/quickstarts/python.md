@@ -36,10 +36,10 @@ Install first because `SSL_CERT_FILE` replaces Python's trust store instead of a
 
 If your code calls the mock through `requests`, also set `REQUESTS_CA_BUNDLE` to the same file, because `requests` ignores `SSL_CERT_FILE`.
 
-If your tests also call real HTTPS services, build a combined bundle and point `SSL_CERT_FILE` at that instead. Run this in the test environment, since `certifi` comes in with `auth0-python`:
+If your tests also call real HTTPS services, build a combined bundle and point `SSL_CERT_FILE` at that instead. `certifi` comes in with `auth0-python`, so ask the example's environment for it. In your own project, drop `--project examples/python`:
 
 ```bash
-cat "$(uv run python -m certifi)" .auth0-mock/tls.crt > bundle.pem
+cat "$(uv run --project examples/python --no-sync python -m certifi)" .auth0-mock/tls.crt > bundle.pem
 export SSL_CERT_FILE="$PWD/bundle.pem"
 ```
 
@@ -185,11 +185,11 @@ def test_sdk_reads_stubbed_user(mock_url, stub):
 
 ## Run the example
 
-From a clone of this repo: install the dependencies once, then run the tests. CI does the same with `make test-examples`.
+From a clone of this repo: install the dependencies once, then run the tests. `env -u SSL_CERT_FILE` keeps an exported mock certificate away from `uv sync`. CI does the same with `make test-examples`.
 
 ```bash
 cd examples/python
-uv sync --locked
+env -u SSL_CERT_FILE uv sync --locked
 SSL_CERT_FILE=../../.auth0-mock/tls.crt uv run --locked pytest
 ```
 

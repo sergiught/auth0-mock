@@ -48,4 +48,4 @@ echo "==> Node quickstart"
 
 echo "==> Python quickstart"
 # Sync before setting SSL_CERT_FILE: it replaces the trust store, uv included, so downloads would fail.
-(cd examples/python && uv sync --locked -q && SSL_CERT_FILE="$AUTH0_MOCK_CA" uv run --locked -q pytest -q)
+(cd examples/python && env -u SSL_CERT_FILE uv sync --locked -q && SSL_CERT_FILE="$AUTH0_MOCK_CA" uv run --locked -q pytest -q)
