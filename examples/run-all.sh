@@ -42,3 +42,6 @@ export AUTH0_MOCK_CA="$TLS_DIR/tls.crt"
 
 echo "==> curl quickstart"
 "$ROOT/examples/http/quickstart.sh"
+
+echo "==> Node quickstart"
+(cd examples/node && npm ci --no-audit --no-fund && NODE_EXTRA_CA_CERTS="$AUTH0_MOCK_CA" npm test)

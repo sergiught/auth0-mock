@@ -39,6 +39,12 @@
       "automerge": false
     },
     {
+      "description": "Group quickstart example dependencies one PR",
+      "matchFileNames": ["examples/node/**"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "quickstart examples"
+    },
+    {
       "description": "Docker base image updates run on their own cadence",
       "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
