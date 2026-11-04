@@ -1,0 +1,11 @@
+[project]
+name = "auth0-mock-python-example"
+version = "0"
+requires-python = ">=3.12"
+dependencies = ["pyjwt[crypto]", "auth0-python"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false

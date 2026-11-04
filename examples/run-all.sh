@@ -45,3 +45,7 @@ echo "==> curl quickstart"
 
 echo "==> Node quickstart"
 (cd examples/node && npm ci --no-audit --no-fund && NODE_EXTRA_CA_CERTS="$AUTH0_MOCK_CA" npm test)
+
+echo "==> Python quickstart"
+# Sync before setting SSL_CERT_FILE: it replaces the trust store, uv included, so downloads would fail.
+(cd examples/python && uv sync --locked -q && SSL_CERT_FILE="$AUTH0_MOCK_CA" uv run --locked -q pytest -q)

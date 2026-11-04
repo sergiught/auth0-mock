@@ -40,7 +40,7 @@
     },
     {
       "description": "Group quickstart example dependencies one PR",
-      "matchFileNames": ["examples/node/**"],
+      "matchFileNames": ["examples/node/**","examples/python/**"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "quickstart examples"
     },

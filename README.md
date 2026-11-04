@@ -165,6 +165,7 @@ Step-by-step guides, each backed by an example that CI runs against a mock built
 |---|---|---|
 | curl | [`docs/quickstarts/http.md`](docs/quickstarts/http.md) | [`examples/http/`](examples/http/quickstart.sh) |
 | Node.js | [`docs/quickstarts/node.md`](docs/quickstarts/node.md) | [`examples/node/`](examples/node/) |
+| Python | [`docs/quickstarts/python.md`](docs/quickstarts/python.md) | [`examples/python/`](examples/python/) |
 
 <p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
