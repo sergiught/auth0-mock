@@ -489,7 +489,8 @@ docker run --rm --user "$(id -u):$(id -g)" -p 127.0.0.1:8443:8443 -p 127.0.0.1:8
 Pick a path; the mock writes its auto-generated cert there on first boot and reuses it on subsequent restarts. Trust the cert once and trust persists:
 
 ```bash
-docker compose run --rm --service-ports -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
+docker compose run --rm -p 127.0.0.1:8443:8443 -p 127.0.0.1:8080:8080 \
+  -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
   -v auth0-mock-tls:/data/tls auth0-mock
 ```
 
