@@ -36,6 +36,11 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^requests are sent with Host "([^"]+)"$`, func(host string) error {
+		c.Host = host
+		return nil
+	})
+
 	sc.Step(`^I have a valid bearer token minted via Host "([^"]+)"$`, func(host string) error {
 		c.MintVia(host)
 		return nil

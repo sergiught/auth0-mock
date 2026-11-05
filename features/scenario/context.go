@@ -40,6 +40,7 @@ import (
 type Context struct {
 	t          *testing.T
 	BaseURL    string
+	Host       string // when set, every request carries this Host header
 	BearerTok  string
 	MFAToken   string // captured from a 403 mfa_required response.
 	RefreshTok string // captured from a token response.
@@ -67,10 +68,28 @@ var nonFollowingClient = &http.Client{
 // client returns the cookie-keeping client once "I keep cookies" ran, and the
 // shared cookieless nonFollowingClient otherwise.
 func (c *Context) client() *http.Client {
+	base := nonFollowingClient
 	if c.jarClient != nil {
-		return c.jarClient
+		base = c.jarClient
 	}
-	return nonFollowingClient
+	if c.Host == "" {
+		return base
+	}
+	clone := *base
+	clone.Transport = hostTransport{host: c.Host, next: http.DefaultTransport}
+	return &clone
+}
+
+// hostTransport sends every request with a fixed Host header.
+type hostTransport struct {
+	host string
+	next http.RoundTripper
+}
+
+func (h hostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Host = h.host
+	return h.next.RoundTrip(req)
 }
 
 // KeepCookies makes this scenario's later requests share one cookie jar.
@@ -106,8 +125,12 @@ func (c *Context) RestartWithIssuer(issuer string) {
 
 // shutdown stops the booted server and waits until it has fully stopped.
 func (c *Context) shutdown() {
+	if c.cancelBoot == nil {
+		return
+	}
 	c.cancelBoot()
 	<-c.bootDone
+	c.cancelBoot = nil
 }
 
 // boot starts the in-process server on a free port. issuerFor maps the
