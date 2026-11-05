@@ -10,6 +10,9 @@ import (
 
 // MintOpts controls a single token mint.
 type MintOpts struct {
+	// Issuer overrides the configured issuer. Empty means the configured one;
+	// it is an error when that is AutoIssuer.
+	Issuer   string
 	Subject  string
 	Audience []string
 	Scope    string
@@ -19,9 +22,13 @@ type MintOpts struct {
 
 // Mint issues a signed RS256 JWT.
 func (k *KeySet) Mint(opts MintOpts) (string, error) {
+	iss, err := k.issuer(opts.Issuer)
+	if err != nil {
+		return "", err
+	}
 	now := k.cfg.Now()
 	claims := jwt.MapClaims{
-		"iss": k.cfg.Issuer,
+		"iss": iss,
 		"sub": opts.Subject,
 		"aud": opts.Audience,
 		"iat": now.Unix(),
