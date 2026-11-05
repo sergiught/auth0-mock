@@ -111,6 +111,7 @@ Feature: ISSUER_URL=auto derives the issuer from the request address
   Scenario: A bearer minted at an address is accepted at that address
     Given the mock is running with ISSUER_URL "auto"
     And I have a valid bearer token minted via Host "other.test:1234"
-    When I send "GET /api/v2/users/auth0|123" with Host "other.test:1234" and a valid bearer
+    And requests are sent with Host "other.test:1234"
+    When I send "GET /api/v2/users/auth0|123" with a valid bearer
     Then I receive a 404 response
     And the response body contains "no_match"

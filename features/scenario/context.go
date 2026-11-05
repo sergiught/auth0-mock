@@ -80,7 +80,8 @@ func (c *Context) client() *http.Client {
 	return &clone
 }
 
-// hostTransport sends every request with a fixed Host header.
+// hostTransport sends requests with a fixed Host header unless the request
+// already carries its own (req.Host set and different from the URL host).
 type hostTransport struct {
 	host string
 	next http.RoundTripper
@@ -88,7 +89,9 @@ type hostTransport struct {
 
 func (h hostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
-	req.Host = h.host
+	if req.Host == "" || req.Host == req.URL.Host {
+		req.Host = h.host
+	}
 	return h.next.RoundTrip(req)
 }
 
