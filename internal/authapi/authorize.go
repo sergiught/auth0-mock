@@ -115,7 +115,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, ok := h.issue(w, u, mode, q, rt, state, subject, authTime)
+	params, ok := h.issue(w, r, u, mode, q, rt, state, subject, authTime)
 	if !ok {
 		return
 	}
@@ -128,7 +128,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // issue builds the success parameters: the code, any tokens, and state. It
 // delivers the error itself and returns false when minting fails.
-func (h *AuthorizeHandler) issue(w http.ResponseWriter, u *url.URL, mode string, q url.Values, rt responseTypes, state, subject string, authTime time.Time) (url.Values, bool) {
+func (h *AuthorizeHandler) issue(w http.ResponseWriter, r *http.Request, u *url.URL, mode string, q url.Values, rt responseTypes, state, subject string, authTime time.Time) (url.Values, bool) {
 	params := url.Values{}
 	var issuedCode string
 	if rt.code {
@@ -136,7 +136,7 @@ func (h *AuthorizeHandler) issue(w http.ResponseWriter, u *url.URL, mode string,
 		params.Set("code", issuedCode)
 	}
 	if rt.token || rt.idToken {
-		if !h.mintTokens(w, u, mode, q, rt, issuedCode, state, subject, authTime, params) {
+		if !h.mintTokens(w, r, u, mode, q, rt, issuedCode, state, subject, authTime, params) {
 			return nil, false
 		}
 	}
@@ -234,7 +234,7 @@ func validateResponseType(q url.Values, raw string, rt responseTypes, valid bool
 // mintTokens adds the access_token / id_token parameters for the requested
 // response types to params. It delivers a server_error and returns false when
 // minting fails.
-func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode string, q url.Values, rt responseTypes, issuedCode, state, subject string, authTime time.Time, params url.Values) bool {
+func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, r *http.Request, u *url.URL, mode string, q url.Values, rt responseTypes, issuedCode, state, subject string, authTime time.Time, params url.Values) bool {
 	fail := func(desc string) bool {
 		deliver(w, u, mode, errorParams("server_error", desc, state))
 		return false
@@ -248,7 +248,7 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode st
 	var access string
 	if rt.token {
 		var err error
-		access, err = h.accessToken(q, subject, clientID)
+		access, err = h.accessToken(r, q, subject, clientID)
 		if err != nil {
 			return fail(err.Error())
 		}
@@ -271,6 +271,7 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode st
 			idExtra["c_hash"] = tokenHash(issuedCode)
 		}
 		id, err := h.Token.Keys.Mint(jwks.MintOpts{
+			Issuer:   h.Token.Keys.IssuerFor(r),
 			Subject:  subject,
 			Audience: []string{clientID},
 			TTL:      cfg.IDTokenTTL,
@@ -289,13 +290,14 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, u *url.URL, mode st
 }
 
 // accessToken mints the access token for a response type that includes token.
-func (h *AuthorizeHandler) accessToken(q url.Values, subject, clientID string) (string, error) {
+func (h *AuthorizeHandler) accessToken(r *http.Request, q url.Values, subject, clientID string) (string, error) {
 	aud := h.Token.resolveAudience(q.Get("audience"))
 	params := make(map[string]any, len(q))
 	for k := range q {
 		params[k] = q.Get(k)
 	}
 	return h.Token.mintAccess(jwks.MintOpts{
+		Issuer:   h.Token.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    q.Get("scope"),

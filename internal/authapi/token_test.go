@@ -853,3 +853,26 @@ func TestParseTokenRequest_BasicAuth_Secrets(t *testing.T) {
 	assert.Equal(t, "bsecret", got.ClientSecret)
 	assert.Equal(t, "bsecret", got.Params["client_secret"])
 }
+
+func TestTokenAutoIssuer(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "auto", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "auto", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(),
+	})
+	body := `{"grant_type":"client_credentials","client_id":"abc","client_secret":"x","audience":"https://api/"}`
+	req := httptest.NewRequest("POST", "http://LocalHost:32768/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	claims, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{Issuer: "http://localhost:32768/"})
+	require.NoError(t, err)
+	assert.Equal(t, "http://localhost:32768/", claims.Issuer)
+}

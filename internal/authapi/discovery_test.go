@@ -76,3 +76,24 @@ func TestDiscovery_GrantTypesAreServed(t *testing.T) {
 		})
 	}
 }
+
+func TestDiscoveryAuto(t *testing.T) {
+	req := httptest.NewRequest("GET", "http://LocalHost:32768/.well-known/openid-configuration", nil)
+	w := httptest.NewRecorder()
+	NewDiscoveryHandler("auto").ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, "http://localhost:32768/", doc["issuer"])
+	assert.Equal(t, "http://localhost:32768/.well-known/jwks.json", doc["jwks_uri"])
+}
+
+func TestDiscoveryAutoTLS(t *testing.T) {
+	req := httptest.NewRequest("GET", "https://LocalHost:32768/.well-known/openid-configuration", nil)
+	w := httptest.NewRecorder()
+	NewDiscoveryHandler("auto").ServeHTTP(w, req)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, "https://localhost:32768/", doc["issuer"])
+	assert.Equal(t, "https://localhost:32768/.well-known/jwks.json", doc["jwks_uri"])
+}

@@ -179,6 +179,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
@@ -204,6 +205,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		"auth_time":      authTime.Unix(),
 	}, subject)
 	id, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
@@ -255,6 +257,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
@@ -275,6 +278,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 	idExtra["auth_time"] = authTime.Unix()
 	idExtra["connection"] = req.Realm
 	id, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
@@ -446,6 +450,7 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 		return
 	}
 	access, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  req.ClientID + "@clients",
 		Audience: []string{aud},
 		Scope:    req.Scope,
@@ -475,6 +480,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    req.Scope,
@@ -494,6 +500,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		"auth_time":      authTime.Unix(),
 	}, subject)
 	id, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
@@ -541,6 +548,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 		clientID = grant.ClientID
 	}
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  grant.Subject,
 		Audience: []string{aud},
 		Scope:    scope,
@@ -561,6 +569,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 		idExtra["connection"] = grant.Realm
 	}
 	id, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  grant.Subject,
 		Audience: []string{clientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
@@ -586,6 +595,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 // the mock did not issue: an access_token for "<client_id>@refresh".
 func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
@@ -637,6 +647,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	}
 	aud, scope := codeAudienceScope(entry, aud, req.Scope)
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    scope,
@@ -658,6 +669,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	}
 	idExtra["auth_time"] = authTime.Unix()
 	id, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
