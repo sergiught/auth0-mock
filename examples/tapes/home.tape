@@ -15,9 +15,9 @@ Set Padding 20
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
 
-# --- hidden setup: boot the freshly built mock on :8080 and wait for it ---
+# --- hidden setup: boot the freshly built mock, HTTP only on :8080, and wait for it ---
 Hide
-Type "./bin/auth0-mock > /tmp/auth0-mock-recording.log 2>&1 &" Enter
+Type "HTTPS_ADDR=off HTTP_ADDR=127.0.0.1:8080 ./bin/auth0-mock > /tmp/auth0-mock-recording.log 2>&1 &" Enter
 Type "until curl -s localhost:8080/healthz >/dev/null; do sleep 0.2; done" Enter
 Sleep 1s
 Type "clear" Enter

@@ -10,9 +10,29 @@ This page moved to <https://sergiu.dev/auth0-mock/reference/architecture/>.
 
 <https://sergiu.dev/auth0-mock/reference/architecture/#two-halves-two-strategies>
 
+### Authentication API: hand-coded, functional
+
+<https://sergiu.dev/auth0-mock/reference/architecture/#authentication-api-hand-coded-functional>
+
+### Management API: spec-driven, generic
+
+<https://sergiu.dev/auth0-mock/reference/architecture/#management-api-spec-driven-generic>
+
+### Why use a chi wildcard for paths?
+
+<https://sergiu.dev/auth0-mock/reference/architecture/#why-use-a-chi-wildcard-for-paths>
+
 ## OpenAPI export
 
 <https://sergiu.dev/auth0-mock/reference/architecture/#openapi-export>
+
+### The bundler
+
+<https://sergiu.dev/auth0-mock/reference/architecture/#the-bundler>
+
+### Serving it
+
+<https://sergiu.dev/auth0-mock/reference/architecture/#serving-it>
 
 ## State stores (all in-memory)
 
