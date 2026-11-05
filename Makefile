@@ -333,3 +333,16 @@ demo-sdk: build ## Run the pkg/auth0mock SDK + go-auth0 round-trip against a thr
 .PHONY: test-examples
 test-examples: build ## Run the curl/Node/Python quickstart examples against a throwaway mock
 	@examples/run-all.sh
+
+.PHONY: docs-site
+docs-site: ## Build the Starlight docs site into docs/site/dist
+	@cd docs/site && npm ci && npm run build
+
+.PHONY: recordings
+recordings: build ## Record the docs site home page demo from examples/tapes/home.tape (needs vhs, ttyd and a free :8080)
+	@command -v vhs >/dev/null 2>&1 || { echo "vhs not found, install charmbracelet/vhs and ttyd"; exit 1; }
+	@if command -v nc >/dev/null 2>&1 && nc -z -w 1 127.0.0.1 8080 >/dev/null 2>&1; then \
+		echo "==> ERROR: localhost:8080 is already in use. Stop the listener and re-run \`make recordings\`."; \
+		exit 1; \
+	fi
+	@vhs examples/tapes/home.tape

@@ -254,7 +254,7 @@ docker_manifests:
 # the non-pushed digest. GHCR is the canonical signed surface; adopters
 # pulling the docker.io mirror can verify the equivalent GHCR digest.
 #
-# Verify with (matches the regex shipped in README.md + docs/DOCKERHUB.md):
+# Verify with (matches the regex published at https://sergiu.dev/auth0-mock/reference/verifying-releases/ + docs/DOCKERHUB.md):
 #   cosign verify \
 #     --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \

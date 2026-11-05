@@ -8,8 +8,8 @@ body:
       value: |
         Thanks for taking the time to suggest an improvement!
 
-        Before filing, please skim the [README](https://github.com/sergiught/auth0-mock/blob/main/README.md)
-        and the [COOKBOOK](https://github.com/sergiught/auth0-mock/blob/main/docs/COOKBOOK.md) — the
+        Before filing, please skim the [docs](https://sergiu.dev/auth0-mock/)
+        and the [recipes](https://sergiu.dev/auth0-mock/guides/stubbing/) — the
         feature you want may already be supported via expectations, custom claims, or a config flag.
 
   - type: checkboxes

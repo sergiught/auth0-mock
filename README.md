@@ -8,7 +8,7 @@ A drop-in mock of Auth0's HTTP API (Authentication + Management) that you can po
 
 Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission injection. MFA, PKCE, OIDC discovery. HTTP and HTTPS.
 
-[Quick start](#-quick-start) · [What's mocked](#-whats-mocked) · [Recipes](docs/COOKBOOK.md) · [Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#-quick-start) · [What's mocked](https://sergiu.dev/auth0-mock/reference/whats-mocked/) · [Recipes](https://sergiu.dev/auth0-mock/guides/stubbing/) · [Architecture](https://sergiu.dev/auth0-mock/reference/architecture/) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -19,7 +19,7 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 [![Go Reference](https://pkg.go.dev/badge/github.com/sergiught/auth0-mock.svg)](https://pkg.go.dev/github.com/sergiught/auth0-mock)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sergiught/auth0-mock/badge)](https://securityscorecards.dev/viewer/?uri=github.com/sergiught/auth0-mock)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12966/badge)](https://www.bestpractices.dev/projects/12966)
-[![Signed releases](https://img.shields.io/badge/releases-cosign%20signed-0a7bbb)](#%EF%B8%8F-verifying-releases)
+[![Signed releases](https://img.shields.io/badge/releases-cosign%20signed-0a7bbb)](https://sergiu.dev/auth0-mock/reference/verifying-releases/)
 [![govulncheck](https://img.shields.io/badge/govulncheck-passing-2ca02c)](https://github.com/sergiught/auth0-mock/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/sergiught/auth0-mock?sort=semver)](https://github.com/sergiught/auth0-mock/releases)
 [![Go version](https://img.shields.io/github/go-mod/go-version/sergiught/auth0-mock)](go.mod)
@@ -29,29 +29,7 @@ Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission inj
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fa6673.svg)](https://www.conventionalcommits.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
----
-
-## 📑 Table of contents
-
-- [✨ What is this?](#-what-is-this)
-- [🎯 Who is this for?](#-who-is-this-for)
-- [🚀 Quick start](#-quick-start)
-- [📮 Calling the API from Postman or Insomnia](#-calling-the-api-from-postman-or-insomnia)
-- [📋 What's mocked](#-whats-mocked)
-- [💡 Common recipes](#-common-recipes)
-- [🛠 Configuration](#-configuration)
-- [🔒 HTTPS / TLS](#-https--tls)
-- [🧪 Testing the mock](#-testing-the-mock)
-- [🛡️ Verifying releases](#️-verifying-releases)
-- [🏗 Architecture](#-architecture)
-- [📂 Example consumer](#-example-consumer)
-- [🐹 Go SDK](#-go-sdk)
-- [🤝 Contributing](#-contributing)
-- [📖 Documentation map](#-documentation-map)
-- [⚖️ License](#️-license)
-- [⚠️ Disclaimer](#️-disclaimer)
-
----
+📖 **Docs:** https://sergiu.dev/auth0-mock/
 
 ## ✨ What is this?
 
@@ -61,8 +39,6 @@ A self-contained Go service that looks and behaves like Auth0 to a calling clien
 - 📦 **Covers the whole Management API** by embedding a stripped skeleton of Auth0's OpenAPI 3.1 document (~480 operations: paths, methods, and schemas; Auth0's prose removed) and routing every endpoint through one generic handler. You stub responses by POSTing `{method, path, response}` to `/admin0/expectations`, and the OpenAPI schema validates the stubbed body at registration time. An optional `request` matcher lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier).
 - 🛠 **Shapes runtime state over HTTP**: custom JWT claims, per-audience permissions, and the MFA-required flag are mutable mid-test through `/admin0/*` endpoints. No restart, no config-file juggling.
 - 🐳 **Ships as a single static binary** (~13 MB) or a small Docker image. Sub-second boot, both HTTP (`:8080`) and HTTPS (`:8443`) by default.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## 🎯 Who is this for?
 
@@ -76,66 +52,13 @@ Anyone whose service talks to Auth0 in tests or local dev:
 
 It is not for: production traffic, replacing your IdP, or anything that needs a real RBAC engine.
 
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
 ## 🚀 Quick start
 
-### From a release (recommended)
-
 ```bash
-# latest stable
-curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash
-
-# pinned version
-curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh | bash -s v0.227.0
-
-# install to a user-writable dir (no sudo)
-BIN_DIR="$HOME/.local/bin" bash <(curl -fsSL https://raw.githubusercontent.com/sergiught/auth0-mock/main/install.sh)
+docker run --rm -p 127.0.0.1:8080:8080 -e ADMIN_ALLOW_REMOTE=true ghcr.io/sergiught/auth0-mock:latest
 ```
 
-The script downloads the goreleaser-built archive, verifies its sha256 against
-the release's `checksums.txt`, and installs the binary as `auth0-mock`. Source
-is at [`install.sh`](install.sh) — review before piping to bash if that bothers you.
-
-### From source
-
-```bash
-make build && ./bin/auth0-mock
-```
-
-### Via `go install`
-
-```bash
-go install github.com/sergiught/auth0-mock/cmd/api@latest
-$(go env GOPATH)/bin/api -version    # installs as `api`, not `auth0-mock`
-```
-
-`install.sh` and `make build` are still the recommended paths because they
-stamp the binary with `version` / `commit` / `date` (visible via
-`auth0-mock -version`) and install it as `auth0-mock`. `go install` is here
-for Go developers who'd rather rebuild from source every time and don't
-mind the cmd-package naming.
-
-### Live-reload dev loop (`air`)
-
-Sub-second rebuild on every save under `cmd/` or `internal/`, no docker, no bind-mounts, no flakiness:
-
-```bash
-make watch     # installs air into ./bin on first run
-```
-
-### Docker
-
-```bash
-docker compose up -d --build
-docker compose logs -f auth0-mock
-```
-
-> **Changed:** the mock now refuses to listen on `0.0.0.0` (as it does inside Docker) unless `ADMIN_ALLOW_REMOTE=true`. `.env.example` sets it for the compose stack; add `-e ADMIN_ALLOW_REMOTE=true` to `docker run`, and add it to an existing `.env`.
-
-`docker compose` builds from the local dev `Dockerfile` (Go toolchain + source) for fast `--build` iteration. The release pipeline uses a separate slim `Dockerfile.release` (binary-only, fed by goreleaser) — `ghcr.io/sergiught/auth0-mock:X.Y.Z` and `docker.io/sergiught/auth0-mock:X.Y.Z` are what hits Docker Hub.
-
-### Smoke test
+Then, in another terminal:
 
 ```bash
 # 1. Mint a real signed access token
@@ -157,533 +80,38 @@ curl http://localhost:8080/api/v2/users/auth0%7C123 \
 
 Your code calls auth0-mock the same way it calls Auth0. No SDK shims, no monkey-patching.
 
-### Quickstarts
+## 📖 Documentation
 
-Step-by-step guides, each backed by an example that CI runs against a mock built from source.
+Full docs live at <https://sergiu.dev/auth0-mock/>.
 
-| Language | Guide | Example |
-|---|---|---|
-| curl | [`docs/quickstarts/http.md`](docs/quickstarts/http.md) | [`examples/http/quickstart.sh`](examples/http/quickstart.sh) |
-| Node.js | [`docs/quickstarts/node.md`](docs/quickstarts/node.md) | [`examples/node/`](examples/node/) |
-| Python | [`docs/quickstarts/python.md`](docs/quickstarts/python.md) | [`examples/python/`](examples/python/) |
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 📮 Calling the API from Postman or Insomnia
-
-> [!TIP]
-> **Prefer a browser?** Run the mock and open
-> [http://localhost:8080/docs](http://localhost:8080/docs) for an interactive
-> reference rendered by [Scalar](https://github.com/scalar/scalar). Every
-> endpoint is clickable, and "Try it" points at the same instance that served
-> the page.
-
-The mock ships a merged OpenAPI 3.1 document that covers every HTTP surface
-it exposes:
-
-- The Auth0 **Authentication API** (`/oauth/token`, `/authorize`,
-  `/userinfo`, `/v2/logout`, `/oidc/logout`, `/dbconnections/*`, `/passwordless/*`).
-- The Auth0 **Management API** (everything under `/api/v2`). Canned responses
-  are programmed centrally via `POST /admin0/expectations`.
-- The **admin0** control plane (`/admin0/*`).
-- The **service** endpoints (`/healthz`, `/.well-known/jwks.json`,
-  `/openapi.json`, `/openapi.yaml`).
-
-### Silent login
-
-A successful `/authorize` sets an `auth0` session cookie (`HttpOnly`,
-`Path=/`; `SameSite=Lax` over HTTP, `SameSite=None; Secure` over HTTPS).
-`prompt=none` then answers from that session, or returns `login_required`
-when there is none, and `response_mode=web_message` delivers the result with
-`postMessage`, so `getTokenSilently` works against the mock. `/v2/logout`,
-`/oidc/logout` and `/admin0/reset` end the session.
-
-Behaviour change for clients that keep cookies (browsers, cookie jars): a
-second `/authorize` without `login_hint` now returns the earlier user, not
-`auth0|mock-user`. Use `prompt=login` or a `login_hint` to pick a user.
-
-Also, `prompt=none` without a live session now returns `login_required`.
-Before, `/authorize` ignored `prompt`, so `prompt=none` always succeeded as
-`auth0|mock-user` (or the `login_hint` user). Log in first in the same cookie
-jar, or drop `prompt=none`, to get tokens.
-
-### Importing
-
-- **From the repo:** import `api/auth0-mock.openapi.json` directly.
-- **From a running instance:** point your client at
-  `http://localhost:8080/openapi.json` (or `/openapi.yaml`).
-
-Both Postman and Insomnia will create a folder per tag (`auth-api`,
-`admin0`, `service`, plus the Management API's existing tags) and
-fill in request bodies from the schemas.
-
-### Regenerating the spec
-
-The merged JSON is committed and checked for drift in CI. Re-run
-`make openapi` after editing any of the auth0-mock-authored fragments:
-
-- `internal/authapi/authapi.openapi.yaml`
-- `internal/admin0/admin0.openapi.yaml`
-- `internal/router/service.openapi.yaml`
-
-`api/auth0-management-api.openapi.json` is a generated skeleton, not a
-hand-edited file. To pull in a newer Auth0 Management API spec, run
-`make refresh-spec` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 📋 What's mocked
-
-### 🎫 Authentication API (hand-coded, fully functional)
-
-Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_ALLOWED_ORIGINS`).
-
-| Endpoint | Method | Notes |
-|---|---|---|
-| `/oauth/token` | POST | All Auth0 grants (see table below) |
-| `/oauth/revoke` | POST | 200 no-op; revoked refresh tokens keep working |
-| `/authorize` | GET | 302 to `redirect_uri` (or 200 auto-submitting form for `response_mode=form_post`) with `code`, implicit tokens (`access_token`, `id_token`) or both for any `response_type` combination of `code` / `token` / `id_token` (fragment unless plain `code`), or an OAuth `error` (bad `code_challenge`, `unsupported_response_type`, `invalid_request` for a missing `client_id` on token types or a missing `nonce` with `id_token`, or an `/admin0/authorize-errors` rule); `prompt=none` answers from the `auth0` session cookie (or `login_required`), `response_mode=web_message` returns a 200 postMessage page; sets the session cookie on success; stashes PKCE challenge if present |
-| `/userinfo` | GET | Returns claims from the bearer (a JWT, or an opaque access token until it expires or `/admin0/reset`), plus the logged-in user's profile (from their last login; token claims win) |
-| `/v2/logout` | GET | 302 to `returnTo`; ends the login session and expires the `auth0` cookie |
-| `/oidc/logout` | GET, POST | OIDC logout (also ends the login session and expires the `auth0` cookie): checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
-| `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
-| `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer; lists only the grants, claims and auth methods the mock serves |
-| `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
-| `/dbconnections/change_password` | POST | Returns the canned reset-email message |
-| `/passwordless/start` | POST | Returns `{_id, email, phone_number}` |
-| `/passwordless/verify` | POST | Same as the passwordless grant on `/oauth/token` |
-
-### 🔑 OAuth grants supported
-
-| `grant_type` | Notes |
+| Page | What it covers |
 |---|---|
-| `client_credentials` | M2M flow, returns `access_token` only; 403 `access_denied` when there is no `audience` and `DEFAULT_AUDIENCE` is blank |
-| `password` | Returns access + id + refresh; gates on the MFA flag |
-| `refresh_token` | A refresh token the mock issued returns the same user: new `access_token` and `id_token` (same profile and `auth_time`) plus a new `refresh_token`; the old one keeps working. `audience`/`scope` default to the login's. Unknown tokens still work and get just a new `access_token` (subject `<client_id>@refresh`) |
-| `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `audience` and `scope` sent to `/authorize` win over the token request's; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |
-| `http://auth0.com/oauth/grant-type/password-realm` | Auth0 Native SDKs; same as password + `realm` field threaded into claims |
-| `http://auth0.com/oauth/grant-type/passwordless/otp` | Needs `client_id`, `username`, `otp=000000` and `realm` (`email` or `sms`); returns access + id + refresh for an Auth0-style user (`email\|…` / `sms\|…`, stable per username) with an email or phone profile; gates on the MFA flag |
-| `http://auth0.com/oauth/grant-type/mfa-otp` | Step 2 of MFA dance; accepts `otp=123456` |
-| `http://auth0.com/oauth/grant-type/mfa-oob` | Push/SMS step-up; accepts `binding_code=123456` |
-| `http://auth0.com/oauth/grant-type/mfa-recovery-code` | Recovery flow; accepts `recovery_code=ABCDEFGHIJKLMNOP` |
-
-Client credentials may also be sent via HTTP Basic (`client_secret_basic`); if both are sent, body values win.
-
-> [!IMPORTANT]
-> **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
-
-### 📦 Management API (spec-driven, ~480 endpoints)
-
-Every operation in the embedded Auth0 Management API skeleton is mounted. Default response is `404 no_match`. Tests register stubs:
-
-```bash
-# Concrete-id stub
-curl -X POST http://localhost:8080/admin0/expectations \
-  -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@x"}}}'
-
-# Template stub (catch-all for any user id)
-curl -X POST http://localhost:8080/admin0/expectations \
-  -H 'Content-Type: application/json' \
-  -d '{"method":"GET","path":"/api/v2/users/{id}","response":{"status":200,"body":{"user_id":"auth0|*","email":"any@x"}}}'
-```
-
-> [!NOTE]
-> Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`) lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier). `response.body` is validated against the operation's response schema at registration time. Invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
-
-### 📡 Event streams
-
-`GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>`, and the buffer fills in what they missed.
-
-```bash
-# In one terminal: subscribe (bearer required).
-TOKEN=$(curl -sX POST http://localhost:8080/oauth/token \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'grant_type=client_credentials&client_id=t&client_secret=t&audience=https://localhost:8443/api/v2/' \
-  | jq -r .access_token)
-curl -N -H "Authorization: Bearer $TOKEN" \
-     'http://localhost:8080/api/v2/events?event_type=user.created'
-
-# In another: push.
-curl -X POST http://localhost:8080/admin0/events \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "type":"user.created","offset":"0",
-    "event":{
-      "specversion":"1.0","type":"user.created","source":"https://auth0.local/",
-      "id":"evt_aaaaaaaaaaaaaaaa000000","time":"2026-05-19T00:00:00Z",
-      "a0tenant":"my-tenant","a0stream":"est_aaaaaaaaaaaaaaaa000000",
-      "data":{"object":{"user_id":"u-1","created_at":"2026-05-19T00:00:00Z","updated_at":"2026-05-19T00:00:00Z","identities":[]}}
-    }
-  }'
-```
-
-On connect the stream opens with a `:connected` readiness comment and a `retry:` reconnect hint (`3000` ms by default, configurable via `EVENTS_RECONNECT_HINT`) — matching Auth0's Events API. The subscriber then receives `id: 0 / event: user.created / data: {...}` — the SSE `id:` is the event's `offset` (the resume cursor you echo back via `Last-Event-ID` / `?from`), matching Auth0's Events API, not the CloudEvent `event.id`. Comment frames (`:keep-alive`) arrive every 15s so reverse-proxy idle timeouts don't drop the connection.
-
-Push an **error frame** (`{"type":"error","error":{"code":"cursor_expired",...}}`) to simulate an in-band stream error — useful for testing a consumer's reconnect / cursor-fallback paths. Matching Auth0, error frames are control signals: delivered to **every** subscriber regardless of `event_type` filter, never stored in the replay buffer (they carry no offset id, so they're never replayed), and the stream **closes** right after, which triggers the consumer's reconnect.
-
-Push an **offset-only marker** (`{"type":"offset-only","offset":"42"}`) to advance the cursor during idle without delivering an event. Also a control frame (reaches every subscriber regardless of filter), but unlike an error it carries an offset, so it **is** buffered and `from=42` is a valid resume point.
-
-Errors are deliberately specific: schema violations → `400 invalid_event` with a one-line `"/json/pointer": reason` list; unknown `?from_timestamp` → `400 invalid_from_timestamp`; a query string that won't unescape → `400 invalid_query` rather than a `200` that quietly dropped the parameter it choked on; an empty `?from` / `?event_type` / `Last-Event-ID` → `400 invalid_from` / `400 invalid_event_type` / `400 invalid_last_event_id` rather than a `200` that silently joins live or subscribes to nothing; aged-out `Last-Event-ID` → `410 event_aged_out` (matches the `410` in Auth0's OpenAPI), which is also the answer when replay is disabled entirely, since there is no buffer that could hold the cursor.
-
-To test how a consumer handles **unrecoverable cursor loss**, `POST /admin0/events/expire` ages out the replay buffer on demand, so the next reconnect presenting an expired cursor gets that `410 event_aged_out` — no need to push past `EVENTS_REPLAY_BUFFER` to force natural eviction. Pass `?before=<offset>` to expire only what is older than that cursor, leaving it and everything after it replayable, which models partial loss. It replies `{"expired":N}` with the number of cursors dropped; repeating a `?before` call is safe, since the boundary cursor survives its own expiry and the second call drops `0`. A cursor the buffer doesn't hold is `404 cursor_not_found` rather than a `200` that expired nothing, so a mistyped offset fails at the expire call instead of at the reconnect that then came back `200` where you asserted `410`. Unlike `/admin0/reset` it is scoped to the replay buffer: subscribers that are already streaming keep receiving events, and no other mock state is touched.
-
-```bash
-# Everything buffered so far is now unresumable.
-curl -X POST http://localhost:8080/admin0/events/expire
-# Or: keep offset 42 and newer, age out the rest.
-curl -X POST "http://localhost:8080/admin0/events/expire?before=42"
-```
-
-To set expectations and verify connection lifecycle, `GET /admin0/events/subscribers` reports `{"active":N,"total":M}` — `active` is how many subscribers are connected right now, `total` how many have connected since the last `/admin0/reset` (handy for asserting reconnection behaviour). `active` is eventually-consistent: the mock removes a subscriber only when it observes the connection close, which can lag a client's disconnect by a few milliseconds. So to assert "my stream closed cleanly", poll until `active` settles rather than reading it immediately:
-
-```bash
-# After closing the consumer, wait for the count to drain to 0.
-until [ "$(curl -s http://localhost:8080/admin0/events/subscribers | jq .active)" = 0 ]; do sleep 0.05; done
-```
-
-From Go tests, skip the hand-rolled loop: `c.Events.Subscribers(ctx)` returns the typed `{Active, Total}` counts, and `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until `active` settles (or fatals on timeout).
-
-> [!NOTE]
-> The mock's `WRITE_TIMEOUT` (default 30s) is automatically bypassed for `/api/v2/events` — long-lived subscribers won't be torn down by the server-side deadline. If a reverse proxy fronts the mock (nginx, Envoy, …), disable response buffering for this endpoint (`proxy_buffering off;` for nginx) so frames reach the client live rather than queuing in the proxy until the connection closes. `/api/v2/events` sends CORS headers like every other route, but the browser's native `EventSource` cannot send an `Authorization` header and the stream needs a bearer, so use a fetch-based SSE client from a browser.
-
-See [docs/COOKBOOK.md → Drive an event-stream consumer from a test](docs/COOKBOOK.md#drive-an-event-stream-consumer-from-a-test) for the SDK-driven workflow.
-
-### 🛠 Admin surface (no auth, JSON-driven)
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, authorize error rules, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
-| `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses; an optional `then` list answers successive calls in sequence ([cookbook](docs/COOKBOOK.md#test-retries-429-then-200)) |
-| `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
-| `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |
-| `/admin0/claims` | GET / PUT / DELETE | Custom claims merged into every minted JWT |
-| `/admin0/claims/mappings` | GET / PUT / DELETE | Request-parameter → claim projection: map a token-request body parameter (form or JSON) to a claim name and `/oauth/token` stamps that parameter's value into the minted access token — per request, overriding `/admin0/claims` for that key. Allowlist semantics; empty map (default) = off. Independent store: `DELETE /admin0/claims` doesn't touch it |
-| `/admin0/authorize-errors` | POST / GET / DELETE | Make /authorize fail on purpose: rules with an optional match on /authorize query params return an OAuth error to redirect_uri; newest match wins; DELETE /admin0/authorize-errors/{id} removes one |
-| `/admin0/permissions` | GET / DELETE | All audiences and their permissions |
-| `/admin0/permissions/{audience}` | GET / PUT / DELETE | Per-audience RBAC injection (audience may be a URL, chi wildcard) |
-| `/admin0/mfa-required` | GET / PUT | Toggle MFA enforcement at runtime |
-| `/admin0/clock` | GET / PUT / DELETE | Freeze the clock at an instant (`{"now":"..."}`), set an offset (`{"offset":"25h"}`), or restore real time. Drives JWT `iat`/`exp` and bearer validation. |
-| `/admin0/clock/advance` | POST | Step the held clock by a Go duration (`{"by":"25h"}`). Negative durations allowed. |
-| `/admin0/events` | POST | Push an Auth0 event-stream envelope onto `GET /api/v2/events` so consumer SDKs see it live. Body is the full envelope `{type, offset, event:{...CloudEvent}}` — validated against the OpenAPI `text/event-stream` schema before fan-out. See [Event streams](#-event-streams). |
-| `/admin0/events/subscribers` | GET | Observe the SSE endpoint: `{"active":N,"total":M}` — subscribers connected right now, and total connected since the last `/admin0/reset`. See [Event streams](#-event-streams). |
-| `/admin0/events/expire` | POST | Age out replay cursors so a reconnect gets `410 event_aged_out`. `?before=<offset>` expires only what is older than that cursor. Leaves live subscribers and every other store alone. See [Event streams](#-event-streams). |
-
-> [!WARNING]
-> **`/admin0/*` is unauthenticated by design** so test setup needs zero token plumbing. Never expose it to an untrusted network. Bind the mock to `127.0.0.1` (the default), keep it inside your CI runner / dev container, or front it with your own auth if you must reach it across a network boundary. The mock won't start on an address other machines can reach unless `ADMIN_ALLOW_REMOTE=true`, and logs a warning when it does.
-
-### 🩺 Operations
-
-| Endpoint | Notes |
-|---|---|
-| `/healthz` | Kubernetes-style liveness probe — `200 {"status":"ok"}` if the process is up. No auth. |
-| `/readyz`  | Kubernetes-style readiness probe — `200 {"status":"ready"}` once the JWKS signing key is materialised. The mock's only init dependency (RSA keygen) is synchronous and runs before the listener accepts, so today this is functionally equivalent to `/healthz`; the endpoint is exposed for orchestrator-convention parity (liveness vs readiness probe separation) and to leave room if future init grows. No auth. |
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 💡 Common recipes
-
-→ See [`docs/COOKBOOK.md`](docs/COOKBOOK.md) for full recipes. Highlights:
-
-```bash
-# Inject a custom claim into every token
-curl -X PUT http://localhost:8080/admin0/claims \
-  -H 'Content-Type: application/json' \
-  -d '{"role":"admin","org_id":"o-42"}'
-
-# Project a token-request parameter into the minted claims (per request,
-# no global-state race): map it once, then every /oauth/token call that
-# carries `resource` mints it under the namespaced claim
-curl -X PUT http://localhost:8080/admin0/claims/mappings \
-  -H 'Content-Type: application/json' \
-  -d '{"resource":"https://example.com/resource"}'
-
-# Set RBAC for an audience (URL-form audience works thanks to chi wildcard)
-curl -X PUT http://localhost:8080/admin0/permissions/https://api.example.com/ \
-  -H 'Content-Type: application/json' \
-  -d '["read:users","write:users"]'
-
-# Force MFA on the next password grant
-curl -X PUT http://localhost:8080/admin0/mfa-required \
-  -H 'Content-Type: application/json' \
-  -d '{"required":true}'
-
-# Freeze the clock so token iat/exp are deterministic
-curl -X PUT http://localhost:8080/admin0/clock \
-  -H 'Content-Type: application/json' \
-  -d '{"now":"2030-01-01T00:00:00Z"}'
-
-# Advance 7 days to simulate token expiry without sleeping
-curl -X POST http://localhost:8080/admin0/clock/advance \
-  -H 'Content-Type: application/json' \
-  -d '{"by":"168h"}'
-
-# Reset everything between tests
-curl -X POST http://localhost:8080/admin0/reset
-```
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 🛠 Configuration
-
-Environment variables (see [`.env.example`](.env.example) for the full template):
-
-| Variable | Default | Notes |
-|---|---|---|
-| `HTTP_ADDR` | `127.0.0.1:8080` | The HTTP listener address. Set to `0.0.0.0:8080` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTPS-only, set this to `off`. |
-| `HTTPS_ADDR` | `127.0.0.1:8443` | The HTTPS listener address. Set to `0.0.0.0:8443` to accept LAN/container traffic (the Dockerfile already does); also set `ADMIN_ALLOW_REMOTE=true`. To run HTTP-only, set this to `off`. |
-| `ADMIN_ALLOW_REMOTE` | `false` | The mock refuses to start when `HTTP_ADDR` or `HTTPS_ADDR` can be reached from other machines (`0.0.0.0`, `::`, a LAN IP, a hostname other than `localhost`), because `/admin0` is unauthenticated. Set `true` to allow it; Docker needs this |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_ | If both set → load. Else → auto-generate (see TLS section) |
-| `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
-| `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
-| `SIGNING_KEY_FILE` | _empty_ | PEM-encoded RSA key. Otherwise a fresh RS256 key is generated each boot |
-| `ISSUER_URL` | `https://localhost:8443/` | `iss` claim and OIDC discovery base |
-| `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one; blank or whitespace means no default audience, as on a tenant without one: user logins then get opaque access tokens that only `/userinfo` accepts, and `client_credentials` without an `audience` gets 403 `access_denied` |
-| `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
-| `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |
-| `TOKEN_LEEWAY` | `0s` | Clock-skew grace on JWT exp, nbf and iat checks. `0s` means a token expires exactly when its lifetime ends; set e.g. `60s` for CI runners with skewed clocks |
-| `SPEC_VALIDATION_STRICT` | `true` | If `false`, runtime response re-check (defence in depth) logs but doesn't fail |
-| `LOG_LEVEL` | `info` | zerolog levels |
-| `DEBUG` | `false` | When `true`, every request and response is logged in full at INFO level: method, path, query, headers (Authorization / Cookie redacted), and body (truncated at 8 KiB). Off by default — turn on only while debugging an SDK trace; adds an allocation and a synchronous log write per request. |
-| `READ_HEADER_TIMEOUT` | `5s` | http.Server's `ReadHeaderTimeout` |
-| `WRITE_TIMEOUT` | `30s` | http.Server's `WriteTimeout`. Bounds slow-write attacks. **Doesn't apply to `/api/v2/events`** — the SSE handler clears the deadline per-connection so long-lived subscribers aren't torn down. |
-| `IDLE_TIMEOUT` | `120s` | http.Server's `IdleTimeout`. Bounds idle keep-alive connections. |
-| `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap. Anything larger is read up to this point and the handler surfaces a 400. Set to `0` to disable. |
-| `EVENTS_REPLAY_BUFFER` | `100` | Cap of the `/api/v2/events` SSE replay ring buffer. Reconnecting subscribers can resume from `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>` up to this many events back. `<= 0` disables replay (the endpoint still works; resume params become no-ops). |
-| `REQUEST_JOURNAL_SIZE` | `1000` | Cap of the in-memory request journal behind `/admin0/journal` (oldest entries are evicted). `<= 0` disables recording: the endpoints return `{"entries":[]}`. The `; closest stub differed on …` hint on `no_match` 404s is unaffected. |
-| `EVENTS_RECONNECT_HINT` | `3s` | The SSE `retry:` reconnect-delay hint sent to `/api/v2/events` subscribers on connect (mirrors Auth0). Clients wait this long before reconnecting after a disconnect. `0` omits the hint, so clients use their built-in default. |
-| `SHUTDOWN_TIMEOUT` | `5s` | Graceful-shutdown grace period |
-| `LOGOUT_ALLOWED_URLS` | _empty_ | Comma-separated allow-list of absolute URLs that `/v2/logout` (`returnTo`) and `/oidc/logout` (`post_logout_redirect_uri`) will 302 to. Empty (default) = no enforcement so SDK tests calling `/v2/logout?returnTo=https://…` work out of the box. When set, mirrors Auth0's tenant "Allowed Logout URLs" setting: relative URLs are always allowed, unlisted absolutes get 400, dangerous schemes (`javascript:`, `data:`, …) and backslash bypasses are rejected. Set in production-like fixtures. |
-| `AUTHORIZE_ALLOWED_CALLBACKS` | _empty_ | Comma-separated allow-list of absolute `redirect_uri` values that `/authorize` will 302 to. Same threat model as `LOGOUT_ALLOWED_URLS` but on the higher-value endpoint: `/authorize` carries `code` / `access_token` in the URL, so an unvalidated `redirect_uri` leaks them. Empty (default) = no enforcement so test SDKs can register any callback; set in production-like fixtures. Mirrors Auth0's per-application "Allowed Callback URLs" setting. |
-| `CORS_ALLOWED_ORIGINS` | _empty_ | Comma-separated allow-list of browser origins that get CORS headers. Empty (default) = any origin, so a browser app can call the mock with no setup. Entries are exact origins (`http://localhost:3000`) or `https://*.example.com` (matches exactly one subdomain level; scheme and port must match). `*` = any origin. Unlisted origins get no CORS headers and their preflights get 403. Default ports (`:443`/`:80`) are normalised; userinfo and empty ports are rejected. Invalid entries fail startup. Mirrors Auth0's per-application "Allowed Web Origins" / "Allowed Origins (CORS)" settings. |
-| `BEARER_REQUIRE_AUDIENCE` | _empty_ | When set, the Mgmt-API bearer middleware rejects tokens whose `aud` claim doesn't contain this value (mirrors Auth0's tenant-API-audience binding). Empty keeps the "echoed, not enforced" default so tests can swap audiences freely. |
-
-> **Changed:** tokens used to stay valid for 60 seconds past their lifetime. They now expire exactly on time, so moving `/admin0/clock` past the TTL gives a 401 at once. Set `TOKEN_LEEWAY=60s` for the old behaviour.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 🔒 HTTPS / TLS
-
-The auto-generated cert covers `localhost`, `127.0.0.1`, `::1` (override with `TLS_HOSTNAMES`). TLS behaviour is the same on macOS and Linux, but the cert is self-signed, so clients reject it unless told otherwise. Three options:
-
-> [!WARNING]
-> **macOS gotcha:** Go on macOS pulls trust roots from the system Security framework and ignores `SSL_CERT_FILE` / `SSL_CERT_DIR` (Linux Go honors them). The Linux `SSL_CERT_FILE=./tls.crt go run …` trick simply doesn't work on macOS. On macOS, trust the cert via `mkcert` (option 1 below, easiest), or import it into the keychain (`security add-trusted-cert …`, recipe in [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert)), or build a custom `tls.Config{RootCAs: pool}` in your client code.
-
-### 1. `mkcert` (recommended for local dev)
-
-[`mkcert`](https://github.com/FiloSottile/mkcert) installs a local CA into your platform's trust store and signs certs with it. Browsers, Go, and `curl` accept the result without flags:
-
-```bash
-mkcert -install                                                # one-time per workstation
-mkcert -cert-file tls.crt -key-file tls.key localhost 127.0.0.1 ::1
-
-docker run --rm --user "$(id -u):$(id -g)" -p 127.0.0.1:8443:8443 -p 127.0.0.1:8080:8080 \
-  -e ADMIN_ALLOW_REMOTE=true -e TLS_CERT_FILE=/certs/tls.crt -e TLS_KEY_FILE=/certs/tls.key \
-  -v "$PWD:/certs" ghcr.io/sergiught/auth0-mock:latest
-```
-
-`mkcert` makes `tls.key` readable only by you. `--user` runs the container as you so it can read the key.
-
-### 2. `TLS_CACHE_DIR` (recommended for `docker compose` without mkcert)
-
-Pick a path; the mock writes its auto-generated cert there on first boot and reuses it on subsequent restarts. Trust the cert once and trust persists:
-
-```bash
-docker compose run --rm -p 127.0.0.1:8443:8443 -p 127.0.0.1:8080:8080 \
-  -e ADMIN_ALLOW_REMOTE=true -e TLS_CACHE_DIR=/data/tls \
-  -v auth0-mock-tls:/data/tls auth0-mock
-```
-
-### 3. Skip verification
-
-Fine for ephemeral tests, ugly for anything else:
-
-```bash
-curl -k https://localhost:8443/.well-known/openid-configuration
-# Go: &tls.Config{InsecureSkipVerify: true}
-```
-
-To install the mock's cert into your OS trust store (after option 2 so it's stable across boots), see [`docs/COOKBOOK.md`](docs/COOKBOOK.md#trusting-the-self-signed-cert).
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 🧪 Testing the mock
-
-```bash
-go test -race ./...                        # unit tests
-go test -tags=features ./cmd/api/...       # godog acceptance suite (every endpoint, end-to-end)
-```
-
-The godog harness boots the service in-process on a random port and exercises every Auth API path, every admin endpoint, and the spec-driven Management API surface. See [`features/`](features/) for the gherkin and [`features/scenario/`](features/scenario/) for the harness.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 🛡️ Verifying releases
-
-Every tagged release ships with a Cosign signature on each Docker image and an SPDX-JSON SBOM per release archive. Both are produced by GitHub-hosted CI and uploaded as part of the same workflow that publishes the binaries.
-
-**Verify a Docker image** (keyless signing — no shared secret required). Replace `X.Y.Z` with the tag you want to verify, e.g. `0.227.0`:
-
-```bash
-cosign verify \
-  --certificate-identity-regexp 'https://github.com/sergiught/auth0-mock/\.github/workflows/release\.yml@.+' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/sergiught/auth0-mock:X.Y.Z
-```
-
-> [!NOTE]
-> Only the `ghcr.io/...` tag is cosign-signed by the release workflow. The `docker.io/sergiught/...` mirror is a publish-only convenience; verify the equivalent GHCR digest if you need attestation.
-
-A successful verification proves the image was built by *this* repo's release workflow at *that* tag — not a CDN-substituted copy.
-
-**Find an SBOM:** every release on the [GitHub Releases page](https://github.com/sergiught/auth0-mock/releases) carries an `auth0-mock_<version>_<os>_<arch>.tar.gz.spdx.json` alongside each archive. Pass it to your SBOM scanner of choice (Snyk, FOSSA, Black Duck, `grype`, etc.).
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 🏗 Architecture
-
-→ Full deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-At-a-glance:
-
-```
-chi router
-  ├── recovery + request_id + logging       (always-on middleware)
-  ├── /healthz                               liveness
-  ├── /openapi.json /openapi.yaml            merged OpenAPI 3.1 spec
-  ├── /docs                                  Scalar-rendered API reference
-  ├── /admin0/{reset, expectations, claims, claims/mappings, permissions/*, mfa-required}
-  │                                          control plane (no auth)
-  ├── /.well-known/{jwks.json, openid-configuration}
-  ├── /oauth/* /authorize /userinfo /v2/logout /oidc/logout
-  │   /dbconnections/* /passwordless/*
-  │                                          Auth API (hand-coded, functional)
-  └── /api/v2/*                              Management API (spec-driven; one generic handler)
-        /api/v2/.../{verb}                   ← bearer-enforced; stubs via /admin0/expectations
-```
-
-Every handler is a struct holding its dependencies as fields, implementing `http.Handler` via `ServeHTTP`. JSON responses go through `go-chi/render`.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 📂 Example consumer
-
-[`examples/consumer/`](examples/consumer/) is a stand-alone Go program that proves the drop-in compatibility end to end: mints a token, verifies its signature against `/.well-known/jwks.json` using the standard `MicahParks/keyfunc` + `golang-jwt/jwt` libraries (NOT the mock's internals), registers a Management API stub, and calls the stubbed endpoint.
-
-```bash
-make demo                # builds the mock, runs the example end-to-end over HTTPS, cleans up
-```
-
-Under the hood, `make demo` boots the binary with a persisted self-signed cert, waits for `/healthz`, runs `examples/consumer` against it, and tears the mock down on exit. To run by hand instead:
-
-```bash
-go run ./cmd/api &
-go run ./examples/consumer
-```
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 🐹 Go SDK
-
-[`pkg/auth0mock`](pkg/auth0mock) is the typed Go client for the `/admin0/*` control plane. Use it from Go test code to register stubs, inject claims, set per-audience permissions, and toggle MFA — without hand-marshalling JSON.
-
-```go
-import (
-    "testing"
-
-    "github.com/sergiught/auth0-mock/pkg/auth0mock"
-    "github.com/sergiught/auth0-mock/pkg/auth0mock/auth0mocktest"
-)
-
-func TestUserLookup(t *testing.T) {
-    // /admin0 listens on HTTP (8080) by default — no TLS dance needed.
-    // For HTTPS (8443) pair with `auth0mock.WithHTTPClient(tlsClient)`,
-    // see examples/sdk for the pattern.
-    c, err := auth0mock.NewClient("http://localhost:8080")
-    if err != nil {
-        t.Fatal(err)
-    }
-    // Reset on entry + exit, Verify all constraints at exit, in the
-    // correct LIFO order. One line replaces two and removes the
-    // "constraint silently dropped" footgun that comes from getting
-    // the cleanup order wrong.
-    auth0mocktest.Bracket(t, c)
-
-    // Register a stub and demand it's hit exactly once.
-    reg := auth0mocktest.MustApply(t, c.ExpectGet("/api/v2/users/auth0|alice").
-        Respond(200).
-        JSON(map[string]any{"user_id": "auth0|alice", "email": "alice@example.com"}))
-    reg.Times(1)
-
-    // ... your code under test calls the mock the same way it calls Auth0 ...
-}
-```
-
-What's covered:
-
-| Resource | Read | Write | Wipe | Verify |
-|---|---|---|---|---|
-| `Expectations` | `List` | `Add`, fluent `ExpectGet/Post/Put/Patch/Delete(...).Respond(...).JSON(...).Then(...).Apply(ctx)` | `Clear`, `ClearOp(method, path)` | `Verify(ctx)`; per-stub: `Hits(ctx)`, `Times(n)`, `AtLeast(n)`, `AtMost(n)`, `AnyTimes()` |
-| `Claims` | `Get` | `Set` | `Clear` | — |
-| `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
-| `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
-| `AuthorizeErrors` | `List` | `Add` | `Clear`, `Delete(id)` | — |
-| `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
-| `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | `ExpireEvents` / `ExpireEventsBefore(ctx, cursor)` age out replay cursors so a resume gets `410 event_aged_out`; top-level `Reset` drains subscribers + replay buffer | — |
-| `Journal` | `List(ctx, JournalFilter)`, `Unmatched(ctx, JournalFilter)`; `auth0mocktest.MustFindCall(t, c, method, path)` returns the newest matching call | — | `Clear` | — |
-| top-level | — | — | `Reset` — wipes every store (including the clock back to real mode) | `auth0mocktest.Bracket(t, c)` — recommended one-liner: pre-test reset + post-test Reset + post-test Verify, all in correct LIFO order |
-
-`Apply(ctx)` and `Expectations.Add(ctx, ...)` return a `*RegisteredExpectation` handle — chain `.Times(n)` / `.AtLeast(n)` / `.AtMost(n)` on it to set hit-count constraints, then `MustVerify` (or `Verify(ctx)` for the error-returning variant) checks every constraint at test end. Discard the handle with `_ = …Apply(ctx)` if you don't need it.
-
-**Which helper?** Use `auth0mocktest.Bracket(t, c)` for every test that wants hit-count assertions — one line wires Reset on entry, Reset on exit, and Verify on exit in the correct LIFO order. Use `auth0mocktest.ResetOnCleanup(t, c)` when you only want isolation (no Times/AtLeast/AtMost constraints anywhere in the test).
-
-**When a stub doesn't match,** the mock returns `{"errorCode":"no_match"}` with HTTP 404 to the SUT, and the 404 `message` names the fields where the closest stub differed. `c.Journal.Unmatched(ctx, auth0mock.JournalFilter{})` gives the full near misses (each stub's differing fields with wanted and received values), and `Verify` prints them automatically under any stub that was hit too few times. To assert on what the SUT actually sent, use `auth0mocktest.MustFindCall(t, c, "PATCH", "/api/v2/users/123")`; if nothing matches, it lists the recent calls of that method.
-
-What's NOT covered: the Auth0 APIs themselves (`/oauth/*`, `/api/v2/*`) — point your existing Auth0 SDK at the mock for those. The SDK only wraps the test-fixture-shaping surface.
-
-A runnable end-to-end walk-through lives at [`examples/sdk/`](examples/sdk/) — its own Go module (with a local-path `replace` so the example doubles as a copy-and-pin template). The example drives stubs registered through this SDK with the real [`go-auth0`](https://github.com/auth0/go-auth0) SDK end-to-end (token mint → typed Management API call → Verify the stub was hit). Defaults to `https://localhost:8443` because go-auth0 only speaks TLS.
-
-```bash
-make demo-sdk                                      # full setup: mock + TLS cert + run + teardown
-# or, against an already-running mock:
-cd examples/sdk && go run . -cert=/path/to/tls.crt # full chain verification
-cd examples/sdk && go run .                        # InsecureSkipVerify fallback (demo only)
-```
-
-Full godoc: [pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock](https://pkg.go.dev/github.com/sergiught/auth0-mock/pkg/auth0mock).
-
-> [!NOTE]
-> The SDK's API is **unstable until v1.0.0**. Pin a tagged version (`go get github.com/sergiught/auth0-mock@v0.227.0` or later) and treat any minor bump as potentially breaking.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+| [Installation](https://sergiu.dev/auth0-mock/getting-started/installation/) | Install and run auth0-mock from a release, from source, with go install, in a live-reload loop or in Docker. |
+| [First request](https://sergiu.dev/auth0-mock/getting-started/first-request/) | Mint a token, stub a Management API response and call it, using only curl. |
+| [curl quickstart](https://sergiu.dev/auth0-mock/quickstarts/http/) | Call the mock with plain curl, from starting it to calling a stubbed endpoint. |
+| [Node.js quickstart](https://sergiu.dev/auth0-mock/quickstarts/node/) | Test a Node API and a Management API client against the mock with express-oauth2-jwt-bearer and the auth0 SDK. |
+| [Python quickstart](https://sergiu.dev/auth0-mock/quickstarts/python/) | Test a Python API and a Management API client against the mock with PyJWT and the auth0-python SDK. |
+| [Stubbing the Management API](https://sergiu.dev/auth0-mock/guides/stubbing/) | Stub Management API responses, errors and retries, and reset or inspect what is registered. |
+| [Tokens and claims](https://sergiu.dev/auth0-mock/guides/tokens-and-claims/) | Test code that reads permissions or custom claims, and test token expiry without sleeping. |
+| [Login flows](https://sergiu.dev/auth0-mock/guides/login-flows/) | Test PKCE, login errors, silent login, MFA challenges and the password-realm grant. |
+| [Event streams](https://sergiu.dev/auth0-mock/guides/event-streams/) | Drive an event-stream consumer from a test. |
+| [HTTPS / TLS](https://sergiu.dev/auth0-mock/guides/https-tls/) | Run auth0-mock over HTTPS and make clients trust its self-signed certificate. |
+| [Calling the API from Postman or Insomnia](https://sergiu.dev/auth0-mock/guides/postman/) | Import the merged OpenAPI document into Postman or Insomnia, and regenerate it after spec changes. |
+| [Browser apps](https://sergiu.dev/auth0-mock/guides/browser-apps/) | Call the mock from a browser app. |
+| [Go SDK](https://sergiu.dev/auth0-mock/guides/go-sdk/) | Use the typed Go client and test helpers to drive auth0-mock from Go tests. |
+| [Common recipes](https://sergiu.dev/auth0-mock/guides/common-recipes/) | Short curl recipes for claims, permissions, MFA and the clock. |
+| [What's mocked](https://sergiu.dev/auth0-mock/reference/whats-mocked/) | What the mock implements: the Authentication API, supported OAuth grants, the Management API, event streams, the admin surface and operations endpoints. |
+| [Configuration](https://sergiu.dev/auth0-mock/reference/configuration/) | Every environment variable and flag that configures auth0-mock. |
+| [Verifying releases](https://sergiu.dev/auth0-mock/reference/verifying-releases/) | Verify the Cosign signature on Docker images and find the SBOM for each release. |
+| [Architecture](https://sergiu.dev/auth0-mock/reference/architecture/) | A walkthrough of how auth0-mock is put together, for contributors and curious users. |
 
 ## 🤝 Contributing
 
-PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code style, testing requirements, and how to add a new endpoint.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
-
-## 📖 Documentation map
-
-| File | Audience | Purpose |
-|---|---|---|
-| [`README.md`](README.md) (this file) | Everyone | Overview, quick start, configuration |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Contributors / curious users | How the service is structured internally |
-| [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Test authors | Recipes for common test scenarios |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Dev setup, conventions, PR workflow |
-| [`SECURITY.md`](SECURITY.md) | Everyone | How to report a vulnerability |
-| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Everyone | Community standards and enforcement |
-| [`CHANGELOG.md`](CHANGELOG.md) | Everyone | What changed between versions |
-| [`examples/consumer/README.md`](examples/consumer/README.md) | Test authors | Worked end-to-end example |
-| [`docs/quickstarts/`](docs/quickstarts/) | Test authors | Copy-paste quickstarts per language |
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
+PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, code style, testing requirements, and how to add a new endpoint. Also see [`SECURITY.md`](SECURITY.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
 ## ⚖️ License
 
 [MIT](LICENSE).
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>
 
 ## ⚠️ Disclaimer
 
@@ -705,5 +133,3 @@ Auth0 does not attach an explicit redistribution license to the published spec.
 The deliberate stripping above is what lets us redistribute the structural shape
 for interoperability without redistributing Auth0's prose. If the distinction
 matters for your compliance review, confirm the terms with Auth0/Okta directly.
-
-<p align="right"><sub><a href="#-table-of-contents">↑ Back to table of contents</a></sub></p>

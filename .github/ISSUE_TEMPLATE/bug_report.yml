@@ -1,5 +1,5 @@
 name: 🐛 Report a bug
-description: The mock is returning unexpected responses, an endpoint is broken, or something is otherwise behaving differently than the README or COOKBOOK promises.
+description: The mock is returning unexpected responses, an endpoint is broken, or something is otherwise behaving differently than the docs promise.
 labels: ["bug"]
 
 body:
@@ -8,9 +8,9 @@ body:
     attributes:
       label: Checklist
       options:
-        - label: I have read the [README](https://github.com/sergiught/auth0-mock/blob/main/README.md) and have not found a suitable solution or answer.
+        - label: I have read the [docs](https://sergiu.dev/auth0-mock/) and have not found a suitable solution or answer.
           required: true
-        - label: I have read the [COOKBOOK](https://github.com/sergiught/auth0-mock/blob/main/docs/COOKBOOK.md) and have not found a suitable recipe.
+        - label: I have read the [recipes](https://sergiu.dev/auth0-mock/guides/stubbing/) and have not found a suitable recipe.
           required: true
         - label: I have searched the [issues](https://github.com/sergiught/auth0-mock/issues) and have not found a duplicate.
           required: true

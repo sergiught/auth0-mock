@@ -13,7 +13,8 @@ on:
   # takes .goreleaser.yaml from the branch you dispatch it on, so a packaging
   # fix can be applied to an already-cut release. Signing still runs from
   # release.yml, so the cosign certificate identity matches the one the
-  # verify instructions in .goreleaser.yaml and README.md expect.
+  # verify instructions in .goreleaser.yaml and
+  # https://sergiu.dev/auth0-mock/reference/verifying-releases/ expect.
   workflow_dispatch:
     inputs:
       tag:
