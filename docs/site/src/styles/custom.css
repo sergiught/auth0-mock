@@ -9,3 +9,9 @@
   --sl-color-accent: #0a7aa8;
   --sl-color-accent-high: #052f46;
 }
+
+.command-demo {
+  width: 100%;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+}
