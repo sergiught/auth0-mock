@@ -16,7 +16,7 @@ Environment variables (see [`.env.example`](https://github.com/sergiught/auth0-m
 | `TLS_CACHE_DIR` | _empty_ | If set, persist auto-gen cert to `<dir>/tls.{crt,key}` and reuse on restart |
 | `TLS_HOSTNAMES` | `localhost,127.0.0.1,::1` | SAN entries on the auto-generated cert |
 | `SIGNING_KEY_FILE` | _empty_ | PEM-encoded RSA key. Otherwise a fresh RS256 key is generated each boot |
-| `ISSUER_URL` | `https://localhost:8443/` | `iss` claim and OIDC discovery base |
+| `ISSUER_URL` | `https://localhost:8443/` | `iss` claim and OIDC discovery base. `auto` derives it from the request's address (scheme, host and port), so a token only verifies at the address it was minted at |
 | `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/` | Default `aud` if request doesn't supply one; blank or whitespace means no default audience, as on a tenant without one: user logins then get opaque access tokens that only `/userinfo` accepts, and `client_credentials` without an `audience` gets 403 `access_denied` |
 | `ACCESS_TOKEN_TTL` | `24h` | Minted access token lifetime |
 | `ID_TOKEN_TTL` | `24h` | Minted ID token lifetime |

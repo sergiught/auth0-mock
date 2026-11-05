@@ -31,6 +31,37 @@ func (p *jsonAssertPrinter) Errorf(format string, args ...any) {
 func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	sc.Step(`^the mock is running$`, func() error { return nil })
 
+	sc.Step(`^the mock is running with ISSUER_URL "([^"]+)"$`, func(issuer string) error {
+		c.RestartWithIssuer(issuer)
+		return nil
+	})
+
+	sc.Step(`^I have a valid bearer token minted via Host "([^"]+)"$`, func(host string) error {
+		c.MintVia(host)
+		return nil
+	})
+
+	sc.Step(`^I send "([^"]+)" with Host "([^"]+)" and a valid bearer$`, func(target, host string) error {
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		req, err := http.NewRequest(method, c.BaseURL+path, nil)
+		if err != nil {
+			return err
+		}
+		req.Host = host
+		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
+		resp, err := c.client().Do(req)
+		if err != nil {
+			return err
+		}
+		c.LastResp = resp
+		c.LastBody, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil
+	})
+
 	sc.Step(`^I have a valid bearer token$`, func() error {
 		c.MintBearer()
 		if c.BearerTok == "" {
@@ -329,6 +360,7 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		if err != nil {
 			return err
 		}
+		want = strings.ReplaceAll(want, "${BASE_URL}", c.BaseURL)
 		if got != want {
 			return fmt.Errorf("id_token claim %q = %q, want %q", claim, got, want)
 		}
@@ -371,6 +403,7 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		if err != nil {
 			return err
 		}
+		want = strings.ReplaceAll(want, "${BASE_URL}", c.BaseURL)
 		if got.String() != want {
 			return fmt.Errorf("claim %q: got %q, want %q", claim, got.String(), want)
 		}
@@ -431,6 +464,7 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		if err != nil {
 			return err
 		}
+		want = strings.ReplaceAll(want, "${BASE_URL}", c.BaseURL)
 		if got.String() != want {
 			return fmt.Errorf("id_token claim %q: got %q, want %q", claim, got.String(), want)
 		}
