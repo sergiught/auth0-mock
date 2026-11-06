@@ -20,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 func newAuthRouter(t *testing.T) (chi.Router, *jwks.KeySet) {
@@ -875,4 +876,34 @@ func TestTokenAutoIssuer(t *testing.T) {
 	claims, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{Issuer: "http://localhost:32768/"})
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:32768/", claims.Issuer)
+}
+
+func TestUserinfoAutoIssuerOpaqueToken(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "auto", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "auto", Sessions: session.NewStore(),
+		Log: zerolog.Nop(),
+	})
+	body := `{"grant_type":"password","client_id":"abc","username":"alice@example.com","password":"x","scope":"openid"}`
+	req := httptest.NewRequest("POST", "http://hosta.test:1111/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	userinfoAt := func(host string) int {
+		req := httptest.NewRequest("GET", "http://"+host+"/userinfo", nil)
+		req.Header.Set("Authorization", "Bearer "+resp.AccessToken)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	assert.Equal(t, http.StatusOK, userinfoAt("hosta.test:1111"))
+	assert.Equal(t, http.StatusUnauthorized, userinfoAt("hostb.test:2222"))
 }

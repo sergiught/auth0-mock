@@ -43,8 +43,8 @@ type Login struct {
 // Access is what the mock remembers about an opaque access token, issued when
 // there is no audience to mint a JWT for, so /userinfo can resolve it.
 type Access struct {
-	Subject, ClientID, Scope string
-	ExpiresAt                time.Time
+	Subject, ClientID, Scope, Issuer string
+	ExpiresAt                        time.Time
 }
 
 // Grant is what the mock remembers about a refresh token it issued, so the

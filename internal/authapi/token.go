@@ -438,6 +438,7 @@ func (h *TokenHandler) mintAccess(opts jwks.MintOpts, clientID string) (string, 
 	if h.Sessions != nil {
 		h.Sessions.RememberAccess(token, session.Access{
 			Subject: opts.Subject, ClientID: clientID, Scope: opts.Scope,
+			Issuer:    opts.Issuer,
 			ExpiresAt: h.Keys.Cfg().Now().Add(opts.TTL),
 		})
 	}
