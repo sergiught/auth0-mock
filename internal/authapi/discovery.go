@@ -17,7 +17,7 @@ import (
 // In auto mode (issuer == jwks.AutoIssuer) the document is built per request
 // from the address the request was sent to.
 type DiscoveryHandler struct {
-	doc  []byte // nil in auto mode
+	doc  []byte // Nil in auto mode.
 	auto bool
 }
 
