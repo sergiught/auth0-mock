@@ -48,7 +48,7 @@ func (h *OIDCLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	state := r.FormValue("state")
 
 	if hint != "" {
-		claims, err := h.Keys.Verify(hint, jwks.VerifyOpts{AllowExpired: true})
+		claims, err := h.Keys.Verify(hint, jwks.VerifyOpts{AllowExpired: true, Issuer: h.Keys.IssuerFor(r)})
 		if err != nil {
 			badLogout(w, "id_token_hint is not a valid id_token issued by this mock: "+err.Error())
 			return

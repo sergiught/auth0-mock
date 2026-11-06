@@ -5,18 +5,32 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/sergiught/auth0-mock/internal/jwks"
 )
 
 // DiscoveryHandler serves the OIDC discovery document. The document depends
 // only on the issuer (fixed at Mount time), so it is marshaled once in
 // NewDiscoveryHandler and every request just writes the cached bytes —
 // mirroring jwks.KeySet's precomputed JWKSJSON.
+//
+// In auto mode (issuer == jwks.AutoIssuer) the document is built per request
+// from the address the request was sent to.
 type DiscoveryHandler struct {
-	doc []byte
+	doc  []byte // Nil in auto mode.
+	auto bool
 }
 
 // NewDiscoveryHandler builds the OIDC discovery document for issuer once.
 func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
+	if issuer == jwks.AutoIssuer {
+		return &DiscoveryHandler{auto: true}
+	}
+	return &DiscoveryHandler{doc: discoveryDoc(issuer)}
+}
+
+// discoveryDoc marshals the discovery document for issuer.
+func discoveryDoc(issuer string) []byte {
 	base := strings.TrimSuffix(issuer, "/")
 	doc := map[string]any{
 		"issuer":                                issuer,
@@ -50,10 +64,14 @@ func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(true)
 	_ = enc.Encode(doc)
-	return &DiscoveryHandler{doc: buf.Bytes()}
+	return buf.Bytes()
 }
 
-func (h *DiscoveryHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+func (h *DiscoveryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	doc := h.doc
+	if h.auto {
+		doc = discoveryDoc(jwks.ResolveIssuer(jwks.AutoIssuer, r))
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(h.doc)
+	_, _ = w.Write(doc)
 }

@@ -207,3 +207,30 @@ func TestNewKeySet_NilNow_DefaultsToTimeNow(t *testing.T) {
 	}
 	assert.LessOrEqual(t, diff, int64(5))
 }
+
+func parseIss(t *testing.T, tok string) string {
+	t.Helper()
+	parsed, _, err := jwt.NewParser().ParseUnverified(tok, jwt.MapClaims{})
+	require.NoError(t, err)
+	iss, err := parsed.Claims.GetIssuer()
+	require.NoError(t, err)
+	return iss
+}
+
+func TestMintIssuerOverride(t *testing.T) {
+	ks := newTestKeySet(t)
+	tok, err := ks.Mint(MintOpts{Subject: "s", TTL: time.Hour, Issuer: "http://x:1/"})
+	require.NoError(t, err)
+	assert.Equal(t, "http://x:1/", parseIss(t, tok))
+
+	tok, err = ks.Mint(MintOpts{Subject: "s", TTL: time.Hour})
+	require.NoError(t, err)
+	assert.Equal(t, "https://mock/", parseIss(t, tok))
+}
+
+func TestMintAutoWithoutIssuerFails(t *testing.T) {
+	ks, err := NewKeySet(Config{Issuer: AutoIssuer, AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	_, err = ks.Mint(MintOpts{})
+	assert.ErrorIs(t, err, ErrIssuerUnresolved)
+}

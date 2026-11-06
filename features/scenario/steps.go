@@ -31,6 +31,21 @@ func (p *jsonAssertPrinter) Errorf(format string, args ...any) {
 func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	sc.Step(`^the mock is running$`, func() error { return nil })
 
+	sc.Step(`^the mock is running with ISSUER_URL "([^"]+)"$`, func(issuer string) error {
+		c.RestartWithIssuer(issuer)
+		return nil
+	})
+
+	sc.Step(`^requests are sent with Host "([^"]+)"$`, func(host string) error {
+		c.Host = host
+		return nil
+	})
+
+	sc.Step(`^I have a valid bearer token minted via Host "([^"]+)"$`, func(host string) error {
+		c.MintVia(host)
+		return nil
+	})
+
 	sc.Step(`^I have a valid bearer token$`, func() error {
 		c.MintBearer()
 		if c.BearerTok == "" {

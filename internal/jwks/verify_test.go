@@ -130,3 +130,27 @@ func TestVerify_IssuedInFutureNeedsLeeway(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyIssuerOverride(t *testing.T) {
+	ks := newTestKeySet(t)
+	for _, expired := range []bool{false, true} {
+		ttl := time.Hour
+		if expired {
+			ttl = -time.Hour
+		}
+		tok, err := ks.Mint(MintOpts{Subject: "s", Audience: []string{"a"}, TTL: ttl, Issuer: "http://a:1/"})
+		require.NoError(t, err)
+
+		_, err = ks.Verify(tok, VerifyOpts{Issuer: "http://a:1/", AllowExpired: expired})
+		require.NoError(t, err)
+		_, err = ks.Verify(tok, VerifyOpts{Issuer: "http://b:2/", AllowExpired: expired})
+		require.Error(t, err)
+	}
+}
+
+func TestVerifyAutoWithoutIssuerFails(t *testing.T) {
+	ks, err := NewKeySet(Config{Issuer: AutoIssuer, AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	_, err = ks.Verify("x.y.z", VerifyOpts{})
+	assert.ErrorIs(t, err, ErrIssuerUnresolved)
+}

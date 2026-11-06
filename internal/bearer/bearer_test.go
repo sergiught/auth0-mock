@@ -174,3 +174,23 @@ func TestMiddleware_NonBearerOrEmptyToken_MissingBearer(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "missing_bearer", hdr)
 	}
 }
+
+func TestMiddlewareAutoIssuer(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "auto", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	tok, err := ks.Mint(jwks.MintOpts{Subject: "u", TTL: time.Hour, Issuer: "http://h:1/"})
+	require.NoError(t, err)
+	h := Middleware(ks, "")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	for host, want := range map[string]int{"h:1": 200, "other:2": 401} {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = host
+		req.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		assert.Equal(t, want, w.Code, host)
+		if want == 401 {
+			assert.Contains(t, w.Body.String(), "invalid_bearer")
+		}
+	}
+}

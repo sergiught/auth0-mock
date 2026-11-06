@@ -30,11 +30,15 @@ type Claims struct {
 type VerifyOpts struct {
 	RequireAudience string
 	AllowExpired    bool
+	// Issuer is the expected issuer. Empty means the configured one; it is an
+	// error when that is AutoIssuer.
+	Issuer string
 }
 
 // Verify parses and validates a JWT against this KeySet.
-// Checks: signature, exp (required), iss == ks.Issuer, iat value (if
-// present, with Config.Leeway clock skew), nbf (if present, with skew), and
+// Checks: signature, exp (required), iss == the expected issuer (opts.Issuer,
+// else the configured one), iat value (if present, with Config.Leeway clock
+// skew), nbf (if present, with skew), and
 // (when opts.RequireAudience is set) aud contains that value. With
 // opts.AllowExpired the exp, iat and nbf checks are skipped; signature,
 // alg, iss and aud are still checked.
@@ -46,12 +50,16 @@ type VerifyOpts struct {
 //
 //nolint:gocyclo // Security-critical; explicit aud/iss/exp/iat/sig branches are easier to audit inline than as a helper chain.
 func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
+	wantIss, err := k.issuer(opts.Issuer)
+	if err != nil {
+		return nil, err
+	}
 	parserOpts := []jwt.ParserOption{jwt.WithValidMethods([]string{"RS256"})}
 	if opts.AllowExpired {
 		parserOpts = append(parserOpts, jwt.WithoutClaimsValidation())
 	} else {
 		parserOpts = append(parserOpts,
-			jwt.WithIssuer(k.cfg.Issuer),
+			jwt.WithIssuer(wantIss),
 			jwt.WithExpirationRequired(),
 			jwt.WithIssuedAt(),
 			jwt.WithLeeway(k.cfg.Leeway),
@@ -80,8 +88,8 @@ func (k *KeySet) Verify(tokenStr string, opts VerifyOpts) (*Claims, error) {
 	}
 
 	if opts.AllowExpired {
-		if got, _ := mc["iss"].(string); got != k.cfg.Issuer {
-			return nil, fmt.Errorf("issuer %q does not match %q", got, k.cfg.Issuer)
+		if got, _ := mc["iss"].(string); got != wantIss {
+			return nil, fmt.Errorf("issuer %q does not match %q", got, wantIss)
 		}
 	}
 

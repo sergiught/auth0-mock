@@ -49,6 +49,7 @@ func Middleware(ks *jwks.KeySet, requireAudience string) func(http.Handler) http
 			}
 			claims, err := ks.Verify(token, jwks.VerifyOpts{
 				RequireAudience: requireAudience,
+				Issuer:          ks.IssuerFor(r),
 			})
 			if err != nil {
 				httperr.WriteMgmt(w, http.StatusUnauthorized, "Unauthorized",

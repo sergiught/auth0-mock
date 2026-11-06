@@ -3,8 +3,11 @@ package jwks
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,4 +74,26 @@ func TestNewKeySet_FailsOnUnreadablePath(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "persist signing key")
+}
+
+func TestResolveIssuer(t *testing.T) {
+	tlsReq := httptest.NewRequest("GET", "http://LocalHost:32768/x", nil)
+	tlsReq.TLS = &tls.ConnectionState{}
+	tests := []struct {
+		name       string
+		configured string
+		req        *http.Request
+		want       string
+	}{
+		{"fixed", "https://localhost:8443/", httptest.NewRequest("GET", "http://other:1/", nil), "https://localhost:8443/"},
+		{"auto http lowercases host", AutoIssuer, httptest.NewRequest("GET", "http://LocalHost:32768/x", nil), "http://localhost:32768/"},
+		{"auto tls", AutoIssuer, tlsReq, "https://localhost:32768/"},
+		{"auto no port", AutoIssuer, httptest.NewRequest("GET", "http://auth0-mock/", nil), "http://auth0-mock/"},
+		{"capitalised Auto passes through", "Auto", httptest.NewRequest("GET", "http://x/", nil), "Auto"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, ResolveIssuer(tc.configured, tc.req))
+		})
+	}
 }

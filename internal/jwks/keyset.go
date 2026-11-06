@@ -9,10 +9,52 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 )
+
+// AutoIssuer is the configured issuer value that derives each request's issuer from
+// the address the request was sent to.
+const AutoIssuer = "auto"
+
+// ErrIssuerUnresolved is returned when the configured issuer is AutoIssuer
+// and the caller gave no per-request issuer.
+var ErrIssuerUnresolved = errors.New(`jwks: ISSUER_URL is "auto" but no per-request issuer was given`)
+
+// ResolveIssuer returns configured, unless it is AutoIssuer; then it returns
+// scheme://host/ built from r (https when r.TLS is set, host lowercased, port
+// kept as sent).
+func ResolveIssuer(configured string, r *http.Request) string {
+	if configured != AutoIssuer {
+		return configured
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + strings.ToLower(r.Host) + "/"
+}
+
+// IssuerFor returns the issuer for r: ResolveIssuer on the configured issuer.
+func (k *KeySet) IssuerFor(r *http.Request) string {
+	return ResolveIssuer(k.cfg.Issuer, r)
+}
+
+// issuer returns override, or the configured issuer when override is empty.
+// In auto mode an empty override is an error.
+func (k *KeySet) issuer(override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	if k.cfg.Issuer == AutoIssuer {
+		return "", ErrIssuerUnresolved
+	}
+	return k.cfg.Issuer, nil
+}
 
 // Config controls KeySet construction.
 type Config struct {

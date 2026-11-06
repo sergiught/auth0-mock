@@ -89,6 +89,7 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		extra["connection"] = ctx.Realm
 	}
 	access, err := h.mintAccess(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  ctx.Subject,
 		Audience: []string{ctx.Audience},
 		Scope:    ctx.Scope,
@@ -118,6 +119,7 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 		idExtra["connection"] = ctx.Realm
 	}
 	id, err := h.Keys.Mint(jwks.MintOpts{
+		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  ctx.Subject,
 		Audience: []string{ctx.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,

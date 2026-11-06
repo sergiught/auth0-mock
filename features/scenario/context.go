@@ -20,6 +20,7 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog"
+	"github.com/tidwall/gjson"
 
 	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/claims"
@@ -39,6 +40,7 @@ import (
 type Context struct {
 	t          *testing.T
 	BaseURL    string
+	Host       string // when set, every request carries this Host header
 	BearerTok  string
 	MFAToken   string // captured from a 403 mfa_required response.
 	RefreshTok string // captured from a token response.
@@ -49,6 +51,7 @@ type Context struct {
 	// body without conflicting with assertions against LastResp.
 	SSEResp    *http.Response
 	cancelBoot context.CancelFunc
+	bootDone   chan struct{} // closed once the booted server has fully stopped
 	// jarClient is set by the "I keep cookies" step; nil means requests use
 	// nonFollowingClient and carry no cookies.
 	jarClient *http.Client
@@ -65,10 +68,31 @@ var nonFollowingClient = &http.Client{
 // client returns the cookie-keeping client once "I keep cookies" ran, and the
 // shared cookieless nonFollowingClient otherwise.
 func (c *Context) client() *http.Client {
+	base := nonFollowingClient
 	if c.jarClient != nil {
-		return c.jarClient
+		base = c.jarClient
 	}
-	return nonFollowingClient
+	if c.Host == "" {
+		return base
+	}
+	clone := *base
+	clone.Transport = hostTransport{host: c.Host, next: http.DefaultTransport}
+	return &clone
+}
+
+// hostTransport sends requests with a fixed Host header unless the request
+// already carries its own (req.Host set and different from the URL host).
+type hostTransport struct {
+	host string
+	next http.RoundTripper
+}
+
+func (h hostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	if req.Host == "" || req.Host == req.URL.Host {
+		req.Host = h.host
+	}
+	return h.next.RoundTrip(req)
 }
 
 // KeepCookies makes this scenario's later requests share one cookie jar.
@@ -85,10 +109,42 @@ func (c *Context) KeepCookies() {
 func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	t.Helper()
 
+	c := &Context{t: t}
+	c.boot(func(addr string) string { return "http://" + addr + "/" })
+
+	sc.After(func(_ context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
+		c.shutdown()
+		return nil, nil
+	})
+	return c
+}
+
+// RestartWithIssuer stops the scenario's server and boots a fresh one on a
+// new port with the given ISSUER_URL value (e.g. "auto"), repointing BaseURL.
+func (c *Context) RestartWithIssuer(issuer string) {
+	c.shutdown()
+	c.boot(func(string) string { return issuer })
+}
+
+// shutdown stops the booted server and waits until it has fully stopped.
+func (c *Context) shutdown() {
+	if c.cancelBoot == nil {
+		return
+	}
+	c.cancelBoot()
+	<-c.bootDone
+	c.cancelBoot = nil
+}
+
+// boot starts the in-process server on a free port. issuerFor maps the
+// listen address to the ISSUER_URL value to configure.
+func (c *Context) boot(issuerFor func(addr string) string) {
+	t := c.t
 	addr := freePort(t)
+	issuer := issuerFor(addr)
 	clk := clock.NewControlled()
 	ks, err := jwks.NewKeySet(jwks.Config{
-		Issuer: "http://" + addr + "/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+		Issuer: issuer, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
 		Now: clk.Now,
 	})
 	if err != nil {
@@ -120,7 +176,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 		Spec:                 openapiSpec,
 		Validator:            validator,
 		Clock:                clk,
-		Issuer:               "http://" + addr + "/",
+		Issuer:               issuer,
 		DefaultAudience:      "http://" + addr + "/api/v2/",
 		SpecValidationStrict: true,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
@@ -136,16 +192,16 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	orc := server.NewOrchestrator(srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { _ = orc.Start(ctx) }()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = orc.Start(ctx)
+	}()
 	waitReachable(t, "http://"+addr+"/admin0/expectations")
 
-	c := &Context{t: t, BaseURL: "http://" + addr, cancelBoot: cancel}
-
-	sc.After(func(_ context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
-		c.cancelBoot()
-		return nil, nil
-	})
-	return c
+	c.BaseURL = "http://" + addr
+	c.cancelBoot = cancel
+	c.bootDone = done
 }
 
 // freePort asks the kernel for an available TCP port.
@@ -250,4 +306,28 @@ func (c *Context) Do(method, path string, body string, withBearer bool) {
 	c.LastResp = resp
 	c.LastBody, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+}
+
+// MintVia mints a user token through the live /oauth/token endpoint, sending
+// the request with the given Host header, and stores it as the bearer. The
+// whole token response is left in LastBody so its id_token can be reused.
+func (c *Context) MintVia(host string) {
+	form := url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"},
+		"password": {"ignored"}, "scope": {"openid"}, "audience": {c.BaseURL + "/api/v2/"},
+	}
+	req, _ := http.NewRequest("POST", c.BaseURL+"/oauth/token", strings.NewReader(form.Encode()))
+	req.Host = host
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		c.t.Fatalf("mint via host %s: %v", host, err)
+	}
+	c.LastResp = resp
+	c.LastBody, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.BearerTok = gjson.GetBytes(c.LastBody, "access_token").String()
+	if c.BearerTok == "" {
+		c.t.Fatalf("mint via host %s: no access_token (body=%s)", host, c.LastBody)
+	}
 }
