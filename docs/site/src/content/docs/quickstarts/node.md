@@ -26,6 +26,7 @@ Add `.auth0-mock/` to your own `.gitignore`: it holds the mock's private key.
 ## Different port
 
 If you map a different host port (for example `-p 127.0.0.1:9443:8443`), also set `-e ISSUER_URL=https://localhost:9443/` and `AUTH0_MOCK_URL=https://localhost:9443/`. Otherwise the `iss` claim in tokens will not match the URL you call. Use that port in the commands below too.
+From release 0.234.0 you can set `-e ISSUER_URL=auto` instead. The mock then builds the issuer from the address of each request, so any mapped port works.
 
 ## Trust its certificate
 

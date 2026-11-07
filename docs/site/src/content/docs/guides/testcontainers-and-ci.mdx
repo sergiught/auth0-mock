@@ -1,0 +1,101 @@
+---
+title: Testcontainers and CI
+description: Start auth0-mock from your tests with Testcontainers in Go, Node.js, Python or Java, or as a GitHub Actions service container.
+sidebar:
+  order: 1.5
+---
+
+import { Code, Tabs, TabItem } from '@astrojs/starlight/components';
+import goTest from '../../../../../../examples/testcontainers/go/auth0mock_test.go?raw';
+import nodeTest from '../../../../../../examples/testcontainers/node/auth0mock.test.mjs?raw';
+import pyTest from '../../../../../../examples/testcontainers/python/test_auth0mock.py?raw';
+import javaTest from '../../../../../../examples/testcontainers/java/src/test/java/example/Auth0MockTest.java?raw';
+import javaPom from '../../../../../../examples/testcontainers/java/pom.xml?raw';
+import serviceWorkflow from '../../../../../../.github/workflows/example-service-container.yml?raw';
+
+There are two good ways to run the mock in automated tests.
+
+- **Testcontainers.** Each test suite starts its own mock on a random port and stops it at the end. It works the same on your laptop and in any CI that has Docker.
+- **A GitHub Actions service container.** One mock runs for the whole job on a fixed port. Use it when several steps share one mock.
+
+The examples on this page are the real test files from the repository's `examples/testcontainers` folder. CI runs them, so they do not drift from the code you see here.
+
+## Testcontainers
+
+Each test does the same things, in this order:
+
+1. Start the image and wait for `GET /healthz` to return 200.
+2. Build the base URL from the container host and the mapped port. Never hard-code `localhost`, because the Docker host can be remote.
+3. Stub `GET /api/v2/users/auth0|123` with `POST /admin0/expectations`.
+4. Get a token from `POST /oauth/token` with the client credentials grant.
+5. Call the stubbed endpoint with the token.
+6. Check the response body.
+7. Check the token: its signature against the mock's JWKS, its `iss`, and its `aud`.
+8. Stop the container.
+
+The container needs three settings. `ADMIN_ALLOW_REMOTE=true` is needed because the image listens on all interfaces so Docker can reach it, and the mock refuses to start that way unless you allow it, since `/admin0` has no authentication. `HTTPS_ADDR=off` turns off the TLS listener, so the tests use plain HTTP and need no certificate. `ISSUER_URL=auto` makes the mock use the address of each request as the issuer, which is right for a random port.
+
+With `auto`, a token only verifies at the address it was minted at. If your tests and your app reach the mock at different addresses, the app rejects the token, the same way one Auth0 tenant rejects another's tokens.
+
+:::note
+The token check needs `ISSUER_URL=auto`, which ships in release 0.234.0. With an older image the test fails at that check.
+:::
+
+Note the request path `/api/v2/users/auth0%7C123`. The stub is registered with a raw `|`, but some HTTP clients, such as Java's `URI.create`, reject a raw `|` in a path. Sending `%7C` works everywhere.
+
+<Tabs syncKey="lang">
+  <TabItem label="Go">
+    Install:
+
+    ```bash
+    go get github.com/testcontainers/testcontainers-go@v0.45.0 github.com/coreos/go-oidc/v3
+    ```
+
+    <Code code={goTest} lang="go" title="auth0mock_test.go" />
+  </TabItem>
+  <TabItem label="Node.js">
+    Install:
+
+    ```bash
+    npm i -D testcontainers@12.2.1 jose
+    ```
+
+    npm 12 may print a notice about blocked install scripts for some of Testcontainers' dependencies. It is harmless here.
+
+    <Code code={nodeTest} lang="js" title="auth0mock.test.mjs" />
+  </TabItem>
+  <TabItem label="Python">
+    Install:
+
+    ```bash
+    uv add --dev testcontainers==4.15.0 "pyjwt[crypto]==2.15.1" pytest
+    ```
+
+    <Code code={pyTest} lang="python" title="test_auth0mock.py" />
+  </TabItem>
+  <TabItem label="Java">
+    Add the dependencies to your `pom.xml`. The full file is below the test.
+
+    <Code code={javaTest} lang="java" title="Auth0MockTest.java" />
+
+    <Code code={javaPom} lang="xml" title="pom.xml" />
+  </TabItem>
+</Tabs>
+
+### Pin a tag
+
+The examples use `ghcr.io/sergiught/auth0-mock:latest` so they run as written. In your own suite, pin a release so a new version cannot change your tests unexpectedly, for example `ghcr.io/sergiught/auth0-mock:0.234.0`.
+
+## GitHub Actions service container
+
+Use a service container when one mock serves every step in a job. The runner starts the image before the first step and waits for the health check to pass. Steps reach the mock at `localhost:8080`.
+
+<Code code={serviceWorkflow} lang="yaml" title=".github/workflows/example-service-container.yml" />
+
+This recipe does not set `ISSUER_URL` and does not verify the token. `auto` makes a token valid only at the address it was minted at, and steps on the runner always reach the service at `localhost:8080`, so `auto` adds nothing here. If your app checks `iss`, set a fixed `ISSUER_URL=http://localhost:8080/` instead.
+
+The health check uses `wget`, which the image includes.
+
+## More settings
+
+See the [configuration reference](/auth0-mock/reference/configuration/) for `ISSUER_URL`, `ADMIN_ALLOW_REMOTE` and the rest. To stub more endpoints, see the [stubbing guide](/auth0-mock/guides/stubbing/).
