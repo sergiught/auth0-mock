@@ -349,3 +349,38 @@ func TestValidator_ValidateEventStreamPayload(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestValidateRegistrationSkipping(t *testing.T) {
+	s, err := Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
+	op, err := v.Resolve("POST", "/api/v2/users")
+	require.NoError(t, err)
+
+	t.Run("skipped_field_passes", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(op, 201, json.RawMessage(`{"email_verified":"sample"}`), []string{"/email_verified"})
+		assert.NoError(t, err)
+	})
+	t.Run("nil_skip_fails", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(op, 201, json.RawMessage(`{"email_verified":"sample"}`), nil)
+		assert.Error(t, err)
+	})
+	t.Run("other_errors_kept", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(op, 201, json.RawMessage(`{"email_verified":"sample","blocked":"no"}`), []string{"/email_verified"})
+		assert.ErrorContains(t, err, "blocked")
+	})
+	t.Run("parent_pointer_covers_children", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(op, 201, json.RawMessage(`{"user_metadata":{"a":1},"email_verified":"x"}`), []string{"/email_verified", "/user_metadata"})
+		assert.NoError(t, err)
+	})
+	t.Run("escaped_pointer", func(t *testing.T) {
+		ok := skipCovers([]string{"/a~1b/c~0d"}, []string{"a/b", "c~d"})
+		assert.True(t, ok)
+		assert.False(t, skipCovers([]string{"/a"}, []string{"ab"}))
+	})
+	t.Run("error_envelope", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(op, 409, json.RawMessage(`{"statusCode":"x","error":"Conflict","message":"m"}`), []string{"/statusCode"})
+		assert.NoError(t, err)
+	})
+}

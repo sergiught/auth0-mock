@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -103,6 +104,13 @@ func isSupportedMethod(method string) bool {
 // operation's response schema for the chosen status. Status must be present in
 // op.Responses (or "default"); body is unmarshaled JSON.
 func (v *Validator) ValidateRegistration(op Operation, status int, body json.RawMessage) error {
+	return v.ValidateRegistrationSkipping(op, status, body, nil)
+}
+
+// ValidateRegistrationSkipping is ValidateRegistration that ignores schema
+// errors at the JSON pointers in skip, or under them. It serves values whose
+// type is only known at serve time, such as template placeholders.
+func (v *Validator) ValidateRegistrationSkipping(op Operation, status int, body json.RawMessage, skip []string) error {
 	resp := selectResponse(op.Op.Responses, status)
 	if resp == nil || resp.Value == nil {
 		return fmt.Errorf("status %d not declared for operation %s", status, op.Op.OperationID)
@@ -114,7 +122,7 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 			return nil
 		}
 		if status >= http.StatusBadRequest {
-			return validateErrorEnvelope(status, body)
+			return validateErrorEnvelope(status, body, skip)
 		}
 		return fmt.Errorf("status %d declares no body but a body was provided", status)
 	}
@@ -127,7 +135,7 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return fmt.Errorf("body json: %w", err)
 	}
-	if err := media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()); err != nil {
+	if err := filterSkippedErrors(media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()), skip); err != nil {
 		return fmt.Errorf("body schema: %w", err)
 	}
 	return nil
@@ -149,16 +157,17 @@ var errorEnvelopeSchema = openapi3.NewObjectSchema().
 // validateErrorEnvelope checks body against errorEnvelopeSchema and
 // that its statusCode names the status it is served with — a 403 stub
 // whose body says 404 would hand the consumer two answers.
-func validateErrorEnvelope(status int, body json.RawMessage) error {
+func validateErrorEnvelope(status int, body json.RawMessage, skip []string) error {
 	var decoded any
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return fmt.Errorf("body json: %w", err)
 	}
-	if err := errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()); err != nil {
+	if err := filterSkippedErrors(errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()), skip); err != nil {
 		return fmt.Errorf("error envelope: %w", err)
 	}
-	// The schema has proven an object with an integer statusCode.
-	if got := decoded.(map[string]any)["statusCode"].(float64); got != float64(status) {
+	// A skipped statusCode may not be a number yet; it is checked at serve time.
+	obj, _ := decoded.(map[string]any)
+	if got, isNum := obj["statusCode"].(float64); isNum && got != float64(status) {
 		return fmt.Errorf("error envelope: statusCode %v does not match status %d", got, status)
 	}
 	return nil
@@ -295,4 +304,46 @@ func filterRequiredErrors(err error) error {
 		return nil
 	}
 	return kept
+}
+
+// filterSkippedErrors drops schema errors located at, or under, one of the
+// JSON pointers in skip, returning nil if none remain.
+func filterSkippedErrors(err error, skip []string) error {
+	if err == nil || len(skip) == 0 {
+		return err
+	}
+	var me openapi3.MultiError
+	if !errors.As(err, &me) {
+		return err
+	}
+	var kept openapi3.MultiError
+	for _, e := range me {
+		var se *openapi3.SchemaError
+		if errors.As(e, &se) && skipCovers(skip, se.JSONPointer()) {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
+
+// skipCovers reports whether the location given as raw path segments equals,
+// or lies under, one of the RFC 6901 pointers in skip.
+func skipCovers(skip, segments []string) bool {
+	esc := strings.NewReplacer("~", "~0", "/", "~1")
+	var b strings.Builder
+	for _, seg := range segments {
+		b.WriteByte('/')
+		b.WriteString(esc.Replace(seg))
+	}
+	ptr := b.String()
+	for _, s := range skip {
+		if ptr == s || strings.HasPrefix(ptr, s+"/") {
+			return true
+		}
+	}
+	return false
 }
