@@ -74,7 +74,7 @@ func clearEnv(t *testing.T) {
 		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "TOKEN_LEEWAY", "ADMIN_ALLOW_REMOTE", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
 		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT", "REQUEST_JOURNAL_SIZE",
-		"CORS_ALLOWED_ORIGINS",
+		"CORS_ALLOWED_ORIGINS", "SEED_FILE",
 	} {
 		_ = os.Unsetenv(k)
 	}
@@ -123,6 +123,18 @@ func TestLoad_RequestJournalSize_HonoursOverride(t *testing.T) {
 	spec, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, 25, spec.RequestJournalSize)
+}
+
+func TestLoad_SeedFile(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Empty(t, spec.SeedFile)
+
+	t.Setenv("SEED_FILE", "/x.yaml")
+	spec, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/x.yaml", spec.SeedFile)
 }
 
 func TestLoad_BlankDefaultAudience(t *testing.T) {

@@ -5,8 +5,12 @@
 package admin0
 
 import (
+	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
+	"net/url"
+	"slices"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -19,6 +23,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/session"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
@@ -37,6 +42,8 @@ type Deps struct {
 	MFA             *mfa.Store
 	Validator       *spec.Validator
 	Clock           *clock.Controlled
+	// Seed is the loaded SEED_FILE. Nil means no seed: reset wipes everything.
+	Seed *seed.Manager
 	// Events is the SSE hub for POST /admin0/events. Nil is fine for
 	// admin0 tests that don't exercise the events surface — the route
 	// only registers when both Events and Validator are non-nil, and
@@ -66,11 +73,15 @@ func Mount(r chi.Router, d Deps) {
 	if d.AuthorizeErrors == nil {
 		d.AuthorizeErrors = authorizeerr.NewStore()
 	}
+	if d.Seed != nil {
+		d.Seed.Bind(func(ctx context.Context) { wipe(ctx, d) })
+	}
 
 	r.Method(http.MethodGet, "/admin0/journal", &ListJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodGet, "/admin0/journal/unmatched", &ListUnmatchedJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodDelete, "/admin0/journal", &DeleteJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
+	r.Method(http.MethodGet, "/admin0/export", &ExportHandler{Deps: d})
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
 	r.Method(http.MethodDelete, "/admin0/expectations", &DeleteExpectationsHandler{Store: d.Matches})
@@ -129,43 +140,64 @@ type ResetHandler struct {
 }
 
 func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.Deps.Matches != nil {
-		h.Deps.Matches.ResetAll()
+	q, ok := strictQuery(w, r)
+	if !ok {
+		return
 	}
-	if h.Deps.Claims != nil {
-		h.Deps.Claims.Clear()
+	keep := true
+	if q.Has("keep_seed") {
+		if keep, ok = parseFlag(q.Get("keep_seed")); !ok {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				"keep_seed must be true or false", "invalid_query")
+			return
+		}
 	}
-	if h.Deps.ClaimMappings != nil {
-		h.Deps.ClaimMappings.Clear()
+	if h.Deps.Seed != nil {
+		h.Deps.Seed.Reset(r.Context(), keep)
+	} else {
+		wipe(r.Context(), h.Deps)
 	}
-	if h.Deps.Sessions != nil {
-		h.Deps.Sessions.Clear()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// wipe clears every store admin0 governs; reset runs it with or without a seed.
+func wipe(ctx context.Context, d Deps) {
+	if d.Matches != nil {
+		d.Matches.ResetAll()
 	}
-	if h.Deps.AuthorizeErrors != nil {
-		h.Deps.AuthorizeErrors.Clear()
+	if d.Claims != nil {
+		d.Claims.Clear()
 	}
-	if h.Deps.Permissions != nil {
-		h.Deps.Permissions.Clear()
+	if d.ClaimMappings != nil {
+		d.ClaimMappings.Clear()
 	}
-	if h.Deps.MFA != nil {
-		h.Deps.MFA.Reset()
+	if d.Sessions != nil {
+		d.Sessions.Clear()
 	}
-	if h.Deps.Journal != nil {
-		h.Deps.Journal.Clear()
+	if d.AuthorizeErrors != nil {
+		d.AuthorizeErrors.Clear()
 	}
-	if h.Deps.Clock != nil {
-		h.Deps.Clock.Reset()
+	if d.Permissions != nil {
+		d.Permissions.Clear()
 	}
-	if h.Deps.Events != nil {
+	if d.MFA != nil {
+		d.MFA.Reset()
+	}
+	if d.Journal != nil {
+		d.Journal.Clear()
+	}
+	if d.Clock != nil {
+		d.Clock.Reset()
+	}
+	if d.Events != nil {
 		// Drain every open SSE subscriber and clear the replay
 		// buffer so the next test starts fresh. The hub stays
 		// functional after Reset (unlike Shutdown, which permanently
 		// closes it). Errors are ignored: by the time reset fires the
 		// test verdict is usually decided and a failing reset
 		// shouldn't mask the original failure.
-		_ = h.Deps.Events.Reset(r.Context())
+		_ = d.Events.Reset(ctx)
 	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- mfa ------------------------------------------------------------------.
@@ -336,4 +368,37 @@ func (h *DeletePermissionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	audience := chi.URLParam(r, "*")
 	h.Store.Delete(audience)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// strictQuery parses the request's query string and writes a 400 when it is
+// malformed (a bad escape or a ; separator) or names a parameter twice.
+// The standard Query drops a bad pair and Get keeps only the first value, either of
+// which would quietly turn a request into one with the default settings.
+func strictQuery(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"malformed query string", "invalid_query")
+		return nil, false
+	}
+	for _, k := range slices.Sorted(maps.Keys(q)) {
+		if len(q[k]) > 1 {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				k+" is given more than once", "invalid_query")
+			return nil, false
+		}
+	}
+	return q, true
+}
+
+// parseFlag reads a boolean query parameter. Only "true" and "false" are
+// accepted, so a stray value like 0 gets a 400 instead of acting.
+func parseFlag(v string) (value, ok bool) {
+	switch v {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }

@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -33,6 +34,48 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 
 	sc.Step(`^the mock is running with ISSUER_URL "([^"]+)"$`, func(issuer string) error {
 		c.RestartWithIssuer(issuer)
+		return nil
+	})
+
+	sc.Step(`^the mock is running with seed file:$`, func(body *godog.DocString) error {
+		return c.RestartWithSeed(body.Content)
+	})
+
+	sc.Step(`^I replace the seed file with:$`, func(body *godog.DocString) error {
+		return c.ReplaceSeedFile(body.Content)
+	})
+
+	sc.Step(`^I save the response body$`, func() error {
+		c.SavedBody = append([]byte(nil), c.LastBody...)
+		return nil
+	})
+
+	sc.Step(`^the response body equals the saved body$`, func() error {
+		if !bytes.Equal(c.LastBody, c.SavedBody) {
+			return fmt.Errorf("body differs from the saved body:\n%s\n--- saved ---\n%s", c.LastBody, c.SavedBody)
+		}
+		return nil
+	})
+
+	sc.Step(`^I replace the seed file with the saved body$`, func() error {
+		return c.ReplaceSeedFile(string(c.SavedBody))
+	})
+
+	sc.Step(`^I delete the seed file$`, func() error {
+		return c.DeleteSeedFile()
+	})
+
+	// The expected text may itself contain quotes written as \", so the
+	// capture is greedy and unescapes them.
+	sc.Step(`^starting the mock with seed file fails with "(.+)":$`, func(want string, body *godog.DocString) error {
+		want = strings.ReplaceAll(want, `\"`, `"`)
+		err := c.RestartWithSeed(body.Content)
+		if err == nil {
+			return fmt.Errorf("mock started, want failure containing %q", want)
+		}
+		if !strings.Contains(err.Error(), want) {
+			return fmt.Errorf("start error %w does not contain %q", err, want)
+		}
 		return nil
 	})
 

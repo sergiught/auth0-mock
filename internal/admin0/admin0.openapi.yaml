@@ -72,8 +72,58 @@ paths:
     post:
       tags: [Expectations]
       summary: Wipe every store admin0 governs (expectations, claims, claims/mappings, authorize error rules, permissions, mfa-required, clock, events, journal).
+      description: |
+        When the mock runs with `SEED_FILE`, the reset then re-applies the
+        seed file. Pass `keep_seed=false` to wipe everything, the seed
+        included.
+      parameters:
+        - name: keep_seed
+          in: query
+          required: false
+          description: |
+            `true` (the default) re-applies the seed file after the wipe.
+            `false` leaves the mock empty. Without a seed file the value
+            changes nothing, but it must still be a boolean.
+          schema: { type: boolean, default: true }
       responses:
         "204": { description: Reset complete. }
+        "400":
+          description: |
+            `errorCode: "invalid_query"` — `keep_seed` is not `true` or `false`, a parameter is repeated, or the query string is malformed.
+  /admin0/export:
+    get:
+      tags: [Expectations]
+      summary: Dump the expectations, claims, claim mappings, permissions and MFA flag in the seed file format.
+      description: |
+        The body can be saved as a seed file and loaded with `SEED_FILE`.
+        Empty sections are left out, keys are sorted, and exporting a
+        loaded export gives the same bytes again. A number written in a
+        YAML-only form such as `0x1F` comes back as plain decimal (`31`).
+      parameters:
+        - name: format
+          in: query
+          required: false
+          description: "`json` (the default) or `yaml`."
+          schema: { type: string, enum: [json, yaml], default: json }
+        - name: detail
+          in: query
+          required: false
+          description: |
+            `true` adds `id` and `hits` to each expectation. A detailed
+            export still loads as a seed file.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: The current state.
+          content:
+            application/json:
+              schema: { type: object }
+            application/yaml:
+              schema: { type: object }
+        "400":
+          description: |
+            `errorCode: "invalid_query"` — `format` is not `json` or
+            `yaml`, or `detail` is not `true` or `false`, a parameter is repeated, or the query string is malformed.
   /admin0/expectations:
     post:
       tags: [Expectations]
