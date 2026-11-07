@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
+	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/server"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
@@ -55,6 +58,17 @@ type Context struct {
 	// jarClient is set by the "I keep cookies" step; nil means requests use
 	// nonFollowingClient and carry no cookies.
 	jarClient *http.Client
+	// seedPath and seed are set when the scenario booted with a seed file.
+	seedPath string
+	seed     *seed.Manager
+}
+
+// bootOptions configures boot.
+type bootOptions struct {
+	// issuerFor maps the listen address to the ISSUER_URL value.
+	issuerFor func(addr string) string
+	// seedFile, when set, is loaded as SEED_FILE before the router is built.
+	seedFile string
 }
 
 // nonFollowingClient is used by all step requests so the tests can assert on
@@ -110,7 +124,7 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 	t.Helper()
 
 	c := &Context{t: t}
-	c.boot(func(addr string) string { return "http://" + addr + "/" })
+	c.mustBoot(bootOptions{issuerFor: func(addr string) string { return "http://" + addr + "/" }})
 
 	sc.After(func(_ context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
 		c.shutdown()
@@ -123,7 +137,56 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 // new port with the given ISSUER_URL value (e.g. "auto"), repointing BaseURL.
 func (c *Context) RestartWithIssuer(issuer string) {
 	c.shutdown()
-	c.boot(func(string) string { return issuer })
+	c.mustBoot(bootOptions{issuerFor: func(string) string { return issuer }})
+}
+
+// RestartWithSeed stops the scenario's server and boots a fresh one whose
+// SEED_FILE holds content. A seed that fails to load is returned as the
+// error and leaves no server running.
+func (c *Context) RestartWithSeed(content string) error {
+	c.shutdown()
+	dir, err := os.MkdirTemp(c.t.TempDir(), "seed")
+	if err != nil {
+		return err
+	}
+	c.seedPath = filepath.Join(dir, "seed.yaml")
+	if err := os.WriteFile(c.seedPath, []byte(content), 0o600); err != nil {
+		return err
+	}
+	return c.boot(bootOptions{
+		issuerFor: func(addr string) string { return "http://" + addr + "/" },
+		seedFile:  c.seedPath,
+	})
+}
+
+// ReplaceSeedFile saves content over the seed file the way an editor does
+// (write a temp file, rename it over) and reloads it. Nothing sleeps: the
+// harness runs no watcher and polls once instead.
+func (c *Context) ReplaceSeedFile(content string) error {
+	tmp := c.seedPath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, c.seedPath); err != nil {
+		return err
+	}
+	c.seed.Poll(context.Background())
+	return nil
+}
+
+// DeleteSeedFile removes the seed file and polls once.
+func (c *Context) DeleteSeedFile() error {
+	if err := os.Remove(c.seedPath); err != nil {
+		return err
+	}
+	c.seed.Poll(context.Background())
+	return nil
+}
+
+func (c *Context) mustBoot(o bootOptions) {
+	if err := c.boot(o); err != nil {
+		c.t.Fatalf("boot: %v", err)
+	}
 }
 
 // shutdown stops the booted server and waits until it has fully stopped.
@@ -136,12 +199,12 @@ func (c *Context) shutdown() {
 	c.cancelBoot = nil
 }
 
-// boot starts the in-process server on a free port. issuerFor maps the
-// listen address to the ISSUER_URL value to configure.
-func (c *Context) boot(issuerFor func(addr string) string) {
+// boot starts the in-process server on a free port. It fails only when the
+// seed file does not load, and then starts nothing.
+func (c *Context) boot(o bootOptions) error {
 	t := c.t
 	addr := freePort(t)
-	issuer := issuerFor(addr)
+	issuer := o.issuerFor(addr)
 	clk := clock.NewControlled()
 	ks, err := jwks.NewKeySet(jwks.Config{
 		Issuer: issuer, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
@@ -164,6 +227,19 @@ func (c *Context) boot(issuerFor func(addr string) string) {
 	if err != nil {
 		t.Fatalf("spec validator: %v", err)
 	}
+	var seedMgr *seed.Manager
+	if o.seedFile != "" {
+		seedMgr, err = seed.NewManager(o.seedFile, validator, seed.Stores{
+			Matches:       store,
+			Claims:        claimsStore,
+			ClaimMappings: claimMappings,
+			Permissions:   permsStore,
+			MFA:           mfaStore,
+		}, zerolog.Nop())
+		if err != nil {
+			return err
+		}
+	}
 	handler, err := router.New(router.Deps{
 		Log:                  zerolog.Nop(),
 		Store:                store,
@@ -184,6 +260,7 @@ func (c *Context) boot(issuerFor func(addr string) string) {
 		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},
 		EventsReplayBuffer:   50, // small but functional in scenario tests
 		Journal:              journal.New(100),
+		Seed:                 seedMgr,
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)
@@ -202,6 +279,8 @@ func (c *Context) boot(issuerFor func(addr string) string) {
 	c.BaseURL = "http://" + addr
 	c.cancelBoot = cancel
 	c.bootDone = done
+	c.seed = seedMgr
+	return nil
 }
 
 // freePort asks the kernel for an available TCP port.

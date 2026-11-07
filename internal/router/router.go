@@ -24,6 +24,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/middleware"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/session"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
@@ -93,6 +94,9 @@ type Deps struct {
 	// Journal records /api/v2 calls for GET /admin0/journal. Nil is
 	// defaulted to a disabled journal (size 0).
 	Journal *journal.Journal
+
+	// Seed is the loaded SEED_FILE; nil means none.
+	Seed *seed.Manager
 }
 
 // New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
@@ -165,6 +169,7 @@ func New(d Deps) (http.Handler, error) {
 		Clock:           d.Clock,
 		Events:          hub,
 		Journal:         d.Journal,
+		Seed:            d.Seed,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {

@@ -36,6 +36,32 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the mock is running with seed file:$`, func(body *godog.DocString) error {
+		return c.RestartWithSeed(body.Content)
+	})
+
+	sc.Step(`^I replace the seed file with:$`, func(body *godog.DocString) error {
+		return c.ReplaceSeedFile(body.Content)
+	})
+
+	sc.Step(`^I delete the seed file$`, func() error {
+		return c.DeleteSeedFile()
+	})
+
+	// The expected text may itself contain quotes written as \", so the
+	// capture is greedy and unescapes them.
+	sc.Step(`^starting the mock with seed file fails with "(.+)":$`, func(want string, body *godog.DocString) error {
+		want = strings.ReplaceAll(want, `\"`, `"`)
+		err := c.RestartWithSeed(body.Content)
+		if err == nil {
+			return fmt.Errorf("mock started, want failure containing %q", want)
+		}
+		if !strings.Contains(err.Error(), want) {
+			return fmt.Errorf("start error %w does not contain %q", err, want)
+		}
+		return nil
+	})
+
 	sc.Step(`^requests are sent with Host "([^"]+)"$`, func(host string) error {
 		c.Host = host
 		return nil

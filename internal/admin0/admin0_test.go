@@ -66,6 +66,30 @@ func TestReset_WipesAllMatches(t *testing.T) {
 	assert.Equal(t, clock.ModeReal, mode)
 }
 
+func TestResetKeepSeedInvalid(t *testing.T) {
+	r := newRouter(newDeps())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/admin0/reset?keep_seed=maybe", nil))
+
+	assert.Equal(t, 400, w.Code)
+	assert.Contains(t, w.Body.String(), "keep_seed must be true or false")
+	assert.Contains(t, w.Body.String(), "invalid_query")
+}
+
+func TestResetNoSeedIgnoresKeepSeed(t *testing.T) {
+	d := newDeps()
+	d.Claims.Set(map[string]any{"role": "admin"})
+	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/x", Kind: matches.KindTemplate, Response: matches.ResponseDef{Status: 200}})
+
+	r := newRouter(d)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/admin0/reset?keep_seed=false", nil))
+
+	assert.Equal(t, 204, w.Code)
+	assert.Empty(t, d.Matches.List())
+	assert.Empty(t, d.Claims.Get())
+}
+
 // --- clock handler tests -----------------------------------------------------.
 
 func TestClock_GetReturnsRealByDefault(t *testing.T) {

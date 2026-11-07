@@ -53,6 +53,12 @@ type Specification struct {
 	// return an empty list; the no_match 404 hint is unaffected).
 	RequestJournalSize int `env:"REQUEST_JOURNAL_SIZE" envDefault:"1000"`
 
+	// SeedFile is the path of a YAML or JSON file of expectations, claims,
+	// claim mappings, permissions and the MFA flag. It is loaded at startup,
+	// re-applied by POST /admin0/reset and reloaded when it changes. Empty
+	// disables seeding.
+	SeedFile string `env:"SEED_FILE"`
+
 	// EventsReconnectHint is the SSE `retry:` reconnect-delay hint sent to
 	// GET /events subscribers on connect (Auth0's Events API sends one
 	// too). 0 omits the hint, so clients fall back to their built-in
