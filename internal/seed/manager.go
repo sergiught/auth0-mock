@@ -74,6 +74,14 @@ func (m *Manager) Reset(ctx context.Context, keepSeed bool) {
 	}
 }
 
+// Export snapshots the stores in seed file shape while holding the lock Reset
+// and Poll hold, so it never sees a half-applied reload.
+func (m *Manager) Export(detail bool) File {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Export(m.st, detail)
+}
+
 // Poll checks the seed file once and reloads it if its content changed.
 func (m *Manager) Poll(ctx context.Context) {
 	m.mu.Lock()

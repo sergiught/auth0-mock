@@ -38,14 +38,20 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	d := h.Deps
-	f := seed.Export(seed.Stores{
-		Matches:       d.Matches,
-		Claims:        d.Claims,
-		ClaimMappings: d.ClaimMappings,
-		Permissions:   d.Permissions,
-		MFA:           d.MFA,
-	}, detail)
+	var f seed.File
+	if h.Deps.Seed != nil {
+		// Reset and reload hold the seed lock between wipe and apply.
+		f = h.Deps.Seed.Export(detail)
+	} else {
+		d := h.Deps
+		f = seed.Export(seed.Stores{
+			Matches:       d.Matches,
+			Claims:        d.Claims,
+			ClaimMappings: d.ClaimMappings,
+			Permissions:   d.Permissions,
+			MFA:           d.MFA,
+		}, detail)
+	}
 	var (
 		out []byte
 		err error

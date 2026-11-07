@@ -245,3 +245,33 @@ func TestWatchReloads(t *testing.T) {
 		t.Fatal("Watch did not return")
 	}
 }
+
+func TestExportWaitsForReset(t *testing.T) {
+	f := newFixture(t, stub("429"))
+	inWipe, release := make(chan struct{}), make(chan struct{})
+	f.m.Bind(func(context.Context) {
+		f.st.reset()
+		close(inWipe)
+		<-release
+	})
+	resetDone := make(chan struct{})
+	go func() {
+		defer close(resetDone)
+		f.m.Reset(context.Background(), true)
+	}()
+	<-inWipe
+
+	exported := make(chan seed.File, 1)
+	go func() { exported <- f.m.Export(false) }()
+	select {
+	case <-exported:
+		t.Fatal("Export returned while a reset was between wipe and apply")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	<-resetDone
+	got := <-exported
+	require.Len(t, got.Expectations, 1)
+	require.Equal(t, 429, got.Expectations[0].Response.Status)
+}
