@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,13 +18,24 @@ import (
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
+var (
+	validatorOnce sync.Once
+	validator     *spec.Validator
+	validatorErr  error
+)
+
+// newValidator builds the (slow) spec validator once per test binary.
 func newValidator(t *testing.T) *spec.Validator {
 	t.Helper()
-	s, err := spec.Load(api.ManagementOpenAPIJSON)
-	require.NoError(t, err)
-	v, err := spec.NewValidator(s)
-	require.NoError(t, err)
-	return v
+	validatorOnce.Do(func() {
+		var s *spec.Spec
+		s, validatorErr = spec.Load(api.ManagementOpenAPIJSON)
+		if validatorErr == nil {
+			validator, validatorErr = spec.NewValidator(s)
+		}
+	})
+	require.NoError(t, validatorErr)
+	return validator
 }
 
 const full = `
