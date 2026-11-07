@@ -42,6 +42,9 @@ func TestPrepareErrors(t *testing.T) {
 		{"request body schema", matches.Registration{Method: "POST", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
 			Request: &matches.RequestMatcher{Body: []byte(`{"email": 5}`)}},
 			"request matcher body violates request schema: ", true, "invalid_request_match"},
+		{"request query", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
+			Request: &matches.RequestMatcher{Query: map[string]string{"bogus_param": "x"}}},
+			"request matcher query is invalid: ", true, "invalid_request_match"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

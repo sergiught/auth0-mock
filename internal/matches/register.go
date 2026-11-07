@@ -78,7 +78,7 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 		}
 		if err := v.ValidateQueryMatcher(op, req.Query); err != nil {
 			return Expectation{}, &RegistrationError{
-				"request matcher query invalid: " + err.Error(), "invalid_request_match",
+				"request matcher query is invalid: " + err.Error(), "invalid_request_match",
 			}
 		}
 	}
