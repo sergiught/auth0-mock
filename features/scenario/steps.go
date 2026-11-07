@@ -301,17 +301,6 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
-	sc.Step(`^the response JSON path "([^"]+)" equals the saved "([^"]+)"$`, func(path, name string) error {
-		want, ok := c.SavedValues[name]
-		if !ok {
-			return fmt.Errorf("no saved value %q", name)
-		}
-		if got := gjson.GetBytes(c.LastBody, path).String(); got != want {
-			return fmt.Errorf("JSON path %s: got %q, want saved %q (%q)", path, got, name, want)
-		}
-		return nil
-	})
-
 	sc.Step(`^the response JSON path "([^"]+)" does not equal the saved "([^"]+)"$`, func(path, name string) error {
 		want, ok := c.SavedValues[name]
 		if !ok {

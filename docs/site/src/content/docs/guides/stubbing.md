@@ -177,7 +177,7 @@ Placeholders work in JSON string values of the body and in header values. Object
 - **A missing field in an embedded `{{body.PATH}}` renders `""`.** `"User {{body.email}}"` gives `"User "`.
 - **Literal braces.** Write `\{{` (in JSON, `"\\{{"`) to get a literal `{{`.
 
-The mock checks the template when you register the stub. An unknown placeholder, a bad path parameter name or an unclosed `{{` gives a 400 with the code `invalid_template`. The body is also checked against the response schema with sample values, so a typo in a field name still fails. A header that renders with a line break gives a 500 `invalid_template` when served.
+The mock checks the template when you register the stub. An unknown placeholder, a bad path parameter name or an unclosed `{{` gives a 400 with the code `invalid_template`. The body is also checked against the response schema with sample values, so a wrong type or format still fails. A typo in a field name fails only where the schema forbids extra fields, which `POST /api/v2/users` does not. A header that renders with a line break gives a 500 `invalid_template` when served.
 
 The rendered body is checked against the schema on every call, as for any stub. If a whole-string placeholder renders the wrong type, strict mode returns a 500 `invalid_match`.
 
