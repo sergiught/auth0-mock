@@ -63,10 +63,13 @@ Feature: Export mock state
       mfa_required: true
       """
     When I send "GET /admin0/export" without a bearer
-    And I save the response body
+    Then I receive a 200 response
+    And the response body contains "auth0|seed"
+    When I save the response body
     And I replace the seed file with the saved body
     And I send "GET /admin0/export" without a bearer
-    Then the response body equals the saved body
+    Then I receive a 200 response
+    And the response body equals the saved body
 
   Scenario: An export loads back as the same state in YAML
     Given the mock is running with seed file:
@@ -78,10 +81,13 @@ Feature: Export mock state
       claims: {tier: gold}
       """
     When I send "GET /admin0/export?format=yaml" without a bearer
-    And I save the response body
+    Then I receive a 200 response
+    And the response body contains "tier: gold"
+    When I save the response body
     And I replace the seed file with the saved body
     And I send "GET /admin0/export?format=yaml" without a bearer
-    Then the response body equals the saved body
+    Then I receive a 200 response
+    And the response body equals the saved body
 
   Scenario: Bad query values are rejected
     When I send "GET /admin0/export?format=xml" without a bearer

@@ -156,3 +156,60 @@ func TestExportYAMLQuotesTimestampLikeStrings(t *testing.T) {
 	out := roundTrip(t, seed.File.YAML)
 	require.Contains(t, string(out), `created: "2024-01-01"`)
 }
+
+func TestExportYAMLRoundTripStringLookalikes(t *testing.T) {
+	cases := []struct {
+		name string
+		val  any
+	}{
+		{"int", "200"},
+		{"bool", "true"},
+		{"null", "null"},
+		{"hex", "0x1F"},
+		{"exp", "1e3"},
+		{"tilde", "~"},
+		{"yes", "yes"},
+		{"empty", ""},
+		{"multiline", "a\nb\n"},
+		{"leading space", " x"},
+		{"hash", "#x"},
+	}
+	body := map[string]any{
+		"nil":    nil,
+		"object": map[string]any{},
+		"array":  []any{},
+		"nested": []any{map[string]any{"k": []any{map[string]any{"deep": "1"}}}},
+	}
+	for _, c := range cases {
+		body[c.name] = c.val
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	st := newStores()
+	exp, err := matches.Prepare(newValidator(t), matches.Registration{
+		Method: "GET", Path: "/api/v2/users/{id}",
+		Response: matches.ResponseDef{Status: 200, Body: raw},
+	})
+	require.NoError(t, err)
+	st.Matches.Put(exp)
+
+	first := mustBytes(t)(seed.Export(st.Stores, false).YAML())
+	st2 := newStores()
+	parse(t, string(first)).Apply(st2.Stores)
+	second := mustBytes(t)(seed.Export(st2.Stores, false).YAML())
+	require.Equal(t, string(first), string(second))
+
+	list := st2.Matches.List()
+	require.Len(t, list, 1)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(list[0].Response.Body, &got))
+	for _, c := range cases {
+		require.Equal(t, c.val, got[c.name], c.name)
+	}
+	require.Contains(t, got, "nil")
+	require.Nil(t, got["nil"])
+	require.Equal(t, map[string]any{}, got["object"])
+	require.Equal(t, []any{}, got["array"])
+	require.Equal(t, body["nested"], got["nested"])
+}
