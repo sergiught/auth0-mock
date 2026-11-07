@@ -7,6 +7,10 @@ services:
       - "8080:8080"
       - "8443:8443"
     env_file: .env
+    # To load a seed file, mount its folder (not the file) and set SEED_FILE in .env:
+    # volumes:
+    #   - ./seed:/seed:ro
+    # SEED_FILE=/seed/seed.yaml
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]

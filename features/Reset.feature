@@ -52,3 +52,7 @@ Feature: Reset operations
     Then I receive a 200 response
     And the expectations list has 1 entries
     And the expectations list contains "GET /api/v2/users/auth0|x"
+
+  Scenario: keep_seed=false is accepted when no seed file is loaded
+    When I send "POST /admin0/reset?keep_seed=false" without a bearer
+    Then I receive a 204 response

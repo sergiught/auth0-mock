@@ -81,6 +81,7 @@ The container is configured via environment variables. The most common ones:
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | _empty_               | If both set → load; else auto-gen    |
 | `TLS_CACHE_DIR` | _empty_                                | Persist auto-gen cert across restarts |
 | `ISSUER_URL`    | `https://localhost:8443/`              | `iss` claim and OIDC discovery base; `auto` derives it from the request's address, so a token only verifies at the address it was minted at |
+| `SEED_FILE`     | _empty_ (off)                          | Path to a YAML or JSON seed file loaded at startup and re-applied by `/admin0/reset`; reloaded when it changes. From release 0.234.0 ([guide](https://sergiu.dev/auth0-mock/guides/seed-file/)) |
 | `DEFAULT_AUDIENCE` | `https://localhost:8443/api/v2/`    | Default `aud` if request omits one; blank = none (opaque user-login tokens, `client_credentials` gets 403) |
 | `LOG_LEVEL`     | `info`                                 | `debug` / `info` / `warn` / `error`  |
 | `WRITE_TIMEOUT` | `30s`                                  | `http.Server.WriteTimeout` — slow-write defence |

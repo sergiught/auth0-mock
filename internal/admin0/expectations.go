@@ -3,9 +3,9 @@ package admin0
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -16,17 +16,6 @@ import (
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
-// expectationBody is the POST /admin0/expectations request payload: the target
-// operation (method + path), an optional request matcher, and the canned
-// response to return when the matcher applies, plus optional later answers.
-type expectationBody struct {
-	Method   string                  `json:"method"`
-	Path     string                  `json:"path"`
-	Request  *matches.RequestMatcher `json:"request,omitempty"`
-	Response matches.ResponseDef     `json:"response"`
-	Then     []matches.ResponseDef   `json:"then,omitempty"`
-}
-
 // PostExpectationHandler registers (upserts) an expectation for the Management
 // API operation identified by {method, path}.
 type PostExpectationHandler struct {
@@ -35,76 +24,22 @@ type PostExpectationHandler struct {
 }
 
 func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var p expectationBody
+	var p matches.Registration
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "decode body: "+err.Error(), "invalid_body")
 		return
 	}
-	p.Method = strings.ToUpper(p.Method)
-	if p.Method == "" || p.Path == "" {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "method and path are required", "invalid_body")
-		return
-	}
-	if p.Response.Status == 0 {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "response.status is required", "invalid_body")
-		return
-	}
-	op, err := h.Validator.Resolve(p.Method, p.Path)
+	exp, err := matches.Prepare(h.Validator, p)
 	if err != nil {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"no Management API operation for "+p.Method+" "+p.Path, "unknown_operation")
-		return
-	}
-	// The event stream's success answer is the live stream itself, fed by
-	// POST /admin0/events. A canned 2xx would silently replace it with a
-	// static body, so only error stubs may stand in for it.
-	if op.Op.OperationID == spec.SubscribeEventsOperationID && p.Response.Status < http.StatusBadRequest {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"GET /api/v2/events accepts only error stubs (status >= 400); push events with POST /admin0/events instead",
-			"invalid_match")
-		return
-	}
-	if err := h.Validator.ValidateRegistration(op, p.Response.Status, p.Response.Body); err != nil {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-			"registered response violates schema for status "+strconv.Itoa(p.Response.Status)+": "+err.Error(),
-			"invalid_match")
-		return
-	}
-	if msg, code := h.validateThen(op, p.Then); msg != "" {
-		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", msg, code)
-		return
-	}
-	// Normalize an empty request matcher to a nil catch-all so a catch-all has
-	// exactly one representation in the store.
-	req := p.Request
-	if req.IsEmpty() {
-		req = nil
-	}
-	if req != nil {
-		if err := h.Validator.ValidateRequestMatcher(op, req.Body); err != nil {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				"request matcher body violates request schema: "+err.Error(), "invalid_request_match")
+		var re *matches.RegistrationError
+		if errors.As(err, &re) {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", re.Message, re.Code)
 			return
 		}
-		if err := h.Validator.ValidateQueryMatcher(op, req.Query); err != nil {
-			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
-				"request matcher query is invalid: "+err.Error(), "invalid_request_match")
-			return
-		}
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", err.Error(), "invalid_body")
+		return
 	}
-	kind := matches.KindOf(p.Path)
-	storePath := p.Path
-	if kind == matches.KindTemplate {
-		storePath = op.Template
-	}
-	stored := h.Store.Put(matches.Expectation{
-		Method:   p.Method,
-		Path:     storePath,
-		Kind:     kind,
-		Request:  req,
-		Response: p.Response,
-		Then:     p.Then,
-	})
+	stored := h.Store.Put(exp)
 	// Echo the assigned ID so the SDK / curl caller can hold a handle
 	// to this specific registration (used by per-stub Hits / Clear in
 	// batches 6b and 6d). Status changes 204 → 201 to advertise the
@@ -114,25 +49,6 @@ func (h *PostExpectationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(struct {
 		ID string `json:"id"`
 	}{ID: stored.ID})
-}
-
-// validateThen checks every sequence entry like the primary response and
-// returns the first problem as a message naming the entry plus its error
-// code, or "" when valid.
-func (h *PostExpectationHandler) validateThen(op spec.Operation, then []matches.ResponseDef) (msg, code string) {
-	for i, t := range then {
-		at := "then[" + strconv.Itoa(i) + "]"
-		switch {
-		case t.Status == 0:
-			return at + ".status is required", "invalid_body"
-		case op.Op.OperationID == spec.SubscribeEventsOperationID && t.Status < http.StatusBadRequest:
-			return "GET /api/v2/events accepts only error stubs (status >= 400); " + at + " has status " + strconv.Itoa(t.Status), "invalid_match"
-		}
-		if err := h.Validator.ValidateRegistration(op, t.Status, t.Body); err != nil {
-			return "registered " + at + " violates schema for status " + strconv.Itoa(t.Status) + ": " + err.Error(), "invalid_match"
-		}
-	}
-	return "", ""
 }
 
 type listExpectationsResponse struct {

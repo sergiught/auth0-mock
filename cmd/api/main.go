@@ -9,6 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/claims"
@@ -22,6 +25,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
+	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/server"
 	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/internal/tlscert"
@@ -93,6 +97,16 @@ func run() error {
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore(pkce.WithNow(clk.Now))
 	mfaStore := mfa.NewStore(mfa.WithNow(clk.Now))
+	seedMgr, err := loadSeed(cfg.SeedFile, validator, seed.Stores{
+		Matches:       store,
+		Claims:        claimsStore,
+		ClaimMappings: claimMappings,
+		Permissions:   permsStore,
+		MFA:           mfaStore,
+	}, log)
+	if err != nil {
+		return err
+	}
 	handler, err := router.New(router.Deps{
 		Log:                          log,
 		Store:                        store,
@@ -117,6 +131,7 @@ func run() error {
 		EventsReplayBuffer:           cfg.EventsReplayBuffer,
 		Journal:                      journal.New(cfg.RequestJournalSize),
 		EventsReconnectHint:          cfg.EventsReconnectHint,
+		Seed:                         seedMgr,
 	})
 	if err != nil {
 		return fmt.Errorf("router init: %w", err)
@@ -151,9 +166,26 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	watchSeed(ctx, seedMgr)
+
 	if err := orc.Start(ctx); err != nil {
 		return fmt.Errorf("server: %w", err)
 	}
 	log.Info().Msg("shutdown complete")
 	return nil
+}
+
+// loadSeed builds the seed manager for SEED_FILE; empty path means no seed.
+func loadSeed(path string, v *spec.Validator, st seed.Stores, log zerolog.Logger) (*seed.Manager, error) {
+	if path == "" {
+		return nil, nil
+	}
+	return seed.NewManager(path, v, st, log)
+}
+
+// watchSeed reloads the seed file in the background until ctx ends.
+func watchSeed(ctx context.Context, m *seed.Manager) {
+	if m != nil {
+		go m.Watch(ctx, time.Second)
+	}
 }

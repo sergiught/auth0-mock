@@ -128,6 +128,8 @@ See [Event streams guide → Drive an event-stream consumer from a test](/auth0-
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/admin0/reset` | POST | Wipe everything: expectations, claims, claim mappings, authorize error rules, permissions, MFA flag, remembered users and refresh tokens, clock, SSE events hub, request journal |
+| `/admin0/reset?keep_seed=false` | POST | From release 0.234.0. Also drop the [seed file](/auth0-mock/guides/seed-file/) state; a plain reset re-applies the seed. Other values get a 400 |
+| `/admin0/export` | GET | From release 0.234.0. Dump expectations, claims, claim mappings, permissions and the MFA flag as a seed file. `?format=yaml` returns YAML; `?detail=true` adds `id` and `hits`. See [Seed file](/auth0-mock/guides/seed-file/) |
 | `/admin0/expectations` | POST / GET / DELETE | Register, list, and clear canned Management API responses; an optional `then` list answers successive calls in sequence ([cookbook](/auth0-mock/guides/stubbing/#test-retries-429-then-200)) |
 | `/admin0/journal` | GET / DELETE | List (`?method=`, `?path=`; a `{template}` path matches by operation) or clear the journal of `/api/v2/*` calls the mock received: method, path, redacted headers, body, status, `matched` / `no_match` / `rejected` outcome. Independent store: `DELETE /admin0/expectations` doesn't touch it; `/admin0/reset` clears it |
 | `/admin0/journal/unmatched` | GET | Only the calls no stub matched, each with up to 3 `nearMisses` showing which fields differed |

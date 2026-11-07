@@ -5,8 +5,10 @@
 package admin0
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -19,6 +21,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/session"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
@@ -37,6 +40,8 @@ type Deps struct {
 	MFA             *mfa.Store
 	Validator       *spec.Validator
 	Clock           *clock.Controlled
+	// Seed is the loaded SEED_FILE. Nil means no seed: reset wipes everything.
+	Seed *seed.Manager
 	// Events is the SSE hub for POST /admin0/events. Nil is fine for
 	// admin0 tests that don't exercise the events surface — the route
 	// only registers when both Events and Validator are non-nil, and
@@ -66,11 +71,15 @@ func Mount(r chi.Router, d Deps) {
 	if d.AuthorizeErrors == nil {
 		d.AuthorizeErrors = authorizeerr.NewStore()
 	}
+	if d.Seed != nil {
+		d.Seed.Bind(func(ctx context.Context) { wipe(ctx, d) })
+	}
 
 	r.Method(http.MethodGet, "/admin0/journal", &ListJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodGet, "/admin0/journal/unmatched", &ListUnmatchedJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodDelete, "/admin0/journal", &DeleteJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
+	r.Method(http.MethodGet, "/admin0/export", &ExportHandler{Deps: d})
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
 	r.Method(http.MethodDelete, "/admin0/expectations", &DeleteExpectationsHandler{Store: d.Matches})
@@ -129,43 +138,61 @@ type ResetHandler struct {
 }
 
 func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.Deps.Matches != nil {
-		h.Deps.Matches.ResetAll()
+	keep := true
+	if v := r.URL.Query().Get("keep_seed"); v != "" {
+		var err error
+		if keep, err = strconv.ParseBool(v); err != nil {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				"keep_seed must be true or false", "invalid_query")
+			return
+		}
 	}
-	if h.Deps.Claims != nil {
-		h.Deps.Claims.Clear()
+	if h.Deps.Seed != nil {
+		h.Deps.Seed.Reset(r.Context(), keep)
+	} else {
+		wipe(r.Context(), h.Deps)
 	}
-	if h.Deps.ClaimMappings != nil {
-		h.Deps.ClaimMappings.Clear()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// wipe clears every store admin0 governs; reset runs it with or without a seed.
+func wipe(ctx context.Context, d Deps) {
+	if d.Matches != nil {
+		d.Matches.ResetAll()
 	}
-	if h.Deps.Sessions != nil {
-		h.Deps.Sessions.Clear()
+	if d.Claims != nil {
+		d.Claims.Clear()
 	}
-	if h.Deps.AuthorizeErrors != nil {
-		h.Deps.AuthorizeErrors.Clear()
+	if d.ClaimMappings != nil {
+		d.ClaimMappings.Clear()
 	}
-	if h.Deps.Permissions != nil {
-		h.Deps.Permissions.Clear()
+	if d.Sessions != nil {
+		d.Sessions.Clear()
 	}
-	if h.Deps.MFA != nil {
-		h.Deps.MFA.Reset()
+	if d.AuthorizeErrors != nil {
+		d.AuthorizeErrors.Clear()
 	}
-	if h.Deps.Journal != nil {
-		h.Deps.Journal.Clear()
+	if d.Permissions != nil {
+		d.Permissions.Clear()
 	}
-	if h.Deps.Clock != nil {
-		h.Deps.Clock.Reset()
+	if d.MFA != nil {
+		d.MFA.Reset()
 	}
-	if h.Deps.Events != nil {
+	if d.Journal != nil {
+		d.Journal.Clear()
+	}
+	if d.Clock != nil {
+		d.Clock.Reset()
+	}
+	if d.Events != nil {
 		// Drain every open SSE subscriber and clear the replay
 		// buffer so the next test starts fresh. The hub stays
 		// functional after Reset (unlike Shutdown, which permanently
 		// closes it). Errors are ignored: by the time reset fires the
 		// test verdict is usually decided and a failing reset
 		// shouldn't mask the original failure.
-		_ = h.Deps.Events.Reset(r.Context())
+		_ = d.Events.Reset(ctx)
 	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- mfa ------------------------------------------------------------------.
