@@ -51,6 +51,12 @@ Note the request path `/api/v2/users/auth0%7C123`. The stub is registered with a
     go get github.com/testcontainers/testcontainers-go@v0.45.0 github.com/coreos/go-oidc/v3
     ```
 
+    Run it:
+
+    ```bash
+    go test ./...
+    ```
+
     <Code code={goTest} lang="go" title="auth0mock_test.go" />
   </TabItem>
   <TabItem label="Node.js">
@@ -58,6 +64,12 @@ Note the request path `/api/v2/users/auth0%7C123`. The stub is registered with a
 
     ```bash
     npm i -D testcontainers@12.2.1 jose
+    ```
+
+    Run it:
+
+    ```bash
+    npm test
     ```
 
     npm 12 may print a notice about blocked install scripts for some of Testcontainers' dependencies. It is harmless here.
@@ -71,10 +83,20 @@ Note the request path `/api/v2/users/auth0%7C123`. The stub is registered with a
     uv add --dev testcontainers==4.15.0 "pyjwt[crypto]==2.15.1" pytest
     ```
 
+    Run it:
+
+    ```bash
+    uv run pytest
+    ```
+
     <Code code={pyTest} lang="python" title="test_auth0mock.py" />
   </TabItem>
   <TabItem label="Java">
-    Add the dependencies to your `pom.xml`. The full file is below the test.
+    Add the dependencies to your `pom.xml`. The full file is below the test. Run it with:
+
+    ```bash
+    ./mvnw test
+    ```
 
     <Code code={javaTest} lang="java" title="Auth0MockTest.java" />
 
@@ -92,7 +114,7 @@ Use a service container when one mock serves every step in a job. The runner sta
 
 <Code code={serviceWorkflow} lang="yaml" title=".github/workflows/example-service-container.yml" />
 
-This recipe does not set `ISSUER_URL` and does not verify the token. `auto` makes a token valid only at the address it was minted at, and steps on the runner always reach the service at `localhost:8080`, so `auto` adds nothing here. If your app checks `iss`, set a fixed `ISSUER_URL=http://localhost:8080/` instead.
+Without `ISSUER_URL`, the issuer defaults to `https://localhost:8443/`, so the `jwks_uri` in the discovery document points at the HTTPS listener, which this recipe turns off. If your app verifies tokens, set `ISSUER_URL=http://localhost:8080/` (or `auto`, from release 0.234.0). The recipe itself only calls the stub, so it needs neither.
 
 The health check uses `wget`, which the image includes.
 

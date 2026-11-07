@@ -29,7 +29,7 @@ Add `.auth0-mock/` to your own `.gitignore`: it holds the mock's private key.
 ## Different port
 
 If you map a different host port (for example `-p 127.0.0.1:9443:8443`), also set `-e ISSUER_URL=https://localhost:9443/` and `AUTH0_MOCK_URL=https://localhost:9443/`. Otherwise the `iss` claim in tokens will not match the URL you call. Use that port in the commands below too.
-From release 0.234.0 you can set `-e ISSUER_URL=auto` instead. The mock then builds the issuer from the address of each request, so any mapped port works.
+From release 0.234.0 you can set `-e ISSUER_URL=auto` instead of the fixed `ISSUER_URL`. The mock then builds the issuer from the address of each request, so any mapped port works. `AUTH0_MOCK_URL` still has to match the port you mapped.
 
 ## Trust its certificate
 
@@ -41,9 +41,9 @@ export SSL_CERT_FILE="$PWD/.auth0-mock/tls.crt"
 
 Without it, the first call to the mock fails with `x509: certificate signed by unknown authority`.
 
-On macOS and Windows, Go reads `SSL_CERT_FILE` only from Go 1.27. With an older Go there, add `.auth0-mock/tls.crt` to the system trust store instead.
+On macOS and Windows, Go uses `SSL_CERT_FILE` only with Go 1.27 or newer, and only if your `go.mod` says `go 1.27` or later or you set `GODEBUG=x509sslcertoverrideplatform=1`. Otherwise add `.auth0-mock/tls.crt` to the system trust store.
 
-Download modules first because, with `SSL_CERT_FILE` set, Go may trust only the mock's certificate (it does on macOS and Windows with Go 1.27+), and fetching modules then fails. If that happens, run `env -u SSL_CERT_FILE go mod download`.
+Download modules first because, with `SSL_CERT_FILE` set, Go may trust only the mock's certificate (on macOS and Windows, when the override above is in effect), and fetching modules then fails. If that happens, run `env -u SSL_CERT_FILE go mod download`.
 
 ## Your API checks tokens
 
@@ -301,6 +301,12 @@ From a clone of this repo: download the modules once, then run the tests. CI doe
 cd examples/go
 go mod download
 SSL_CERT_FILE=../../.auth0-mock/tls.crt go test ./...
+```
+
+On macOS or Windows, use this instead:
+
+```bash
+GODEBUG=x509sslcertoverrideplatform=1 SSL_CERT_FILE=../../.auth0-mock/tls.crt go test ./...
 ```
 
 The full files are in [`examples/go/`](https://github.com/sergiught/auth0-mock/tree/main/examples/go/).

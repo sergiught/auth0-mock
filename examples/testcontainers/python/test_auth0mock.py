@@ -29,7 +29,7 @@ def test_auth0_mock():
 
     container = (
         DockerContainer(image)
-        .with_env("ADMIN_ALLOW_REMOTE", "true")  # the admin API is loopback-only by default; the test runs outside the container
+        .with_env("ADMIN_ALLOW_REMOTE", "true")  # the image listens on 0.0.0.0; the mock refuses to start that way without this, since /admin0 has no auth
         .with_env("HTTPS_ADDR", "off")  # plain HTTP, no certificate to trust
         .with_env("ISSUER_URL", "auto")  # issuer follows the URL the test reaches the mock on
         .with_exposed_ports(8080)

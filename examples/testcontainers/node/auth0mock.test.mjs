@@ -9,7 +9,7 @@ test("auth0-mock in Testcontainers", async (t) => {
 
   const container = await new GenericContainer(image)
     .withEnvironment({
-      ADMIN_ALLOW_REMOTE: "true", // the admin API is loopback-only by default; the test runs outside the container
+      ADMIN_ALLOW_REMOTE: "true", // the image listens on 0.0.0.0; the mock refuses to start that way without this, since /admin0 has no auth
       HTTPS_ADDR: "off", // plain HTTP, no certificate to trust
       ISSUER_URL: "auto", // issuer follows the URL the test reaches the mock on
     })

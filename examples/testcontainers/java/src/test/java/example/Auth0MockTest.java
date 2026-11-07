@@ -37,7 +37,7 @@ class Auth0MockTest {
     // The extension starts the container before the test and stops it afterwards.
     @Container
     static GenericContainer<?> mock = new GenericContainer<>(IMAGE)
-            .withEnv("ADMIN_ALLOW_REMOTE", "true") // admin API is loopback-only by default; the test runs outside the container
+            .withEnv("ADMIN_ALLOW_REMOTE", "true") // the image listens on 0.0.0.0; the mock refuses to start that way without this, since /admin0 has no auth
             .withEnv("HTTPS_ADDR", "off") // plain HTTP, no certificate trust to set up
             .withEnv("ISSUER_URL", "auto") // the issuer follows the URL the test reaches the mock on
             .withExposedPorts(8080)
