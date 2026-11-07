@@ -40,6 +40,7 @@ run_suite() {
     go) (cd "$HERE/go" && go test -count=1 ./...) ;;
     node) (cd "$HERE/node" && npm ci --no-audit --no-fund && npm test) ;;
     python) (cd "$HERE/python" && uv sync --locked -q && uv run --locked -q pytest -q) ;;
+    java) (cd "$HERE/java" && ./mvnw -B -q test) ;;
     *) echo "unsupported suite: $1" >&2; return 1 ;;
   esac
 }
