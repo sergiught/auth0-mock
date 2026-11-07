@@ -207,3 +207,18 @@ func TestPrepareTemplateThenOKAndSurvivesStore(t *testing.T) {
 	require.NotNil(t, found)
 	require.NotNil(t, found.Then[0].Tmpl())
 }
+
+// A required response field filled by a whole-string {{body.x}} must still
+// register: the sample render keeps the slot instead of dropping the key.
+func TestPrepareTemplateRequiredFieldFromBody(t *testing.T) {
+	v := newValidator(t)
+	reg := func(body string, tmpl bool) error {
+		_, err := matches.Prepare(v, matches.Registration{
+			Method: "POST", Path: "/api/v2/custom-domains/{id}/test",
+			Response: matches.ResponseDef{Status: 200, Template: tmpl, Body: []byte(body)},
+		})
+		return err
+	}
+	require.Error(t, reg(`{}`, false), "success is required, so an empty body must fail")
+	require.NoError(t, reg(`{"success":"{{body.success}}"}`, true))
+}

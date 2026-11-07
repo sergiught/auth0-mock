@@ -205,6 +205,21 @@ Feature: Expectation registration and lookup
     And the response JSON path "email" equals "second@x.test"
     And the response JSON path "identities.0.user_id" exists
 
+  Scenario: Templated POST /users leaves out a field the request omitted
+    Given the mock is running
+    And I have a valid bearer token
+    And I register an expectation for "POST /api/v2/users" with response:
+      """
+      {"status":201,"template":true,"body":{"user_id":"auth0|{{uuid}}","email":"{{body.email}}","email_verified":"{{body.email_verified}}","created_at":"{{now}}"}}
+      """
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"nov@x.test","connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "email" equals "nov@x.test"
+    And the response JSON path "email_verified" does not exist
+
   Scenario: Templated created_at follows a frozen clock
     Given the mock is running
     When I PUT "/admin0/clock" with body:

@@ -143,9 +143,10 @@ func prepareEntry(v *spec.Validator, op spec.Operation, path, at string, e *Resp
 		}
 	}
 	rendered, _, err := t.Render(tmpl.Vars{
-		UUID: "00000000-0000-4000-8000-000000000000",
-		Now:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		Path: pathVars,
+		UUID:   "00000000-0000-4000-8000-000000000000",
+		Now:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Path:   pathVars,
+		Sample: true,
 	})
 	if err != nil {
 		return at + " template: " + err.Error(), "invalid_template"

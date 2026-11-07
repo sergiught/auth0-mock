@@ -71,9 +71,41 @@ func TestRenderBodyMissing(t *testing.T) {
 	for _, b := range [][]byte{[]byte(`{"s":1}`), nil, []byte("not json")} {
 		v := testVars()
 		v.Body = b
-		assert.Equal(t, `{"a":"","b":"x"}`,
+		assert.Equal(t, `{"b":"x"}`,
 			renderBody(t, `{"a":"{{body.nope}}","b":"x{{body.nope}}"}`, nil, v))
 	}
+}
+
+func TestRenderBodyMissingDropsKeysAndElements(t *testing.T) {
+	v := testVars()
+	v.Body = []byte(`{"a":1,"c":3}`)
+	assert.Equal(t, `{"k":[1,3],"n":{"keep":"x","o":{}}}`,
+		renderBody(t, `{"k":["{{body.a}}","{{body.b}}","{{body.c}}"],"n":{"keep":"x","gone":"{{body.b}}","o":{"deep":"{{body.z.y}}"}}}`, nil, v))
+}
+
+func TestRenderBodyNonJSONDropsWholeKeepsEmbedded(t *testing.T) {
+	v := testVars()
+	v.Body = []byte("not json")
+	assert.Equal(t, `{"emb":"u="}`,
+		renderBody(t, `{"whole":"{{body.a}}","emb":"u={{body.a}}"}`, nil, v))
+}
+
+func TestRenderBodyWholeBodyMissingIsEmptyString(t *testing.T) {
+	assert.Equal(t, `""`, renderBody(t, `"{{body.a}}"`, nil, testVars()))
+}
+
+func TestRenderBodyPresentFalsyValuesKept(t *testing.T) {
+	v := testVars()
+	v.Body = []byte(`{"f":false,"z":0,"n":null,"e":""}`)
+	assert.Equal(t, `{"e":"","f":false,"n":null,"z":0}`,
+		renderBody(t, `{"f":"{{body.f}}","z":"{{body.z}}","n":"{{body.n}}","e":"{{body.e}}"}`, nil, v))
+}
+
+func TestRenderSampleKeepsSlot(t *testing.T) {
+	v := testVars()
+	v.Sample = true
+	assert.Equal(t, `{"a":"","l":[""]}`,
+		renderBody(t, `{"a":"{{body.a}}","l":["{{body.b}}"]}`, nil, v))
 }
 
 func TestRenderPath(t *testing.T) {

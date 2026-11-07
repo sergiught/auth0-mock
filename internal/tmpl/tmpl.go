@@ -24,6 +24,9 @@ type Vars struct {
 	Now  time.Time
 	Path map[string]string
 	Body []byte
+	// Sample marks a registration-time render: a whole-string body
+	// placeholder with no value renders "" in place instead of being dropped.
+	Sample bool
 }
 
 type segKind int
@@ -220,7 +223,9 @@ func (t *Template) Render(v Vars) (body []byte, headers map[string]string, err e
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r.render(t.body)); err != nil {
+	// A dropped top-level value is already "", so the flag is not needed.
+	rendered, _ := r.render(t.body)
+	if err := enc.Encode(rendered); err != nil {
 		return nil, nil, fmt.Errorf("encode rendered body: %w", err)
 	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), headers, nil
@@ -232,30 +237,36 @@ type renderer struct {
 }
 
 // render rebuilds the tree with placeholders replaced, leaving the parsed tree untouched.
-func (r renderer) render(n any) any {
+// The bool is false when n is a whole-string body placeholder with no value:
+// the caller drops it from its parent object or array.
+func (r renderer) render(n any) (any, bool) {
 	switch x := n.(type) {
 	case *str:
 		if len(x.segs) == 1 && x.segs[0].kind == segBody {
 			if res := r.lookup(x.segs[0].text); res.Exists() {
-				return json.RawMessage(res.Raw)
+				return json.RawMessage(res.Raw), true
 			}
-			return ""
+			return "", r.v.Sample
 		}
-		return r.text(x)
+		return r.text(x), true
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			out[k] = r.render(e)
+			if v, ok := r.render(e); ok {
+				out[k] = v
+			}
 		}
-		return out
+		return out, true
 	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			out[i] = r.render(e)
+		out := make([]any, 0, len(x))
+		for _, e := range x {
+			if v, ok := r.render(e); ok {
+				out = append(out, v)
+			}
 		}
-		return out
+		return out, true
 	default:
-		return n
+		return n, true
 	}
 }
 

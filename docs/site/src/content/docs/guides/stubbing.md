@@ -173,7 +173,8 @@ Placeholders work in JSON string values of the body and in header values. Object
 - **`{{now}}` follows the clock.** It reads `/admin0/clock`. Freeze the clock and `created_at` is the frozen time.
 - **Whole-string `{{body.PATH}}` keeps its type.** If a string is only `{{body.PATH}}`, the field replaces the whole string with its own type. `"email_verified": "{{body.email_verified}}"` gives `true`, and an object field gives the object.
 - **Embedded `{{body.PATH}}` is text.** In `"User {{body.email}}"`, a string goes in as is and any other value goes in as its JSON text.
-- **A missing field renders `""`.** That includes a request with no JSON body.
+- **A missing field in a whole-string `{{body.PATH}}` is left out.** The key is removed from its object, or the element from its array, the way Auth0 leaves out fields you didn't send. If the placeholder is the entire body, it renders `""`. This also applies to a request with no JSON body.
+- **A missing field in an embedded `{{body.PATH}}` renders `""`.** `"User {{body.email}}"` gives `"User "`.
 - **Literal braces.** Write `\{{` (in JSON, `"\\{{"`) to get a literal `{{`.
 
 The mock checks the template when you register the stub. An unknown placeholder, a bad path parameter name or an unclosed `{{` gives a 400 with the code `invalid_template`. The body is also checked against the response schema with sample values, so a typo in a field name still fails. A header that renders with a line break gives a 500 `invalid_template` when served.
