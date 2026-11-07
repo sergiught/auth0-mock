@@ -97,7 +97,8 @@ paths:
       description: |
         The body can be saved as a seed file and loaded with `SEED_FILE`.
         Empty sections are left out, keys are sorted, and exporting a
-        loaded export gives the same bytes again.
+        loaded export gives the same values again. Numbers may come back in
+        their shortest form, for example `1.0` as `1`.
       parameters:
         - name: format
           in: query
