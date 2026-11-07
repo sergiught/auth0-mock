@@ -2,7 +2,7 @@
   "name": "auth0-mock-testcontainers-node",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.22" },
   "scripts": { "test": "node --test" },
   "devDependencies": {
     "jose": "6.2.15",

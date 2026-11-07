@@ -52,4 +52,5 @@ echo "==> Python quickstart"
 
 echo "==> Go quickstart"
 # Download before setting SSL_CERT_FILE: it replaces the trust store, so fetching modules would fail.
-(cd examples/go && env -u SSL_CERT_FILE go mod download && SSL_CERT_FILE="$AUTH0_MOCK_CA" go test -count=1 ./...)
+# GODEBUG makes Go 1.27+ honour SSL_CERT_FILE on macOS and Windows while go.mod says go 1.26.
+(cd examples/go && env -u SSL_CERT_FILE go mod download && GODEBUG=x509sslcertoverrideplatform=1 SSL_CERT_FILE="$AUTH0_MOCK_CA" go test -count=1 ./...)
