@@ -107,3 +107,73 @@ func TestPrepareTreatsEmptyMapsAsOmitted(t *testing.T) {
 	require.True(t, matches.SameTarget(c, d))
 	require.Nil(t, c.Request.Headers)
 }
+
+func TestPrepareTemplateOK(t *testing.T) {
+	v := newValidator(t)
+	body := []byte(`{"user_id":"auth0|{{uuid}}","email":"{{body.email}}","email_verified":"{{body.email_verified}}","created_at":"{{now}}","identities":[{"provider":"auth0","user_id":"{{uuid}}","connection":"{{body.connection}}","isSocial":false}]}`)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "POST", Path: "/api/v2/users",
+		Response: matches.ResponseDef{
+			Status: 201, Template: true, Body: body,
+			Headers: map[string]string{"Location": "/api/v2/users/auth0|{{uuid}}"},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Response.Tmpl())
+	require.Equal(t, string(body), string(exp.Response.Body))
+}
+
+func TestPrepareTemplateErrors(t *testing.T) {
+	v := newValidator(t)
+	tests := []struct {
+		name    string
+		reg     matches.Registration
+		code    string
+		contain []string
+	}{
+		{"response", matches.Registration{Method: "GET", Path: "/api/v2/users/{id}",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"user_id":"{{nope}}"}`)}},
+			"invalid_template", []string{"response", "nope"}},
+		{"then", matches.Registration{Method: "GET", Path: "/api/v2/users/{id}",
+			Response: matches.ResponseDef{Status: 404},
+			Then:     []matches.ResponseDef{{Status: 200, Template: true, Body: []byte(`{"user_id":"{{nope}}"}`)}}},
+			"invalid_template", []string{"then[0]", "nope"}},
+		{"unknown path name", matches.Registration{Method: "GET", Path: "/api/v2/users/{id}",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.nope}}"}`)}},
+			"invalid_template", []string{"nope"}},
+		{"schema format", matches.Registration{Method: "POST", Path: "/api/v2/users",
+			Response: matches.ResponseDef{Status: 201, Template: true, Body: []byte(`{"created_at":"{{uuid}}"}`)}},
+			"invalid_match", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := matches.Prepare(v, tc.reg)
+			var re *matches.RegistrationError
+			require.ErrorAs(t, err, &re)
+			require.Equal(t, tc.code, re.Code, re.Message)
+			for _, s := range tc.contain {
+				require.Contains(t, re.Message, s)
+			}
+		})
+	}
+}
+
+func TestPrepareTemplateConcretePath(t *testing.T) {
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/auth0|1",
+		Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.id}}"}`)},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Response.Tmpl())
+}
+
+func TestPrepareNoTemplateFlagKeepsBraces(t *testing.T) {
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/email-templates/{templateName}",
+		Response: matches.ResponseDef{Status: 200, Body: []byte(`{"template":"verify_email","body":"<p>{{ user.email }}</p>","from":"a@b.c","subject":"s","syntax":"liquid","enabled":true}`)},
+	})
+	require.NoError(t, err)
+	require.Nil(t, exp.Response.Tmpl())
+}
