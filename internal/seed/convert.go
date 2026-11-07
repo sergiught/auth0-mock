@@ -1,9 +1,14 @@
 package seed
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 // toJSONValue turns a value decoded by yaml.Unmarshal into any into one
-// encoding/json can marshal: map keys become strings (YAML allows 200 or
+// encoding/json can marshal (numbers marked by prepareScalars become
+// json.Number, which marshals verbatim): map keys become strings (YAML allows 200 or
 // true as a key) and nested collections are converted recursively.
 func toJSONValue(v any) (any, error) {
 	switch t := v.(type) {
@@ -45,6 +50,11 @@ func toJSONValue(v any) (any, error) {
 			out[i] = c
 		}
 		return out, nil
+	case string:
+		if rest, ok := strings.CutPrefix(t, numberMarker); ok {
+			return json.Number(rest), nil
+		}
+		return t, nil
 	default:
 		return v, nil
 	}

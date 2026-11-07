@@ -154,7 +154,7 @@ func toYAMLNode(v any) *yaml.Node {
 			tag = "!!float"
 		} else if _, err := strconv.ParseInt(string(x), 10, 64); err != nil {
 			if _, err := strconv.ParseUint(string(x), 10, 64); err != nil {
-				tag = "!!float" // Too big for !!int, which would not load back.
+				tag = "!!float" // Plain text stays plain; !!int would add an explicit tag.
 			}
 		}
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: string(x)}

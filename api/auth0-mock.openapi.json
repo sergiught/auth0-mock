@@ -84727,7 +84727,7 @@
     },
     "/admin0/export": {
       "get": {
-        "description": "The body can be saved as a seed file and loaded with `SEED_FILE`.\nEmpty sections are left out, keys are sorted, and exporting a\nloaded export gives the same values again. Numbers may come back in\ntheir shortest form, for example `1.0` as `1`.\n",
+        "description": "The body can be saved as a seed file and loaded with `SEED_FILE`.\nEmpty sections are left out, keys are sorted, and exporting a\nloaded export gives the same bytes again. A number written in a\nYAML-only form such as `0x1F` comes back as plain decimal (`31`).\n",
         "parameters": [
           {
             "description": "`json` (the default) or `yaml`.",

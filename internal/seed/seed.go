@@ -78,15 +78,38 @@ func decodeStrict(data []byte, out any) error {
 	return dec.Decode(out)
 }
 
-// keepTimestampsAsText retags timestamp scalars as strings so they keep the
-// exact text written in the file instead of being parsed into time.Time and
-// re-rendered.
-func keepTimestampsAsText(n *yaml.Node) {
-	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!timestamp" {
-		n.Tag = "!!str"
+// numberMarker prefixes the text of a number that must reach the JSON output
+// exactly as written. YAML input has to be valid UTF-8, so no YAML string can
+// start with the byte 0xff and the marker cannot clash with real content.
+const numberMarker = "\xff"
+
+var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+
+// prepareScalars retags scalars so they keep the exact text written in the
+// file. Timestamps become strings instead of being parsed into time.Time and
+// re-rendered. Numbers that are valid JSON literals become marked strings, which
+// toJSONValue turns into json.Number; decoding them into int or float64 would
+// round big or precise values. Mapping keys are only checked for timestamps, as
+// they become text anyway.
+func prepareScalars(n *yaml.Node) {
+	prepareNode(n, false)
+}
+
+func prepareNode(n *yaml.Node, isKey bool) {
+	if n.Kind == yaml.ScalarNode {
+		switch n.ShortTag() {
+		case "!!timestamp":
+			n.Tag = "!!str"
+		case "!!int", "!!float":
+			if !isKey && jsonNumber.MatchString(n.Value) {
+				n.Tag = "!!str"
+				n.Value = numberMarker + n.Value
+				n.Style = 0
+			}
+		}
 	}
-	for _, c := range n.Content {
-		keepTimestampsAsText(c)
+	for i, c := range n.Content {
+		prepareNode(c, n.Kind == yaml.MappingNode && i%2 == 0)
 	}
 }
 
@@ -118,7 +141,7 @@ func Parse(data []byte, v *spec.Validator) (*Seed, error) {
 	if node == nil {
 		return &Seed{}, nil
 	}
-	keepTimestampsAsText(node)
+	prepareScalars(node)
 	var doc any
 	if err := node.Decode(&doc); err != nil {
 		return nil, err

@@ -215,18 +215,65 @@ func TestExportYAMLRoundTripStringLookalikes(t *testing.T) {
 	require.Equal(t, body["nested"], got["nested"])
 }
 
-// An integer too big for int64 and uint64 is exported as a float so the file
-// still loads; its precision is lost on the way back in.
-func TestExportYAMLHugeIntegerLoads(t *testing.T) {
-	raw := []byte(`{"big":18446744073709551616,"neg":-9223372036854775809}`)
-	st := newStores()
-	exp, err := matches.Prepare(newValidator(t), matches.Registration{
-		Method: "GET", Path: "/api/v2/users/{id}",
-		Response: matches.ResponseDef{Status: 200, Body: raw},
-	})
-	require.NoError(t, err)
-	st.Matches.Put(exp)
-	out := mustBytes(t)(seed.Export(st.Stores, false).YAML())
-	require.Contains(t, string(out), "18446744073709551616")
-	parse(t, string(out))
+// Numbers keep the exact text they were written with, whatever their size
+// or spelling, through load, export and a second load.
+func TestSeededNumbersKeepTheirText(t *testing.T) {
+	const src = `
+expectations:
+  - method: GET
+    path: /api/v2/users/{id}
+    response:
+      status: 200
+      body: {a: -9223372036854775809, b: 18446744073709551616, c: 0.10000000000000000555, d: 1.0, e: 1E5, f: -0, g: [1.50, 7]}
+claims:
+  big: 18446744073709551616
+`
+	want := []string{
+		`"a":-9223372036854775809`, `"b":18446744073709551616`, `"c":0.10000000000000000555`,
+		`"d":1.0`, `"e":1E5`, `"f":-0`, `"g":[1.50,7]`,
+	}
+	for _, e := range parse(t, src).Expectations {
+		for _, w := range want {
+			require.Contains(t, string(e.Response.Body), w)
+		}
+	}
+
+	for name, render := range map[string]func(seed.File) ([]byte, error){
+		"json": seed.File.JSON,
+		"yaml": seed.File.YAML,
+	} {
+		t.Run(name, func(t *testing.T) {
+			first := mustBytes(t)(render(seed.Export(applied(t, src).Stores, false)))
+			for _, w := range []string{"-9223372036854775809", "18446744073709551616", "0.10000000000000000555", "1.0", "1E5", "-0", "1.50"} {
+				require.Contains(t, string(first), w)
+			}
+			second := mustBytes(t)(render(seed.Export(applied(t, string(first)).Stores, false)))
+			require.Equal(t, string(first), string(second))
+		})
+	}
+}
+
+// Claims are decoded like PUT /admin0/claims, as float64, and still load.
+func TestSeededLargeClaimLoads(t *testing.T) {
+	s := parse(t, "claims: {big: 18446744073709551616, n: 1}\n")
+	require.InDelta(t, 1.8446744073709552e19, s.Claims["big"], 1e5)
+	require.InDelta(t, 1.0, s.Claims["n"], 0)
+}
+
+// YAML-only spellings are not JSON numbers; they load as plain decimals.
+func TestSeededYAMLOnlyNumbersBecomeDecimal(t *testing.T) {
+	s := parse(t, `
+expectations:
+  - {method: GET, path: "/api/v2/users/{id}", response: {status: 200, body: {a: 0x1F, b: 0o17, c: 1_000}}}
+`)
+	require.JSONEq(t, `{"a":31,"b":15,"c":1000}`, string(s.Expectations[0].Response.Body))
+}
+
+// A numeric mapping key stays the key text.
+func TestSeededNumericKeysAreUnchanged(t *testing.T) {
+	s := parse(t, `
+expectations:
+  - {method: GET, path: "/api/v2/users/{id}", response: {status: 200, body: {200: x, 1.5: y}}}
+`)
+	require.JSONEq(t, `{"200":"x","1.5":"y"}`, string(s.Expectations[0].Response.Body))
 }
