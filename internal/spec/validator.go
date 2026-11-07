@@ -313,19 +313,28 @@ func filterRequiredErrors(err error) error {
 
 // filterSkippedErrors drops schema errors located at, or under, one of the
 // JSON pointers in skip, returning nil if none remain.
+//
+// A oneOf/anyOf failure is reported at the union's own pointer, which a skip
+// pointer inside the value does not cover. For such an error the value is
+// re-checked against each branch with the skip pointers rebased to the union's
+// location; the error is dropped when some branch is left with no errors.
 func filterSkippedErrors(err error, skip []string) error {
 	if err == nil || len(skip) == 0 {
 		return err
 	}
-	var me openapi3.MultiError
-	if !errors.As(err, &me) {
-		return err
+	// Not errors.As: a union error wraps its branches' MultiError, which
+	// must not be mistaken for the top-level list.
+	errs := []error{err}
+	if me, ok := err.(openapi3.MultiError); ok { //nolint:errorlint // see above
+		errs = me
 	}
 	var kept openapi3.MultiError
-	for _, e := range me {
+	for _, e := range errs {
 		var se *openapi3.SchemaError
-		if errors.As(e, &se) && skipCovers(skip, se.JSONPointer()) {
-			continue
+		if errors.As(e, &se) {
+			if skipCovers(skip, se.JSONPointer()) || unionSatisfied(se, skip) {
+				continue
+			}
 		}
 		kept = append(kept, e)
 	}
@@ -335,16 +344,52 @@ func filterSkippedErrors(err error, skip []string) error {
 	return kept
 }
 
-// skipCovers reports whether the location given as raw path segments equals,
-// or lies under, one of the RFC 6901 pointers in skip.
-func skipCovers(skip, segments []string) bool {
+// unionSatisfied reports whether se is a oneOf/anyOf failure that some branch
+// accepts once the skip pointers under the union's location are ignored.
+func unionSatisfied(se *openapi3.SchemaError, skip []string) bool {
+	if se.Schema == nil || (se.SchemaField != "oneOf" && se.SchemaField != "anyOf") {
+		return false
+	}
+	base := pointerOf(se.JSONPointer())
+	var rebased []string
+	for _, s := range skip {
+		if strings.HasPrefix(s, base+"/") {
+			rebased = append(rebased, strings.TrimPrefix(s, base))
+		}
+	}
+	if len(rebased) == 0 {
+		return false
+	}
+	branches := se.Schema.OneOf
+	if se.SchemaField == "anyOf" {
+		branches = se.Schema.AnyOf
+	}
+	for _, b := range branches {
+		if b.Value == nil {
+			continue
+		}
+		if filterSkippedErrors(b.Value.VisitJSON(se.Value, openapi3.MultiErrors()), rebased) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// pointerOf renders raw path segments as an RFC 6901 pointer.
+func pointerOf(segments []string) string {
 	esc := strings.NewReplacer("~", "~0", "/", "~1")
 	var b strings.Builder
 	for _, seg := range segments {
 		b.WriteByte('/')
 		b.WriteString(esc.Replace(seg))
 	}
-	ptr := b.String()
+	return b.String()
+}
+
+// skipCovers reports whether the location given as raw path segments equals,
+// or lies under, one of the RFC 6901 pointers in skip.
+func skipCovers(skip, segments []string) bool {
+	ptr := pointerOf(segments)
 	for _, s := range skip {
 		if ptr == s || strings.HasPrefix(ptr, s+"/") {
 			return true

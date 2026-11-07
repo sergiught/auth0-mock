@@ -419,3 +419,45 @@ func TestValidator_ValidateResponse_ErrorEnvelope(t *testing.T) {
 	// Success statuses without content stay unchecked.
 	assert.NoError(t, v.ValidateResponse(postOp, 201, nil, []byte(`{"anything":1}`)))
 }
+
+// A response schema that is a oneOf fails as a whole at the union's own
+// pointer, which a skip pointer deeper inside does not cover. The skip
+// must apply inside each branch instead.
+func TestValidateRegistrationSkipping_Union(t *testing.T) {
+	s, err := Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
+
+	usersOp, err := v.Resolve("GET", "/api/v2/users")
+	require.NoError(t, err)
+	logOp, err := v.Resolve("POST", "/api/v2/log-streams")
+	require.NoError(t, err)
+
+	t.Run("array_branch_with_skipped_field", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(usersOp, 200, json.RawMessage(`[{"email_verified":"sample"}]`), []string{"/0/email_verified"})
+		assert.NoError(t, err)
+	})
+	t.Run("array_branch_without_skip_fails", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(usersOp, 200, json.RawMessage(`[{"email_verified":"sample"}]`), nil)
+		assert.Error(t, err)
+	})
+	t.Run("genuine_mismatch_still_fails", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(usersOp, 200, json.RawMessage(`[{"email_verified":"sample","blocked":"no"}]`), []string{"/0/email_verified"})
+		assert.Error(t, err)
+		err = v.ValidateRegistrationSkipping(usersOp, 200, json.RawMessage(`[{"email_verified":"sample","name":5}]`), []string{"/0/email_verified"})
+		assert.Error(t, err)
+	})
+	t.Run("skip_in_no_branch_shape_fails", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(usersOp, 200, json.RawMessage(`"text"`), []string{"/0/email_verified"})
+		assert.Error(t, err)
+	})
+	t.Run("log_stream_union", func(t *testing.T) {
+		err := v.ValidateRegistrationSkipping(logOp, 200, json.RawMessage(`{"type":"http","status":"sample"}`), []string{"/status"})
+		assert.NoError(t, err)
+		err = v.ValidateRegistrationSkipping(logOp, 200, json.RawMessage(`{"type":"http","status":"sample","name":5}`), []string{"/status"})
+		assert.Error(t, err)
+		err = v.ValidateRegistrationSkipping(logOp, 200, json.RawMessage(`{"type":"http","status":"sample"}`), nil)
+		assert.Error(t, err)
+	})
+}

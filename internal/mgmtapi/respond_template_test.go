@@ -165,3 +165,12 @@ func TestRespondTemplateErrorEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestRespondTemplateUnionResponse(t *testing.T) {
+	// GET /api/v2/users answers with a oneOf (array or paginated object);
+	// the placeholder in the array branch must still register.
+	e := newTmplEnv(t, true)
+	e.register(t, matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{
+		Status: 200, Template: true, Body: json.RawMessage(`[{"email_verified":"{{body.verified}}"}]`),
+	}})
+}
