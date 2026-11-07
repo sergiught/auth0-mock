@@ -84769,7 +84769,7 @@
             "description": "The current state."
           },
           "400": {
-            "description": "`errorCode: \"invalid_query\"` — `format` is not `json` or\n`yaml`, or `detail` is not `true` or `false`.\n"
+            "description": "`errorCode: \"invalid_query\"` — `format` is not `json` or\n`yaml`, or `detail` is not `true` or `false`, a parameter is repeated, or the query string is malformed.\n"
           }
         },
         "summary": "Dump the expectations, claims, claim mappings, permissions and MFA flag in the seed file format.",
@@ -85044,7 +85044,7 @@
             "description": "Reset complete."
           },
           "400": {
-            "description": "`errorCode: \"invalid_query\"` — `keep_seed` is not `true` or `false`.\n"
+            "description": "`errorCode: \"invalid_query\"` — `keep_seed` is not `true` or `false`, a parameter is repeated, or the query string is malformed.\n"
           }
         },
         "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, authorize error rules, permissions, mfa-required, clock, events, journal).",

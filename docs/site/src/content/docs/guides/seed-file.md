@@ -85,7 +85,7 @@ To wipe everything, the seed included, add `keep_seed=false`:
 curl -X POST "http://localhost:8080/admin0/reset?keep_seed=false"
 ```
 
-A value that is not `true` or `false` gets a 400. Without `SEED_FILE`, `keep_seed` changes nothing.
+A value that is not `true` or `false` gets a 400, as does a repeated parameter or a malformed query string. Without `SEED_FILE`, `keep_seed` changes nothing.
 
 ## Edits are picked up
 
@@ -112,6 +112,6 @@ The mock watches `seed/seed.yaml`, and writing it in place can be read half-writ
 | `format` | `json` (default), `yaml` | `yaml` returns `application/yaml` |
 | `detail` | `true`, `false` (default) | `true` adds `id` and `hits` to each expectation |
 
-Any other value gets a 400. Empty sections are left out and keys are sorted. Exporting, loading and exporting again gives the same bytes. Numbers keep the exact text you wrote, as values and as keys, so `1.0` stays `1.0`; a number written in a YAML-only form such as `0x1F` comes back as plain decimal (`31`).
+Any other value gets a 400, as does a repeated parameter or a malformed query string. Empty sections are left out and keys are sorted. Exporting, loading and exporting again gives the same bytes. Numbers keep the exact text you wrote, as values and as keys, so `1.0` stays `1.0`; a number written in a YAML-only form such as `0x1F` comes back as plain decimal (`31`).
 
 Reading the export does not change the mock, so you can call it at any point.

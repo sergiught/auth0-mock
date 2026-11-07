@@ -15,7 +15,10 @@ type ExportHandler struct {
 }
 
 func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
+	q, ok := strictQuery(w, r)
+	if !ok {
+		return
+	}
 	contentType := "application/json"
 	asYAML := false
 	format := "json"
@@ -33,7 +36,6 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	detail := false
 	if q.Has("detail") {
-		var ok bool
 		if detail, ok = parseFlag(q.Get("detail")); !ok {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				"detail must be true or false", "invalid_query")

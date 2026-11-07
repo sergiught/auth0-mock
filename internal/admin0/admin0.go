@@ -7,7 +7,10 @@ package admin0
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
+	"net/url"
+	"slices"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -137,9 +140,12 @@ type ResetHandler struct {
 }
 
 func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	q, ok := strictQuery(w, r)
+	if !ok {
+		return
+	}
 	keep := true
-	if q := r.URL.Query(); q.Has("keep_seed") {
-		var ok bool
+	if q.Has("keep_seed") {
 		if keep, ok = parseFlag(q.Get("keep_seed")); !ok {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				"keep_seed must be true or false", "invalid_query")
@@ -362,6 +368,27 @@ func (h *DeletePermissionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	audience := chi.URLParam(r, "*")
 	h.Store.Delete(audience)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// strictQuery parses the request's query string and writes a 400 when it is
+// malformed (a bad escape or a ; separator) or names a parameter twice.
+// The standard Query drops a bad pair and Get keeps only the first value, either of
+// which would quietly turn a request into one with the default settings.
+func strictQuery(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+			"malformed query string", "invalid_query")
+		return nil, false
+	}
+	for _, k := range slices.Sorted(maps.Keys(q)) {
+		if len(q[k]) > 1 {
+			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
+				k+" is given more than once", "invalid_query")
+			return nil, false
+		}
+	}
+	return q, true
 }
 
 // parseFlag reads a boolean query parameter. Only "true" and "false" are
