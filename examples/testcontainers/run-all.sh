@@ -38,6 +38,7 @@ export AUTH0_MOCK_IMAGE
 run_suite() {
   case "$1" in
     go) (cd "$HERE/go" && go test -count=1 ./...) ;;
+    node) (cd "$HERE/node" && npm ci --no-audit --no-fund && npm test) ;;
     *) echo "unsupported suite: $1" >&2; return 1 ;;
   esac
 }
