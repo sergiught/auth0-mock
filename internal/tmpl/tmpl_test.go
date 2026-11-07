@@ -176,3 +176,25 @@ func TestPathValues(t *testing.T) {
 	assert.Equal(t, map[string]string{"id": "a/b"}, PathValues("/api/v2/users/{id}", "/api/v2/users/a%2Fb"))
 	assert.Nil(t, PathValues("/api/v2/users/{id}", "/api/v2/users"))
 }
+
+func TestBodyMultipath(t *testing.T) {
+	v := testVars()
+	v.Body = []byte(`{"email":"a@x.io","user_id":"u1","other":1}`)
+	// Whole string: the projected object keeps its JSON type.
+	assert.JSONEq(t, `{"x":{"email":"a@x.io","user_id":"u1"}}`, renderBody(t, `{"x":"{{body.{email,user_id}}}"}`, nil, v))
+	assert.JSONEq(t, `{"x":{"email":"a@x.io","user_id":"u1"}}`, renderBody(t, `{"x":"{{ body.{email,user_id} }}"}`, nil, v))
+	// Embedded: the projection is spliced in as text.
+	assert.JSONEq(t, `{"x":"got {\"email\":\"a@x.io\",\"user_id\":\"u1\"}!"}`, renderBody(t, `{"x":"got {{body.{email,user_id}}}!"}`, nil, v))
+	// Braces inside a quoted alias, or escaped, do not count.
+	assert.JSONEq(t, `{"x":{"a}":"a@x.io"}}`, renderBody(t, `{"x":"{{body.{\"a}\":email}}}"}`, nil, v))
+	v.Body = []byte(`{"a}b":1}`)
+	assert.JSONEq(t, `{"x":1}`, renderBody(t, `{"x":"{{body.a\\}b}}"}`, nil, v))
+
+	_, err := Parse(json.RawMessage(`{"x":"{{body.{email}"}`), nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unclosed placeholder")
+
+	p, err := Parse(json.RawMessage(`{"x":"{{body.{email,user_id}}}"}`), nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/x"}, p.BodyPointers())
+}

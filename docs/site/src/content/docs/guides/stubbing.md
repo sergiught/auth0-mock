@@ -163,7 +163,7 @@ _, err := c.ExpectPost("/api/v2/users").
 | `{{uuid}}` | A random lowercase UUID v4 |
 | `{{now}}` | The mock's clock as UTC time with milliseconds, like `2026-11-07T12:34:56.789Z` |
 | `{{path.NAME}}` | The decoded path parameter `NAME` (`/api/v2/users/{id}` gives `{{path.id}}`) |
-| `{{body.PATH}}` | A field of the JSON request body, by [gjson path](https://github.com/tidwall/gjson/blob/master/SYNTAX.md) such as `email` or `app_metadata.plan` |
+| `{{body.PATH}}` | A field of the JSON request body, by [gjson path](https://github.com/tidwall/gjson/blob/master/SYNTAX.md) such as `email` or `app_metadata.plan`; a multipath like `{email,user_id}` works too |
 
 Spaces inside the braces are fine: `{{ uuid }}`.
 

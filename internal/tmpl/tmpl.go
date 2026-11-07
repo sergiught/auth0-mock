@@ -159,7 +159,7 @@ func parseString(s string, names map[string]bool) (*str, error) {
 			lit.WriteString("{{")
 			i += 3
 		case strings.HasPrefix(s[i:], "{{"):
-			end := strings.Index(s[i:], "}}")
+			end := placeholderEnd(s[i:])
 			if end < 0 {
 				return nil, fmt.Errorf("unclosed placeholder %q", s[i:])
 			}
@@ -178,6 +178,33 @@ func parseString(s string, names map[string]bool) (*str, error) {
 	}
 	flush()
 	return &str{segs: segs}, nil
+}
+
+// placeholderEnd returns the index of the "}}" closing the placeholder that
+// opens at the start of s, or -1. Braces in the name are balanced first, so a
+// gjson multipath like {{body.{a,b}}} ends at its last two braces, and braces
+// inside a quoted path key are ignored.
+func placeholderEnd(s string) int {
+	depth := 0
+	quoted := false
+	for j := 2; j < len(s); j++ {
+		c := s[j]
+		switch {
+		case c == '\\':
+			j++ // The next byte is escaped, so it is part of the name.
+		case quoted:
+			quoted = c != '"'
+		case c == '"':
+			quoted = true
+		case c == '{':
+			depth++
+		case depth == 0 && strings.HasPrefix(s[j:], "}}"):
+			return j
+		case c == '}' && depth > 0:
+			depth--
+		}
+	}
+	return -1
 }
 
 func parsePlaceholder(name string, names map[string]bool) (seg, error) {
