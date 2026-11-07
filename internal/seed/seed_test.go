@@ -341,3 +341,14 @@ expectations:
 `
 	require.Contains(t, firstBody(t, src), `"user_metadata":{"0.10000000000000000555":"k","v":0.10000000000000000555}`)
 }
+
+func TestParseRejectsKeysThatResolveToTheSameValue(t *testing.T) {
+	for key, src := range map[string]string{
+		`"31"`:   "claims:\n  0x1F: a\n  0o37: b\n",
+		`"null"`: "claims:\n  ~: a\n  null: b\n",
+		`"true"`: "claims:\n  true: a\n  True: b\n",
+		`"1"`:    "expectations:\n  - method: GET\n    path: /api/v2/users/{id}\n    response: {status: 200, body: {user_id: x, user_metadata: {+1: a, 0x1: b}}}\n",
+	} {
+		require.Contains(t, parseErr(t, src), "duplicate key "+key)
+	}
+}

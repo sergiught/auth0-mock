@@ -154,8 +154,10 @@ var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9
 // toJSONValue turns into json.Number; decoding them into int or float64 would
 // round big or precise values. Keys are marked too: toJSONValue drops the marker
 // from a key, so it keeps its written text, and an alias of an anchored key
-// still gets the exact number.
-func prepareScalars(n *yaml.Node) {
+// still gets the exact number. It also rejects two keys of one mapping that
+// become the same text, such as 0x1F and 0o37; the YAML decoder would
+// otherwise keep only the second one.
+func prepareScalars(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
 		switch n.ShortTag() {
 		case "!!timestamp":
@@ -169,8 +171,30 @@ func prepareScalars(n *yaml.Node) {
 		}
 	}
 	for _, c := range n.Content {
-		prepareScalars(c)
+		if err := prepareScalars(c); err != nil {
+			return err
+		}
 	}
+	if n.Kind != yaml.MappingNode {
+		return nil
+	}
+	seen := map[string]bool{}
+	for i := 0; i < len(n.Content); i += 2 {
+		var k any
+		if err := n.Content[i].Decode(&k); err != nil {
+			return err
+		}
+		switch k.(type) {
+		case map[string]any, map[any]any, []any:
+			continue // Not a scalar: toJSONValue rejects it.
+		}
+		text := keyText(k)
+		if seen[text] {
+			return fmt.Errorf("duplicate key %q after conversion to text", text)
+		}
+		seen[text] = true
+	}
+	return nil
 }
 
 // decodeSingleDocument parses data as exactly one YAML document. It returns a
@@ -201,7 +225,9 @@ func Parse(data []byte, v *spec.Validator) (*Seed, error) {
 	if node == nil {
 		return &Seed{}, nil
 	}
-	prepareScalars(node)
+	if err := prepareScalars(node); err != nil {
+		return nil, err
+	}
 	var doc any
 	if err := node.Decode(&doc); err != nil {
 		return nil, err
