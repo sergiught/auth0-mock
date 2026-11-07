@@ -75,7 +75,7 @@ The mock is strict about the file:
 
 If the file is bad at startup, the mock refuses to start. It prints `fatal: seed file <path>: ...` and exits with code 1. Check `docker compose logs auth0-mock`.
 
-A stub can use placeholders such as `{{uuid}}` and `{{now}}` when you set `template: true`. See [Dynamic responses](/auth0-mock/guides/stubbing/#dynamic-responses).
+A stub can use placeholders such as `{{uuid}}` and `{{now}}` when you set `template: true` (from release 0.234.0). See [Dynamic responses](/auth0-mock/guides/stubbing/#dynamic-responses).
 
 ```yaml
 expectations:

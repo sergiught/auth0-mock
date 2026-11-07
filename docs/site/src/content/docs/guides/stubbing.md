@@ -123,7 +123,7 @@ go-auth0 retries a 429 up to twice and waits at least 1s; `Retry-After: 0` keeps
 
 ## Dynamic responses
 
-A stub returns the same body on every call. For `POST /api/v2/users` that means every user gets the same `user_id`. Add `"template": true` to a response and the mock fills in placeholders each time the stub is served.
+A stub returns the same body on every call. For `POST /api/v2/users` that means every user gets the same `user_id`. Add `"template": true` to a response and the mock fills in placeholders each time the stub is served. From release 0.234.0.
 
 Templating is off by default, and you turn it on per response. Auth0's email templates and Universal Login templates contain Liquid text like `{{ user.email }}`, and a stub that returns them must come back unchanged.
 
