@@ -49,6 +49,7 @@ type Context struct {
 	RefreshTok string // captured from a token response.
 	LastResp   *http.Response
 	LastBody   []byte
+	SavedBody  []byte // set by "I save the response body".
 	// SSEResp holds the response from a successful SSE subscription
 	// so subsequent steps (push, deliver) can read frames from its
 	// body without conflicting with assertions against LastResp.

@@ -79,6 +79,7 @@ func Mount(r chi.Router, d Deps) {
 	r.Method(http.MethodGet, "/admin0/journal/unmatched", &ListUnmatchedJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodDelete, "/admin0/journal", &DeleteJournalHandler{Journal: d.Journal})
 	r.Method(http.MethodPost, "/admin0/reset", &ResetHandler{Deps: d})
+	r.Method(http.MethodGet, "/admin0/export", &ExportHandler{Deps: d})
 	r.Method(http.MethodPost, "/admin0/expectations", &PostExpectationHandler{Store: d.Matches, Validator: d.Validator})
 	r.Method(http.MethodGet, "/admin0/expectations", &ListExpectationsHandler{Store: d.Matches})
 	r.Method(http.MethodDelete, "/admin0/expectations", &DeleteExpectationsHandler{Store: d.Matches})

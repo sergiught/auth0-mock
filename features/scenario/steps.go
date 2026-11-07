@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -42,6 +43,22 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 
 	sc.Step(`^I replace the seed file with:$`, func(body *godog.DocString) error {
 		return c.ReplaceSeedFile(body.Content)
+	})
+
+	sc.Step(`^I save the response body$`, func() error {
+		c.SavedBody = append([]byte(nil), c.LastBody...)
+		return nil
+	})
+
+	sc.Step(`^the response body equals the saved body$`, func() error {
+		if !bytes.Equal(c.LastBody, c.SavedBody) {
+			return fmt.Errorf("body differs from the saved body:\n%s\n--- saved ---\n%s", c.LastBody, c.SavedBody)
+		}
+		return nil
+	})
+
+	sc.Step(`^I replace the seed file with the saved body$`, func() error {
+		return c.ReplaceSeedFile(string(c.SavedBody))
 	})
 
 	sc.Step(`^I delete the seed file$`, func() error {
