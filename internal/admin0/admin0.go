@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -140,8 +139,8 @@ type ResetHandler struct {
 func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	keep := true
 	if v := r.URL.Query().Get("keep_seed"); v != "" {
-		var err error
-		if keep, err = strconv.ParseBool(v); err != nil {
+		var ok bool
+		if keep, ok = parseFlag(v); !ok {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				"keep_seed must be true or false", "invalid_query")
 			return
@@ -363,4 +362,16 @@ func (h *DeletePermissionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	audience := chi.URLParam(r, "*")
 	h.Store.Delete(audience)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// parseFlag reads a boolean query parameter. Only "true" and "false" are
+// accepted, so a stray value like 0 gets a 400 instead of acting.
+func parseFlag(v string) (value, ok bool) {
+	switch v {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }

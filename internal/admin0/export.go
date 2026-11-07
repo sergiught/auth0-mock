@@ -2,7 +2,6 @@ package admin0
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/seed"
@@ -30,8 +29,8 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	detail := false
 	if v := q.Get("detail"); v != "" {
-		var err error
-		if detail, err = strconv.ParseBool(v); err != nil {
+		var ok bool
+		if detail, ok = parseFlag(v); !ok {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				"detail must be true or false", "invalid_query")
 			return

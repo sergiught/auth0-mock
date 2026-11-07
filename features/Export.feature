@@ -95,3 +95,5 @@ Feature: Export mock state
     And the response JSON path "errorCode" equals "invalid_query"
     When I send "GET /admin0/export?detail=maybe" without a bearer
     Then I receive a 400 response
+    When I send "GET /admin0/export?detail=1" without a bearer
+    Then I receive a 400 response
