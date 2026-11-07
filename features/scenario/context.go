@@ -50,6 +50,9 @@ type Context struct {
 	LastResp   *http.Response
 	LastBody   []byte
 	SavedBody  []byte // set by "I save the response body".
+	// SavedValues holds JSON values saved by name with "I save the response
+	// JSON path".
+	SavedValues map[string]string
 	// SSEResp holds the response from a successful SSE subscription
 	// so subsequent steps (push, deliver) can read frames from its
 	// body without conflicting with assertions against LastResp.

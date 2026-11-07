@@ -150,3 +150,28 @@ Feature: Seed file
           path: /api/v2/users
           response: {status: 200}
       """
+
+  Scenario: Exported templates load back as templates
+    Given the mock is running with seed file:
+      """
+      claims: {tier: gold}
+      """
+    And I register an expectation for "POST /api/v2/users" with response:
+      """
+      {"status":201,"template":true,"body":{"user_id":"auth0|{{uuid}}","email":"{{body.email}}"}}
+      """
+    And I have a valid bearer token
+    When I send "GET /admin0/export" without a bearer
+    Then I receive a 200 response
+    And the response body contains "{{uuid}}"
+    And the response JSON path "expectations.0.response.template" equals "true"
+    When I save the response body
+    And I replace the seed file with the saved body
+    And I reset all mock state
+    And I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"seed@x.test","connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "email" equals "seed@x.test"
+    And the response JSON path "user_id" exists

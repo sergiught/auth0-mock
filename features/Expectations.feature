@@ -182,3 +182,84 @@ Feature: Expectation registration and lookup
       """
     Then I receive a 400 response
     And the response body contains "then[0]"
+
+  Scenario: Templated POST /users returns a fresh id each call
+    Given the mock is running
+    And I have a valid bearer token
+    And I register an expectation for "POST /api/v2/users" with response:
+      """
+      {"status":201,"template":true,"headers":{"Location":"/api/v2/users/auth0|{{uuid}}"},"body":{"user_id":"auth0|{{uuid}}","email":"{{body.email}}","email_verified":"{{body.email_verified}}","created_at":"{{now}}","identities":[{"provider":"auth0","user_id":"{{uuid}}","connection":"{{body.connection}}","isSocial":false}]}}
+      """
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"first@x.test","email_verified":true,"connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 201 response
+    And I save the response JSON path "user_id" as "first"
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"second@x.test","email_verified":false,"connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "user_id" does not equal the saved "first"
+    And the response JSON path "email" equals "second@x.test"
+    And the response JSON path "identities.0.user_id" exists
+
+  Scenario: Templated created_at follows a frozen clock
+    Given the mock is running
+    When I PUT "/admin0/clock" with body:
+      """
+      {"now":"2030-01-01T00:00:00Z"}
+      """
+    Then I receive a 204 response
+    Given I have a valid bearer token
+    And I register an expectation for "POST /api/v2/users" with response:
+      """
+      {"status":201,"template":true,"body":{"user_id":"auth0|t","email":"t@x.test","created_at":"{{now}}"}}
+      """
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"t@x.test","connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "created_at" equals "2030-01-01T00:00:00.000Z"
+
+  Scenario: Templated path parameter is echoed
+    Given the mock is running
+    And I have a valid bearer token
+    And I register an expectation for "GET /api/v2/users/{id}" with response:
+      """
+      {"status":200,"template":true,"body":{"user_id":"{{path.id}}","email":"p@x.test"}}
+      """
+    When I send "GET /api/v2/users/auth0|7" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "user_id" equals "auth0|7"
+
+  Scenario: A then sequence mixes templated and fixed answers
+    Given the mock is running
+    And I have a valid bearer token
+    And I register the expectation "POST /api/v2/users":
+      """
+      {"response":{"status":201,"template":true,"body":{"user_id":"auth0|{{uuid}}","email":"{{body.email}}"}},"then":[{"status":409,"body":{"statusCode":409,"error":"Conflict","message":"The user already exists."}}]}
+      """
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"seq@x.test","connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "email" equals "seq@x.test"
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"seq@x.test","connection":"Username-Password-Authentication","password":"Passw0rd!"}
+      """
+    Then I receive a 409 response
+    And the response JSON path "message" equals "The user already exists."
+
+  Scenario: Unknown placeholder is rejected
+    Given the mock is running
+    When I attempt to register an expectation for "POST /api/v2/users" with response:
+      """
+      {"status":201,"template":true,"body":{"user_id":"{{nope}}","email":"x@x.test"}}
+      """
+    Then I receive a 400 response
+    And the response body contains "invalid_template"
