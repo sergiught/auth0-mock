@@ -126,6 +126,8 @@ func TestPollReloadsOnChange(t *testing.T) {
 	f := newFixture(t, stub("429"))
 	f.write(stub("503"))
 	f.m.Poll(context.Background())
+	require.Equal(t, []int{429}, f.statuses())
+	f.m.Poll(context.Background())
 	require.Equal(t, []int{503}, f.statuses())
 	require.Equal(t, 2, strings.Count(f.log.String(), "seed loaded"))
 }
@@ -142,6 +144,7 @@ func TestPollBrokenEditKeepsState(t *testing.T) {
 	f.write("bogus: 1\n")
 	f.m.Poll(context.Background())
 	f.m.Poll(context.Background())
+	f.m.Poll(context.Background())
 	require.Equal(t, []int{429}, f.statuses())
 	n := 0
 	for _, l := range strings.Split(f.log.String(), "\n") {
@@ -152,7 +155,20 @@ func TestPollBrokenEditKeepsState(t *testing.T) {
 	require.Equal(t, 1, n, f.log.String())
 	f.write(stub("503"))
 	f.m.Poll(context.Background())
+	f.m.Poll(context.Background())
 	require.Equal(t, []int{503}, f.statuses())
+}
+
+func TestPollTruncatedFileIsIgnored(t *testing.T) {
+	f := newFixture(t, stub("429"))
+	require.NoError(t, os.WriteFile(f.path, nil, 0o600))
+	f.m.Poll(context.Background())
+	require.Equal(t, []int{429}, f.statuses())
+	require.NoError(t, os.WriteFile(f.path, []byte(stub("429")), 0o600))
+	f.m.Poll(context.Background())
+	f.m.Poll(context.Background())
+	require.Equal(t, []int{429}, f.statuses())
+	require.Zero(t, f.wipes.Load())
 }
 
 func TestPollRenameSave(t *testing.T) {
@@ -160,6 +176,7 @@ func TestPollRenameSave(t *testing.T) {
 	tmp := f.path + ".tmp"
 	require.NoError(t, os.WriteFile(tmp, []byte(stub("503")), 0o600))
 	require.NoError(t, os.Rename(tmp, f.path))
+	f.m.Poll(context.Background())
 	f.m.Poll(context.Background())
 	require.Equal(t, []int{503}, f.statuses())
 }
@@ -185,7 +202,7 @@ func TestResetAndPollDoNotInterleave(t *testing.T) {
 	f := newFixture(t, stub("429"))
 	ctx := context.Background()
 	var wg sync.WaitGroup
-	var mu sync.Mutex // serialises the test's own atomic rewrites
+	var mu sync.Mutex // Serialises the test's own atomic rewrites.
 	for i := range 50 {
 		wg.Add(1)
 		go func() {

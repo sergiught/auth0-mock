@@ -21,13 +21,17 @@ type Manager struct {
 	st   Stores
 	log  zerolog.Logger
 
-	mu         sync.Mutex // guards everything below, for the whole of Reset and Poll
+	mu         sync.Mutex // Guards everything below, for the whole of Reset and Poll.
 	wipe       func(context.Context)
 	current    *Seed
 	loadedHash [sha256.Size]byte
 	badHash    [sha256.Size]byte
 	hasBad     bool
-	missing    bool
+	// A changed content seen once is acted on only when the next poll sees
+	// it again, so a half-written file is never loaded.
+	pendingHash [sha256.Size]byte
+	hasPending  bool
+	missing     bool
 }
 
 // NewManager reads and parses the seed file at path and applies it to st.
@@ -80,12 +84,18 @@ func (m *Manager) Poll(ctx context.Context) {
 			m.log.Warn().Msgf("seed file %s unreadable, keeping the current seed: %v", m.path, err)
 			m.missing = true
 		}
+		m.hasPending = false
 		return
 	}
 	m.missing = false
 	h := sha256.Sum256(data)
 	if h == m.loadedHash {
 		m.hasBad = false
+		m.hasPending = false
+		return
+	}
+	if !m.hasPending || h != m.pendingHash {
+		m.pendingHash, m.hasPending = h, true
 		return
 	}
 	if m.hasBad && h == m.badHash {

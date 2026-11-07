@@ -25,7 +25,7 @@ func TestPrepareErrors(t *testing.T) {
 	tests := []struct {
 		name    string
 		reg     matches.Registration
-		message string // exact, unless prefix is true
+		message string // Exact, unless prefix is true.
 		prefix  bool
 		code    string
 	}{

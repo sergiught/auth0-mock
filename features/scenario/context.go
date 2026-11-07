@@ -162,7 +162,8 @@ func (c *Context) RestartWithSeed(content string) error {
 
 // ReplaceSeedFile saves content over the seed file the way an editor does
 // (write a temp file, rename it over) and reloads it. Nothing sleeps: the
-// harness runs no watcher and polls once instead.
+// harness runs no watcher and polls twice instead, as a changed file is acted
+// on only once it has been seen on two consecutive polls.
 func (c *Context) ReplaceSeedFile(content string) error {
 	tmp := c.seedPath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
@@ -171,6 +172,7 @@ func (c *Context) ReplaceSeedFile(content string) error {
 	if err := os.Rename(tmp, c.seedPath); err != nil {
 		return err
 	}
+	c.seed.Poll(context.Background())
 	c.seed.Poll(context.Background())
 	return nil
 }
