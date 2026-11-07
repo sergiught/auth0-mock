@@ -181,7 +181,12 @@ func (v *Validator) ValidateResponse(op Operation, status int, headers map[strin
 	if resp == nil || resp.Value == nil {
 		return fmt.Errorf("status %d not declared", status)
 	}
-	if resp.Value.Content == nil {
+	if len(resp.Value.Content) == 0 {
+		// An error body is checked against the envelope with nothing
+		// skipped: a templated field is a real value by now.
+		if status >= http.StatusBadRequest && len(bytes.TrimSpace(body)) > 0 {
+			return validateErrorEnvelope(status, body, nil)
+		}
 		return nil
 	}
 	media := resp.Value.Content.Get("application/json")

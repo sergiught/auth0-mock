@@ -145,3 +145,23 @@ func TestRespondTemplateWrongTypeStrict(t *testing.T) {
 		}
 	}
 }
+
+func TestRespondTemplateErrorEnvelope(t *testing.T) {
+	// Registration cannot know what {{body.app_metadata.code}} renders to, so the
+	// envelope is checked when the response is served.
+	body := `{"statusCode":"{{body.app_metadata.code}}","error":"Conflict","message":"m"}`
+	for _, strict := range []bool{true, false} {
+		e := newTmplEnv(t, strict)
+		e.register(t, matches.Registration{Method: "POST", Path: "/api/v2/users", Response: matches.ResponseDef{
+			Status: 409, Template: true, Body: json.RawMessage(body),
+		}})
+		w := e.do("POST", "/api/v2/users", `{"email":"a@x.io","connection":"c","password":"x","app_metadata":{"code":"oops"}}`)
+		if strict {
+			require.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
+			assert.Contains(t, w.Body.String(), "invalid_match")
+		} else {
+			require.Equal(t, 409, w.Code, w.Body.String())
+			assert.Contains(t, w.Body.String(), `"statusCode":"oops"`)
+		}
+	}
+}

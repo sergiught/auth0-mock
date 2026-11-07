@@ -384,3 +384,38 @@ func TestValidateRegistrationSkipping(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+// A templated error body is only known once rendered, so serve time
+// checks the envelope the same way registration does.
+func TestValidator_ValidateResponse_ErrorEnvelope(t *testing.T) {
+	s, getOp, postOp := loadMinSpec(t)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{name: "empty body", body: ``},
+		{name: "full envelope", body: `{"statusCode":404,"error":"Not Found","message":"gone","errorCode":"x"}`},
+		{name: "statusCode rendered as string", body: `{"statusCode":"404","error":"Not Found","message":"gone"}`, wantErr: "statusCode"},
+		{name: "statusCode mismatch", body: `{"statusCode":403,"error":"Forbidden","message":"no"}`, wantErr: "statusCode 403 does not match status 404"},
+		{name: "missing message", body: `{"statusCode":404,"error":"Not Found"}`, wantErr: "message"},
+		{name: "message not string", body: `{"statusCode":404,"error":"Not Found","message":7}`, wantErr: "message"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := v.ValidateResponse(getOp, 404, nil, []byte(tc.body))
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), tc.wantErr)
+			}
+		})
+	}
+
+	// Success statuses without content stay unchecked.
+	assert.NoError(t, v.ValidateResponse(postOp, 201, nil, []byte(`{"anything":1}`)))
+}
