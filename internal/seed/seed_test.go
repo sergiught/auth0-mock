@@ -284,3 +284,8 @@ expectations:
 `
 	require.Equal(t, "expectations[0] and expectations[1] have the same method, path and request matcher", parseErr(t, src))
 }
+
+func TestParseRejectsKeysThatCollideAsText(t *testing.T) {
+	require.Contains(t, parseErr(t, "claims: {0xC8: first, \"200\": second}\n"),
+		`duplicate key "200" after conversion to text`)
+}

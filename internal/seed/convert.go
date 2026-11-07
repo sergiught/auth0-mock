@@ -28,7 +28,11 @@ func toJSONValue(v any) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			out[fmt.Sprint(k)] = c
+			key := fmt.Sprint(k)
+			if _, dup := out[key]; dup {
+				return nil, fmt.Errorf("duplicate key %q after conversion to text", key)
+			}
+			out[key] = c
 		}
 		return out, nil
 	case []any:
