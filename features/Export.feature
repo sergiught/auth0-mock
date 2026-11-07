@@ -97,3 +97,7 @@ Feature: Export mock state
     Then I receive a 400 response
     When I send "GET /admin0/export?detail=1" without a bearer
     Then I receive a 400 response
+    When I send "GET /admin0/export?detail=" without a bearer
+    Then I receive a 400 response
+    When I send "GET /admin0/export?format=" without a bearer
+    Then I receive a 400 response

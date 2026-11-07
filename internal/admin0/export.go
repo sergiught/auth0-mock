@@ -18,8 +18,12 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	contentType := "application/json"
 	asYAML := false
-	switch q.Get("format") {
-	case "", "json":
+	format := "json"
+	if q.Has("format") {
+		format = q.Get("format")
+	}
+	switch format {
+	case "json":
 	case "yaml":
 		contentType, asYAML = "application/yaml", true
 	default:
@@ -28,9 +32,9 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	detail := false
-	if v := q.Get("detail"); v != "" {
+	if q.Has("detail") {
 		var ok bool
-		if detail, ok = parseFlag(v); !ok {
+		if detail, ok = parseFlag(q.Get("detail")); !ok {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				"detail must be true or false", "invalid_query")
 			return

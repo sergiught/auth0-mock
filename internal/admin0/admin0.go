@@ -138,9 +138,9 @@ type ResetHandler struct {
 
 func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	keep := true
-	if v := r.URL.Query().Get("keep_seed"); v != "" {
+	if q := r.URL.Query(); q.Has("keep_seed") {
 		var ok bool
-		if keep, ok = parseFlag(v); !ok {
+		if keep, ok = parseFlag(q.Get("keep_seed")); !ok {
 			httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request",
 				"keep_seed must be true or false", "invalid_query")
 			return

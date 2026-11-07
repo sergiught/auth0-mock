@@ -80,6 +80,8 @@ Feature: Seed file
     Then I receive a 400 response
     When I send "POST /admin0/reset?keep_seed=0" without a bearer
     Then I receive a 400 response
+    When I send "POST /admin0/reset?keep_seed=" without a bearer
+    Then I receive a 400 response
 
   Scenario: Editing the file replaces the state, runtime stubs included
     Given the mock is running with seed file:
