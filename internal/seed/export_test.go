@@ -173,6 +173,7 @@ func TestExportYAMLRoundTripStringLookalikes(t *testing.T) {
 		{"multiline", "a\nb\n"},
 		{"leading space", " x"},
 		{"hash", "#x"},
+		{"<<", "merge"},
 	}
 	body := map[string]any{
 		"nil":    nil,
@@ -212,4 +213,20 @@ func TestExportYAMLRoundTripStringLookalikes(t *testing.T) {
 	require.Equal(t, map[string]any{}, got["object"])
 	require.Equal(t, []any{}, got["array"])
 	require.Equal(t, body["nested"], got["nested"])
+}
+
+// An integer too big for int64 and uint64 is exported as a float so the file
+// still loads; its precision is lost on the way back in.
+func TestExportYAMLHugeIntegerLoads(t *testing.T) {
+	raw := []byte(`{"big":18446744073709551616,"neg":-9223372036854775809}`)
+	st := newStores()
+	exp, err := matches.Prepare(newValidator(t), matches.Registration{
+		Method: "GET", Path: "/api/v2/users/{id}",
+		Response: matches.ResponseDef{Status: 200, Body: raw},
+	})
+	require.NoError(t, err)
+	st.Matches.Put(exp)
+	out := mustBytes(t)(seed.Export(st.Stores, false).YAML())
+	require.Contains(t, string(out), "18446744073709551616")
+	parse(t, string(out))
 }

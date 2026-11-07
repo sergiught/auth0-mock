@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -89,14 +90,35 @@ func keepTimestampsAsText(n *yaml.Node) {
 	}
 }
 
+// decodeSingleDocument parses data as exactly one YAML document. It returns a
+// nil node for empty input.
+func decodeSingleDocument(data []byte) (*yaml.Node, error) {
+	var node yaml.Node
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&node); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil //nolint:nilnil // nil means an empty file
+		}
+		return nil, err
+	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, errors.New("seed file must contain a single YAML document")
+	}
+	return &node, nil
+}
+
 // Parse reads YAML (or JSON, which is a subset) and validates every
 // expectation against the Management API spec.
 func Parse(data []byte, v *spec.Validator) (*Seed, error) {
-	var node yaml.Node
-	if err := yaml.Unmarshal(data, &node); err != nil {
+	node, err := decodeSingleDocument(data)
+	if err != nil {
 		return nil, err
 	}
-	keepTimestampsAsText(&node)
+	if node == nil {
+		return &Seed{}, nil
+	}
+	keepTimestampsAsText(node)
 	var doc any
 	if err := node.Decode(&doc); err != nil {
 		return nil, err

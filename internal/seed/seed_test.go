@@ -119,6 +119,13 @@ func TestParseEmpty(t *testing.T) {
 	}
 }
 
+func TestParseDocumentMarkers(t *testing.T) {
+	require.Equal(t, &seed.Seed{}, parse(t, "---\n"))
+	parse(t, "---\nmfa_required: true\n")
+	require.Equal(t, "seed file must contain a single YAML document",
+		parseErr(t, "mfa_required: true\n---\nmfa_required: false\n"))
+}
+
 func TestParseUnknownTopKey(t *testing.T) {
 	require.Equal(t, `unknown key "expectation"`, parseErr(t, "expectation: []\n"))
 }

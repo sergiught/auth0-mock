@@ -135,7 +135,11 @@ func toYAMLNode(v any) *yaml.Node {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			n.Content = append(n.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}, toYAMLNode(x[k]))
+			key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+			if k == "<<" {
+				key.Style = yaml.DoubleQuotedStyle // A plain << is the merge key.
+			}
+			n.Content = append(n.Content, key, toYAMLNode(x[k]))
 		}
 		return n
 	case []any:
@@ -148,6 +152,10 @@ func toYAMLNode(v any) *yaml.Node {
 		tag := "!!int"
 		if strings.ContainsAny(string(x), ".eE") {
 			tag = "!!float"
+		} else if _, err := strconv.ParseInt(string(x), 10, 64); err != nil {
+			if _, err := strconv.ParseUint(string(x), 10, 64); err != nil {
+				tag = "!!float" // Too big for !!int, which would not load back.
+			}
 		}
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: string(x)}
 	case string:
