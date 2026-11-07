@@ -91,6 +91,7 @@ Full docs live at <https://sergiu.dev/auth0-mock/>.
 | [curl quickstart](https://sergiu.dev/auth0-mock/quickstarts/http/) | Call the mock with plain curl, from starting it to calling a stubbed endpoint. |
 | [Node.js quickstart](https://sergiu.dev/auth0-mock/quickstarts/node/) | Test a Node API and a Management API client against the mock with express-oauth2-jwt-bearer and the auth0 SDK. |
 | [Python quickstart](https://sergiu.dev/auth0-mock/quickstarts/python/) | Test a Python API and a Management API client against the mock with PyJWT and the auth0-python SDK. |
+| [Go quickstart](https://sergiu.dev/auth0-mock/quickstarts/go/) | Test a Go API and a Management API client against the mock with go-jwt-middleware and the go-auth0 SDK. |
 | [Stubbing the Management API](https://sergiu.dev/auth0-mock/guides/stubbing/) | Stub Management API responses, errors and retries, and reset or inspect what is registered. |
 | [Tokens and claims](https://sergiu.dev/auth0-mock/guides/tokens-and-claims/) | Test code that reads permissions or custom claims, and test token expiry without sleeping. |
 | [Login flows](https://sergiu.dev/auth0-mock/guides/login-flows/) | Test PKCE, login errors, silent login, MFA challenges and the password-realm grant. |

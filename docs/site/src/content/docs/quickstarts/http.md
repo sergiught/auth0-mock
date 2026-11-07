@@ -2,6 +2,7 @@
 title: curl quickstart
 description: Call the mock with plain curl, from starting it to calling a stubbed endpoint.
 sidebar:
+  label: cURL
   order: 1
 ---
 
@@ -111,4 +112,5 @@ With `--rm` this also removes the container.
 
 - [Node.js quickstart](/auth0-mock/quickstarts/node/)
 - [Python quickstart](/auth0-mock/quickstarts/python/)
+- [Go quickstart](/auth0-mock/quickstarts/go/)
 - [Go SDK](/auth0-mock/guides/go-sdk/)

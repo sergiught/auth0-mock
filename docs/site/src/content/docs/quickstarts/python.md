@@ -2,6 +2,7 @@
 title: Python quickstart
 description: Test a Python API and a Management API client against the mock with PyJWT and the auth0-python SDK.
 sidebar:
+  label: Python
   order: 3
 ---
 
@@ -215,4 +216,5 @@ With `--rm` this also removes the container.
 
 - [curl quickstart](/auth0-mock/quickstarts/http/)
 - [Node.js quickstart](/auth0-mock/quickstarts/node/)
+- [Go quickstart](/auth0-mock/quickstarts/go/)
 - [Go SDK](/auth0-mock/guides/go-sdk/)

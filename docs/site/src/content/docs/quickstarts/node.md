@@ -2,6 +2,7 @@
 title: Node.js quickstart
 description: Test a Node API and a Management API client against the mock with express-oauth2-jwt-bearer and the auth0 SDK.
 sidebar:
+  label: Node.js
   order: 2
 ---
 
@@ -192,4 +193,5 @@ With `--rm` this also removes the container.
 
 - [curl quickstart](/auth0-mock/quickstarts/http/)
 - [Python quickstart](/auth0-mock/quickstarts/python/)
+- [Go quickstart](/auth0-mock/quickstarts/go/)
 - [Go SDK](/auth0-mock/guides/go-sdk/)
