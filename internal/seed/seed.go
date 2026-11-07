@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -76,6 +79,66 @@ func decodeStrict(data []byte, out any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	return dec.Decode(out)
+}
+
+// checkKeyCase rejects a key that encoding/json matched to a field of t only
+// because it ignores case, such as "Method" for "method". Without it a file
+// with both "expectations" and "Expectations" would silently keep one list.
+// Free-form maps (claims, headers, bodies) keep whatever case they have.
+func checkKeyCase(v any, t reflect.Type) error {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		m, _ := v.(map[string]any)
+		fields := jsonFields(t)
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			ft, ok := fields[k]
+			if !ok {
+				return fmt.Errorf("unknown key %q (keys are case-sensitive)", k)
+			}
+			if err := checkKeyCase(m[k], ft); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice:
+		l, _ := v.([]any)
+		for _, e := range l {
+			if err := checkKeyCase(e, t.Elem()); err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		m, _ := v.(map[string]any)
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			if err := checkKeyCase(m[k], t.Elem()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// jsonFields maps each JSON key of struct type t, including keys of embedded
+// structs, to its field type.
+func jsonFields(t reflect.Type) map[string]reflect.Type {
+	out := map[string]reflect.Type{}
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if f.Anonymous && name == "" {
+			maps.Copy(out, jsonFields(f.Type))
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		if name != "-" {
+			out[name] = f.Type
+		}
+	}
+	return out
 }
 
 // numberMarker prefixes the text of a number that must reach the JSON output
@@ -167,6 +230,10 @@ func Parse(data []byte, v *spec.Validator) (*Seed, error) {
 	if err := decodeStrict(js, &raw); err != nil {
 		return nil, errors.New(friendly(err))
 	}
+	if err := checkKeyCase(conv, reflect.TypeFor[rawFile]()); err != nil {
+		return nil, err
+	}
+	items, _ := conv.(map[string]any)["expectations"].([]any)
 
 	s := &Seed{
 		Claims:        raw.Claims,
@@ -175,18 +242,9 @@ func Parse(data []byte, v *spec.Validator) (*Seed, error) {
 		MFARequired:   raw.MFARequired,
 	}
 	for i, r := range raw.Expectations {
-		prefix := "expectations[" + strconv.Itoa(i) + "]: "
-		var item Item
-		if err := decodeStrict(r, &item); err != nil {
-			return nil, errors.New(prefix + friendly(err))
-		}
-		exp, err := matches.Prepare(v, item.Registration)
+		exp, err := parseItem(r, items[i], v)
 		if err != nil {
-			var re *matches.RegistrationError
-			if errors.As(err, &re) {
-				return nil, errors.New(prefix + re.Message)
-			}
-			return nil, errors.New(prefix + err.Error())
+			return nil, errors.New("expectations[" + strconv.Itoa(i) + "]: " + err.Error())
 		}
 		for j, prev := range s.Expectations {
 			if matches.SameTarget(prev, exp) {
@@ -196,6 +254,24 @@ func Parse(data []byte, v *spec.Validator) (*Seed, error) {
 		s.Expectations = append(s.Expectations, exp)
 	}
 	return s, nil
+}
+
+// parseItem decodes and validates one expectation. The generic argument is the
+// same item as decoded from the file, used to check key case.
+func parseItem(r json.RawMessage, generic any, v *spec.Validator) (matches.Expectation, error) {
+	var item Item
+	if err := decodeStrict(r, &item); err != nil {
+		return matches.Expectation{}, errors.New(friendly(err))
+	}
+	if err := checkKeyCase(generic, reflect.TypeFor[Item]()); err != nil {
+		return matches.Expectation{}, err
+	}
+	exp, err := matches.Prepare(v, item.Registration)
+	var re *matches.RegistrationError
+	if errors.As(err, &re) {
+		return matches.Expectation{}, errors.New(re.Message)
+	}
+	return exp, err
 }
 
 // Apply writes the seed into the stores. Expectations are Put in file order.

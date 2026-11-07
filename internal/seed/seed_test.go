@@ -289,3 +289,33 @@ func TestParseRejectsKeysThatCollideAsText(t *testing.T) {
 	require.Contains(t, parseErr(t, "claims: {0xC8: first, \"200\": second}\n"),
 		`duplicate key "200" after conversion to text`)
 }
+
+func TestParseRejectsKeysThatDifferOnlyInCase(t *testing.T) {
+	require.Equal(t, `unknown key "Expectations" (keys are case-sensitive)`, parseErr(t, `
+expectations:
+  - {method: GET, path: /api/v2/users, response: {status: 429}}
+Expectations:
+  - {method: GET, path: /api/v2/roles, response: {status: 429}}
+`))
+	require.Equal(t, `expectations[0]: unknown key "Method" (keys are case-sensitive)`, parseErr(t, `
+expectations:
+  - {Method: GET, path: /api/v2/users, response: {status: 429}}
+`))
+	require.Equal(t, `expectations[0]: unknown key "Status" (keys are case-sensitive)`, parseErr(t, `
+expectations:
+  - {method: GET, path: /api/v2/users, response: {Status: 429}}
+`))
+}
+
+func TestParseKeepsCaseOfFreeFormKeys(t *testing.T) {
+	s := parse(t, `
+claims: {Tier: gold}
+expectations:
+  - method: GET
+    path: /api/v2/users
+    request: {headers: {X-Trace: "1"}}
+    response: {status: 429}
+`)
+	require.Equal(t, "gold", s.Claims["Tier"])
+	require.Len(t, s.Expectations, 1)
+}

@@ -68,7 +68,7 @@ The file is YAML. JSON works too, because JSON is valid YAML. All keys are optio
 
 The mock is strict about the file:
 
-- An unknown key is an error. Inside an expectation, `id` and `hits` are the only extra keys allowed, so an export with `detail=true` still loads.
+- An unknown key is an error, and keys are case-sensitive (`Expectations` is unknown). Inside an expectation, `id` and `hits` are the only extra keys allowed, so an export with `detail=true` still loads.
 - An error in an expectation names the item, for example `expectations[2]: ...`.
 - Two expectations with the same method, path and request matcher are an error.
 - A date or timestamp written without quotes, such as `2026-11-07`, stays exactly as you wrote it.
