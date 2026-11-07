@@ -8,8 +8,7 @@ import (
 
 // keyText is the JSON text of a scalar map key. A number key carries the
 // number marker, which is not part of its text. A null key, written ~ or null
-// in YAML, becomes "null". Keys whose texts collide are rejected earlier, by
-// prepareScalars.
+// in YAML, becomes "null".
 func keyText(k any) string {
 	if k == nil {
 		return "null"
@@ -40,7 +39,12 @@ func toJSONValue(v any) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			out[keyText(k)] = c
+			key := keyText(k)
+			if _, dup := out[key]; dup {
+				// Keys merged in with << are not checked by prepareScalars.
+				return nil, fmt.Errorf("duplicate key %q after conversion to text", key)
+			}
+			out[key] = c
 		}
 		return out, nil
 	case []any:

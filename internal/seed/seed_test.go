@@ -352,3 +352,14 @@ func TestParseRejectsKeysThatResolveToTheSameValue(t *testing.T) {
 		require.Contains(t, parseErr(t, src), "duplicate key "+key)
 	}
 }
+
+func TestParseRejectsMergedKeysThatCollideAsText(t *testing.T) {
+	for _, src := range []string{
+		// The 0x20 key makes the decoder use a map[any]any, where the merged
+		// 0x1F is the number 31 and collides with 31 only as text.
+		"claims:\n  0x20: c\n  <<: {0x1F: a}\n  31: b\n",
+		"claims:\n  0x20: c\n  <<: [{0x1F: a}, {31: b}]\n",
+	} {
+		require.Equal(t, `duplicate key "31" after conversion to text`, parseErr(t, src), src)
+	}
+}
