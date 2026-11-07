@@ -331,8 +331,12 @@ demo-sdk: build ## Run the pkg/auth0mock SDK + go-auth0 round-trip against a thr
 	cd examples/sdk && go run . -cert=$$TLS_DIR/tls.crt
 
 .PHONY: test-examples
-test-examples: build ## Run the curl/Node/Python quickstart examples against a throwaway mock
+test-examples: build ## Run the curl/Node/Python/Go quickstart examples against a throwaway mock
 	@examples/run-all.sh
+
+.PHONY: test-testcontainers
+test-testcontainers: ## Run the Testcontainers examples (Go, Node, Python, Java); builds the image unless AUTH0_MOCK_IMAGE is set
+	@examples/testcontainers/run-all.sh
 
 .PHONY: docs-site
 docs-site: ## Build the Starlight docs site into docs/site/dist

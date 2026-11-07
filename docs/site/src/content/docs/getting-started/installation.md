@@ -51,6 +51,8 @@ make watch     # installs air into ./bin on first run
 
 ## Docker
 
+To start the mock from your tests or CI, see [Testcontainers and CI](/auth0-mock/guides/testcontainers-and-ci/).
+
 ```bash
 docker compose up -d --build
 docker compose logs -f auth0-mock

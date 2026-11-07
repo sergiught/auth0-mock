@@ -2,6 +2,7 @@
 title: curl quickstart
 description: Call the mock with plain curl, from starting it to calling a stubbed endpoint.
 sidebar:
+  label: cURL
   order: 1
 ---
 
@@ -26,6 +27,7 @@ Add `.auth0-mock/` to your own `.gitignore`: it holds the mock's private key.
 ## Different port
 
 If you map a different host port (for example `-p 127.0.0.1:9443:8443`), also set `-e ISSUER_URL=https://localhost:9443/` and `AUTH0_MOCK_URL=https://localhost:9443/`. Otherwise the `iss` claim in tokens will not match the URL you call. Use that port in the commands below too.
+From release 0.234.0 you can set `-e ISSUER_URL=auto` instead of the fixed `ISSUER_URL`. The mock then builds the issuer from the address of each request, so any mapped port works. `AUTH0_MOCK_URL` (or the port in your commands) still has to match the port you mapped.
 
 ## Trust its certificate
 
@@ -110,4 +112,5 @@ With `--rm` this also removes the container.
 
 - [Node.js quickstart](/auth0-mock/quickstarts/node/)
 - [Python quickstart](/auth0-mock/quickstarts/python/)
+- [Go quickstart](/auth0-mock/quickstarts/go/)
 - [Go SDK](/auth0-mock/guides/go-sdk/)
