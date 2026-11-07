@@ -275,3 +275,12 @@ func TestSummary(t *testing.T) {
 	require.Equal(t, "4 expectations, 2 claims, 1 claim mapping, 1 permission audience, mfa required", parse(t, full).Summary())
 	require.Equal(t, "empty", (&seed.Seed{}).Summary())
 }
+
+func TestParseDuplicateEmptyQueryIsOmittedQuery(t *testing.T) {
+	src := `
+expectations:
+  - {method: GET, path: /api/v2/users, request: {query: {}, headers: {X-A: "1"}}, response: {status: 429}}
+  - {method: GET, path: /api/v2/users, request: {headers: {X-A: "1"}}, response: {status: 429}}
+`
+	require.Equal(t, "expectations[0] and expectations[1] have the same method, path and request matcher", parseErr(t, src))
+}

@@ -70,6 +70,7 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 	if req.IsEmpty() {
 		req = nil
 	}
+	req = dropEmptyMaps(req)
 	if req != nil {
 		if err := v.ValidateRequestMatcher(op, req.Body); err != nil {
 			return Expectation{}, &RegistrationError{
@@ -95,6 +96,22 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 		Response: r.Response,
 		Then:     r.Then,
 	}, nil
+}
+
+// dropEmptyMaps returns m with an empty query or headers map set to nil, so
+// {} and an omitted key are one matcher. It copies rather than modifies m.
+func dropEmptyMaps(m *RequestMatcher) *RequestMatcher {
+	if m == nil || (m.Query == nil || len(m.Query) > 0) && (m.Headers == nil || len(m.Headers) > 0) {
+		return m
+	}
+	c := *m
+	if len(c.Query) == 0 {
+		c.Query = nil
+	}
+	if len(c.Headers) == 0 {
+		c.Headers = nil
+	}
+	return &c
 }
 
 // validateThen checks each sequence entry like the primary response and
