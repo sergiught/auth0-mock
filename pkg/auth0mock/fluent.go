@@ -194,6 +194,18 @@ func (r *ResponseBuilder) Header(key, value string) *ResponseBuilder {
 	return r
 }
 
+// Template marks the entry under construction as a template, so the
+// server expands {{uuid}}, {{now}}, {{path.NAME}} and {{body.PATH}}
+// in its JSON string values and header values on every serve. It
+// applies to the current entry only. Call it after Respond to flag
+// the first answer, or after a Then to flag that Then entry, because
+// each Then starts a fresh entry without the flag. The server rejects
+// a malformed template with 400 invalid_template.
+func (r *ResponseBuilder) Template() *ResponseBuilder {
+	r.cur().Template = true
+	return r
+}
+
 // Apply registers the assembled Expectation with the mock and returns
 // a handle to the stored entry. Equivalent to Client.Expectations.Add
 // composed with the fluent chain — discard the handle (assign to `_`)
