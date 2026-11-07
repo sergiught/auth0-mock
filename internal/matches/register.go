@@ -121,10 +121,7 @@ func dropEmptyMaps(m *RequestMatcher) *RequestMatcher {
 // on e. It returns a message and code, or "" when the entry is valid.
 func prepareEntry(v *spec.Validator, op spec.Operation, path, at string, e *ResponseDef) (msg, code string) {
 	status := strconv.Itoa(e.Status)
-	schemaMsg := "registered " + at + " violates schema status " + status + ": "
-	if at == "response" {
-		schemaMsg = "registered response violates schema for status " + status + ": "
-	}
+	schemaMsg := "registered " + at + " violates schema for status " + status + ": "
 	if !e.Template {
 		if err := v.ValidateRegistration(op, e.Status, e.Body); err != nil {
 			return schemaMsg + err.Error(), "invalid_match"

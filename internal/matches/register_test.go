@@ -177,3 +177,33 @@ func TestPrepareNoTemplateFlagKeepsBraces(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, exp.Response.Tmpl())
 }
+
+func TestPrepareThenSchemaMessage(t *testing.T) {
+	v := newValidator(t)
+	_, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/{id}",
+		Response: matches.ResponseDef{Status: 404},
+		Then:     []matches.ResponseDef{{Status: 200, Body: []byte(`{"user_id": 5}`)}},
+	})
+	var re *matches.RegistrationError
+	require.ErrorAs(t, err, &re)
+	require.Equal(t, "invalid_match", re.Code)
+	require.True(t, strings.HasPrefix(re.Message, "registered then[0] violates schema for status 200: "), re.Message)
+}
+
+func TestPrepareTemplateThenOKAndSurvivesStore(t *testing.T) {
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/{id}",
+		Response: matches.ResponseDef{Status: 404},
+		Then:     []matches.ResponseDef{{Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.id}}"}`)}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Then[0].Tmpl())
+
+	s := matches.NewStore()
+	s.Put(exp)
+	found := s.Find("GET", "/api/v2/users/x", "/api/v2/users/{id}", matches.MatchableRequest{})
+	require.NotNil(t, found)
+	require.NotNil(t, found.Then[0].Tmpl())
+}
