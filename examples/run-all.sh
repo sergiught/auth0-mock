@@ -49,3 +49,7 @@ echo "==> Node quickstart"
 echo "==> Python quickstart"
 # Sync before setting SSL_CERT_FILE: it replaces the trust store, uv included, so downloads would fail.
 (cd examples/python && env -u SSL_CERT_FILE uv sync --locked -q && SSL_CERT_FILE="$AUTH0_MOCK_CA" uv run --locked -q pytest -q)
+
+echo "==> Go quickstart"
+# Download before setting SSL_CERT_FILE: it replaces the trust store, so fetching modules would fail.
+(cd examples/go && env -u SSL_CERT_FILE go mod download && SSL_CERT_FILE="$AUTH0_MOCK_CA" go test -count=1 ./...)
