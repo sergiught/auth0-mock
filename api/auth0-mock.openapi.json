@@ -84725,6 +84725,59 @@
         ]
       }
     },
+    "/admin0/export": {
+      "get": {
+        "description": "The body can be saved as a seed file and loaded with `SEED_FILE`.\nEmpty sections are left out, keys are sorted, and exporting a\nloaded export gives the same bytes again.\n",
+        "parameters": [
+          {
+            "description": "`json` (the default) or `yaml`.",
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "default": "json",
+              "enum": [
+                "json",
+                "yaml"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "`true` adds `id` and `hits` to each expectation. A detailed\nexport still loads as a seed file.\n",
+            "in": "query",
+            "name": "detail",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The current state."
+          },
+          "400": {
+            "description": "`errorCode: \"invalid_query\"` — `format` is not `json` or\n`yaml`, or `detail` is not a boolean.\n"
+          }
+        },
+        "summary": "Dump the expectations, claims, claim mappings, permissions and MFA flag in the seed file format.",
+        "tags": [
+          "Expectations"
+        ]
+      }
+    },
     "/admin0/journal": {
       "delete": {
         "responses": {
@@ -84974,9 +85027,24 @@
     },
     "/admin0/reset": {
       "post": {
+        "description": "When the mock runs with `SEED_FILE`, the reset then re-applies the\nseed file. Pass `keep_seed=false` to wipe everything, the seed\nincluded.\n",
+        "parameters": [
+          {
+            "description": "`true` (the default) re-applies the seed file after the wipe.\n`false` leaves the mock empty. Without a seed file the value\nchanges nothing, but it must still be a boolean.\n",
+            "in": "query",
+            "name": "keep_seed",
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "Reset complete."
+          },
+          "400": {
+            "description": "`errorCode: \"invalid_query\"` — `keep_seed` is not a boolean.\n"
           }
         },
         "summary": "Wipe every store admin0 governs (expectations, claims, claims/mappings, authorize error rules, permissions, mfa-required, clock, events, journal).",
