@@ -165,13 +165,17 @@ func firstBody(t *testing.T, src string) string {
 }
 
 func TestParseYAMLTimestampStaysString(t *testing.T) {
-	src := `
+	for _, ts := range []string{"2024-01-01", "2024-01-01 10:00:00", "2024-01-01T10:00:00.500+02:00"} {
+		t.Run(ts, func(t *testing.T) {
+			src := `
 expectations:
   - method: GET
     path: /api/v2/users/{id}
-    response: {status: 200, body: {user_id: "auth0|1", user_metadata: {created_at: 2024-01-01T00:00:00Z}}}
+    response: {status: 200, body: {user_id: "auth0|1", user_metadata: {created_at: ` + ts + `}}}
 `
-	require.Contains(t, firstBody(t, src), `"user_metadata":{"created_at":"2024-01-01T00:00:00Z"}`)
+			require.Contains(t, firstBody(t, src), `"created_at":"`+ts+`"`)
+		})
+	}
 }
 
 func TestParseLargeIntExact(t *testing.T) {

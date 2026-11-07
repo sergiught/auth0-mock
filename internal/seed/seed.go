@@ -77,11 +77,28 @@ func decodeStrict(data []byte, out any) error {
 	return dec.Decode(out)
 }
 
+// keepTimestampsAsText retags timestamp scalars as strings so they keep the
+// exact text written in the file instead of being parsed into time.Time and
+// re-rendered.
+func keepTimestampsAsText(n *yaml.Node) {
+	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!timestamp" {
+		n.Tag = "!!str"
+	}
+	for _, c := range n.Content {
+		keepTimestampsAsText(c)
+	}
+}
+
 // Parse reads YAML (or JSON, which is a subset) and validates every
 // expectation against the Management API spec.
 func Parse(data []byte, v *spec.Validator) (*Seed, error) {
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	keepTimestampsAsText(&node)
 	var doc any
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	if err := node.Decode(&doc); err != nil {
 		return nil, err
 	}
 	if doc == nil {
