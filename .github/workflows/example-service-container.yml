@@ -1,0 +1,45 @@
+name: example (GitHub Actions service container)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  recipe:
+    runs-on: ubuntu-latest
+    services:
+      auth0-mock:
+        image: ghcr.io/sergiught/auth0-mock:latest
+        ports: ["8080:8080"]
+        env:
+          ADMIN_ALLOW_REMOTE: "true"
+          HTTPS_ADDR: "off"
+        # The job waits for this to pass before running any step.
+        options: >-
+          --health-cmd "wget -qO- http://localhost:8080/healthz"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - name: stub a user, get a token, call the API
+        run: |
+          set -euo pipefail
+          base=http://localhost:8080
+
+          curl -fsS -X POST "$base/admin0/expectations" \
+            -H 'Content-Type: application/json' \
+            -d '{"method":"GET","path":"/api/v2/users/auth0|123","response":{"status":200,"body":{"user_id":"auth0|123","email":"alice@example.com","name":"Alice"}}}'
+
+          token=$(curl -fsS -X POST "$base/oauth/token" \
+            -d grant_type=client_credentials \
+            -d client_id=demo \
+            -d client_secret=x \
+            --data-urlencode "audience=$base/api/v2/" | jq -r .access_token)
+
+          curl -fsS "$base/api/v2/users/auth0%7C123" \
+            -H "Authorization: Bearer $token" \
+            | jq -e '.user_id == "auth0|123"'
