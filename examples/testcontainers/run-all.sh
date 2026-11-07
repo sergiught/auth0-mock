@@ -39,6 +39,7 @@ run_suite() {
   case "$1" in
     go) (cd "$HERE/go" && go test -count=1 ./...) ;;
     node) (cd "$HERE/node" && npm ci --no-audit --no-fund && npm test) ;;
+    python) (cd "$HERE/python" && uv sync --locked -q && uv run --locked -q pytest -q) ;;
     *) echo "unsupported suite: $1" >&2; return 1 ;;
   esac
 }

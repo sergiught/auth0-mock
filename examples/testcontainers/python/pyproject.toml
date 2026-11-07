@@ -1,0 +1,11 @@
+[project]
+name = "auth0-mock-testcontainers-example"
+version = "0"
+requires-python = ">=3.12"
+dependencies = ["testcontainers==4.15.0", "pyjwt[crypto]==2.15.1"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false
