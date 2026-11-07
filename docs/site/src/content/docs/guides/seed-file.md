@@ -112,6 +112,6 @@ The mock watches `seed/seed.yaml`, and writing it in place can be read half-writ
 | `format` | `json` (default), `yaml` | `yaml` returns `application/yaml` |
 | `detail` | `true`, `false` (default) | `true` adds `id` and `hits` to each expectation |
 
-Any other value gets a 400. Empty sections are left out and keys are sorted. Exporting, loading and exporting again gives the same bytes. Numbers keep the exact text you wrote, so `1.0` stays `1.0`; a number written in a YAML-only form such as `0x1F` comes back as plain decimal (`31`).
+Any other value gets a 400. Empty sections are left out and keys are sorted. Exporting, loading and exporting again gives the same bytes. Numbers keep the exact text you wrote, as values and as keys, so `1.0` stays `1.0`; a number written in a YAML-only form such as `0x1F` comes back as plain decimal (`31`).
 
 Reading the export does not change the mock, so you can call it at any point.

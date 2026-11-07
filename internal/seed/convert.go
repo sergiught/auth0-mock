@@ -29,9 +29,12 @@ func toJSONValue(v any) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			// An anchored number reused as a key through an alias carries the
-			// number marker, which is not part of the key's text.
+			// A number key carries the number marker, which is not part of its
+			// text. A null key is written ~ or null in YAML and becomes "null".
 			key := strings.TrimPrefix(fmt.Sprint(k), numberMarker)
+			if k == nil {
+				key = "null"
+			}
 			if _, dup := out[key]; dup {
 				return nil, fmt.Errorf("duplicate key %q after conversion to text", key)
 			}

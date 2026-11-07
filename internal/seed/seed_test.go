@@ -326,3 +326,18 @@ func TestParseAnchoredNumberReusedAsKey(t *testing.T) {
 	require.Equal(t, `duplicate key "42" after conversion to text`,
 		parseErr(t, "claims:\n  level: &n 42\n  \"42\": a\n  *n : b\n"))
 }
+
+func TestParseKeysKeepTheirWrittenText(t *testing.T) {
+	s := parse(t, "claims:\n  1.10: a\n  123456789012345678901234567890: b\n  ~: c\n  &n 0.10000000000000000555: d\n  v: *n\n")
+	require.Equal(t, map[string]any{
+		"1.10": "a", "123456789012345678901234567890": "b", "null": "c",
+		"0.10000000000000000555": "d", "v": float64(0.1),
+	}, s.Claims)
+	src := `
+expectations:
+  - method: GET
+    path: /api/v2/users/{id}
+    response: {status: 200, body: {user_id: "auth0|1", user_metadata: {&n 0.10000000000000000555: k, v: *n}}}
+`
+	require.Contains(t, firstBody(t, src), `"user_metadata":{"0.10000000000000000555":"k","v":0.10000000000000000555}`)
+}

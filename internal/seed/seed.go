@@ -152,27 +152,24 @@ var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9
 // file. Timestamps become strings instead of being parsed into time.Time and
 // re-rendered. Numbers that are valid JSON literals become marked strings, which
 // toJSONValue turns into json.Number; decoding them into int or float64 would
-// round big or precise values. Mapping keys are only checked for timestamps, as
-// they become text anyway.
+// round big or precise values. Keys are marked too: toJSONValue drops the marker
+// from a key, so it keeps its written text, and an alias of an anchored key
+// still gets the exact number.
 func prepareScalars(n *yaml.Node) {
-	prepareNode(n, false)
-}
-
-func prepareNode(n *yaml.Node, isKey bool) {
 	if n.Kind == yaml.ScalarNode {
 		switch n.ShortTag() {
 		case "!!timestamp":
 			n.Tag = "!!str"
 		case "!!int", "!!float":
-			if !isKey && jsonNumber.MatchString(n.Value) {
+			if jsonNumber.MatchString(n.Value) {
 				n.Tag = "!!str"
 				n.Value = numberMarker + n.Value
 				n.Style = 0
 			}
 		}
 	}
-	for i, c := range n.Content {
-		prepareNode(c, n.Kind == yaml.MappingNode && i%2 == 0)
+	for _, c := range n.Content {
+		prepareScalars(c)
 	}
 }
 
