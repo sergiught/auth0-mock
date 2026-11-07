@@ -319,3 +319,10 @@ expectations:
 	require.Equal(t, "gold", s.Claims["Tier"])
 	require.Len(t, s.Expectations, 1)
 }
+
+func TestParseAnchoredNumberReusedAsKey(t *testing.T) {
+	s := parse(t, "claims:\n  level: &n 42\n  *n : answer\n")
+	require.Equal(t, map[string]any{"level": float64(42), "42": "answer"}, s.Claims)
+	require.Equal(t, `duplicate key "42" after conversion to text`,
+		parseErr(t, "claims:\n  level: &n 42\n  \"42\": a\n  *n : b\n"))
+}

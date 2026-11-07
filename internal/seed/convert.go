@@ -13,15 +13,11 @@ import (
 func toJSONValue(v any) (any, error) {
 	switch t := v.(type) {
 	case map[string]any:
-		out := make(map[string]any, len(t))
+		m := make(map[any]any, len(t))
 		for k, val := range t {
-			c, err := toJSONValue(val)
-			if err != nil {
-				return nil, err
-			}
-			out[k] = c
+			m[k] = val
 		}
-		return out, nil
+		return toJSONValue(m)
 	case map[any]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
@@ -33,7 +29,9 @@ func toJSONValue(v any) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			key := fmt.Sprint(k)
+			// An anchored number reused as a key through an alias carries the
+			// number marker, which is not part of the key's text.
+			key := strings.TrimPrefix(fmt.Sprint(k), numberMarker)
 			if _, dup := out[key]; dup {
 				return nil, fmt.Errorf("duplicate key %q after conversion to text", key)
 			}
