@@ -75,6 +75,23 @@ The mock is strict about the file:
 
 If the file is bad at startup, the mock refuses to start. It prints `fatal: seed file <path>: ...` and exits with code 1. Check `docker compose logs auth0-mock`.
 
+A stub can use placeholders such as `{{uuid}}` and `{{now}}` when you set `template: true`. See [Dynamic responses](/auth0-mock/guides/stubbing/#dynamic-responses).
+
+```yaml
+expectations:
+  - method: POST
+    path: /api/v2/users
+    response:
+      status: 201
+      template: true
+      body:
+        user_id: "auth0|{{uuid}}"
+        email: "{{body.email}}"
+        created_at: "{{now}}"
+```
+
+An export keeps the template as written, so it loads back the same way.
+
 ## Reset
 
 `POST /admin0/reset` wipes the mock and then applies the seed again. Stubs you registered during a test are gone and the seeded ones are back.
