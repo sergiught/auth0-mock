@@ -209,10 +209,14 @@ func TestBodyMultipath(t *testing.T) {
 	assert.JSONEq(t, `{"x":{"a}":"a@x.io"}}`, renderBody(t, `{"x":"{{body.{\"a}\":email}}}"}`, nil, v))
 	v.Body = []byte(`{"a}b":1}`)
 	assert.JSONEq(t, `{"x":1}`, renderBody(t, `{"x":"{{body.a\\}b}}"}`, nil, v))
-	// A quote outside a multipath is a plain key character.
+	// A quote inside a key is a plain character.
 	v.Body = []byte(`{"m":{"a\"b":3}}`)
 	assert.JSONEq(t, `{"x":3}`, renderBody(t, `{"x":"{{body.m.a\"b}}"}`, nil, v))
 	assert.JSONEq(t, `{"x":{"q":3}}`, renderBody(t, `{"x":"{{body.m.{\"q\":a\\\"b}}}"}`, nil, v))
+	// Braces inside a quoted query operand do not count.
+	v.Body = []byte(`{"items":[{"tag":"}}","value":1},{"tag":"{","value":2}]}`)
+	assert.JSONEq(t, `{"x":1}`, renderBody(t, `{"x":"{{body.items.#(tag==\"}}\").value}}"}`, nil, v))
+	assert.JSONEq(t, `{"x":2}`, renderBody(t, `{"x":"{{body.items.#(tag==\"{\").value}}"}`, nil, v))
 
 	_, err := Parse(json.RawMessage(`{"x":"{{body.{email}"}`), nil, nil)
 	require.Error(t, err)

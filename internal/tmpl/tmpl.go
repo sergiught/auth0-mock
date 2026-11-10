@@ -208,9 +208,10 @@ func parseString(s string, names map[string]bool) (*str, error) {
 
 // placeholderEnd returns the index of the "}}" closing the placeholder that
 // opens at the start of s, or -1. Braces in the name are balanced first, so a
-// gjson multipath like {{body.{a,b}}} ends at its last two braces, and braces
-// inside a quoted alias within the multipath are ignored. Outside a
-// multipath a quote is an ordinary key character.
+// gjson multipath like {{body.{a,b}}} ends at its last two braces. A quoted
+// string, an alias in a multipath or an operand in a #(tag=="x") query,
+// starts where gjson expects one, after a delimiter or an operator; braces
+// inside it are ignored. Anywhere else a quote is an ordinary key character.
 func placeholderEnd(s string) int {
 	depth := 0
 	quoted := false
@@ -221,7 +222,7 @@ func placeholderEnd(s string) int {
 			j++ // The next byte is escaped, so it is part of the name.
 		case quoted:
 			quoted = c != '"'
-		case c == '"' && depth > 0:
+		case c == '"' && strings.IndexByte("{,(=!<>% ", s[j-1]) >= 0:
 			quoted = true
 		case c == '{':
 			depth++
