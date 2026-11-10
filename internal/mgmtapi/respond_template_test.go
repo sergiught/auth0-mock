@@ -166,6 +166,22 @@ func TestRespondTemplateErrorEnvelope(t *testing.T) {
 	}
 }
 
+func TestRespondTemplatePathValueCheckedWhenServed(t *testing.T) {
+	// {templateName} is an enum; a stub for any name registers. When served
+	// the request validator has already refused a name outside the enum, so
+	// the rendered value always satisfies the response schema.
+	e := newTmplEnv(t, true)
+	e.register(t, matches.Registration{Method: "GET", Path: "/api/v2/email-templates/{templateName}", Response: matches.ResponseDef{
+		Status: 200, Template: true, Body: json.RawMessage(`{"template":"{{path.templateName}}"}`),
+	}})
+	w := e.do(http.MethodGet, "/api/v2/email-templates/verify_email", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"template":"verify_email"}`, w.Body.String())
+	w = e.do(http.MethodGet, "/api/v2/email-templates/nope", "")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "invalid_request")
+}
+
 func TestRespondTemplateUnionResponse(t *testing.T) {
 	// GET /api/v2/users answers with a oneOf (array or paginated object);
 	// the placeholder in the array branch must still register.

@@ -144,6 +144,12 @@ func TestPrepareTemplateErrors(t *testing.T) {
 		{"schema format", matches.Registration{Method: "POST", Path: "/api/v2/users",
 			Response: matches.ResponseDef{Status: 201, Template: true, Body: []byte(`{"created_at":"{{uuid}}"}`)}},
 			"invalid_match", nil},
+		{"embedded body placeholder is a string", matches.Registration{Method: "POST", Path: "/api/v2/users",
+			Response: matches.ResponseDef{Status: 201, Template: true, Body: []byte(`{"email_verified":"x{{body.email_verified}}"}`)}},
+			"invalid_match", []string{"email_verified"}},
+		{"concrete path value fails enum", matches.Registration{Method: "GET", Path: "/api/v2/email-templates/nope",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"template":"{{path.templateName}}"}`)}},
+			"invalid_match", []string{"template"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,6 +172,32 @@ func TestPrepareTemplateConcretePath(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, exp.Response.Tmpl())
+}
+
+func TestPrepareTemplatePathDefersValueChecks(t *testing.T) {
+	// The value of {templateName} is only known when served, so its enum
+	// is checked then; a concrete path is checked now (see TestPrepareTemplateErrors).
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/email-templates/{templateName}",
+		Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"template":"{{path.templateName}}"}`)},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Response.Tmpl())
+}
+
+func TestPrepareTemplatePathKeepsPercent(t *testing.T) {
+	// A registration path is already decoded: a literal %0A is three
+	// characters, not a line break, so a header built from it is fine.
+	v := newValidator(t)
+	_, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/a%0Ab",
+		Response: matches.ResponseDef{
+			Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.id}}"}`),
+			Headers: map[string]string{"X-Id": "{{path.id}}"},
+		},
+	})
+	require.NoError(t, err)
 }
 
 func TestPrepareNoTemplateFlagKeepsBraces(t *testing.T) {

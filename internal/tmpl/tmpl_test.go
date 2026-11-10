@@ -165,7 +165,17 @@ func TestRenderEmptyBody(t *testing.T) {
 func TestBodyPointers(t *testing.T) {
 	p, err := Parse(json.RawMessage(`{"a":"{{body.x}}","l":[{"b":"p{{body.y}}"}],"c":"{{uuid}}","a/b":"{{body.z}}","m~n":"{{body.z}}"}`), nil, nil)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"/a", "/a~1b", "/l/0/b", "/m~0n"}, p.BodyPointers())
+	assert.Equal(t, []string{"/a", "/a~1b", "/m~0n"}, p.BodyPointers())
+	assert.Equal(t, []string{"/l/0/b"}, p.TextPointers(nil))
+}
+
+func TestTextPointers(t *testing.T) {
+	p, err := Parse(json.RawMessage(`{"a":"{{body.x}}","b":"p{{body.y}}","c":"{{path.id}}","d":"{{path.org}}/{{uuid}}","e":"{{uuid}}"}`), nil, []string{"id", "org"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/a"}, p.BodyPointers())
+	assert.Equal(t, []string{"/b"}, p.TextPointers(nil))
+	assert.Equal(t, []string{"/b", "/d"}, p.TextPointers([]string{"org"}))
+	assert.Equal(t, []string{"/b", "/c", "/d"}, p.TextPointers([]string{"id", "org"}))
 }
 
 func TestPathNames(t *testing.T) {

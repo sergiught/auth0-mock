@@ -423,6 +423,37 @@ func TestValidator_ValidateResponse_ErrorEnvelope(t *testing.T) {
 // A response schema that is a oneOf fails as a whole at the union's own
 // pointer, which a skip pointer deeper inside does not cover. The skip
 // must apply inside each branch instead.
+func TestValidateRegistrationDeferring(t *testing.T) {
+	s, err := Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := NewValidator(s)
+	require.NoError(t, err)
+
+	emailOp, err := v.Resolve("GET", "/api/v2/email-templates/{templateName}")
+	require.NoError(t, err)
+	usersOp, err := v.Resolve("POST", "/api/v2/users")
+	require.NoError(t, err)
+	groupsOp, err := v.Resolve("GET", "/api/v2/users/{id}/groups")
+	require.NoError(t, err)
+
+	t.Run("text_defers_enum", func(t *testing.T) {
+		body := json.RawMessage(`{"template":"sample"}`)
+		assert.NoError(t, v.ValidateRegistrationDeferring(emailOp, 200, body, nil, []string{"/template"}))
+		assert.Error(t, v.ValidateRegistrationDeferring(emailOp, 200, body, nil, nil))
+	})
+	t.Run("text_keeps_type_check", func(t *testing.T) {
+		body := json.RawMessage(`{"email_verified":"x"}`)
+		assert.Error(t, v.ValidateRegistrationDeferring(usersOp, 201, body, nil, []string{"/email_verified"}))
+		assert.NoError(t, v.ValidateRegistrationDeferring(usersOp, 201, body, []string{"/email_verified"}, nil))
+	})
+	t.Run("all_of_branch_with_skipped_field", func(t *testing.T) {
+		body := json.RawMessage(`[{"membership_created_at":""}]`)
+		assert.NoError(t, v.ValidateRegistrationDeferring(groupsOp, 200, body, []string{"/0/membership_created_at"}, nil))
+		assert.Error(t, v.ValidateRegistrationDeferring(groupsOp, 200, body, nil, nil))
+		assert.Error(t, v.ValidateRegistrationDeferring(groupsOp, 200, json.RawMessage(`[{"membership_created_at":"","name":5}]`), []string{"/0/membership_created_at"}, nil))
+	})
+}
+
 func TestValidateRegistrationSkipping_Union(t *testing.T) {
 	s, err := Load(api.ManagementOpenAPIJSON)
 	require.NoError(t, err)

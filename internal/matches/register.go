@@ -2,6 +2,7 @@ package matches
 
 import (
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -133,13 +134,17 @@ func prepareEntry(v *spec.Validator, op spec.Operation, path, at string, e *Resp
 	if err != nil {
 		return at + " template: " + err.Error(), "invalid_template"
 	}
-	pathVars := tmpl.PathValues(op.Template, path)
+	pathVars := tmpl.PathValues(op.Template, escapedPath(path))
 	if pathVars == nil {
 		pathVars = map[string]string{}
 	}
+	// A parameter the registration leaves as {name} is any value when
+	// served: it renders as a sample now and is checked then.
+	var unresolved []string
 	for _, name := range names {
 		if val, ok := pathVars[name]; !ok || val == "{"+name+"}" {
 			pathVars[name] = "sample"
+			unresolved = append(unresolved, name)
 		}
 	}
 	rendered, _, err := t.Render(tmpl.Vars{
@@ -151,11 +156,21 @@ func prepareEntry(v *spec.Validator, op spec.Operation, path, at string, e *Resp
 	if err != nil {
 		return at + " template: " + err.Error(), "invalid_template"
 	}
-	if err := v.ValidateRegistrationSkipping(op, e.Status, rendered, t.BodyPointers()); err != nil {
+	if err := v.ValidateRegistrationDeferring(op, e.Status, rendered, t.BodyPointers(), t.TextPointers(unresolved)); err != nil {
 		return schemaMsg + err.Error(), "invalid_match"
 	}
 	e.tmpl = t
 	return "", ""
+}
+
+// escapedPath re-encodes a decoded registration path segment by segment, so
+// that PathValues decodes it exactly once, as it does a request's escaped path.
+func escapedPath(path string) string {
+	segs := strings.Split(path, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	return strings.Join(segs, "/")
 }
 
 // validateThen checks each sequence entry like the primary response and

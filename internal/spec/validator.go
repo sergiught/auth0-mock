@@ -111,6 +111,15 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 // errors at the JSON pointers in skip, or under them. It serves values whose
 // type is only known at serve time, such as template placeholders.
 func (v *Validator) ValidateRegistrationSkipping(op Operation, status int, body json.RawMessage, skip []string) error {
+	return v.ValidateRegistrationDeferring(op, status, body, skip, nil)
+}
+
+// ValidateRegistrationDeferring is ValidateRegistrationSkipping that also
+// defers the value checks (enum, format, pattern, length) at the JSON
+// pointers in text to serve time, while still requiring a string there. It
+// serves strings whose text is only known when served, such as a path
+// parameter or an embedded placeholder in a template.
+func (v *Validator) ValidateRegistrationDeferring(op Operation, status int, body json.RawMessage, skip, text []string) error {
 	resp := selectResponse(op.Op.Responses, status)
 	if resp == nil || resp.Value == nil {
 		return fmt.Errorf("status %d not declared for operation %s", status, op.Op.OperationID)
@@ -122,7 +131,7 @@ func (v *Validator) ValidateRegistrationSkipping(op Operation, status int, body 
 			return nil
 		}
 		if status >= http.StatusBadRequest {
-			return validateErrorEnvelope(status, body, skip)
+			return validateErrorEnvelope(status, body, skip, text)
 		}
 		return fmt.Errorf("status %d declares no body but a body was provided", status)
 	}
@@ -135,7 +144,7 @@ func (v *Validator) ValidateRegistrationSkipping(op Operation, status int, body 
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return fmt.Errorf("body json: %w", err)
 	}
-	if err := filterSkippedErrors(media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()), skip); err != nil {
+	if err := filterSkippedErrors(media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()), skip, text); err != nil {
 		return fmt.Errorf("body schema: %w", err)
 	}
 	return nil
@@ -157,12 +166,12 @@ var errorEnvelopeSchema = openapi3.NewObjectSchema().
 // validateErrorEnvelope checks body against errorEnvelopeSchema and
 // that its statusCode names the status it is served with — a 403 stub
 // whose body says 404 would hand the consumer two answers.
-func validateErrorEnvelope(status int, body json.RawMessage, skip []string) error {
+func validateErrorEnvelope(status int, body json.RawMessage, skip, text []string) error {
 	var decoded any
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return fmt.Errorf("body json: %w", err)
 	}
-	if err := filterSkippedErrors(errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()), skip); err != nil {
+	if err := filterSkippedErrors(errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()), skip, text); err != nil {
 		return fmt.Errorf("error envelope: %w", err)
 	}
 	// A skipped statusCode may not be a number yet; it is checked at serve time.
@@ -185,7 +194,7 @@ func (v *Validator) ValidateResponse(op Operation, status int, headers map[strin
 		// An error body is checked against the envelope with nothing
 		// skipped: a templated field is a real value by now.
 		if status >= http.StatusBadRequest && len(bytes.TrimSpace(body)) > 0 {
-			return validateErrorEnvelope(status, body, nil)
+			return validateErrorEnvelope(status, body, nil, nil)
 		}
 		return nil
 	}
@@ -312,18 +321,19 @@ func filterRequiredErrors(err error) error {
 }
 
 // filterSkippedErrors drops schema errors located at, or under, one of the
-// JSON pointers in skip, returning nil if none remain.
+// JSON pointers in skip, and errors other than a type mismatch at, or under,
+// one of the pointers in text. It returns nil if none remain.
 //
-// A oneOf/anyOf failure is reported at the union's own pointer, which a skip
-// pointer inside the value does not cover. For such an error the value is
-// re-checked against each branch with the skip pointers rebased to the union's
-// location; the error is dropped when some branch is left with no errors.
-func filterSkippedErrors(err error, skip []string) error {
-	if err == nil || len(skip) == 0 {
+// A oneOf/anyOf/allOf failure is reported at the composition's own pointer,
+// which a pointer inside the value does not cover. For such an error the
+// value is re-checked branch by branch with the pointers rebased to the
+// composition's location; see compositionSatisfied.
+func filterSkippedErrors(err error, skip, text []string) error {
+	if err == nil || (len(skip) == 0 && len(text) == 0) {
 		return err
 	}
-	// Not errors.As: a union error wraps its branches' MultiError, which
-	// must not be mistaken for the top-level list.
+	// Not errors.As: a composition error wraps its branches' MultiError,
+	// which must not be mistaken for the top-level list.
 	errs := []error{err}
 	if me, ok := err.(openapi3.MultiError); ok { //nolint:errorlint // see above
 		errs = me
@@ -332,7 +342,14 @@ func filterSkippedErrors(err error, skip []string) error {
 	for _, e := range errs {
 		var se *openapi3.SchemaError
 		if errors.As(e, &se) {
-			if skipCovers(skip, se.JSONPointer()) || unionSatisfied(se, skip) {
+			switch {
+			case skipCovers(skip, se.JSONPointer()):
+				continue
+			case se.SchemaField == "oneOf" || se.SchemaField == "anyOf" || se.SchemaField == "allOf":
+				if compositionSatisfied(se, skip, text) {
+					continue
+				}
+			case se.SchemaField != "type" && skipCovers(text, se.JSONPointer()):
 				continue
 			}
 		}
@@ -344,35 +361,52 @@ func filterSkippedErrors(err error, skip []string) error {
 	return kept
 }
 
-// unionSatisfied reports whether se is a oneOf/anyOf failure that some branch
-// accepts once the skip pointers under the union's location are ignored.
-func unionSatisfied(se *openapi3.SchemaError, skip []string) bool {
-	if se.Schema == nil || (se.SchemaField != "oneOf" && se.SchemaField != "anyOf") {
+// compositionSatisfied reports whether se is a oneOf, anyOf or allOf failure
+// that passes once the skip and text pointers at or under its location are
+// honoured: in some branch for oneOf and anyOf, in every branch for allOf.
+func compositionSatisfied(se *openapi3.SchemaError, skip, text []string) bool {
+	if se.Schema == nil {
 		return false
 	}
 	base := pointerOf(se.JSONPointer())
-	var rebased []string
-	for _, s := range skip {
-		if strings.HasPrefix(s, base+"/") {
-			rebased = append(rebased, strings.TrimPrefix(s, base))
-		}
-	}
-	if len(rebased) == 0 {
+	skip, text = rebase(skip, base), rebase(text, base)
+	if len(skip) == 0 && len(text) == 0 {
 		return false
 	}
-	branches := se.Schema.OneOf
-	if se.SchemaField == "anyOf" {
+	var branches openapi3.SchemaRefs
+	switch se.SchemaField {
+	case "oneOf":
+		branches = se.Schema.OneOf
+	case "anyOf":
 		branches = se.Schema.AnyOf
+	case "allOf":
+		branches = se.Schema.AllOf
 	}
+	all := se.SchemaField == "allOf"
 	for _, b := range branches {
 		if b.Value == nil {
 			continue
 		}
-		if filterSkippedErrors(b.Value.VisitJSON(se.Value, openapi3.MultiErrors()), rebased) == nil {
-			return true
+		ok := filterSkippedErrors(b.Value.VisitJSON(se.Value, openapi3.MultiErrors()), skip, text) == nil
+		if ok != all {
+			return ok
 		}
 	}
-	return false
+	return all
+}
+
+// rebase returns the pointers at or under base, made relative to it.
+func rebase(ptrs []string, base string) []string {
+	var out []string
+	for _, p := range ptrs {
+		switch {
+		case p == base:
+			out = append(out, "")
+		case strings.HasPrefix(p, base+"/"):
+			out = append(out, strings.TrimPrefix(p, base))
+		}
+	}
+	return out
 }
 
 // pointerOf renders raw path segments as an RFC 6901 pointer.

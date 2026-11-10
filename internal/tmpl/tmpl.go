@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -54,7 +55,16 @@ type Template struct {
 	body     any // Decoded JSON tree; templated strings are *str. Nil when empty.
 	hasBody  bool
 	headers  map[string]*str
-	pointers []string
+	pointers []string // Whole-string {{body.*}} values: any JSON type when served.
+	texts    []text   // Other templated strings: always a string when served.
+}
+
+// text records a templated string value that renders as text: whether it
+// embeds a {{body.*}} placeholder, and the path parameters it names.
+type text struct {
+	ptr   string
+	body  bool
+	paths []string
 }
 
 // Parse checks body (JSON, may be empty) and header values. The pathNames are the
@@ -101,20 +111,7 @@ func Parse(body json.RawMessage, headers map[string]string, pathNames []string) 
 func (t *Template) walk(v any, ptr string, names map[string]bool) (any, error) {
 	switch x := v.(type) {
 	case string:
-		if !strings.Contains(x, "{{") {
-			return x, nil
-		}
-		s, err := parseString(x, names)
-		if err != nil {
-			return nil, err
-		}
-		for _, sg := range s.segs {
-			if sg.kind == segBody {
-				t.pointers = append(t.pointers, ptr)
-				break
-			}
-		}
-		return s, nil
+		return t.walkString(x, ptr, names)
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
@@ -138,6 +135,35 @@ func (t *Template) walk(v any, ptr string, names map[string]bool) (any, error) {
 	default:
 		return v, nil
 	}
+}
+
+// walkString parses one string value, recording its pointer when its
+// rendered form depends on the request.
+func (t *Template) walkString(x, ptr string, names map[string]bool) (any, error) {
+	if !strings.Contains(x, "{{") {
+		return x, nil
+	}
+	s, err := parseString(x, names)
+	if err != nil {
+		return nil, err
+	}
+	if len(s.segs) == 1 && s.segs[0].kind == segBody {
+		t.pointers = append(t.pointers, ptr)
+		return s, nil
+	}
+	tx := text{ptr: ptr}
+	for _, sg := range s.segs {
+		switch sg.kind {
+		case segBody:
+			tx.body = true
+		case segPath:
+			tx.paths = append(tx.paths, sg.text)
+		}
+	}
+	if tx.body || len(tx.paths) > 0 {
+		t.texts = append(t.texts, tx)
+	}
+	return s, nil
 }
 
 func escapePointer(k string) string {
@@ -332,9 +358,25 @@ func (r renderer) text(s *str) string {
 }
 
 // BodyPointers returns the JSON pointers ("/a/0/b") of every string value
-// that holds at least one {{body.*}} placeholder, sorted.
+// that is a single {{body.*}} placeholder, sorted. Such a value takes the
+// type of the request field when served.
 func (t *Template) BodyPointers() []string {
 	return append([]string(nil), t.pointers...)
+}
+
+// TextPointers returns the JSON pointers, sorted, of every other templated
+// string value whose text depends on the request: it embeds a {{body.*}}
+// placeholder or names a path parameter in unresolved. Such a value is
+// always a string, but its text is only known when served.
+func (t *Template) TextPointers(unresolved []string) []string {
+	var out []string
+	for _, tx := range t.texts {
+		if tx.body || slices.ContainsFunc(tx.paths, func(p string) bool { return slices.Contains(unresolved, p) }) {
+			out = append(out, tx.ptr)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // PathNames returns the {name} segments of an OpenAPI path template, in order.
