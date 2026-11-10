@@ -127,7 +127,8 @@ func TestRenderEscapesJSON(t *testing.T) {
 	want := "a\"b\\c\nd"
 	assert.Equal(t, want, got["x"])
 	assert.Equal(t, "<"+want+">", got["y"])
-	assert.NotContains(t, out, `\u003c`)
+	// Request-derived text is HTML-escaped on the wire; the JSON value is unchanged.
+	assert.Contains(t, out, `\u003c`)
 }
 
 func TestRenderPreservesNumbers(t *testing.T) {

@@ -247,15 +247,15 @@ func (t *Template) Render(v Vars) (body []byte, headers map[string]string, err e
 	if !t.hasBody {
 		return nil, headers, nil
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
 	// A dropped top-level value is already "", so the flag is not needed.
 	rendered, _ := r.render(t.body)
-	if err := enc.Encode(rendered); err != nil {
+	// Marshal escapes <, > and & as \u003c and friends. Request-derived
+	// values land in this body, so they must never come out as literal HTML.
+	out, err := json.Marshal(rendered)
+	if err != nil {
 		return nil, nil, fmt.Errorf("encode rendered body: %w", err)
 	}
-	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), headers, nil
+	return out, headers, nil
 }
 
 type renderer struct {
