@@ -150,6 +150,9 @@ func TestPrepareTemplateErrors(t *testing.T) {
 		{"concrete path value fails enum", matches.Registration{Method: "GET", Path: "/api/v2/email-templates/nope",
 			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"template":"{{path.templateName}}"}`)}},
 			"invalid_match", []string{"template"}},
+		{"deferred text cannot pick a oneOf branch", matches.Registration{Method: "GET", Path: "/api/v2/log-streams",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`[{"name":"x{{body.name}}","status":"active"}]`)}},
+			"invalid_match", []string{"oneOf"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

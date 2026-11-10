@@ -363,7 +363,10 @@ func filterSkippedErrors(err error, skip, text []string) error {
 
 // compositionSatisfied reports whether se is a oneOf, anyOf or allOf failure
 // that passes once the skip and text pointers at or under its location are
-// honoured: in some branch for oneOf and anyOf, in every branch for allOf.
+// honoured: in some branch for anyOf, in every branch for allOf, and in some
+// branch for oneOf as long as at most one branch accepts the sample as is.
+// Two branches that pass before any deferral are the ambiguity the plain
+// check rejects, and the served values are not what tells them apart.
 func compositionSatisfied(se *openapi3.SchemaError, skip, text []string) bool {
 	if se.Schema == nil {
 		return false
@@ -382,17 +385,30 @@ func compositionSatisfied(se *openapi3.SchemaError, skip, text []string) bool {
 	case "allOf":
 		branches = se.Schema.AllOf
 	}
-	all := se.SchemaField == "allOf"
+	var passed, outright int
 	for _, b := range branches {
 		if b.Value == nil {
 			continue
 		}
-		ok := filterSkippedErrors(b.Value.VisitJSON(se.Value, openapi3.MultiErrors()), skip, text) == nil
-		if ok != all {
-			return ok
+		err := b.Value.VisitJSON(se.Value, openapi3.MultiErrors())
+		if err == nil {
+			outright++
+		}
+		switch {
+		case filterSkippedErrors(err, skip, text) == nil:
+			passed++
+		case se.SchemaField == "allOf":
+			return false
 		}
 	}
-	return all
+	switch se.SchemaField {
+	case "allOf":
+		return true
+	case "oneOf":
+		return passed > 0 && outright <= 1
+	default:
+		return passed > 0
+	}
 }
 
 // rebase returns the pointers at or under base, made relative to it.

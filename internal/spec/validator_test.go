@@ -435,6 +435,8 @@ func TestValidateRegistrationDeferring(t *testing.T) {
 	require.NoError(t, err)
 	groupsOp, err := v.Resolve("GET", "/api/v2/users/{id}/groups")
 	require.NoError(t, err)
+	logsOp, err := v.Resolve("GET", "/api/v2/log-streams")
+	require.NoError(t, err)
 
 	t.Run("text_defers_enum", func(t *testing.T) {
 		body := json.RawMessage(`{"template":"sample"}`)
@@ -451,6 +453,21 @@ func TestValidateRegistrationDeferring(t *testing.T) {
 		assert.NoError(t, v.ValidateRegistrationDeferring(groupsOp, 200, body, []string{"/0/membership_created_at"}, nil))
 		assert.Error(t, v.ValidateRegistrationDeferring(groupsOp, 200, body, nil, nil))
 		assert.Error(t, v.ValidateRegistrationDeferring(groupsOp, 200, json.RawMessage(`[{"membership_created_at":"","name":5}]`), []string{"/0/membership_created_at"}, nil))
+	})
+	t.Run("one_of_stays_exclusive", func(t *testing.T) {
+		// Without a type, every log stream branch accepts the entry, and a
+		// deferred name cannot pick one of them when served.
+		body := json.RawMessage(`[{"name":"x","status":"active"}]`)
+		assert.Error(t, v.ValidateRegistrationDeferring(logsOp, 200, body, nil, []string{"/0/name"}))
+		assert.Error(t, v.ValidateRegistrationDeferring(logsOp, 200, json.RawMessage(`[{"name":"","status":"active"}]`), []string{"/0/name"}, nil))
+		assert.NoError(t, v.ValidateRegistrationDeferring(logsOp, 200, json.RawMessage(`[{"type":"http","name":"x"}]`), nil, []string{"/0/name"}))
+	})
+	t.Run("one_of_decided_by_deferred_value", func(t *testing.T) {
+		// The type itself is deferred: no branch accepts the sample as is,
+		// so the served value is what picks one.
+		body := json.RawMessage(`[{"type":"","name":"x"}]`)
+		assert.NoError(t, v.ValidateRegistrationDeferring(logsOp, 200, body, []string{"/0/type"}, nil))
+		assert.Error(t, v.ValidateRegistrationDeferring(logsOp, 200, body, nil, nil))
 	})
 }
 

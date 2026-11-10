@@ -263,8 +263,8 @@ func (t *Template) Render(v Vars) (body []byte, headers map[string]string, err e
 		headers = make(map[string]string, len(t.headers))
 		for k, s := range t.headers {
 			val := r.text(s)
-			if strings.ContainsAny(val, "\r\n") {
-				return nil, nil, fmt.Errorf("header %q renders with a line break", k)
+			if strings.ContainsFunc(val, isHeaderControl) {
+				return nil, nil, fmt.Errorf("header %q renders with a control character", k)
 			}
 			headers[k] = val
 		}
@@ -282,6 +282,12 @@ func (t *Template) Render(v Vars) (body []byte, headers map[string]string, err e
 		return nil, nil, fmt.Errorf("encode rendered body: %w", err)
 	}
 	return out, headers, nil
+}
+
+// isHeaderControl reports whether r may not appear in a header value: a C0
+// control other than horizontal tab, or DEL.
+func isHeaderControl(r rune) bool {
+	return r < 0x20 && r != '\t' || r == 0x7f
 }
 
 type renderer struct {

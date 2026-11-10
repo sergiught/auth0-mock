@@ -142,13 +142,22 @@ func TestRenderPreservesNumbers(t *testing.T) {
 	assert.Equal(t, json.Number("0.10"), got["f"])
 }
 
-func TestRenderHeaderCRLF(t *testing.T) {
+func TestRenderHeaderControlCharacters(t *testing.T) {
 	p, err := Parse(nil, map[string]string{"X": "{{body.s}}"}, nil)
 	require.NoError(t, err)
+	for _, s := range []string{"a\r\nb", "a\rb", "a\nb", "a\u0000b", "a\u001bb", "a\u007fb"} {
+		v := testVars()
+		body, err := json.Marshal(map[string]string{"s": s})
+		require.NoError(t, err)
+		v.Body = body
+		_, _, err = p.Render(v)
+		require.Error(t, err, "%q", s)
+	}
 	v := testVars()
-	v.Body = []byte(`{"s":"a\r\nb"}`)
-	_, _, err = p.Render(v)
-	require.Error(t, err)
+	v.Body = []byte(`{"s":"a\tb"}`)
+	_, h, err := p.Render(v)
+	require.NoError(t, err)
+	assert.Equal(t, "a\tb", h["X"])
 }
 
 func TestRenderEmptyBody(t *testing.T) {
