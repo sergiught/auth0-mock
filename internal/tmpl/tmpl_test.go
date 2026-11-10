@@ -217,6 +217,11 @@ func TestBodyMultipath(t *testing.T) {
 	v.Body = []byte(`{"items":[{"tag":"}}","value":1},{"tag":"{","value":2}]}`)
 	assert.JSONEq(t, `{"x":1}`, renderBody(t, `{"x":"{{body.items.#(tag==\"}}\").value}}"}`, nil, v))
 	assert.JSONEq(t, `{"x":2}`, renderBody(t, `{"x":"{{body.items.#(tag==\"{\").value}}"}`, nil, v))
+	// Nor braces inside the strings of a JSON literal or a modifier argument.
+	assert.JSONEq(t, `{"x":{"msg":"{"}}`, renderBody(t, `{"x":"{{body.!{\"msg\":\"{\"}}}"}`, nil, v))
+	assert.JSONEq(t, `{"x":["}}"]}`, renderBody(t, `{"x":"{{body.![\"}}\"]}}"}`, nil, v))
+	v.Body = []byte(`{"l":["a","b"]}`)
+	assert.JSONEq(t, `{"x":["a","b"]}`, renderBody(t, `{"x":"{{body.l|@pretty:{\"indent\":\"\",\"note\":\"}}\"}}}"}`, nil, v))
 
 	_, err := Parse(json.RawMessage(`{"x":"{{body.{email}"}`), nil, nil)
 	require.Error(t, err)
