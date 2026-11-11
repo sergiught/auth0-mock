@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.234.0](https://github.com/sergiught/auth0-mock/compare/v0.233.0...v0.234.0) (2026-11-11)
+
+
+### Features
+
+* **authapi:** ISSUER_URL=auto derives the issuer from the request address ([#103](https://github.com/sergiught/auth0-mock/issues/103)) ([89f3efe](https://github.com/sergiught/auth0-mock/commit/89f3efe257e80fee446275ab01f667b211211b8b))
+* load a seed file at startup and add GET /admin0/export ([#105](https://github.com/sergiught/auth0-mock/issues/105)) ([d76fc18](https://github.com/sergiught/auth0-mock/commit/d76fc185cbf2fece5c91c0cf2fb4321c6a843df5))
+* response templating with uuid, now, path and body placeholders ([#106](https://github.com/sergiught/auth0-mock/issues/106)) ([6795960](https://github.com/sergiught/auth0-mock/commit/679596087fd61a54e75c05575df315267a551086))
+
+
+### Bug fixes
+
+* **docker:** make the TLS_CACHE_DIR and mkcert recipes work as written ([#101](https://github.com/sergiught/auth0-mock/issues/101)) ([d47025a](https://github.com/sergiught/auth0-mock/commit/d47025ad503f3e2a26259e861c36883121c601cc))
+
+
+### Documentation
+
+* add a Testcontainers and CI guide and a Go quickstart ([#104](https://github.com/sergiught/auth0-mock/issues/104)) ([b9b8c67](https://github.com/sergiught/auth0-mock/commit/b9b8c67a584ed34f88b20886d58cdfc21daf5829))
+* fix image tags and the listener-disable note ([#98](https://github.com/sergiught/auth0-mock/issues/98)) ([a2d702e](https://github.com/sergiught/auth0-mock/commit/a2d702e16221e99e615176f893deb34eed7cd3d1))
+* move the docs to a Starlight site on GitHub Pages ([#102](https://github.com/sergiught/auth0-mock/issues/102)) ([b4daebb](https://github.com/sergiught/auth0-mock/commit/b4daebb4e01dfc78dbb87b01dc1a5790aa697d61))
+* Node, Python and curl quickstarts with examples run in CI ([#100](https://github.com/sergiught/auth0-mock/issues/100)) ([f6e6e2b](https://github.com/sergiught/auth0-mock/commit/f6e6e2be477130eb7cbd100ce23f9cf03c95b4dd))
+
 ## [0.233.0](https://github.com/sergiught/auth0-mock/compare/v0.232.0...v0.233.0) (2026-10-27)
 
 
