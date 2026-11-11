@@ -334,3 +334,25 @@ func TestFluent_ReusedBuilderDropsStaleThen(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.last(t).Body, &raw))
 	assert.NotContains(t, raw, "then")
 }
+
+// TestResponseBuilderTemplate locks the template flag's wire shape: it
+// lands on the entry under construction only.
+func TestResponseBuilderTemplate(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	_, err := c.ExpectPost("/api/v2/users").
+		Respond(201).Template().JSON(map[string]any{"user_id": "auth0|{{uuid}}"}).
+		Then(409).JSON(map[string]any{"statusCode": 409}).
+		Apply(t.Context())
+	require.NoError(t, err)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &raw))
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(raw["response"], &resp))
+	assert.Equal(t, true, resp["template"])
+	var then []map[string]any
+	require.NoError(t, json.Unmarshal(raw["then"], &then))
+	require.Len(t, then, 1)
+	assert.NotContains(t, then[0], "template")
+}

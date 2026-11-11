@@ -9,6 +9,8 @@ package matches
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/sergiught/auth0-mock/internal/tmpl"
 )
 
 // Kind distinguishes how an Expectation's path is interpreted.
@@ -81,7 +83,15 @@ type ResponseDef struct {
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
+	// Template marks Body and Headers as a response template.
+	Template bool `json:"template,omitempty"`
+
+	tmpl *tmpl.Template
 }
+
+// Tmpl returns the template parsed at registration, or nil when the entry
+// is not a template.
+func (r ResponseDef) Tmpl() *tmpl.Template { return r.tmpl }
 
 // KindOf reports whether path is a concrete URL (KindExact) or an OpenAPI
 // path template containing a "{...}" segment (KindTemplate).

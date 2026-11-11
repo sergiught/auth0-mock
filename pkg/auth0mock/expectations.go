@@ -63,11 +63,14 @@ type RequestMatcher struct {
 }
 
 // ResponseDef is the canned response an Expectation returns. Status is
-// required — POSTing with Status: 0 returns 400 invalid_body.
+// required — POSTing with Status: 0 returns 400 invalid_body. Template
+// turns on {{uuid}}, {{now}}, {{path.NAME}} and {{body.PATH}}
+// placeholders in JSON string values and header values.
 type ResponseDef struct {
-	Status  int               `json:"status"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    json.RawMessage   `json:"body,omitempty"`
+	Status   int               `json:"status"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Body     json.RawMessage   `json:"body,omitempty"`
+	Template bool              `json:"template,omitempty"`
 }
 
 // ExpectationsClient owns the /admin0/expectations CRUD surface. Reach
@@ -83,7 +86,8 @@ type ExpectationsClient struct {
 // introspection.
 //
 // Returns *APIError for validation failures — known error codes are
-// invalid_body, unknown_operation, invalid_match, invalid_request_match.
+// invalid_body, unknown_operation, invalid_match, invalid_request_match,
+// invalid_template.
 // The server validates response.body against the operation's response
 // schema at registration time so test code fails on bad fixtures
 // instead of at SDK-call time. Auth0's spec gives error statuses no

@@ -72420,6 +72420,11 @@
             "maximum": 599,
             "minimum": 100,
             "type": "integer"
+          },
+          "template": {
+            "default": false,
+            "description": "When true, the mock expands placeholders in this response on every\nserve: `{{uuid}}`, `{{now}}`, `{{path.NAME}}` (a path parameter)\nand `{{body.PATH}}` (a gjson path into the request body). They are\nrecognised only inside JSON string values and header values; use\n`\\{{` for a literal `{{`. It is opt-in because Auth0 email and\nUniversal Login templates contain Liquid `{{ }}`. A malformed\ntemplate is rejected with `errorCode: \"invalid_template\"`. See\nhttps://sergiu.dev/auth0-mock/guides/stubbing/ for details.\n",
+            "type": "boolean"
           }
         },
         "required": [
@@ -84716,7 +84721,7 @@
             "description": "Expectation stored."
           },
           "400": {
-            "description": "Body could not be parsed, names an unknown operation, or violates the response schema."
+            "description": "Body could not be parsed, names an unknown operation, violates\nthe response schema, or holds a malformed template\n(`errorCode: \"invalid_template\"`).\n"
           }
         },
         "summary": "Register (or replace) a canned response for a Management API operation.",

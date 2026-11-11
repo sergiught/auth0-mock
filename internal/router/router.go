@@ -198,6 +198,7 @@ func New(d Deps) (http.Handler, error) {
 		Store: d.Store, Keys: d.Keys, Log: d.Log, Strict: d.SpecValidationStrict,
 		RequireAudience: d.BearerRequireAudience,
 		EventsHandler:   hub.Handler(),
+		Now:             clockNow,
 	}); err != nil {
 		return nil, fmt.Errorf("mount mgmtapi: %w", err)
 	}

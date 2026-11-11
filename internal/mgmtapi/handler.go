@@ -6,13 +6,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/spec"
+	"github.com/sergiught/auth0-mock/internal/tmpl"
 )
 
 // GenericHandler is the main spec-driven handler for a Management API operation.
@@ -22,6 +25,9 @@ type GenericHandler struct {
 	Store     *matches.Store
 	Log       zerolog.Logger
 	Strict    bool
+	// Now supplies the time for {{now}} in templated responses. Nil means
+	// time.Now.
+	Now func() time.Time
 }
 
 func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +81,7 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			noMatchMessage(r.Method, r.URL.Path, h.Op.Template, nm), "no_match")
 		return
 	}
-	h.respond(r.Context(), w, exp)
+	h.respond(w, r, exp, body)
 }
 
 // noMatchMessage explains a no_match 404: which fields of the closest stub
@@ -99,9 +105,36 @@ func noMatchMessage(method, path, opTemplate string, nm []matches.NearMiss) stri
 }
 
 // respond writes a matched expectation's canned response.
-func (h *GenericHandler) respond(ctx context.Context, w http.ResponseWriter, exp *matches.Expectation) {
-	journal.MarkMatched(ctx, exp.ID)
+// A templated response is rendered first, from the request's path and body.
+func (h *GenericHandler) respond(w http.ResponseWriter, r *http.Request, exp *matches.Expectation, body []byte) {
+	journal.MarkMatched(r.Context(), exp.ID)
 	res := exp.Served()
+	if t := res.Tmpl(); t != nil {
+		now := h.Now
+		if now == nil {
+			now = time.Now
+		}
+		rb, rh, err := t.Render(tmpl.Vars{
+			UUID: uuid.NewString(),
+			Now:  now().UTC(),
+			Path: tmpl.PathValues(h.Op.Template, r.URL.EscapedPath()),
+			Body: body,
+		})
+		if err != nil {
+			h.Log.Error().
+				Str("op", h.Op.Op.OperationID).
+				Int("status", res.Status).
+				Err(err).
+				Msg("templated response failed to render")
+			httperr.WriteMgmt(w, http.StatusInternalServerError, "Internal Server Error",
+				"templated response failed to render: "+err.Error(), "invalid_template")
+			return
+		}
+		if rb != nil {
+			res.Body = rb
+		}
+		res.Headers = rh
+	}
 	// 3. Defense-in-depth response validation.
 	if err := h.Validator.ValidateResponse(h.Op, res.Status, res.Headers, res.Body); err != nil {
 		h.Log.Error().
@@ -158,7 +191,7 @@ func (h *eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.stream.ServeHTTP(&markOn2xx{ResponseWriter: w, ctx: r.Context()}, r)
 		return
 	}
-	h.stubs.respond(r.Context(), w, exp)
+	h.stubs.respond(w, r, exp, nil)
 }
 
 // markOn2xx marks the request matched only when the stream answers 2xx, so

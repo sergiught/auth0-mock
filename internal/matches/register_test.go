@@ -107,3 +107,153 @@ func TestPrepareTreatsEmptyMapsAsOmitted(t *testing.T) {
 	require.True(t, matches.SameTarget(c, d))
 	require.Nil(t, c.Request.Headers)
 }
+
+func TestPrepareTemplateOK(t *testing.T) {
+	v := newValidator(t)
+	body := []byte(`{"user_id":"auth0|{{uuid}}","email":"{{body.email}}","email_verified":"{{body.email_verified}}","created_at":"{{now}}","identities":[{"provider":"auth0","user_id":"{{uuid}}","connection":"{{body.connection}}","isSocial":false}]}`)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "POST", Path: "/api/v2/users",
+		Response: matches.ResponseDef{
+			Status: 201, Template: true, Body: body,
+			Headers: map[string]string{"Location": "/api/v2/users/auth0|{{uuid}}"},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Response.Tmpl())
+	require.Equal(t, string(body), string(exp.Response.Body))
+}
+
+func TestPrepareTemplateErrors(t *testing.T) {
+	v := newValidator(t)
+	tests := []struct {
+		name    string
+		reg     matches.Registration
+		code    string
+		contain []string
+	}{
+		{"response", matches.Registration{Method: "GET", Path: "/api/v2/users/{id}",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"user_id":"{{nope}}"}`)}},
+			"invalid_template", []string{"response", "nope"}},
+		{"then", matches.Registration{Method: "GET", Path: "/api/v2/users/{id}",
+			Response: matches.ResponseDef{Status: 404},
+			Then:     []matches.ResponseDef{{Status: 200, Template: true, Body: []byte(`{"user_id":"{{nope}}"}`)}}},
+			"invalid_template", []string{"then[0]", "nope"}},
+		{"unknown path name", matches.Registration{Method: "GET", Path: "/api/v2/users/{id}",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.nope}}"}`)}},
+			"invalid_template", []string{"nope"}},
+		{"schema format", matches.Registration{Method: "POST", Path: "/api/v2/users",
+			Response: matches.ResponseDef{Status: 201, Template: true, Body: []byte(`{"created_at":"{{uuid}}"}`)}},
+			"invalid_match", nil},
+		{"embedded body placeholder is a string", matches.Registration{Method: "POST", Path: "/api/v2/users",
+			Response: matches.ResponseDef{Status: 201, Template: true, Body: []byte(`{"email_verified":"x{{body.email_verified}}"}`)}},
+			"invalid_match", []string{"email_verified"}},
+		{"concrete path value fails enum", matches.Registration{Method: "GET", Path: "/api/v2/email-templates/nope",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"template":"{{path.templateName}}"}`)}},
+			"invalid_match", []string{"template"}},
+		{"deferred text cannot pick a oneOf branch", matches.Registration{Method: "GET", Path: "/api/v2/log-streams",
+			Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`[{"name":"x{{body.name}}","status":"active"}]`)}},
+			"invalid_match", []string{"oneOf"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := matches.Prepare(v, tc.reg)
+			var re *matches.RegistrationError
+			require.ErrorAs(t, err, &re)
+			require.Equal(t, tc.code, re.Code, re.Message)
+			for _, s := range tc.contain {
+				require.Contains(t, re.Message, s)
+			}
+		})
+	}
+}
+
+func TestPrepareTemplateConcretePath(t *testing.T) {
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/auth0|1",
+		Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.id}}"}`)},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Response.Tmpl())
+}
+
+func TestPrepareTemplatePathDefersValueChecks(t *testing.T) {
+	// The value of {templateName} is only known when served, so its enum
+	// is checked then; a concrete path is checked now (see TestPrepareTemplateErrors).
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/email-templates/{templateName}",
+		Response: matches.ResponseDef{Status: 200, Template: true, Body: []byte(`{"template":"{{path.templateName}}"}`)},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Response.Tmpl())
+}
+
+func TestPrepareTemplatePathKeepsPercent(t *testing.T) {
+	// A registration path is already decoded: a literal %0A is three
+	// characters, not a line break, so a header built from it is fine.
+	v := newValidator(t)
+	_, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/a%0Ab",
+		Response: matches.ResponseDef{
+			Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.id}}"}`),
+			Headers: map[string]string{"X-Id": "{{path.id}}"},
+		},
+	})
+	require.NoError(t, err)
+}
+
+func TestPrepareNoTemplateFlagKeepsBraces(t *testing.T) {
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/email-templates/{templateName}",
+		Response: matches.ResponseDef{Status: 200, Body: []byte(`{"template":"verify_email","body":"<p>{{ user.email }}</p>","from":"a@b.c","subject":"s","syntax":"liquid","enabled":true}`)},
+	})
+	require.NoError(t, err)
+	require.Nil(t, exp.Response.Tmpl())
+}
+
+func TestPrepareThenSchemaMessage(t *testing.T) {
+	v := newValidator(t)
+	_, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/{id}",
+		Response: matches.ResponseDef{Status: 404},
+		Then:     []matches.ResponseDef{{Status: 200, Body: []byte(`{"user_id": 5}`)}},
+	})
+	var re *matches.RegistrationError
+	require.ErrorAs(t, err, &re)
+	require.Equal(t, "invalid_match", re.Code)
+	require.True(t, strings.HasPrefix(re.Message, "registered then[0] violates schema for status 200: "), re.Message)
+}
+
+func TestPrepareTemplateThenOKAndSurvivesStore(t *testing.T) {
+	v := newValidator(t)
+	exp, err := matches.Prepare(v, matches.Registration{
+		Method: "GET", Path: "/api/v2/users/{id}",
+		Response: matches.ResponseDef{Status: 404},
+		Then:     []matches.ResponseDef{{Status: 200, Template: true, Body: []byte(`{"user_id":"{{path.id}}"}`)}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exp.Then[0].Tmpl())
+
+	s := matches.NewStore()
+	s.Put(exp)
+	found := s.Find("GET", "/api/v2/users/x", "/api/v2/users/{id}", matches.MatchableRequest{})
+	require.NotNil(t, found)
+	require.NotNil(t, found.Then[0].Tmpl())
+}
+
+// A required response field filled by a whole-string {{body.x}} must still
+// register: the sample render keeps the slot instead of dropping the key.
+func TestPrepareTemplateRequiredFieldFromBody(t *testing.T) {
+	v := newValidator(t)
+	reg := func(body string, tmpl bool) error {
+		_, err := matches.Prepare(v, matches.Registration{
+			Method: "POST", Path: "/api/v2/custom-domains/{id}/test",
+			Response: matches.ResponseDef{Status: 200, Template: tmpl, Body: []byte(body)},
+		})
+		return err
+	}
+	require.Error(t, reg(`{}`, false), "success is required, so an empty body must fail")
+	require.NoError(t, reg(`{"success":"{{body.success}}"}`, true))
+}

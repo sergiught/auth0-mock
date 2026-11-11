@@ -2,10 +2,14 @@ package matches
 
 import (
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sergiught/auth0-mock/internal/spec"
+	"github.com/sergiught/auth0-mock/internal/tmpl"
 )
 
 // Registration is the payload that describes one expectation: the target
@@ -55,13 +59,11 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 			"invalid_match",
 		}
 	}
-	if err := v.ValidateRegistration(op, r.Response.Status, r.Response.Body); err != nil {
-		return Expectation{}, &RegistrationError{
-			"registered response violates schema for status " + strconv.Itoa(r.Response.Status) + ": " + err.Error(),
-			"invalid_match",
-		}
+	if msg, code := prepareEntry(v, op, r.Path, "response", &r.Response); msg != "" {
+		return Expectation{}, &RegistrationError{msg, code}
 	}
-	if msg, code := validateThen(v, op, r.Then); msg != "" {
+	r.Then = slices.Clone(r.Then)
+	if msg, code := validateThen(v, op, r.Path, r.Then); msg != "" {
 		return Expectation{}, &RegistrationError{msg, code}
 	}
 	// Normalize an empty request matcher to nil so a catch-all has
@@ -114,10 +116,67 @@ func dropEmptyMaps(m *RequestMatcher) *RequestMatcher {
 	return &c
 }
 
+// prepareEntry checks one response entry (named at: "response" or "then[i]")
+// against the spec. A templated entry is parsed, rendered with sample values
+// and checked with its body placeholders skipped; the parsed template is kept
+// on e. It returns a message and code, or "" when the entry is valid.
+func prepareEntry(v *spec.Validator, op spec.Operation, path, at string, e *ResponseDef) (msg, code string) {
+	status := strconv.Itoa(e.Status)
+	schemaMsg := "registered " + at + " violates schema for status " + status + ": "
+	if !e.Template {
+		if err := v.ValidateRegistration(op, e.Status, e.Body); err != nil {
+			return schemaMsg + err.Error(), "invalid_match"
+		}
+		return "", ""
+	}
+	names := tmpl.PathNames(op.Template)
+	t, err := tmpl.Parse(e.Body, e.Headers, names)
+	if err != nil {
+		return at + " template: " + err.Error(), "invalid_template"
+	}
+	pathVars := tmpl.PathValues(op.Template, escapedPath(path))
+	if pathVars == nil {
+		pathVars = map[string]string{}
+	}
+	// A parameter the registration leaves as {name} is any value when
+	// served: it renders as a sample now and is checked then.
+	var unresolved []string
+	for _, name := range names {
+		if val, ok := pathVars[name]; !ok || val == "{"+name+"}" {
+			pathVars[name] = "sample"
+			unresolved = append(unresolved, name)
+		}
+	}
+	rendered, _, err := t.Render(tmpl.Vars{
+		UUID:   "00000000-0000-4000-8000-000000000000",
+		Now:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Path:   pathVars,
+		Sample: true,
+	})
+	if err != nil {
+		return at + " template: " + err.Error(), "invalid_template"
+	}
+	if err := v.ValidateRegistrationDeferring(op, e.Status, rendered, t.BodyPointers(), t.TextPointers(unresolved)); err != nil {
+		return schemaMsg + err.Error(), "invalid_match"
+	}
+	e.tmpl = t
+	return "", ""
+}
+
+// escapedPath re-encodes a decoded registration path segment by segment, so
+// that PathValues decodes it exactly once, as it does a request's escaped path.
+func escapedPath(path string) string {
+	segs := strings.Split(path, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	return strings.Join(segs, "/")
+}
+
 // validateThen checks each sequence entry like the primary response and
 // returns the first problem message naming the entry plus an error code, or
 // "" when valid.
-func validateThen(v *spec.Validator, op spec.Operation, then []ResponseDef) (msg, code string) {
+func validateThen(v *spec.Validator, op spec.Operation, path string, then []ResponseDef) (msg, code string) {
 	for i, t := range then {
 		at := "then[" + strconv.Itoa(i) + "]"
 		switch {
@@ -126,8 +185,8 @@ func validateThen(v *spec.Validator, op spec.Operation, then []ResponseDef) (msg
 		case op.Op.OperationID == spec.SubscribeEventsOperationID && t.Status < http.StatusBadRequest:
 			return "GET /api/v2/events accepts only error stubs (status >= 400); " + at + " has status " + strconv.Itoa(t.Status), "invalid_match"
 		}
-		if err := v.ValidateRegistration(op, t.Status, t.Body); err != nil {
-			return "registered " + at + " violates schema for status " + strconv.Itoa(t.Status) + ": " + err.Error(), "invalid_match"
+		if msg, code := prepareEntry(v, op, path, at, &then[i]); msg != "" {
+			return msg, code
 		}
 	}
 	return "", ""

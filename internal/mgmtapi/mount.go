@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
@@ -37,6 +38,9 @@ type MountOpts struct {
 	// the generic handler is used (the old behaviour — useful in tests
 	// that don't care about the SSE surface).
 	EventsHandler http.Handler
+	// Now supplies the time for {{now}} in templated responses. Nil means
+	// time.Now.
+	Now func() time.Time
 }
 
 // Mount walks the spec and registers one bearer-protected generic handler per
@@ -48,7 +52,7 @@ func Mount(opts MountOpts) error {
 	for op := range opts.Spec.Operations() {
 		generic := &GenericHandler{
 			Op: op, Validator: opts.Validator, Store: opts.Store,
-			Log: opts.Log, Strict: opts.Strict,
+			Log: opts.Log, Strict: opts.Strict, Now: opts.Now,
 		}
 		var inner http.Handler = generic
 		if opts.EventsHandler != nil && op.Op.OperationID == spec.SubscribeEventsOperationID {

@@ -146,7 +146,10 @@ paths:
       responses:
         "204": { description: Expectation stored. }
         "400":
-          description: Body could not be parsed, names an unknown operation, or violates the response schema.
+          description: |
+            Body could not be parsed, names an unknown operation, violates
+            the response schema, or holds a malformed template
+            (`errorCode: "invalid_template"`).
     get:
       tags: [Expectations]
       summary: List every registered expectation.
@@ -867,3 +870,15 @@ components:
           description: |
             Response body the mock should return. Validated against the target
             operation's response schema for `status` before it is stored.
+        template:
+          type: boolean
+          default: false
+          description: |
+            When true, the mock expands placeholders in this response on every
+            serve: `{{uuid}}`, `{{now}}`, `{{path.NAME}}` (a path parameter)
+            and `{{body.PATH}}` (a gjson path into the request body). They are
+            recognised only inside JSON string values and header values; use
+            `\{{` for a literal `{{`. It is opt-in because Auth0 email and
+            Universal Login templates contain Liquid `{{ }}`. A malformed
+            template is rejected with `errorCode: "invalid_template"`. See
+            https://sergiu.dev/auth0-mock/guides/stubbing/ for details.

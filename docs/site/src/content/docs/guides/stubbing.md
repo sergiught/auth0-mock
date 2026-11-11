@@ -121,6 +121,66 @@ _, err := c.ExpectGet("/api/v2/users/auth0|x").
 
 go-auth0 retries a 429 up to twice and waits at least 1s; `Retry-After: 0` keeps each wait at that floor.
 
+## Dynamic responses
+
+A stub returns the same body on every call. For `POST /api/v2/users` that means every user gets the same `user_id`. Add `"template": true` to a response and the mock fills in placeholders each time the stub is served. From release 0.234.0.
+
+Templating is off by default, and you turn it on per response. Auth0's email templates and Universal Login templates contain Liquid text like `{{ user.email }}`, and a stub that returns them must come back unchanged.
+
+```bash
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"POST","path":"/api/v2/users","response":{"status":201,"template":true,"headers":{"Location":"/api/v2/users/auth0|{{uuid}}"},"body":{"user_id":"auth0|{{uuid}}","email":"{{body.email}}","email_verified":"{{body.email_verified}}","created_at":"{{now}}","identities":[{"provider":"auth0","user_id":"{{uuid}}","connection":"{{body.connection}}","isSocial":false}]}}}'
+
+curl -s -X POST http://localhost:8080/api/v2/users \
+  -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
+  -d '{"email":"jane@example.com","email_verified":true,"connection":"Username-Password-Authentication","password":"S3cretPass!"}'
+```
+
+Each call gets a new `user_id`, the `email` you posted, and the current time in `created_at`.
+
+The Go SDK equivalent:
+
+```go
+_, err := c.ExpectPost("/api/v2/users").
+    Respond(201).Template().
+    Header("Location", "/api/v2/users/auth0|{{uuid}}").
+    JSON(map[string]any{
+        "user_id":        "auth0|{{uuid}}",
+        "email":          "{{body.email}}",
+        "email_verified": "{{body.email_verified}}",
+        "created_at":     "{{now}}",
+    }).
+    Apply(ctx)
+```
+
+`Template()` flags only the entry you are building. After `Then(...)`, call it again for that entry.
+
+### Placeholders
+
+| Placeholder | Renders to |
+|---|---|
+| `{{uuid}}` | A random lowercase UUID v4 |
+| `{{now}}` | The mock's clock as UTC time with milliseconds, like `2026-11-07T12:34:56.789Z` |
+| `{{path.NAME}}` | The decoded path parameter `NAME` (`/api/v2/users/{id}` gives `{{path.id}}`) |
+| `{{body.PATH}}` | A field of the JSON request body, by [gjson path](https://github.com/tidwall/gjson/blob/master/SYNTAX.md) such as `email` or `app_metadata.plan`; a multipath like `{email,user_id}` works too |
+
+Spaces inside the braces are fine: `{{ uuid }}`.
+
+Placeholders work in JSON string values of the body and in header values. Object keys, numbers, booleans and nulls are never changed.
+
+- **One `uuid` and one `now` per response.** Every `{{uuid}}` in a response, headers included, gets the same value, so `user_id`, `identities[0].user_id` and `Location` agree. The next call gets a new one.
+- **`{{now}}` follows the clock.** It reads `/admin0/clock`. Freeze the clock and `created_at` is the frozen time.
+- **Whole-string `{{body.PATH}}` keeps its type.** If a string is only `{{body.PATH}}`, the field replaces the whole string with its own type. `"email_verified": "{{body.email_verified}}"` gives `true`, and an object field gives the object.
+- **Embedded `{{body.PATH}}` is text.** In `"User {{body.email}}"`, a string goes in as is and any other value goes in as its JSON text.
+- **A missing field in a whole-string `{{body.PATH}}` is left out.** The key is removed from its object, or the element from its array, the way Auth0 leaves out fields you didn't send. If the placeholder is the entire body, it renders `""`. This also applies to a request with no JSON body.
+- **A missing field in an embedded `{{body.PATH}}` renders `""`.** `"User {{body.email}}"` gives `"User "`.
+- **Literal braces.** Write `\{{` (in JSON, `"\\{{"`) to get a literal `{{`.
+
+The mock checks the template when you register the stub. An unknown placeholder, a bad path parameter name or an unclosed `{{` gives a 400 with the code `invalid_template`. The body is also checked against the response schema. A whole-string `{{body.PATH}}` is skipped, since its type is only known when served. Any other templated string must be a string in the schema, so `"email_verified": "x{{body.email_verified}}"` fails. Its value is checked too, against an enum or a format for example, unless the text depends on the request body or on a path parameter the stub leaves as `{name}`; those values are checked when served. A typo in a field name fails only where the schema forbids extra fields, which `POST /api/v2/users` does not. A header that renders with a line break or another control character gives a 500 `invalid_template` when served.
+
+The rendered body is checked against the schema on every call, as for any stub. If a placeholder renders the wrong type or value, strict mode returns a 500 `invalid_match`.
+
 ## Reset state between tests
 
 The cheapest possible teardown: one POST wipes everything:

@@ -289,6 +289,30 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I save the response JSON path "([^"]+)" as "([^"]+)"$`, func(path, name string) error {
+		got := gjson.GetBytes(c.LastBody, path)
+		if !got.Exists() {
+			return fmt.Errorf("JSON path %s does not exist (body=%s)", path, string(c.LastBody))
+		}
+		if c.SavedValues == nil {
+			c.SavedValues = map[string]string{}
+		}
+		c.SavedValues[name] = got.String()
+		return nil
+	})
+
+	sc.Step(`^the response JSON path "([^"]+)" does not equal the saved "([^"]+)"$`, func(path, name string) error {
+		want, ok := c.SavedValues[name]
+		if !ok {
+			return fmt.Errorf("no saved value %q", name)
+		}
+		got := gjson.GetBytes(c.LastBody, path)
+		if !got.Exists() || got.String() == want {
+			return fmt.Errorf("JSON path %s: got %q (exists=%v), must exist and differ from saved %q", path, got.String(), got.Exists(), name)
+		}
+		return nil
+	})
+
 	sc.Step(`^the response JSON path "([^"]+)" exists$`, func(path string) error {
 		if !gjson.GetBytes(c.LastBody, path).Exists() {
 			return fmt.Errorf("JSON path %s does not exist (body=%s)", path, string(c.LastBody))

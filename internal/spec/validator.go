@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -103,6 +104,22 @@ func isSupportedMethod(method string) bool {
 // operation's response schema for the chosen status. Status must be present in
 // op.Responses (or "default"); body is unmarshaled JSON.
 func (v *Validator) ValidateRegistration(op Operation, status int, body json.RawMessage) error {
+	return v.ValidateRegistrationSkipping(op, status, body, nil)
+}
+
+// ValidateRegistrationSkipping is ValidateRegistration that ignores schema
+// errors at the JSON pointers in skip, or under them. It serves values whose
+// type is only known at serve time, such as template placeholders.
+func (v *Validator) ValidateRegistrationSkipping(op Operation, status int, body json.RawMessage, skip []string) error {
+	return v.ValidateRegistrationDeferring(op, status, body, skip, nil)
+}
+
+// ValidateRegistrationDeferring is ValidateRegistrationSkipping that also
+// defers the value checks (enum, format, pattern, length) at the JSON
+// pointers in text to serve time, while still requiring a string there. It
+// serves strings whose text is only known when served, such as a path
+// parameter or an embedded placeholder in a template.
+func (v *Validator) ValidateRegistrationDeferring(op Operation, status int, body json.RawMessage, skip, text []string) error {
 	resp := selectResponse(op.Op.Responses, status)
 	if resp == nil || resp.Value == nil {
 		return fmt.Errorf("status %d not declared for operation %s", status, op.Op.OperationID)
@@ -114,7 +131,7 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 			return nil
 		}
 		if status >= http.StatusBadRequest {
-			return validateErrorEnvelope(status, body)
+			return validateErrorEnvelope(status, body, skip, text)
 		}
 		return fmt.Errorf("status %d declares no body but a body was provided", status)
 	}
@@ -127,7 +144,7 @@ func (v *Validator) ValidateRegistration(op Operation, status int, body json.Raw
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return fmt.Errorf("body json: %w", err)
 	}
-	if err := media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()); err != nil {
+	if err := filterSkippedErrors(media.Schema.Value.VisitJSON(decoded, openapi3.MultiErrors()), skip, text); err != nil {
 		return fmt.Errorf("body schema: %w", err)
 	}
 	return nil
@@ -149,16 +166,17 @@ var errorEnvelopeSchema = openapi3.NewObjectSchema().
 // validateErrorEnvelope checks body against errorEnvelopeSchema and
 // that its statusCode names the status it is served with — a 403 stub
 // whose body says 404 would hand the consumer two answers.
-func validateErrorEnvelope(status int, body json.RawMessage) error {
+func validateErrorEnvelope(status int, body json.RawMessage, skip, text []string) error {
 	var decoded any
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return fmt.Errorf("body json: %w", err)
 	}
-	if err := errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()); err != nil {
+	if err := filterSkippedErrors(errorEnvelopeSchema.VisitJSON(decoded, openapi3.MultiErrors()), skip, text); err != nil {
 		return fmt.Errorf("error envelope: %w", err)
 	}
-	// The schema has proven an object with an integer statusCode.
-	if got := decoded.(map[string]any)["statusCode"].(float64); got != float64(status) {
+	// A skipped statusCode may not be a number yet; it is checked at serve time.
+	obj, _ := decoded.(map[string]any)
+	if got, isNum := obj["statusCode"].(float64); isNum && got != float64(status) {
 		return fmt.Errorf("error envelope: statusCode %v does not match status %d", got, status)
 	}
 	return nil
@@ -172,7 +190,12 @@ func (v *Validator) ValidateResponse(op Operation, status int, headers map[strin
 	if resp == nil || resp.Value == nil {
 		return fmt.Errorf("status %d not declared", status)
 	}
-	if resp.Value.Content == nil {
+	if len(resp.Value.Content) == 0 {
+		// An error body is checked against the envelope with nothing
+		// skipped: a templated field is a real value by now.
+		if status >= http.StatusBadRequest && len(bytes.TrimSpace(body)) > 0 {
+			return validateErrorEnvelope(status, body, nil, nil)
+		}
 		return nil
 	}
 	media := resp.Value.Content.Get("application/json")
@@ -295,4 +318,132 @@ func filterRequiredErrors(err error) error {
 		return nil
 	}
 	return kept
+}
+
+// filterSkippedErrors drops schema errors located at, or under, one of the
+// JSON pointers in skip, and errors other than a type mismatch at, or under,
+// one of the pointers in text. It returns nil if none remain.
+//
+// A oneOf/anyOf/allOf failure is reported at the composition's own pointer,
+// which a pointer inside the value does not cover. For such an error the
+// value is re-checked branch by branch with the pointers rebased to the
+// composition's location; see compositionSatisfied.
+func filterSkippedErrors(err error, skip, text []string) error {
+	if err == nil || (len(skip) == 0 && len(text) == 0) {
+		return err
+	}
+	// Not errors.As: a composition error wraps its branches' MultiError,
+	// which must not be mistaken for the top-level list.
+	errs := []error{err}
+	if me, ok := err.(openapi3.MultiError); ok { //nolint:errorlint // see above
+		errs = me
+	}
+	var kept openapi3.MultiError
+	for _, e := range errs {
+		var se *openapi3.SchemaError
+		if errors.As(e, &se) {
+			switch {
+			case skipCovers(skip, se.JSONPointer()):
+				continue
+			case se.SchemaField == "oneOf" || se.SchemaField == "anyOf" || se.SchemaField == "allOf":
+				if compositionSatisfied(se, skip, text) {
+					continue
+				}
+			case se.SchemaField != "type" && skipCovers(text, se.JSONPointer()):
+				continue
+			}
+		}
+		kept = append(kept, e)
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
+
+// compositionSatisfied reports whether se is a oneOf, anyOf or allOf failure
+// that passes once the skip and text pointers at or under its location are
+// honoured: in some branch for anyOf, in every branch for allOf, and in some
+// branch for oneOf as long as at most one branch accepts the sample as is.
+// Two branches that pass before any deferral are the ambiguity the plain
+// check rejects, and the served values are not what tells them apart.
+func compositionSatisfied(se *openapi3.SchemaError, skip, text []string) bool {
+	if se.Schema == nil {
+		return false
+	}
+	base := pointerOf(se.JSONPointer())
+	skip, text = rebase(skip, base), rebase(text, base)
+	if len(skip) == 0 && len(text) == 0 {
+		return false
+	}
+	var branches openapi3.SchemaRefs
+	switch se.SchemaField {
+	case "oneOf":
+		branches = se.Schema.OneOf
+	case "anyOf":
+		branches = se.Schema.AnyOf
+	case "allOf":
+		branches = se.Schema.AllOf
+	}
+	var passed, outright int
+	for _, b := range branches {
+		if b.Value == nil {
+			continue
+		}
+		err := b.Value.VisitJSON(se.Value, openapi3.MultiErrors())
+		if err == nil {
+			outright++
+		}
+		switch {
+		case filterSkippedErrors(err, skip, text) == nil:
+			passed++
+		case se.SchemaField == "allOf":
+			return false
+		}
+	}
+	switch se.SchemaField {
+	case "allOf":
+		return true
+	case "oneOf":
+		return passed > 0 && outright <= 1
+	default:
+		return passed > 0
+	}
+}
+
+// rebase returns the pointers at or under base, made relative to it.
+func rebase(ptrs []string, base string) []string {
+	var out []string
+	for _, p := range ptrs {
+		switch {
+		case p == base:
+			out = append(out, "")
+		case strings.HasPrefix(p, base+"/"):
+			out = append(out, strings.TrimPrefix(p, base))
+		}
+	}
+	return out
+}
+
+// pointerOf renders raw path segments as an RFC 6901 pointer.
+func pointerOf(segments []string) string {
+	esc := strings.NewReplacer("~", "~0", "/", "~1")
+	var b strings.Builder
+	for _, seg := range segments {
+		b.WriteByte('/')
+		b.WriteString(esc.Replace(seg))
+	}
+	return b.String()
+}
+
+// skipCovers reports whether the location given as raw path segments equals,
+// or lies under, one of the RFC 6901 pointers in skip.
+func skipCovers(skip, segments []string) bool {
+	ptr := pointerOf(segments)
+	for _, s := range skip {
+		if ptr == s || strings.HasPrefix(ptr, s+"/") {
+			return true
+		}
+	}
+	return false
 }
