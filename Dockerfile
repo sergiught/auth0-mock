@@ -5,7 +5,7 @@
 # For published images the release pipeline uses the slimmer
 # `Dockerfile.release`, which is fed a pre-built binary by goreleaser.
 
-FROM golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
+FROM golang:1.27-alpine@sha256:eb61c3873c97416fff0116553fff65d67a3549f72e11d9758849a689cdd8b523 AS build
 WORKDIR /src
 
 # Cache deps separately from source so a code-only change doesn't re-download.
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/auth0-mock ./cmd/
 
 # --- runtime image -----------------------------------------------------------
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 LABEL org.opencontainers.image.title="auth0-mock"
 LABEL org.opencontainers.image.description="Drop-in mock of Auth0's Authentication and Management APIs."
 LABEL org.opencontainers.image.licenses="MIT"
