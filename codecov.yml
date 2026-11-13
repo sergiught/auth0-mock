@@ -9,3 +9,10 @@
 # entrypoints (cmd/*) are intentionally NOT excluded.
 ignore:
   - "features/scenario"
+
+# Wait for both uploads before posting statuses. Without this, Codecov
+# reports as soon as the first flag lands and briefly fails the PR on
+# partial coverage (e.g. -21% project) until the second one arrives.
+codecov:
+  notify:
+    after_n_builds: 2
