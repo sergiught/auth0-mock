@@ -95,6 +95,9 @@ func (rm *RequestMatcher) validateAbsentPath(p string, body any, hasBody bool) e
 		if name == "" {
 			return errors.New("header name is empty")
 		}
+		if name == "Host" {
+			return errors.New("the Host header cannot be checked for absence")
+		}
 		for h := range rm.Headers {
 			if http.CanonicalHeaderKey(h) == name {
 				return errors.New("the matcher also requires this header")
@@ -115,13 +118,13 @@ func (rm *RequestMatcher) validateAbsentPath(p string, body any, hasBody bool) e
 }
 
 // bodySets reports whether the matcher body sets the value at segs, or an
-// ancestor of it. A scalar met on the way down fixes everything below it, so
-// that counts as set too.
+// ancestor of it. A non-object met on the way down has no fields, so
+// everything below it is absent and does not count as set.
 func bodySets(body any, segs []string) bool {
 	for _, s := range segs {
 		obj, isObj := body.(map[string]any)
 		if !isObj {
-			return true
+			return false
 		}
 		next, present := obj[s]
 		if !present {

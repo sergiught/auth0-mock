@@ -71867,7 +71867,7 @@
         "description": "Optional conditions the incoming request must satisfy for the\nexpectation to apply. Omit it (or send `{}`) for a catch-all. `query`\nand `body` are subset-matched: every key you specify must be present\nand equal in the real request; extra keys are allowed. Scalars must\nmatch exactly. Arrays must too, unless `arrays` is `contains`. The matcher is validated against the\noperation's request schema (with `required` relaxed) at registration.\n",
         "properties": {
           "absent": {
-            "description": "Field paths the request must not carry: `query.\u003ckey\u003e`,\n`headers.\u003cName\u003e` (case-insensitive) or `body.\u003ca\u003e.\u003cb\u003e` (a dotted\nobject path, no array indexing). A field is present when it exists,\neven with an empty value or JSON null. A matcher with only `absent`\nis not a catch-all. A path without one of those prefixes, with an\nempty segment, naming an undeclared query parameter, or that the\nmatcher also requires is rejected with `invalid_request_match`.\n",
+            "description": "Field paths the request must not carry: `query.\u003ckey\u003e`,\n`headers.\u003cName\u003e` (case-insensitive) or `body.\u003ca\u003e.\u003cb\u003e` (a dotted\nobject path, no array indexing). A field is present when it exists,\neven with an empty value or JSON null. A matcher with only `absent`\nis not a catch-all. A path without one of those prefixes, with an\nempty segment, naming an undeclared query parameter, naming\nthe Host header, or that the matcher also requires is rejected with\n`invalid_request_match`.\n",
             "items": {
               "type": "string"
             },
