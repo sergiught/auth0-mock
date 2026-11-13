@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -158,10 +159,17 @@ func bodySets(body any, segs []string) bool {
 }
 
 // bodyValue returns the value at the dotted path in a request body, JSON null
-// included. A missing or non-JSON body holds nothing.
+// included. A missing or non-JSON body holds nothing. Numbers stay
+// json.Number, so one too large for float64 cannot hide the path and the
+// value is reported as sent.
 func bodyValue(raw []byte, path string) (any, bool) {
 	var cur any
-	if len(bytes.TrimSpace(raw)) == 0 || json.Unmarshal(raw, &cur) != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if dec.Decode(&cur) != nil {
+		return nil, false
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, false
 	}
 	for _, s := range strings.Split(strings.TrimPrefix(path, absentBodyPrefix), ".") {
