@@ -61,8 +61,8 @@ func (c *Client) Expect(method, path string) *ExpectationBuilder {
 // WithQuery narrows the matcher to requests that include this
 // query-string key + value. When the request repeats the key, it matches
 // if any of the request's values for the key equals value. Repeated
-// calls add more keys; later values for the same key overwrite earlier
-// ones. Subset semantics — extra incoming query keys don't disqualify a
+// calls add more keys; a later WithQuery or WithQueryAll for the same key
+// overwrites the earlier one. Subset semantics — extra incoming query keys don't disqualify a
 // match. To require several values of one key, use WithQueryAll.
 func (b *ExpectationBuilder) WithQuery(key, value string) *ExpectationBuilder {
 	b.ensureRequest()
@@ -70,19 +70,21 @@ func (b *ExpectationBuilder) WithQuery(key, value string) *ExpectationBuilder {
 		b.exp.Request.Query = map[string]string{}
 	}
 	b.exp.Request.Query[key] = value
+	delete(b.exp.Request.QueryAll, key)
 	return b
 }
 
 // WithQueryAll narrows the matcher to requests whose query string carries
 // every one of values for key, in any order; extra values are allowed.
 // A repeated value must appear that many times in the request. A later
-// call for the same key overwrites the earlier one.
+// WithQueryAll or WithQuery for the same key overwrites the earlier one.
 func (b *ExpectationBuilder) WithQueryAll(key string, values ...string) *ExpectationBuilder {
 	b.ensureRequest()
 	if b.exp.Request.QueryAll == nil {
 		b.exp.Request.QueryAll = map[string][]string{}
 	}
 	b.exp.Request.QueryAll[key] = slices.Clone(values)
+	delete(b.exp.Request.Query, key)
 	return b
 }
 

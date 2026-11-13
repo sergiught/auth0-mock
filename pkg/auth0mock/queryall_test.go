@@ -77,3 +77,24 @@ func TestRequestMatcher_UnmarshalRejectsNullQueryValues(t *testing.T) {
 		assert.Error(t, json.Unmarshal([]byte(in), &rm), in)
 	}
 }
+
+func TestFluent_QuerySettersOverwriteEachOther(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+	_, err := c.ExpectGet("/api/v2/users").
+		WithQuery("fields", "name").
+		WithQueryAll("fields", "name", "email").
+		WithQueryAll("q", "a", "b").
+		WithQuery("q", "c").
+		Respond(200).
+		Apply(t.Context())
+	require.NoError(t, err)
+
+	var wire struct {
+		Request struct {
+			Query map[string]any `json:"query"`
+		} `json:"request"`
+	}
+	require.NoError(t, json.Unmarshal(rec.last(t).Body, &wire))
+	assert.Equal(t, map[string]any{"fields": []any{"name", "email"}, "q": "c"}, wire.Request.Query)
+}
