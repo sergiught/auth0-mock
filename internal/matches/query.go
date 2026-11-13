@@ -57,9 +57,15 @@ func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body}
-	if len(w.Absent) > 0 && string(w.Absent) != "null" {
-		if err := json.Unmarshal(w.Absent, &rm.Absent); err != nil {
+	if len(w.Absent) > 0 {
+		var items []*string
+		if err := json.Unmarshal(w.Absent, &items); err != nil || items == nil || slices.Contains(items, nil) {
 			rm.decodeErr = errors.New("absent: must be a list of strings")
+		}
+		for _, v := range items {
+			if v != nil {
+				rm.Absent = append(rm.Absent, *v)
+			}
 		}
 	}
 	if w.Query == nil {

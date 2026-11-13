@@ -125,6 +125,8 @@ func TestMistypedAbsentIsInvalidRequestMatch(t *testing.T) {
 	for name, src := range map[string]string{
 		"string":          `{"absent":"body.x"}`,
 		"non-string item": `{"absent":["body.x",1]}`,
+		"null":            `{"absent":null}`,
+		"null item":       `{"absent":["body.x",null]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var reg matches.Registration
@@ -135,4 +137,13 @@ func TestMistypedAbsentIsInvalidRequestMatch(t *testing.T) {
 			assert.Equal(t, "invalid_request_match", re.Code)
 		})
 	}
+}
+
+func TestEmptyAbsentListIsAccepted(t *testing.T) {
+	t.Parallel()
+	v := newValidator(t)
+	var reg matches.Registration
+	require.NoError(t, json.Unmarshal([]byte(`{"method":"GET","path":"/api/v2/users","response":{"status":429},"request":{"absent":[]}}`), &reg))
+	_, err := matches.Prepare(v, reg)
+	require.NoError(t, err)
 }

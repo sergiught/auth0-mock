@@ -110,7 +110,9 @@ func TestAbsent_Validate(t *testing.T) {
 		{"header also required", RequestMatcher{Headers: map[string]string{"x-foo": "1"}, Absent: []string{"headers.X-Foo"}}, false},
 		{"body exact", RequestMatcher{Body: raw(`{"a":{"b":1}}`), Absent: []string{"body.a.b"}}, false},
 		{"body ancestor set", RequestMatcher{Body: raw(`{"a":{"b":1}}`), Absent: []string{"body.a"}}, false},
-		{"body below scalar", RequestMatcher{Body: raw(`{"a":{"b":1}}`), Absent: []string{"body.a.b.c"}}, false},
+		{"body below scalar", RequestMatcher{Body: raw(`{"a":{"b":1}}`), Absent: []string{"body.a.b.c"}}, true},
+		{"body below array", RequestMatcher{Body: raw(`{"a":[1]}`), Absent: []string{"body.a.b"}}, true},
+		{"host header", RequestMatcher{Absent: []string{"headers.host"}}, false},
 		{"body sibling ok", RequestMatcher{Body: raw(`{"a":{"b":1}}`), Absent: []string{"body.a.c"}}, true},
 		{"body other key ok", RequestMatcher{Body: raw(`{"a":1}`), Absent: []string{"body.password"}}, true},
 	}

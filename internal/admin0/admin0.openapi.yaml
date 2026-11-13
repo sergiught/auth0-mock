@@ -867,8 +867,9 @@ components:
             object path, no array indexing). A field is present when it exists,
             even with an empty value or JSON null. A matcher with only `absent`
             is not a catch-all. A path without one of those prefixes, with an
-            empty segment, naming an undeclared query parameter, or that the
-            matcher also requires is rejected with `invalid_request_match`.
+            empty segment, naming an undeclared query parameter, naming
+            the Host header, or that the matcher also requires is rejected with
+            `invalid_request_match`.
         body:
           description: JSON the request body must contain (subset match).
     ResponseDef:
