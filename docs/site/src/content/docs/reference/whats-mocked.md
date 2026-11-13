@@ -28,7 +28,7 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 
 | `grant_type` | Notes |
 |---|---|
-| `client_credentials` | M2M flow, returns `access_token` only; `scope` is the requested one, else the audience's `/admin0/permissions` joined by spaces (omitted when none); 403 `access_denied` when there is no `audience` and `DEFAULT_AUDIENCE` is blank |
+| `client_credentials` | M2M flow, returns `access_token` only; `scope` is the requested one, else the audience's `/admin0/permissions` joined by spaces (omitted when none); for a Management API audience (any `https://<host>/api/v2/`, whatever the scheme, host or port) with no registered permissions, every Management scope; 403 `access_denied` when there is no `audience` and `DEFAULT_AUDIENCE` is blank |
 | `password` | Returns access + id + refresh; gates on the MFA flag |
 | `refresh_token` | A refresh token the mock issued returns the same user: new `access_token` and `id_token` (same profile and `auth_time`) plus a new `refresh_token`; the old one keeps working. `audience`/`scope` default to the login's. Unknown tokens still work and get just a new `access_token` (subject `<client_id>@refresh`) |
 | `authorization_code` | Returns access + id; **enforces PKCE** if challenge was set at `/authorize`; the `audience` and `scope` sent to `/authorize` win over the token request's; the `nonce` sent to `/authorize` is echoed in the id_token, and id_tokens carry `auth_time` and `azp`; the user is the `login_hint` from `/authorize` or `auth0\|mock-user`, and id_tokens carry a profile derived from it (`email`, `name`, `nickname`, `picture`) |
@@ -42,6 +42,8 @@ Client credentials may also be sent via HTTP Basic (`client_secret_basic`); if b
 
 :::caution
 **Audience is echoed, not enforced.** The mock mints tokens with whatever `audience` you ask for (falling back to `DEFAULT_AUDIENCE`) and the bearer middleware verifies signature + expiry + issuer but *not* that the audience matches anything client-side. This is deliberate — tests need to swap audiences freely. Real Auth0 does enforce audience against the client's registered APIs; if your downstream service relies on `aud` checks, you'll need to add your own assertion in test fixtures.
+
+**Management API scopes are enforced.** Each operation lists the scopes it accepts in the spec. A token carrying none of them gets `403 insufficient_scope` (`Insufficient scope, expected any of: ...`), before any stub is consulted. `client_credentials` tokens for the Management API audience get every Management scope by default, so a plain token works; request a narrower `scope` or register `/admin0/permissions` to test the 403. Tokens from other grants (password, authorization code, refresh) get no default scope, so request the scopes they need. A `client_credentials` token minted for a non-Management audience (for example `DEFAULT_AUDIENCE` set to your own API) gets no default scope and now returns 403 on `/api/v2`; mint a separate token for `https://<host>/api/v2/`. Set `BEARER_REQUIRE_SCOPES=false` to turn the check off.
 :::
 
 ## Management API (spec-driven, ~480 endpoints)

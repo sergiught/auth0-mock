@@ -40,6 +40,9 @@ type TokenHandler struct {
 	// precedence over the global claims store. Empty store = feature off.
 	ClaimMappings *claims.MappingStore
 	Permissions   *permissions.Store
+	// ManagementScopes is the default scope of a client_credentials token for
+	// the Management API audience (see clientCredentialsScope).
+	ManagementScopes []string
 	// PKCE may be nil. When set and the authorization_code grant supplies a
 	// code that was stashed at /authorize with a code_challenge, the matching
 	// code_verifier is required and verified.
@@ -474,15 +477,33 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 // clientCredentialsScope returns the scope for a client_credentials token: the
 // requested scope when it is non-blank, otherwise the audience's registered
 // permissions joined by spaces (what Auth0 reports as the client's granted
-// scopes). Empty when neither exists, which omits the claim.
+// scopes). For the Management API audience with no registered permissions it
+// is every Management scope, so a default token can call any endpoint. Empty
+// otherwise, which omits the claim.
 func (h *TokenHandler) clientCredentialsScope(audience, requested string) string {
 	if strings.TrimSpace(requested) != "" {
 		return requested
 	}
-	if h.Permissions == nil {
-		return ""
+	if h.Permissions != nil {
+		if perms := h.Permissions.Get(audience); len(perms) > 0 {
+			return strings.Join(perms, " ")
+		}
 	}
-	return strings.Join(h.Permissions.Get(audience), " ")
+	if isManagementAudience(audience) {
+		return strings.Join(h.ManagementScopes, " ")
+	}
+	return ""
+}
+
+// isManagementAudience reports whether audience is a Management API audience:
+// an absolute URL whose path is /api/v2/ (or /api/v2), on any scheme, host or
+// port. Auth0's is always https://<domain>/api/v2/; the mock's host varies.
+func isManagementAudience(audience string) bool {
+	u, err := url.Parse(audience)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	return u.Path == "/api/v2/" || u.Path == "/api/v2"
 }
 
 func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {

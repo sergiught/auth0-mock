@@ -31,7 +31,9 @@ behaviours are insecure *by design* and are out of scope for reports:
   untrusted network. Bind to `127.0.0.1` (the default) or your CI runner.
 - The auto-generated TLS certificate is self-signed.
 - Tokens are signed with an in-process key and audience is echoed, not enforced
-  (unless `BEARER_REQUIRE_AUDIENCE` is set).
+  (unless `BEARER_REQUIRE_AUDIENCE` is set). Management API scopes are enforced,
+  but `client_credentials` tokens for a Management API audience (any http or
+  https `<host>/api/v2/`) get every scope by default.
 
 In scope: anything that lets an attacker compromise the **host running the
 mock** or escape the documented test-tool threat model (e.g. RCE via a crafted

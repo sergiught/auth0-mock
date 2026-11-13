@@ -147,6 +147,7 @@ Feature: Clock control
       client_id=demo
       client_secret=x
       audience=https://api.example.com/
+      scope=read:users
       """
     And I save the access_token as my bearer
     When I POST "/admin0/clock/advance" with body:

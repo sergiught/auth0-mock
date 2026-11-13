@@ -96,6 +96,13 @@ type Specification struct {
 	// the "echoed, not enforced" behaviour the README documents so test
 	// suites can swap audiences freely.
 	BearerRequireAudience string `env:"BEARER_REQUIRE_AUDIENCE"`
+
+	// BearerRequireScopes makes the Mgmt-API bearer check enforce token
+	// scopes as Auth0 does: a token carrying none of the scopes an
+	// operation lists gets 403 insufficient_scope. On by default;
+	// client_credentials tokens for the Management API audience get every
+	// Management scope unless a narrower scope is requested or registered.
+	BearerRequireScopes bool `env:"BEARER_REQUIRE_SCOPES" envDefault:"true"`
 }
 
 // Load populates a Specification from process environment and validates it.

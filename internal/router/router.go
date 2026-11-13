@@ -71,6 +71,9 @@ type Deps struct {
 	// middleware reject tokens whose `aud` claim doesn't contain this
 	// value. Opt-in to preserve the documented test-friendly default.
 	BearerRequireAudience string
+	// BearerRequireScopes makes the Mgmt-API enforce each operation's
+	// required token scopes (403 insufficient_scope).
+	BearerRequireScopes bool
 	// Debug enables the request/response dump middleware. Off by default;
 	// when on, every request and response gets a full method/path/query/
 	// headers/body log line at INFO level. Authorization + Cookie headers
@@ -181,6 +184,7 @@ func New(d Deps) (http.Handler, error) {
 		Keys:                         d.Keys,
 		Issuer:                       d.Issuer,
 		DefaultAudience:              d.DefaultAudience,
+		ManagementScopes:             d.Spec.ManagementScopes(),
 		Log:                          d.Log,
 		Claims:                       d.Claims,
 		ClaimMappings:                d.ClaimMappings,
@@ -197,6 +201,7 @@ func New(d Deps) (http.Handler, error) {
 		Router: r, Spec: d.Spec, Validator: d.Validator,
 		Store: d.Store, Keys: d.Keys, Log: d.Log, Strict: d.SpecValidationStrict,
 		RequireAudience: d.BearerRequireAudience,
+		RequireScopes:   d.BearerRequireScopes,
 		EventsHandler:   hub.Handler(),
 		Now:             clockNow,
 	}); err != nil {

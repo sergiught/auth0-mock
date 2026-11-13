@@ -82,7 +82,7 @@
           const resp = await fetch('/oauth/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'grant_type=client_credentials&client_id=docs&client_secret=docs',
+            body: 'grant_type=client_credentials&client_id=docs&client_secret=docs&audience=' + encodeURIComponent(location.origin + '/api/v2/'),
           });
           if (resp.ok) {
             const data = await resp.json();

@@ -89,6 +89,14 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^I have a client_credentials bearer token with scope "([^"]*)"$`, func(scope string) error {
+		c.MintBearerWithScope(scope)
+		if c.BearerTok == "" {
+			return fmt.Errorf("failed to mint bearer")
+		}
+		return nil
+	})
+
 	sc.Step(`^I have a valid bearer token$`, func() error {
 		c.MintBearer()
 		if c.BearerTok == "" {
