@@ -690,7 +690,7 @@ func TestToken_MFAOOB_MissingOOBCode_400(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "oob_code")
 }
 
-// TestToken_MFA_MissingMFAToken_400 covers consumeMFAToken's empty-token
+// TestToken_MFA_MissingMFAToken_400 covers redeemMFAToken's empty-token
 // guard. Triggers on any of the three MFA grants; tested on mfa-otp here.
 func TestToken_MFA_MissingMFAToken_400(t *testing.T) {
 	r, _, _ := newAuthRouterWithMFA(t)
