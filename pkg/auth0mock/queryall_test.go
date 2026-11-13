@@ -65,3 +65,15 @@ func TestRequestMatcher_EmptyQueryAllMarshalsAsEmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"query":{"fields":[]}}`, string(out))
 }
+
+func TestRequestMatcher_UnmarshalRejectsNullQueryValues(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		`{"query":{"k":null}}`,
+		`{"query":{"k":["a",null]}}`,
+		`{"query":{"k":[1]}}`,
+	} {
+		var rm auth0mock.RequestMatcher
+		assert.Error(t, json.Unmarshal([]byte(in), &rm), in)
+	}
+}

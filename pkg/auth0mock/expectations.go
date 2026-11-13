@@ -1,6 +1,7 @@
 package auth0mock
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 )
@@ -124,17 +126,21 @@ func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
 	}
 	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body, Absent: w.Absent}
 	for k, raw := range w.Query {
-		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
+		raw = bytes.TrimSpace(raw)
+		if len(raw) > 0 && raw[0] == '"' {
+			var s string
+			if err := json.Unmarshal(raw, &s); err != nil {
+				return fmt.Errorf("query %q: %w", k, err)
+			}
 			if rm.Query == nil {
 				rm.Query = map[string]string{}
 			}
 			rm.Query[k] = s
 			continue
 		}
-		var vs []string
-		if err := json.Unmarshal(raw, &vs); err != nil {
-			return fmt.Errorf("query %q: want a string or a list of strings: %w", k, err)
+		vs, err := decodeQueryList(raw)
+		if err != nil {
+			return fmt.Errorf("query %q: %w", k, err)
 		}
 		if rm.QueryAll == nil {
 			rm.QueryAll = map[string][]string{}
@@ -142,6 +148,20 @@ func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
 		rm.QueryAll[k] = vs
 	}
 	return nil
+}
+
+// decodeQueryList reads a JSON list of strings, rejecting null — as a
+// value or as a list entry — the way the server does.
+func decodeQueryList(raw json.RawMessage) ([]string, error) {
+	var items []*string
+	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &items) != nil || slices.Contains(items, nil) {
+		return nil, errors.New("want a string or a list of strings")
+	}
+	vs := make([]string, len(items))
+	for i, v := range items {
+		vs[i] = *v
+	}
+	return vs, nil
 }
 
 // ResponseDef is the canned response an Expectation returns. Status is
