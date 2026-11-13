@@ -93,6 +93,9 @@ func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
 		w.Query = make(map[string]json.RawMessage, len(merged))
 		for k, vs := range merged {
 			var v any = vs
+			if vs == nil {
+				v = []string{}
+			}
 			if len(vs) == 1 {
 				v = vs[0]
 			}

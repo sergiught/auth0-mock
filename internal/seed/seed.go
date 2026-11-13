@@ -131,6 +131,9 @@ func jsonFields(t reflect.Type) map[string]reflect.Type {
 			maps.Copy(out, jsonFields(f.Type))
 			continue
 		}
+		if !f.IsExported() {
+			continue
+		}
 		if name == "" {
 			name = f.Name
 		}

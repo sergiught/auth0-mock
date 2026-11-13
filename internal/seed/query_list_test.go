@@ -44,3 +44,16 @@ expectations:
     response: {status: 429}
 `))
 }
+
+func TestParseRejectsUnexportedMatcherFieldNames(t *testing.T) {
+	for _, key := range []string{"decodeErr"} {
+		require.Equal(t, `expectations[0]: unknown key "`+key+`" (keys are case-sensitive)`, parseErr(t, `
+expectations:
+  - method: GET
+    path: /api/v2/users
+    request:
+      `+key+`: 1
+    response: {status: 429}
+`))
+	}
+}

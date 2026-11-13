@@ -58,3 +58,10 @@ func TestRequestMatcher_UnmarshalRejectsBadQueryValue(t *testing.T) {
 	var rm auth0mock.RequestMatcher
 	require.Error(t, json.Unmarshal([]byte(`{"query":{"k":5}}`), &rm))
 }
+
+func TestRequestMatcher_EmptyQueryAllMarshalsAsEmptyList(t *testing.T) {
+	t.Parallel()
+	out, err := json.Marshal(auth0mock.RequestMatcher{QueryAll: map[string][]string{"fields": nil}})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"query":{"fields":[]}}`, string(out))
+}
