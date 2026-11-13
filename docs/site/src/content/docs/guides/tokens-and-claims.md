@@ -7,7 +7,7 @@ sidebar:
 
 ## Test a code path that reads a specific `permissions` claim
 
-Use `/admin0/permissions/{audience}` to register the permissions the test needs, then mint a token for that audience. The mock injects the permissions as the JWT's `permissions` claim. For `client_credentials` tokens that don't request a `scope`, the same permissions also become the default `scope` claim (space-separated, in registered order) and the response's `scope` field, as Auth0 does for the scopes granted to a client. A `scope` in the request is echoed instead.
+Use `/admin0/permissions/{audience}` to register the permissions the test needs, then mint a token for that audience. The mock injects the permissions as the JWT's `permissions` claim. For `client_credentials` tokens that don't request a `scope`, the same permissions also become the default `scope` claim (space-separated, in registered order) and the response's `scope` field, as Auth0 does for the scopes granted to a client. A `scope` in the request is echoed instead. For a Management API audience (any `https://<host>/api/v2/`, whatever the scheme, host or port) with nothing registered, the default scope is every Management API scope, so a plain token can call any endpoint (registering an empty list grants none); request a narrower `scope` to test `403 insufficient_scope`. A default Management token carries every scope and is about 8 KB; request a narrower `scope` if a proxy limits header size.
 
 ```bash
 curl -X PUT 'http://localhost:8080/admin0/permissions/https://api.example.com/' \

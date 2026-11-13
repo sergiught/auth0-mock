@@ -261,6 +261,7 @@ func (c *Context) boot(o bootOptions) error {
 		Issuer:               issuer,
 		DefaultAudience:      "http://" + addr + "/api/v2/",
 		SpecValidationStrict: true,
+		BearerRequireScopes:  true,    // the production default
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
 		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},
@@ -319,6 +320,26 @@ func waitReachable(t *testing.T, url string) {
 func (c *Context) MintBearer() {
 	body := strings.NewReader("grant_type=client_credentials&client_id=test&client_secret=x&audience=" + c.BaseURL + "/api/v2/")
 	req, _ := http.NewRequest("POST", c.BaseURL+"/oauth/token", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		c.t.Fatalf("mint bearer: %v", err)
+	}
+	defer resp.Body.Close()
+	var tr struct {
+		AccessToken string `json:"access_token"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&tr)
+	c.BearerTok = tr.AccessToken
+}
+
+// MintBearerWithScope is MintBearer with an explicit requested scope.
+func (c *Context) MintBearerWithScope(scope string) {
+	form := url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"test"}, "client_secret": {"x"},
+		"audience": {c.BaseURL + "/api/v2/"}, "scope": {scope},
+	}
+	req, _ := http.NewRequest("POST", c.BaseURL+"/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.client().Do(req)
 	if err != nil {
@@ -399,7 +420,7 @@ func (c *Context) Do(method, path string, body string, withBearer bool) {
 func (c *Context) MintVia(host string) {
 	form := url.Values{
 		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"},
-		"password": {"ignored"}, "scope": {"openid"}, "audience": {c.BaseURL + "/api/v2/"},
+		"password": {"ignored"}, "scope": {"openid read:users"}, "audience": {c.BaseURL + "/api/v2/"},
 	}
 	req, _ := http.NewRequest("POST", c.BaseURL+"/oauth/token", strings.NewReader(form.Encode()))
 	req.Host = host

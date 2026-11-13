@@ -70,3 +70,24 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestStore_Lookup(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	_, ok := s.Lookup("api")
+	assert.False(t, ok, "unregistered audience")
+
+	s.Set("api", []string{})
+	perms, ok := s.Lookup("api")
+	assert.True(t, ok, "an empty registration is still a registration")
+	assert.Empty(t, perms)
+
+	s.Set("api", []string{"read:users"})
+	perms, ok = s.Lookup("api")
+	assert.True(t, ok)
+	assert.Equal(t, []string{"read:users"}, perms)
+
+	s.Delete("api")
+	_, ok = s.Lookup("api")
+	assert.False(t, ok)
+}

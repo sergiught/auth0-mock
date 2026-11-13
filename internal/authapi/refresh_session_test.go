@@ -267,3 +267,12 @@ func TestRefresh_UpdatesRememberedProfile(t *testing.T) {
 	body := getUserinfo(t, r, decodeToken(t, w).AccessToken)
 	assert.Equal(t, "alice", body["email"])
 }
+
+func TestRefresh_UnknownTokenEchoesRequestedScope(t *testing.T) {
+	r, ks, _, _ := newRefreshRouter(t)
+	resp := decodeToken(t, refreshWith(r, "any-uuid", url.Values{"scope": {"read:users"}}))
+	access, err := ks.Verify(resp.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "read:users", access.Scope)
+	assert.Equal(t, "read:users", resp.Scope)
+}

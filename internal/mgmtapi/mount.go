@@ -31,6 +31,9 @@ type MountOpts struct {
 	// tokens whose `aud` claim doesn't contain this value. Empty = no
 	// audience enforcement (the documented default).
 	RequireAudience string
+	// RequireScopes makes each operation reject (403 insufficient_scope)
+	// tokens carrying none of the scopes its spec entry lists.
+	RequireScopes bool
 	// EventsHandler replaces the generic stub-driven handler for the
 	// subscribe_events operation (GET /events). When non-nil, Mount
 	// registers it for that one route behind the bearer check, with
@@ -57,6 +60,11 @@ func Mount(opts MountOpts) error {
 		var inner http.Handler = generic
 		if opts.EventsHandler != nil && op.Op.OperationID == spec.SubscribeEventsOperationID {
 			inner = &eventsHandler{stubs: generic, stream: opts.EventsHandler}
+		}
+		// The scope check sits between the bearer check and the handler, so it
+		// runs after route matching and before any stub can answer.
+		if opts.RequireScopes {
+			inner = bearer.RequireScopes(spec.OperationScopes(op.Op))(inner)
 		}
 		handler := bearerMW(inner)
 

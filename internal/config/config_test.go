@@ -18,6 +18,7 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, "https://localhost:8443/", spec.IssuerURL)
 	assert.Equal(t, "https://localhost:8443/api/v2/", spec.DefaultAudience)
 	assert.True(t, spec.SpecValidationStrict)
+	assert.True(t, spec.BearerRequireScopes)
 	assert.Equal(t, []string{"localhost", "127.0.0.1", "::1"}, spec.TLS.Hostnames)
 	assert.Empty(t, spec.CORSAllowedOrigins)
 }

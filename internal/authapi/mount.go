@@ -24,12 +24,16 @@ type Deps struct {
 	Keys            *jwks.KeySet
 	Issuer          string
 	DefaultAudience string
-	Log             zerolog.Logger
-	Claims          *claims.Store
-	ClaimMappings   *claims.MappingStore
-	Permissions     *permissions.Store
-	PKCE            *pkce.Store
-	MFA             *mfa.Store
+	// ManagementScopes is every scope the Management API spec lists. A
+	// client_credentials token for the Management API audience gets all of
+	// them when no narrower scope is requested or registered.
+	ManagementScopes []string
+	Log              zerolog.Logger
+	Claims           *claims.Store
+	ClaimMappings    *claims.MappingStore
+	Permissions      *permissions.Store
+	PKCE             *pkce.Store
+	MFA              *mfa.Store
 	// Sessions may be nil (no remembered profiles).
 	Sessions                     *session.Store
 	LogoutAllowedURLs            []string
@@ -41,16 +45,17 @@ type Deps struct {
 // Mount registers all Auth API endpoints on d.Router.
 func Mount(d Deps) {
 	tok := &TokenHandler{
-		Keys:            d.Keys,
-		Issuer:          d.Issuer,
-		DefaultAudience: d.DefaultAudience,
-		Log:             d.Log,
-		Claims:          d.Claims,
-		ClaimMappings:   d.ClaimMappings,
-		Permissions:     d.Permissions,
-		PKCE:            d.PKCE,
-		MFA:             d.MFA,
-		Sessions:        d.Sessions,
+		Keys:             d.Keys,
+		Issuer:           d.Issuer,
+		DefaultAudience:  d.DefaultAudience,
+		ManagementScopes: d.ManagementScopes,
+		Log:              d.Log,
+		Claims:           d.Claims,
+		ClaimMappings:    d.ClaimMappings,
+		Permissions:      d.Permissions,
+		PKCE:             d.PKCE,
+		MFA:              d.MFA,
+		Sessions:         d.Sessions,
 	}
 	d.Router.Method(http.MethodPost, "/oauth/token", tok)
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{

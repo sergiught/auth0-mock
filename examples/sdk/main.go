@@ -362,7 +362,7 @@ func phase8DriveWithGoAuth0(ctx context.Context, mockURL string, hc *http.Client
 		return "", fmt.Errorf("new go-auth0 authentication client: %w", err)
 	}
 	tokens, err := auth.OAuth.LoginWithClientCredentials(ctx, oauth.LoginWithClientCredentialsRequest{
-		Audience: "https://api.example.com/",
+		Audience: "https://" + domain + "/api/v2/",
 	}, oauth.IDTokenValidationOptions{})
 	if err != nil {
 		return "", fmt.Errorf("client_credentials grant: %w", err)

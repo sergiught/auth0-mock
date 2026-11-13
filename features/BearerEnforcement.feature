@@ -27,3 +27,32 @@ Feature: Mgmt API requires a bearer; admin surface does not
     Given the mock is running
     When I send "GET /admin0/expectations" without a bearer
     Then I receive a 200 response
+
+  Scenario: A token without the operation's scope is rejected with 403, even when a stub exists
+    Given I have a client_credentials bearer token with scope "read:clients"
+    And I register an expectation for "GET /api/v2/users/auth0|123" with response:
+      """
+      {"status":200,"body":{"user_id":"auth0|123","email":"a@x"}}
+      """
+    When I send "GET /api/v2/users/auth0|123" with a valid bearer
+    Then I receive a 403 response
+    And the response body contains "insufficient_scope"
+    And the response body contains "Insufficient scope, expected any of: read:users,read:current_user,read:user_idp_tokens"
+
+  Scenario: A token carrying one of the operation's scopes passes
+    Given I have a client_credentials bearer token with scope "read:user_idp_tokens"
+    And I register an expectation for "GET /api/v2/users/auth0|123" with response:
+      """
+      {"status":200,"body":{"user_id":"auth0|123","email":"a@x"}}
+      """
+    When I send "GET /api/v2/users/auth0|123" with a valid bearer
+    Then I receive a 200 response
+
+  Scenario: A default client_credentials token for the Management API carries every scope
+    Given I have a valid bearer token
+    And I register an expectation for "GET /api/v2/users/auth0|123" with response:
+      """
+      {"status":200,"body":{"user_id":"auth0|123","email":"a@x"}}
+      """
+    When I send "GET /api/v2/users/auth0|123" with a valid bearer
+    Then I receive a 200 response
