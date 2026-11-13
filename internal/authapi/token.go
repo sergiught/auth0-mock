@@ -629,12 +629,14 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 }
 
 // respondUnknownRefreshToken keeps the lenient behaviour for refresh tokens
-// the mock did not issue: an access_token for "<client_id>@refresh".
+// the mock did not issue: an access_token for "<client_id>@refresh", carrying
+// the requested scope (there is no stored grant to fall back to).
 func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  req.ClientID + "@refresh",
 		Audience: []string{aud},
+		Scope:    req.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": req.ClientID}, aud, req.Params),
 	}, req.ClientID)
@@ -646,6 +648,7 @@ func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http
 		AccessToken: access,
 		TokenType:   "Bearer",
 		ExpiresIn:   int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
+		Scope:       req.Scope,
 	})
 }
 
