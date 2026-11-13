@@ -57,6 +57,9 @@ func requestMatcherEqual(a, b *RequestMatcher) bool {
 	if !reflect.DeepEqual(a.Headers, b.Headers) {
 		return false
 	}
+	if a.Arrays != b.Arrays {
+		return false
+	}
 	if !absentEqual(a.Absent, b.Absent) {
 		return false
 	}

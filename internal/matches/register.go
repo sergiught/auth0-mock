@@ -103,13 +103,23 @@ func prepareMatcher(v *spec.Validator, op spec.Operation, in *RequestMatcher) (*
 			"request matcher absent is invalid: " + err.Error(), "invalid_request_match",
 		}
 	}
+	if err := req.validateArrays(); err != nil {
+		return nil, &RegistrationError{
+			"request matcher arrays is invalid: " + err.Error(), "invalid_request_match",
+		}
+	}
 	if req.IsEmpty() {
 		req = nil
 	}
 	req = dropEmptyMaps(req)
-	if req != nil && len(req.Absent) > 0 {
+	if req != nil && (len(req.Absent) > 0 || req.Arrays == ArraysExact) {
 		c := *req
-		c.Absent = canonicalAbsentList(req.Absent)
+		if len(c.Absent) > 0 {
+			c.Absent = canonicalAbsentList(c.Absent)
+		}
+		if c.Arrays == ArraysExact {
+			c.Arrays = ""
+		}
 		req = &c
 	}
 	if req != nil {

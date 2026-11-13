@@ -102,6 +102,21 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 A path without one of the three prefixes, with an empty segment, naming an undeclared query parameter, or that the same matcher also requires is rejected with `400 invalid_request_match`. In Go, use `WithoutField(path)`.
 
+### Arrays in the body
+
+By default an array in a body matcher must equal the request's array exactly: same items, same order. Set `"arrays": "contains"` in the matcher when the request may carry extra items or a different order. Every wanted item must then pair with a different item of the request's array (`["a","a"]` needs `a` twice), objects inside are subset-matched, and the rule applies to nested arrays too. `"exact"` is the same as leaving it out; any other value is rejected with `400 invalid_request_match`. It only affects `body`. In Go, use `WithArraysContaining()`.
+
+```bash
+# Matches a body whose roles include "admin", whatever else it lists
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"POST","path":"/api/v2/users",
+       "request":{"body":{"app_metadata":{"roles":["admin"]}},"arrays":"contains"},
+       "response":{"status":201,"body":{"user_id":"auth0|admin","email":"a@example.com","email_verified":false}}}'
+```
+
+Registering the same method, path and matcher again replaces the earlier stub. To serve several answers in turn from one stub, use `then` (see [Test retries](#test-retries-429-then-200)).
+
 To clear all expectations for an operation at once (catch-all + every request-matched one):
 
 ```bash

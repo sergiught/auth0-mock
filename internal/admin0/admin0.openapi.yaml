@@ -842,7 +842,7 @@ components:
         expectation to apply. Omit it (or send `{}`) for a catch-all. `query`
         and `body` are subset-matched: every key you specify must be present
         and equal in the real request; extra keys are allowed. Arrays and
-        scalars must match exactly. The matcher is validated against the
+        scalars must match exactly unless `arrays` is `contains`. The matcher is validated against the
         operation's request schema (with `required` relaxed) at registration.
       properties:
         query:
@@ -869,6 +869,15 @@ components:
             is not a catch-all. A path without one of those prefixes, with an
             empty segment, naming an undeclared query parameter, or that the
             matcher also requires is rejected with `invalid_request_match`.
+        arrays:
+          type: string
+          enum: [exact, contains]
+          description: |
+            How arrays in `body` are compared. `exact` (the default) needs
+            equal arrays. `contains` needs every wanted item to pair with a
+            different request item (subset-matched objects, any order, extras
+            allowed; `["a","a"]` needs two `a`). It has no effect without a
+            `body`. Any other value is rejected with `invalid_request_match`.
         body:
           description: JSON the request body must contain (subset match).
     ResponseDef:
