@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestExplain_NilMatcherHasNoDifferences(t *testing.T) {
 
 func TestExplain_Query(t *testing.T) {
 	t.Parallel()
-	rm := &RequestMatcher{Query: map[string]string{"page": "2"}}
+	rm := &RequestMatcher{Query: map[string][]string{"page": {"2"}}}
 	assert.Equal(t, []Difference{{Field: "query.page", Reason: "mismatch", Want: raw(`"2"`), Got: raw(`"1"`)}},
 		rm.Explain(MatchableRequest{Query: url.Values{"page": {"1"}}}))
 	assert.Equal(t, []Difference{{Field: "query.page", Reason: "missing", Want: raw(`"2"`)}},
@@ -122,10 +123,10 @@ func TestExplain_AgreesWithMatches(t *testing.T) {
 		{"body subset", &RequestMatcher{Body: raw(`{"email":"a@x"}`)}, MatchableRequest{Body: []byte(`{"email":"a@x","c":"db"}`)}},
 		{"body value mismatch", &RequestMatcher{Body: raw(`{"email":"a@x"}`)}, MatchableRequest{Body: []byte(`{"email":"b@x"}`)}},
 		{"body nil request", &RequestMatcher{Body: raw(`{"email":"a@x"}`)}, MatchableRequest{}},
-		{"query ok", &RequestMatcher{Query: map[string]string{"q": "e"}}, MatchableRequest{Query: url.Values{"q": {"e"}, "p": {"1"}}}},
-		{"query mismatch", &RequestMatcher{Query: map[string]string{"q": "e"}}, MatchableRequest{Query: url.Values{"q": {"f"}}}},
-		{"query missing", &RequestMatcher{Query: map[string]string{"q": "e"}}, MatchableRequest{Query: url.Values{}}},
-		{"query empty want absent", &RequestMatcher{Query: map[string]string{"q": ""}}, MatchableRequest{}},
+		{"query ok", &RequestMatcher{Query: map[string][]string{"q": {"e"}}}, MatchableRequest{Query: url.Values{"q": {"e"}, "p": {"1"}}}},
+		{"query mismatch", &RequestMatcher{Query: map[string][]string{"q": {"e"}}}, MatchableRequest{Query: url.Values{"q": {"f"}}}},
+		{"query missing", &RequestMatcher{Query: map[string][]string{"q": {"e"}}}, MatchableRequest{Query: url.Values{}}},
+		{"query empty want absent", &RequestMatcher{Query: map[string][]string{"q": {""}}}, MatchableRequest{}},
 		{"header ok", &RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}}, MatchableRequest{Headers: hdr("X-Tenant", "acme")}},
 		{"header extra ok", &RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}}, MatchableRequest{Headers: http.Header{"X-Tenant": {"acme"}, "X-Other": {"v"}}}},
 		{"header mismatch", &RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}}, MatchableRequest{Headers: hdr("X-Tenant", "globex")}},
@@ -151,14 +152,19 @@ func TestExplain_AgreesWithMatches(t *testing.T) {
 }
 
 // oracleMatches decides a match independently of Explain: subsetMatch for the
-// body, a direct first-value query check and a case-insensitive header check.
+// body, a direct multiset query check and a case-insensitive header check.
 func oracleMatches(rm *RequestMatcher, req MatchableRequest) bool {
 	if rm == nil {
 		return true
 	}
 	for k, want := range rm.Query {
-		if vs := req.Query[k]; (len(vs) == 0 && want != "") || (len(vs) > 0 && vs[0] != want) {
-			return false
+		rest := slices.Clone(req.Query[k])
+		for _, w := range want {
+			i := slices.Index(rest, w)
+			if i < 0 {
+				return false
+			}
+			rest = slices.Delete(rest, i, i+1)
 		}
 	}
 	for k, want := range rm.Headers {
@@ -197,9 +203,9 @@ func tmplOf(_, p string) string {
 // queryStub returns a stub requiring every named query key, so a request
 // with no query differs on exactly len(fields) keys.
 func queryStub(path string, kind Kind, method string, fields ...string) Expectation {
-	rm := &RequestMatcher{Query: map[string]string{}}
+	rm := &RequestMatcher{Query: map[string][]string{}}
 	for _, f := range fields {
-		rm.Query[f] = "want"
+		rm.Query[f] = []string{"want"}
 	}
 	return Expectation{Method: method, Path: path, Kind: kind, Request: rm}
 }

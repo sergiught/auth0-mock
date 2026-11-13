@@ -43,7 +43,7 @@ func TestPrepareErrors(t *testing.T) {
 			Request: &matches.RequestMatcher{Body: []byte(`{"email": 5}`)}},
 			"request matcher body violates request schema: ", true, "invalid_request_match"},
 		{"request query", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
-			Request: &matches.RequestMatcher{Query: map[string]string{"bogus_param": "x"}}},
+			Request: &matches.RequestMatcher{Query: map[string][]string{"bogus_param": {"x"}}}},
 			"request matcher query is invalid: ", true, "invalid_request_match"},
 	}
 	for _, tc := range tests {
@@ -78,10 +78,10 @@ func TestPrepareNormalises(t *testing.T) {
 
 func TestSameTarget(t *testing.T) {
 	a := matches.Expectation{Method: "GET", Path: "/api/v2/users", Kind: matches.KindExact,
-		Request: &matches.RequestMatcher{Query: map[string]string{"q": "a"}}}
+		Request: &matches.RequestMatcher{Query: map[string][]string{"q": {"a"}}}}
 	b := a
 	require.True(t, matches.SameTarget(a, b))
-	b.Request = &matches.RequestMatcher{Query: map[string]string{"q": "b"}}
+	b.Request = &matches.RequestMatcher{Query: map[string][]string{"q": {"b"}}}
 	require.False(t, matches.SameTarget(a, b))
 }
 
@@ -95,15 +95,15 @@ func TestPrepareTreatsEmptyMapsAsOmitted(t *testing.T) {
 		require.NoError(t, err)
 		return e
 	}
-	withEmpty := &matches.RequestMatcher{Query: map[string]string{}, Headers: map[string]string{"X-A": "1"}}
+	withEmpty := &matches.RequestMatcher{Query: map[string][]string{}, Headers: map[string]string{"X-A": "1"}}
 	a := prepare(withEmpty)
 	b := prepare(&matches.RequestMatcher{Headers: map[string]string{"X-A": "1"}})
 	require.True(t, matches.SameTarget(a, b))
 	require.Nil(t, a.Request.Query)
 	require.NotNil(t, withEmpty.Query, "the caller's matcher must not be modified")
 
-	c := prepare(&matches.RequestMatcher{Query: map[string]string{"q": "a"}, Headers: map[string]string{}})
-	d := prepare(&matches.RequestMatcher{Query: map[string]string{"q": "a"}})
+	c := prepare(&matches.RequestMatcher{Query: map[string][]string{"q": {"a"}}, Headers: map[string]string{}})
+	d := prepare(&matches.RequestMatcher{Query: map[string][]string{"q": {"a"}}})
 	require.True(t, matches.SameTarget(c, d))
 	require.Nil(t, c.Request.Headers)
 }

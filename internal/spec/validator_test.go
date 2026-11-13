@@ -272,24 +272,24 @@ func TestValidator_ValidateQueryMatcher(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		query   map[string]string
+		keys    []string
 		wantErr bool
 	}{
-		{name: "declared query param", query: map[string]string{"fields": "name"}},
-		{name: "nil map", query: nil},
-		{name: "undeclared param rejected", query: map[string]string{"not_a_param": "x"}, wantErr: true},
+		{name: "declared query param", keys: []string{"fields"}},
+		{name: "nil map", keys: nil},
+		{name: "undeclared param rejected", keys: []string{"not_a_param"}, wantErr: true},
 		{
 			// "id" is a path parameter, not a query parameter, so
 			// it must be rejected.
 			name:    "path param rejected as query",
-			query:   map[string]string{"id": "x"},
+			keys:    []string{"id"},
 			wantErr: true,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			err := v.ValidateQueryMatcher(postOp, c.query)
+			err := v.ValidateQueryMatcher(postOp, c.keys)
 			if c.wantErr {
 				assert.Error(t, err)
 			} else {

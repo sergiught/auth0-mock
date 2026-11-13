@@ -29,9 +29,11 @@ func (rm *RequestMatcher) IsEmpty() bool {
 }
 
 // Matches reports whether req satisfies matcher, i.e. Explain finds no
-// differences. A nil matcher (catch-all) always matches. Query and header
-// keys are subset-matched (every matcher key must be present with an equal
-// value; extras allowed); body is subset-matched recursively.
+// differences. A nil matcher (catch-all) always matches. Header keys are
+// subset-matched (every matcher key must be present with an equal value;
+// extras allowed). A query value matches when any of the request's values
+// for that key equals it; a query list needs every listed value present.
+// The body is subset-matched recursively.
 //
 // Header lookup is case-insensitive — http.Header.Get canonicalises the key
 // against the canonical MIME header form, so matcher entry "X-Tenant: acme"
@@ -42,12 +44,12 @@ func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
 
 // requestMatcherEqual reports whether two matchers are equivalent. Two nil
 // (catch-all) matchers are equal; otherwise the query and header maps must
-// be equal and the bodies must be semantically equal JSON.
+// be equal (query lists as multisets) and the bodies must be semantically equal JSON.
 func requestMatcherEqual(a, b *RequestMatcher) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	if !reflect.DeepEqual(a.Query, b.Query) {
+	if !queryEqual(a.Query, b.Query) {
 		return false
 	}
 	if !reflect.DeepEqual(a.Headers, b.Headers) {

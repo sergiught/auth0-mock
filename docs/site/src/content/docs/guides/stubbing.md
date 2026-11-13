@@ -72,6 +72,21 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 A `POST /api/v2/users` request carrying `{"email":"a@example.com", ...}` returns `{"user_id":"auth0|a"}`; one carrying `{"email":"b@example.com", ...}` returns `{"user_id":"auth0|b"}`. Omit `request` entirely (or send `{}`) for a catch-all that fires when no more-specific matcher applies.
 
+### Repeated query keys
+
+A query value in `request.query` is either a string or a list of strings. A string matches when any of the request's values for that key equals it, so `"fields":"email"` matches `?fields=name&fields=email`. A list matches when the request carries every listed value, in any order, with extra values allowed; a repeated value must appear that many times. A one-element list is the same as the string. An empty list or a non-string item is rejected with `400 invalid_request_match`.
+
+```bash
+# Matches ?fields=name&fields=email, ?fields=email&fields=x&fields=name, ...
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"GET","path":"/api/v2/users",
+       "request":{"query":{"fields":["name","email"]}},
+       "response":{"status":200,"body":[]}}'
+```
+
+In Go, use `WithQuery(key, value)` for the string form and `WithQueryAll(key, values...)` for a list.
+
 To clear all expectations for an operation at once (catch-all + every request-matched one):
 
 ```bash

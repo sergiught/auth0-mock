@@ -84,13 +84,22 @@ func (s *Store) Find(q url.Values) *Rule {
 	defer s.mu.Unlock()
 	for i := len(s.rules) - 1; i >= 0; i-- {
 		r := s.rules[i]
-		m := matches.RequestMatcher{Query: r.Match}
+		m := matches.RequestMatcher{Query: wanted(r.Match)}
 		if m.Matches(matches.MatchableRequest{Query: q}) {
 			c := clone(r)
 			return &c
 		}
 	}
 	return nil
+}
+
+// wanted turns a rule's match map into the matcher's list form.
+func wanted(m map[string]string) map[string][]string {
+	out := make(map[string][]string, len(m))
+	for k, v := range m {
+		out[k] = []string{v}
+	}
+	return out
 }
 
 func clone(r Rule) Rule {

@@ -53,12 +53,12 @@ func (rm *RequestMatcher) Explain(req MatchableRequest) []Difference {
 	}
 	var diffs []Difference
 	for k, want := range rm.Query {
-		got := req.Query.Get(k)
-		if got == want {
+		got, present := req.Query[k]
+		if containsAll(got, want) {
 			continue
 		}
-		d := Difference{Field: "query." + k, Reason: "mismatch", Want: rawString(want), Got: rawString(got)}
-		if _, ok := req.Query[k]; !ok {
+		d := Difference{Field: "query." + k, Reason: "mismatch", Want: rawValues(want), Got: rawValues(got)}
+		if !present {
 			d.Reason, d.Got = "missing", nil
 		}
 		diffs = append(diffs, d)

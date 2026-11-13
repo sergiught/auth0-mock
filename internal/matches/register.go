@@ -69,6 +69,11 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 	// Normalize an empty request matcher to nil so a catch-all has
 	// exactly one representation in the store.
 	req := r.Request
+	if err := req.validateQuery(); err != nil {
+		return Expectation{}, &RegistrationError{
+			"request matcher query is invalid: " + err.Error(), "invalid_request_match",
+		}
+	}
 	if req.IsEmpty() {
 		req = nil
 	}
@@ -79,7 +84,7 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 				"request matcher body violates request schema: " + err.Error(), "invalid_request_match",
 			}
 		}
-		if err := v.ValidateQueryMatcher(op, req.Query); err != nil {
+		if err := v.ValidateQueryMatcher(op, req.queryKeys()); err != nil {
 			return Expectation{}, &RegistrationError{
 				"request matcher query is invalid: " + err.Error(), "invalid_request_match",
 			}

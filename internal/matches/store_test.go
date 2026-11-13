@@ -117,7 +117,7 @@ func TestStore_ExactCatchAllBeatsTemplateMatcher(t *testing.T) {
 	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: KindTemplate,
-		Request: &RequestMatcher{Query: map[string]string{"fields": "email"}}, Response: resp(200, `{"tier":"tmpl-matcher"}`)})
+		Request: &RequestMatcher{Query: map[string][]string{"fields": {"email"}}}, Response: resp(200, `{"tier":"tmpl-matcher"}`)})
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users/123", Kind: KindExact, Response: resp(200, `{"tier":"exact-catchall"}`)})
 
 	m := s.Find("GET", "/api/v2/users/123", "/api/v2/users/{id}",
@@ -131,7 +131,7 @@ func TestStore_QuerySubsetMatch(t *testing.T) {
 	t.Parallel()
 	s := NewStore()
 	s.Put(Expectation{Method: "GET", Path: "/api/v2/users", Kind: KindExact,
-		Request: &RequestMatcher{Query: map[string]string{"q": "email:a@x"}}, Response: resp(200, `[]`)})
+		Request: &RequestMatcher{Query: map[string][]string{"q": {"email:a@x"}}}, Response: resp(200, `[]`)})
 
 	// Extra query params are allowed.
 	m := s.Find("GET", "/api/v2/users", "/api/v2/users",

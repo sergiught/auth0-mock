@@ -48,7 +48,7 @@ func TestRequestMatcher_Matches(t *testing.T) {
 	assert.False(t, body.Matches(MatchableRequest{Body: []byte(`{"email":"b@x"}`)}))
 	assert.False(t, body.Matches(MatchableRequest{Body: nil}))
 
-	query := &RequestMatcher{Query: map[string]string{"q": "email:a@x"}}
+	query := &RequestMatcher{Query: map[string][]string{"q": {"email:a@x"}}}
 	assert.True(t, query.Matches(MatchableRequest{Query: url.Values{"q": {"email:a@x"}, "page": {"1"}}}))
 	assert.False(t, query.Matches(MatchableRequest{Query: url.Values{"q": {"email:b@x"}}}))
 	assert.False(t, query.Matches(MatchableRequest{Query: url.Values{}}))
@@ -88,7 +88,7 @@ func TestRequestMatcher_IsEmpty(t *testing.T) {
 	assert.True(t, (&RequestMatcher{}).IsEmpty())
 	assert.True(t, (&RequestMatcher{Body: json.RawMessage(`null`)}).IsEmpty())
 	assert.True(t, (&RequestMatcher{Body: json.RawMessage("  ")}).IsEmpty())
-	assert.False(t, (&RequestMatcher{Query: map[string]string{"a": "b"}}).IsEmpty())
+	assert.False(t, (&RequestMatcher{Query: map[string][]string{"a": {"b"}}}).IsEmpty())
 	assert.False(t, (&RequestMatcher{Body: json.RawMessage(`{"a":1}`)}).IsEmpty())
 	assert.False(t, (&RequestMatcher{Headers: map[string]string{"X-Tenant": "acme"}}).IsEmpty(),
 		"a header-only matcher must not collapse to catch-all")
@@ -107,12 +107,12 @@ func TestRequestMatcherEqual(t *testing.T) {
 		&RequestMatcher{Body: json.RawMessage(`{"a":2}`)},
 	))
 	assert.True(t, requestMatcherEqual(
-		&RequestMatcher{Query: map[string]string{"a": "b"}},
-		&RequestMatcher{Query: map[string]string{"a": "b"}},
+		&RequestMatcher{Query: map[string][]string{"a": {"b"}}},
+		&RequestMatcher{Query: map[string][]string{"a": {"b"}}},
 	))
 	assert.False(t, requestMatcherEqual(
-		&RequestMatcher{Query: map[string]string{"a": "b"}},
-		&RequestMatcher{Query: map[string]string{"a": "c"}},
+		&RequestMatcher{Query: map[string][]string{"a": {"b"}}},
+		&RequestMatcher{Query: map[string][]string{"a": {"c"}}},
 	))
 
 	// Two matchers with equal Headers maps are equal.

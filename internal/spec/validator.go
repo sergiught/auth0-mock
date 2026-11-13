@@ -275,9 +275,10 @@ func (v *Validator) ValidateRequestMatcher(op Operation, body json.RawMessage) e
 }
 
 // ValidateQueryMatcher checks that every key in a query matcher names a query
-// parameter declared by the operation.
-func (v *Validator) ValidateQueryMatcher(op Operation, query map[string]string) error {
-	if len(query) == 0 {
+// parameter declared by the operation. Only the keys matter; the values are
+// not inspected.
+func (v *Validator) ValidateQueryMatcher(op Operation, keys []string) error {
+	if len(keys) == 0 {
 		return nil
 	}
 	declared := make(map[string]bool)
@@ -286,7 +287,7 @@ func (v *Validator) ValidateQueryMatcher(op Operation, query map[string]string) 
 			declared[p.Value.Name] = true
 		}
 	}
-	for k := range query {
+	for _, k := range keys {
 		if !declared[k] {
 			return fmt.Errorf("unknown query parameter %q for operation %s", k, op.Op.OperationID)
 		}

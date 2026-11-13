@@ -1,6 +1,7 @@
 package auth0mock
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 )
@@ -56,10 +58,104 @@ type Expectation struct {
 // Headers are compared case-insensitively (HTTP canonical form). Use
 // header matchers to stub different responses based on Authorization
 // (Bearer vs DPoP), tenant headers, Accept-Language, etc.
+//
+// Query and QueryAll both feed the single "query" JSON object. A Query
+// entry matches when any of the request's values for that key equals it;
+// a QueryAll entry matches when the request carries every listed value
+// (any order, extras allowed, duplicates counted). When a key is in both,
+// the wire form is the union list. Reading an expectation back puts a
+// plain string in Query and a list in QueryAll.
 type RequestMatcher struct {
-	Query   map[string]string `json:"query,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    json.RawMessage   `json:"body,omitempty"`
+	Query    map[string]string
+	QueryAll map[string][]string
+	Headers  map[string]string
+	Body     json.RawMessage
+}
+
+// wireRequestMatcher is the JSON shape of a RequestMatcher. Add new wire
+// fields here and handle them in MarshalJSON and UnmarshalJSON.
+type wireRequestMatcher struct {
+	Query   map[string]json.RawMessage `json:"query,omitempty"`
+	Headers map[string]string          `json:"headers,omitempty"`
+	Body    json.RawMessage            `json:"body,omitempty"`
+}
+
+// MarshalJSON writes Query and QueryAll as one "query" object: a one-value
+// key as a plain string, several values as a list.
+func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
+	w := wireRequestMatcher{Headers: rm.Headers, Body: rm.Body}
+	merged := make(map[string][]string, len(rm.Query)+len(rm.QueryAll))
+	for k, v := range rm.Query {
+		merged[k] = append(merged[k], v)
+	}
+	for k, vs := range rm.QueryAll {
+		merged[k] = append(merged[k], vs...)
+	}
+	if len(merged) > 0 {
+		w.Query = make(map[string]json.RawMessage, len(merged))
+		for k, vs := range merged {
+			var v any = vs
+			if vs == nil {
+				v = []string{}
+			}
+			if len(vs) == 1 {
+				v = vs[0]
+			}
+			b, err := json.Marshal(v)
+			if err != nil {
+				return nil, err
+			}
+			w.Query[k] = b
+		}
+	}
+	return json.Marshal(w)
+}
+
+// UnmarshalJSON reads a "query" object into Query (string values) and
+// QueryAll (list values).
+func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
+	var w wireRequestMatcher
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body}
+	for k, raw := range w.Query {
+		raw = bytes.TrimSpace(raw)
+		if len(raw) > 0 && raw[0] == '"' {
+			var s string
+			if err := json.Unmarshal(raw, &s); err != nil {
+				return fmt.Errorf("query %q: %w", k, err)
+			}
+			if rm.Query == nil {
+				rm.Query = map[string]string{}
+			}
+			rm.Query[k] = s
+			continue
+		}
+		vs, err := decodeQueryList(raw)
+		if err != nil {
+			return fmt.Errorf("query %q: %w", k, err)
+		}
+		if rm.QueryAll == nil {
+			rm.QueryAll = map[string][]string{}
+		}
+		rm.QueryAll[k] = vs
+	}
+	return nil
+}
+
+// decodeQueryList reads a JSON list of strings, rejecting null — as a
+// value or as a list entry — the way the server does.
+func decodeQueryList(raw json.RawMessage) ([]string, error) {
+	var items []*string
+	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &items) != nil || slices.Contains(items, nil) {
+		return nil, errors.New("want a string or a list of strings")
+	}
+	vs := make([]string, len(items))
+	for i, v := range items {
+		vs[i] = *v
+	}
+	return vs, nil
 }
 
 // ResponseDef is the canned response an Expectation returns. Status is
