@@ -841,8 +841,8 @@ components:
         Optional conditions the incoming request must satisfy for the
         expectation to apply. Omit it (or send `{}`) for a catch-all. `query`
         and `body` are subset-matched: every key you specify must be present
-        and equal in the real request; extra keys are allowed. Arrays and
-        scalars must match exactly unless `arrays` is `contains`. The matcher is validated against the
+        and equal in the real request; extra keys are allowed. Scalars must
+        match exactly. Arrays must too, unless `arrays` is `contains`. The matcher is validated against the
         operation's request schema (with `required` relaxed) at registration.
       properties:
         query:

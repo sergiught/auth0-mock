@@ -46,7 +46,7 @@ expectations:
 }
 
 func TestParseRejectsUnexportedMatcherFieldNames(t *testing.T) {
-	for _, key := range []string{"decodeErr"} {
+	for _, key := range []string{"decodeErr", "arraysErr"} {
 		require.Equal(t, `expectations[0]: unknown key "`+key+`" (keys are case-sensitive)`, parseErr(t, `
 expectations:
   - method: GET

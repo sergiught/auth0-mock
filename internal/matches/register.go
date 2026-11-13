@@ -112,12 +112,12 @@ func prepareMatcher(v *spec.Validator, op spec.Operation, in *RequestMatcher) (*
 		req = nil
 	}
 	req = dropEmptyMaps(req)
-	if req != nil && (len(req.Absent) > 0 || req.Arrays == ArraysExact) {
+	if req != nil && (len(req.Absent) > 0 || req.Arrays != "") {
 		c := *req
 		if len(c.Absent) > 0 {
 			c.Absent = canonicalAbsentList(c.Absent)
 		}
-		if c.Arrays == ArraysExact {
+		if c.Arrays == ArraysExact || len(c.Body) == 0 || string(c.Body) == "null" {
 			c.Arrays = ""
 		}
 		req = &c

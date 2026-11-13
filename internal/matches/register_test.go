@@ -303,4 +303,7 @@ func TestPrepareNormalisesArrays(t *testing.T) {
 	c := prepare(&matches.RequestMatcher{Arrays: "contains", Body: []byte(`{"email":"a@x"}`)})
 	require.False(t, matches.SameTarget(a, c))
 	require.Nil(t, prepare(&matches.RequestMatcher{Arrays: "contains"}).Request)
+	d := prepare(&matches.RequestMatcher{Arrays: "contains", Absent: []string{"body.password"}})
+	require.Empty(t, d.Request.Arrays, "arrays has no effect without a body")
+	require.True(t, matches.SameTarget(d, prepare(&matches.RequestMatcher{Absent: []string{"body.password"}})))
 }
