@@ -85,3 +85,13 @@ func TestToken_ClientCredentials_ManagementAudienceFollowsIssuerWithoutTrailingS
 	_, c := postClientCredentials(t, r, ks, url.Values{"audience": []string{"https://tenant.example/api/v2/"}})
 	assert.Equal(t, "create:users read:users", c.Scope)
 }
+
+func TestToken_ClientCredentials_ManagementAudienceEmptyRegistrationGrantsNothing(t *testing.T) {
+	perms := permissions.NewStore()
+	perms.Set("https://mock/api/v2/", []string{})
+	r, ks := newMgmtScopeRouter(t, "https://mock/", perms)
+
+	body, c := postClientCredentials(t, r, ks, url.Values{"audience": []string{"https://mock/api/v2/"}})
+	assert.Empty(t, c.Scope)
+	assert.Empty(t, body.Scope)
+}

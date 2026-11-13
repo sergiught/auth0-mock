@@ -32,13 +32,20 @@ func (s *Store) Set(audience string, perms []string) {
 // Get returns a copy of the permissions for an audience, or nil if none are
 // registered.
 func (s *Store) Get(audience string) []string {
+	perms, _ := s.Lookup(audience)
+	return perms
+}
+
+// Lookup is Get that also reports whether the audience is registered, so an
+// empty registration can be told apart from none.
+func (s *Store) Lookup(audience string) ([]string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	perms, ok := s.perms[audience]
 	if !ok {
-		return nil
+		return nil, false
 	}
-	return slices.Clone(perms)
+	return slices.Clone(perms), true
 }
 
 // Delete removes any permissions registered for an audience.

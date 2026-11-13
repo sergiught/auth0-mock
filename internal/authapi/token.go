@@ -477,15 +477,15 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 // clientCredentialsScope returns the scope for a client_credentials token: the
 // requested scope when it is non-blank, otherwise the audience's registered
 // permissions joined by spaces (what Auth0 reports as the client's granted
-// scopes). For the Management API audience with no registered permissions it
-// is every Management scope, so a default token can call any endpoint. Empty
-// otherwise, which omits the claim.
+// scopes). For the Management API audience with nothing registered it is
+// every Management scope, so a default token can call any endpoint; an empty
+// registration grants none. Empty otherwise, which omits the claim.
 func (h *TokenHandler) clientCredentialsScope(audience, requested string) string {
 	if strings.TrimSpace(requested) != "" {
 		return requested
 	}
 	if h.Permissions != nil {
-		if perms := h.Permissions.Get(audience); len(perms) > 0 {
+		if perms, ok := h.Permissions.Lookup(audience); ok {
 			return strings.Join(perms, " ")
 		}
 	}
