@@ -104,3 +104,16 @@ func TestStore_NewStore_NoOptions_UsesTimeNow(t *testing.T) {
 	_, ok := s.Consume(tok)
 	assert.True(t, ok)
 }
+
+func TestStore_PeekDoesNotConsume(t *testing.T) {
+	s := NewStore()
+	tok := s.Issue(Context{ClientID: "demo"})
+	_, ok := s.Peek(tok)
+	require.True(t, ok)
+	_, ok = s.Peek(tok)
+	require.True(t, ok)
+	_, ok = s.Consume(tok)
+	require.True(t, ok)
+	_, ok = s.Peek(tok)
+	assert.False(t, ok)
+}

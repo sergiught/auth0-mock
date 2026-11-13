@@ -82,6 +82,33 @@ Feature: MFA challenge flow
     Then I receive a 403 response
     And the response JSON path "error" equals "invalid_grant"
 
+  Scenario: A wrong OTP does not burn the mfa_token
+    When I PUT "/admin0/mfa-required" with body:
+      """
+      {"required":true}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    And I save the mfa_token from the response
+    And I exchange the mfa_token with grant "http://auth0.com/oauth/grant-type/mfa-otp" and form body:
+      """
+      otp=wrong
+      client_id=demo
+      """
+    Then I receive a 403 response
+    When I exchange the mfa_token with grant "http://auth0.com/oauth/grant-type/mfa-otp" and form body:
+      """
+      otp=123456
+      client_id=demo
+      """
+    Then I receive a 200 response
+    And the access_token claim "gty" equals "mfa-otp"
+
   Scenario: mfa-oob grant with binding_code mints a stepped-up token
     When I PUT "/admin0/mfa-required" with body:
       """

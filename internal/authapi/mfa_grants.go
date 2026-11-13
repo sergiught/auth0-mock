@@ -15,12 +15,15 @@ import (
 // respondMFAOTP handles grant_type=http://auth0.com/oauth/grant-type/mfa-otp.
 // Trades a previously-issued mfa_token + a TOTP/HOTP code for an access_token.
 func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
-	ctx, ok := h.consumeMFAToken(w, req.MFAToken)
+	ctx, ok := h.peekMFAToken(w, req.MFAToken)
 	if !ok {
 		return
 	}
 	if req.OTP != mfa.AcceptedOTP {
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong otp")
+		return
+	}
+	if !h.consumeMFAToken(w, req.MFAToken) {
 		return
 	}
 	h.mintFromMFA(w, r, ctx, "mfa-otp", req.Params)
@@ -29,7 +32,7 @@ func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req
 // respondMFAOOB handles grant_type=http://auth0.com/oauth/grant-type/mfa-oob
 // (out-of-band challenge — push notification or SMS confirmation).
 func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
-	ctx, ok := h.consumeMFAToken(w, req.MFAToken)
+	ctx, ok := h.peekMFAToken(w, req.MFAToken)
 	if !ok {
 		return
 	}
@@ -43,13 +46,16 @@ func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong binding code")
 		return
 	}
+	if !h.consumeMFAToken(w, req.MFAToken) {
+		return
+	}
 	h.mintFromMFA(w, r, ctx, "mfa-oob", req.Params)
 }
 
 // respondMFARecoveryCode handles
 // grant_type=http://auth0.com/oauth/grant-type/mfa-recovery-code.
 func (h *TokenHandler) respondMFARecoveryCode(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
-	ctx, ok := h.consumeMFAToken(w, req.MFAToken)
+	ctx, ok := h.peekMFAToken(w, req.MFAToken)
 	if !ok {
 		return
 	}
@@ -57,12 +63,16 @@ func (h *TokenHandler) respondMFARecoveryCode(w http.ResponseWriter, r *http.Req
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong recovery code")
 		return
 	}
+	if !h.consumeMFAToken(w, req.MFAToken) {
+		return
+	}
 	h.mintFromMFA(w, r, ctx, "mfa-recovery-code", req.Params)
 }
 
-// consumeMFAToken validates and consumes an mfa_token. On failure, writes the
-// appropriate 4xx response and returns ok=false.
-func (h *TokenHandler) consumeMFAToken(w http.ResponseWriter, token string) (mfa.Context, bool) {
+// peekMFAToken validates an mfa_token without consuming it, so a wrong code
+// can be retried. On failure, writes the appropriate 4xx response and returns
+// ok=false.
+func (h *TokenHandler) peekMFAToken(w http.ResponseWriter, token string) (mfa.Context, bool) {
 	if h.MFA == nil {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "mfa not configured on this server")
 		return mfa.Context{}, false
@@ -71,12 +81,23 @@ func (h *TokenHandler) consumeMFAToken(w http.ResponseWriter, token string) (mfa
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "missing mfa_token")
 		return mfa.Context{}, false
 	}
-	ctx, ok := h.MFA.Consume(token)
+	ctx, ok := h.MFA.Peek(token)
 	if !ok {
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Malformed or expired mfa_token")
 		return mfa.Context{}, false
 	}
 	return ctx, true
+}
+
+// consumeMFAToken removes the mfa_token once the code has been accepted.
+// Consume is atomic, so of several concurrent correct submissions only one
+// wins; the others get the same error as a reused token.
+func (h *TokenHandler) consumeMFAToken(w http.ResponseWriter, token string) bool {
+	if _, ok := h.MFA.Consume(token); !ok {
+		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Malformed or expired mfa_token")
+		return false
+	}
+	return true
 }
 
 // mintFromMFA issues the access_token + id_token + refresh_token after a
