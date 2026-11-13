@@ -103,15 +103,23 @@ func (rm *RequestMatcher) explainBody(gotBody []byte) []Difference {
 	if err := json.Unmarshal(gotBody, &got); err != nil {
 		return []Difference{{Field: "body", Reason: "invalid_json"}}
 	}
-	return explainValue("body", want, got, rm.Arrays == ArraysContains)
+	var cb *containsBudget
+	if rm.Arrays == ArraysContains {
+		cb = newContainsBudget()
+	}
+	return explainValue("body", want, got, cb)
 }
 
 // explainValue walks want against got: object keys recurse (subset
-// semantics), arrays follow arrayContains when contains is set, everything
-// else must be deeply equal.
-func explainValue(field string, want, got any, contains bool) []Difference {
-	if wantArr, ok := want.([]any); ok && contains {
-		if gotArr, ok := got.([]any); ok && arrayContains(wantArr, gotArr) {
+// semantics), arrays follow arrayContains when cb is set (contains mode),
+// everything else must be deeply equal. In contains mode each value costs
+// one unit of cb, and a spent budget reports a mismatch.
+func explainValue(field string, want, got any, cb *containsBudget) []Difference {
+	if cb != nil && !cb.spend(1) {
+		return []Difference{{Field: field, Reason: "mismatch", Want: rawJSON(want), Got: rawJSON(got)}}
+	}
+	if wantArr, ok := want.([]any); ok && cb != nil {
+		if gotArr, ok := got.([]any); ok && arrayContains(wantArr, gotArr, cb) {
 			return nil
 		}
 		return []Difference{{Field: field, Reason: "mismatch", Want: rawJSON(want), Got: rawJSON(got)}}
@@ -134,7 +142,7 @@ func explainValue(field string, want, got any, contains bool) []Difference {
 			diffs = append(diffs, Difference{Field: field + "." + k, Reason: "missing", Want: rawJSON(w)})
 			continue
 		}
-		diffs = append(diffs, explainValue(field+"."+k, w, g, contains)...)
+		diffs = append(diffs, explainValue(field+"."+k, w, g, cb)...)
 	}
 	return diffs
 }

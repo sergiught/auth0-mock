@@ -104,7 +104,7 @@ A path without one of the three prefixes, with an empty segment, naming an undec
 
 ### Arrays in the body
 
-By default an array in a body matcher must equal the request's array exactly: same items, same order. Set `"arrays": "contains"` in the matcher when the request may carry extra items or a different order. Every wanted item must then pair with a different item of the request's array (`["a","a"]` needs `a` twice), objects inside are subset-matched, and the rule applies to nested arrays too. `"exact"` is the same as leaving it out; any other value is rejected with `400 invalid_request_match`. It only affects `body`. In Go, use `WithArraysContaining()`.
+By default an array in a body matcher must equal the request's array exactly: same items, same order. Set `"arrays": "contains"` in the matcher when the request may carry extra items or a different order. Every wanted item must then pair with a different item of the request's array (`["a","a"]` needs `a` twice), objects inside are subset-matched, and the rule applies to nested arrays too. `"exact"` is the same as leaving it out; any other value, including `null` or `""`, is rejected with `400 invalid_request_match`. It only affects `body`. Pairing objects is capped at about 100,000 comparisons per request, so a request whose arrays need more does not match; arrays of plain values are counted and never hit the cap. In Go, use `WithArraysContaining()`.
 
 ```bash
 # Matches a body whose roles include "admin", whatever else it lists

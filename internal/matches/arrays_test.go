@@ -76,9 +76,14 @@ func TestArrays_JSON(t *testing.T) {
 	var bad RequestMatcher
 	require.NoError(t, json.Unmarshal([]byte(`{"arrays":"all"}`), &bad))
 	require.Error(t, bad.validateArrays())
-	var wrongType RequestMatcher
-	require.NoError(t, json.Unmarshal([]byte(`{"arrays":5}`), &wrongType))
-	require.Error(t, wrongType.validateArrays())
+	for _, src := range []string{`{"arrays":5}`, `{"arrays":null}`, `{"arrays":""}`, `{"body":{"t":["a"]},"arrays":null}`} {
+		var wrong RequestMatcher
+		require.NoError(t, json.Unmarshal([]byte(src), &wrong))
+		require.Error(t, wrong.validateArrays(), src)
+	}
+	var omitted RequestMatcher
+	require.NoError(t, json.Unmarshal([]byte(`{"body":{"t":["a"]}}`), &omitted))
+	require.NoError(t, omitted.validateArrays())
 	require.NoError(t, (&RequestMatcher{Arrays: "exact"}).validateArrays())
 }
 
@@ -94,7 +99,7 @@ func TestArrayContains_FailsFastOnLargeArrays(t *testing.T) {
 		got[i] = "a"
 	}
 	done := make(chan bool, 1)
-	go func() { done <- arrayContains(want, got) }()
+	go func() { done <- arrayContains(want, got, newContainsBudget()) }()
 	select {
 	case ok := <-done:
 		assert.False(t, ok)
@@ -107,5 +112,42 @@ func TestArrayContains_PairsAroundGreedyChoice(t *testing.T) {
 	t.Parallel()
 	want := []any{map[string]any{"a": 1.0}, map[string]any{"a": 1.0, "b": 2.0}}
 	got := []any{map[string]any{"a": 1.0, "b": 2.0}, map[string]any{"a": 1.0}}
-	assert.True(t, arrayContains(want, got))
+	assert.True(t, arrayContains(want, got, newContainsBudget()))
+}
+
+func TestArrayContains_DenseDuplicateScalarsAreCounted(t *testing.T) {
+	t.Parallel()
+	want := make([]any, 250_000)
+	got := make([]any, 250_000)
+	for i := range want {
+		want[i], got[i] = "a", "a"
+	}
+	assert.True(t, arrayContains(want[:10_000], got[:20_000], newContainsBudget()))
+	assert.False(t, arrayContains(append(want[:10_000:10_000], "b"), got, newContainsBudget()))
+}
+
+func TestArrayContains_DenseDuplicateObjectsStopAtBudget(t *testing.T) {
+	t.Parallel()
+	want := make([]any, 10_000)
+	got := make([]any, 10_000)
+	for i := range want {
+		want[i], got[i] = map[string]any{"a": 1.0}, map[string]any{"a": 1.0}
+	}
+	done := make(chan bool, 1)
+	go func() { done <- arrayContains(want, got, newContainsBudget()) }()
+	select {
+	case ok := <-done:
+		assert.False(t, ok, "over-budget match gives up as no match")
+	case <-time.After(2 * time.Second):
+		t.Fatal("arrayContains did not stop within 2s")
+	}
+}
+
+func TestArrayContains_MixesScalarsAndObjects(t *testing.T) {
+	t.Parallel()
+	want := []any{"a", map[string]any{"id": 1.0}, "a", nil}
+	got := []any{map[string]any{"id": 1.0, "x": true}, "a", nil, "b", "a"}
+	assert.True(t, arrayContains(want, got, newContainsBudget()))
+	assert.False(t, arrayContains(append(want, "a"), got, newContainsBudget()))
+	assert.False(t, arrayContains([]any{map[string]any{}}, []any{"a"}, newContainsBudget()))
 }

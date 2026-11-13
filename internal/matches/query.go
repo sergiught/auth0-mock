@@ -72,8 +72,13 @@ func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
-	if len(w.Arrays) > 0 && json.Unmarshal(w.Arrays, &rm.Arrays) != nil {
-		rm.arraysErr = errArraysNotString
+	if len(w.Arrays) > 0 {
+		var mode *string
+		if json.Unmarshal(w.Arrays, &mode) != nil || mode == nil || *mode == "" {
+			rm.arraysErr = errArraysInvalid
+		} else {
+			rm.Arrays = *mode
+		}
 	}
 	if w.Query == nil {
 		return nil

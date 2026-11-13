@@ -1,7 +1,6 @@
 package matches
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -14,10 +13,13 @@ const (
 	ArraysContains = "contains"
 )
 
-var errArraysNotString = errors.New("arrays must be a string")
+// errArraysInvalid reports an arrays value sent as something other than a
+// non-empty JSON string, such as null, "" or a number.
+var errArraysInvalid = fmt.Errorf("arrays: must be %q or %q", ArraysExact, ArraysContains)
 
 // validateArrays reports an arrays value that is not "exact" or
-// "contains", or one that was not a JSON string. A nil matcher is valid.
+// "contains", or one sent as null, "" or a non-string. A nil matcher is
+// valid.
 func (rm *RequestMatcher) validateArrays() error {
 	if rm == nil {
 		return nil
@@ -32,18 +34,79 @@ func (rm *RequestMatcher) validateArrays() error {
 	return fmt.Errorf("arrays %q: must be %q or %q", rm.Arrays, ArraysExact, ArraysContains)
 }
 
+// maxContainsWork caps the work one contains-mode body match may do: every
+// array item looked at, value compared and pairing step costs one unit. A
+// body that needs more does not match, so a huge request array cannot hold
+// the store's read lock for long.
+const maxContainsWork = 100_000
+
+// containsBudget is the work a contains-mode body match has left. A nil
+// budget means arrays are compared exactly.
+type containsBudget struct{ left int }
+
+func newContainsBudget() *containsBudget { return &containsBudget{left: maxContainsWork} }
+
+// spend takes n units and reports whether the budget covered them.
+func (b *containsBudget) spend(n int) bool {
+	b.left -= n
+	return b.left >= 0
+}
+
 // arrayContains reports whether every item of want can be paired with a
 // different item of got that matches it (objects subset-matched, arrays
-// by arrayContains, scalars equal). It finds a maximum pairing with
-// augmenting paths, so a large request array cannot make it blow up.
-func arrayContains(want, got []any) bool {
+// by arrayContains, scalars equal). A scalar only fits an equal scalar, so
+// scalars are paired by counting; objects and arrays are paired with
+// augmenting paths. It gives up, reporting no match, once cb runs out.
+func arrayContains(want, got []any, cb *containsBudget) bool {
+	if len(want) > len(got) || !cb.spend(len(want)+len(got)) {
+		return false
+	}
+	scalars := make(map[any]int)
+	var gotComposite []any
+	for _, g := range got {
+		if isComposite(g) {
+			gotComposite = append(gotComposite, g)
+		} else {
+			scalars[g]++
+		}
+	}
+	var wantComposite []any
+	for _, w := range want {
+		if isComposite(w) {
+			wantComposite = append(wantComposite, w)
+			continue
+		}
+		if scalars[w] == 0 {
+			return false
+		}
+		scalars[w]--
+	}
+	return pairComposites(wantComposite, gotComposite, cb)
+}
+
+// isComposite reports whether v is a JSON object or array.
+func isComposite(v any) bool {
+	switch v.(type) {
+	case map[string]any, []any:
+		return true
+	}
+	return false
+}
+
+// pairComposites reports whether every object or array in want pairs with
+// a different item of got that it matches.
+func pairComposites(want, got []any, cb *containsBudget) bool {
 	if len(want) > len(got) {
 		return false
 	}
 	fits := make([][]int, len(want))
 	for w := range want {
 		for g := range got {
-			if len(explainValue("", want[w], got[g], true)) == 0 {
+			fit := len(explainValue("", want[w], got[g], cb)) == 0
+			if cb.left < 0 {
+				return false
+			}
+			if fit {
 				fits[w] = append(fits[w], g)
 			}
 		}
@@ -56,7 +119,7 @@ func arrayContains(want, got []any) bool {
 		owner[g] = -1
 	}
 	for w := range want {
-		if !augment(w, fits, owner, make([]bool, len(got))) {
+		if !augment(w, fits, owner, make([]bool, len(got)), cb) {
 			return false
 		}
 	}
@@ -64,14 +127,18 @@ func arrayContains(want, got []any) bool {
 }
 
 // augment tries to give want item w a request item, moving earlier
-// pairings to other items they also fit when needed.
-func augment(w int, fits [][]int, owner []int, seen []bool) bool {
+// pairings to other items they also fit when needed. Each item it looks at
+// costs one unit of cb.
+func augment(w int, fits [][]int, owner []int, seen []bool, cb *containsBudget) bool {
 	for _, g := range fits[w] {
 		if seen[g] {
 			continue
 		}
+		if !cb.spend(1) {
+			return false
+		}
 		seen[g] = true
-		if owner[g] == -1 || augment(owner[g], fits, owner, seen) {
+		if owner[g] == -1 || augment(owner[g], fits, owner, seen, cb) {
 			owner[g] = w
 			return true
 		}
