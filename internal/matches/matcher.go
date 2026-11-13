@@ -42,12 +42,12 @@ func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
 
 // requestMatcherEqual reports whether two matchers are equivalent. Two nil
 // (catch-all) matchers are equal; otherwise the query and header maps must
-// be equal and the bodies must be semantically equal JSON.
+// be equal (query lists as multisets) and the bodies must be semantically equal JSON.
 func requestMatcherEqual(a, b *RequestMatcher) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	if !reflect.DeepEqual(a.Query, b.Query) {
+	if !queryEqual(a.Query, b.Query) {
 		return false
 	}
 	if !reflect.DeepEqual(a.Headers, b.Headers) {

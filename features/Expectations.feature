@@ -155,6 +155,41 @@ Feature: Expectation registration and lookup
     Then I receive a 200 response
     And the response JSON path "0.user_id" equals "auth0|found"
 
+  Scenario: A query matcher accepts any value of a repeated key, and a list needs every value
+    Given the mock is running
+    And I have a valid bearer token
+    And I register the expectation "GET /api/v2/users":
+      """
+      {"request":{"query":{"fields":"email"}},"response":{"status":200,"body":[{"user_id":"auth0|single"}]}}
+      """
+    And I register the expectation "GET /api/v2/users":
+      """
+      {"request":{"query":{"fields":["name","nickname"]}},"response":{"status":200,"body":[{"user_id":"auth0|list"}]}}
+      """
+    When I send "GET /api/v2/users?fields=name&fields=email" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "0.user_id" equals "auth0|single"
+    When I send "GET /api/v2/users?fields=nickname&fields=x&fields=name" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "0.user_id" equals "auth0|list"
+    When I send "GET /api/v2/users?fields=name" with a valid bearer
+    Then I receive a 404 response
+
+  Scenario: A query matcher list that is empty or holds a non-string is rejected
+    Given the mock is running
+    When I attempt to register the expectation "GET /api/v2/users":
+      """
+      {"request":{"query":{"fields":[]}},"response":{"status":200,"body":[]}}
+      """
+    Then I receive a 400 response
+    And the response body contains "invalid_request_match"
+    When I attempt to register the expectation "GET /api/v2/users":
+      """
+      {"request":{"query":{"fields":["a",1]}},"response":{"status":200,"body":[]}}
+      """
+    Then I receive a 400 response
+    And the response body contains "invalid_request_match"
+
   Scenario: A sequenced stub answers in order and repeats its last answer
     Given the mock is running
     And I have a valid bearer token

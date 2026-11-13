@@ -73,9 +73,16 @@ func (e Expectation) Served() ResponseDef {
 // Useful for stubbing different responses based on Authorization (Bearer vs
 // DPoP), Accept-Language, Tenant-Id, etc.
 type RequestMatcher struct {
-	Query   map[string]string `json:"query,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    json.RawMessage   `json:"body,omitempty"`
+	// Query maps a query key to the values the request must carry for it. A
+	// JSON string is a one-element list. MarshalJSON and UnmarshalJSON own the
+	// wire format; the tags only name the keys for reflection (seed loading).
+	Query   map[string][]string `json:"query,omitempty"`
+	Headers map[string]string   `json:"headers,omitempty"`
+	Body    json.RawMessage     `json:"body,omitempty"`
+
+	// The decodeErr field is the first invalid query value UnmarshalJSON met; Prepare
+	// reports it as invalid_request_match.
+	decodeErr error
 }
 
 // ResponseDef is the canned response an Expectation returns.

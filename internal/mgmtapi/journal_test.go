@@ -90,7 +90,7 @@ func TestNoMatch_HintNamesClosestFields(t *testing.T) {
 func TestNoMatch_HintEllipsisOverThree(t *testing.T) {
 	e := newJournalEnv(t, 10, nil)
 	e.store.Put(matches.Expectation{Method: "GET", Path: "/api/v2/users/{id}", Kind: matches.KindTemplate,
-		Request:  &matches.RequestMatcher{Query: map[string]string{"a": "1", "b": "2", "c": "3", "d": "4"}},
+		Request:  &matches.RequestMatcher{Query: map[string][]string{"a": {"1"}, "b": {"2"}, "c": {"3"}, "d": {"4"}}},
 		Response: matches.ResponseDef{Status: 200, Body: json.RawMessage(`{"user_id":"auth0|1"}`)}})
 
 	w := e.do("GET", "/api/v2/users/auth0|1", "", true)

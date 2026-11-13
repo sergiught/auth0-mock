@@ -71870,9 +71870,20 @@
           },
           "query": {
             "additionalProperties": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              ]
             },
-            "description": "Query parameters the request must carry.",
+            "description": "Query parameters the request must carry. A string matches when any\nof the request's values for that key equals it. A non-empty list\nmatches when the request carries every listed value, in any order,\nextras allowed; a repeated value must appear that many times. A\none-element list is the same as the string. An empty list or a\nnon-string item is rejected with `invalid_request_match`.\n",
             "type": "object"
           }
         },
