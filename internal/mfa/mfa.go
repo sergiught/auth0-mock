@@ -126,12 +126,17 @@ func (s *Store) Consume(token string) (Context, bool) {
 
 // Peek returns the Context registered against an mfa_token without removing
 // it, so a wrong code can be retried. Returns false if the token is unknown
-// or expired.
+// or expired; an expired token is removed, as Consume does, so rewinding the
+// clock cannot revive it.
 func (s *Store) Peek(token string) (Context, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ctx, ok := s.tokens[token]
-	if !ok || s.now().After(ctx.expiresAt) {
+	if !ok {
+		return Context{}, false
+	}
+	if s.now().After(ctx.expiresAt) {
+		delete(s.tokens, token)
 		return Context{}, false
 	}
 	return ctx, true
