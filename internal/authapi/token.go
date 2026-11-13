@@ -450,11 +450,12 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusForbidden, "access_denied", "No audience parameter was provided, and no default audience has been configured")
 		return
 	}
+	scope := h.clientCredentialsScope(aud, req.Scope)
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  req.ClientID + "@clients",
 		Audience: []string{aud},
-		Scope:    req.Scope,
+		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
 		Extra:    h.augmentExtra(map[string]any{"gty": "client-credentials", "azp": req.ClientID}, aud, req.Params),
 	})
@@ -466,8 +467,22 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 		AccessToken: access,
 		TokenType:   "Bearer",
 		ExpiresIn:   int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
-		Scope:       req.Scope,
+		Scope:       scope,
 	})
+}
+
+// clientCredentialsScope returns the scope for a client_credentials token: the
+// requested scope when it is non-blank, otherwise the audience's registered
+// permissions joined by spaces (what Auth0 reports as the client's granted
+// scopes). Empty when neither exists, which omits the claim.
+func (h *TokenHandler) clientCredentialsScope(audience, requested string) string {
+	if strings.TrimSpace(requested) != "" {
+		return requested
+	}
+	if h.Permissions == nil {
+		return ""
+	}
+	return strings.Join(h.Permissions.Get(audience), " ")
 }
 
 func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {

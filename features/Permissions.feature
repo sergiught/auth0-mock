@@ -19,6 +19,39 @@ Feature: Per-audience permission injection
     And the access_token claim "permissions" array contains "read:users"
     And the access_token claim "permissions" array contains "write:users"
 
+  Scenario: client_credentials tokens default their scope to the audience's permissions
+    When I PUT "/admin0/permissions/http://example/api/v2/" with body:
+      """
+      ["read:users","write:users"]
+      """
+    Then I receive a 204 response
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=client_credentials
+      client_id=demo
+      client_secret=x
+      audience=http://example/api/v2/
+      """
+    Then I receive a 200 response
+    And the response JSON path "scope" equals "read:users write:users"
+    And the access_token claim "scope" equals "read:users write:users"
+
+  Scenario: A requested scope wins over the audience's permissions
+    When I PUT "/admin0/permissions/http://example/api/v2/" with body:
+      """
+      ["read:users","write:users"]
+      """
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=client_credentials
+      client_id=demo
+      client_secret=x
+      audience=http://example/api/v2/
+      scope=read:users
+      """
+    Then I receive a 200 response
+    And the access_token claim "scope" equals "read:users"
+
   Scenario: Different audiences carry different permissions
     When I PUT "/admin0/permissions/http://api1/" with body:
       """
