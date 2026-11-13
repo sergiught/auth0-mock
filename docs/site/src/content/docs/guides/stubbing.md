@@ -100,7 +100,7 @@ curl -X POST http://localhost:8080/admin0/expectations \
        "response":{"status":201,"body":{"user_id":"auth0|nopassword","email":"a@example.com","email_verified":false}}}'
 ```
 
-A path without one of the three prefixes, with an empty segment, naming an undeclared query parameter, naming the `Host` header, or that the same matcher also requires is rejected with `400 invalid_request_match`. In Go, use `WithoutField(path)`.
+A path without one of the three prefixes, with an empty segment, naming an undeclared query parameter, naming the `Host`, `Transfer-Encoding` or `Trailer` header (Go strips them before matching), a `body.*` path on a `GET /api/v2/events` stub, or that the same matcher also requires is rejected with `400 invalid_request_match`. In Go, use `WithoutField(path)`.
 
 To clear all expectations for an operation at once (catch-all + every request-matched one):
 
