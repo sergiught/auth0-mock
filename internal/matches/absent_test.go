@@ -33,6 +33,8 @@ func TestAbsent_Matches(t *testing.T) {
 		{"body parent missing", []string{"body.a.b"}, MatchableRequest{Body: []byte(`{"c":1}`)}, true},
 		{"body parent not object", []string{"body.a.b"}, MatchableRequest{Body: []byte(`{"a":5}`)}, true},
 		{"body nested present", []string{"body.a.b"}, MatchableRequest{Body: []byte(`{"a":{"b":false}}`)}, false},
+		{"body present beside huge number", []string{"body.a"}, MatchableRequest{Body: []byte(`{"a":"x","n":1e400}`)}, false},
+		{"body trailing garbage", []string{"body.a"}, MatchableRequest{Body: []byte(`{"a":1} x`)}, true},
 		{"one of several present", []string{"query.x", "query.y"}, MatchableRequest{Query: url.Values{"y": {"1"}}}, false},
 	}
 	for _, c := range cases {
@@ -73,6 +75,13 @@ func TestAbsent_Explain(t *testing.T) {
 		{Field: "headers.X-Foo", Reason: "present", Got: raw(`"v"`)},
 		{Field: "query.x", Reason: "present", Got: raw(`"1"`)},
 	}, diffs)
+}
+
+func TestAbsent_ExplainKeepsLargeNumbersExact(t *testing.T) {
+	t.Parallel()
+	rm := &RequestMatcher{Absent: []string{"body.id"}}
+	diffs := rm.Explain(MatchableRequest{Body: []byte(`{"id":12345678901234567890123}`)})
+	assert.Equal(t, []Difference{{Field: "body.id", Reason: "present", Got: raw(`12345678901234567890123`)}}, diffs)
 }
 
 func TestAbsent_ExplainReportsDuplicatePathOnce(t *testing.T) {
