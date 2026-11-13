@@ -118,3 +118,21 @@ func TestSameTargetTreatsQueryListsAsMultisets(t *testing.T) {
 	assert.False(t, matches.SameTarget(mk(`{"query":{"t":["a","a"]}}`), mk(`{"query":{"t":["a","b"]}}`)))
 	assert.False(t, matches.SameTarget(mk(`{"query":{"t":["a"]}}`), mk(`{"query":{"t":["a","b"]}}`)))
 }
+
+func TestMistypedAbsentIsInvalidRequestMatch(t *testing.T) {
+	t.Parallel()
+	v := newValidator(t)
+	for name, src := range map[string]string{
+		"string":          `{"absent":"body.x"}`,
+		"non-string item": `{"absent":["body.x",1]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var reg matches.Registration
+			require.NoError(t, json.Unmarshal([]byte(`{"method":"GET","path":"/api/v2/users","response":{"status":429},"request":`+src+`}`), &reg))
+			_, err := matches.Prepare(v, reg)
+			var re *matches.RegistrationError
+			require.ErrorAs(t, err, &re)
+			assert.Equal(t, "invalid_request_match", re.Code)
+		})
+	}
+}

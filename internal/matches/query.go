@@ -41,15 +41,27 @@ func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
+// wireMatcherIn reads absent raw, so a mistyped list is reported like a
+// mistyped query value rather than failing the whole decode.
+type wireMatcherIn struct {
+	wireMatcher
+	Absent json.RawMessage `json:"absent,omitempty"`
+}
+
 // UnmarshalJSON reads each query value as a string or a list of strings. An
-// invalid value does not fail the decode; it is remembered and Prepare turns
-// it into an invalid_request_match error.
+// invalid query or absent value does not fail the decode; it is remembered
+// and Prepare turns it into an invalid_request_match error.
 func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
-	var w wireMatcher
+	var w wireMatcherIn
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
-	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body, Absent: w.Absent}
+	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body}
+	if len(w.Absent) > 0 && string(w.Absent) != "null" {
+		if err := json.Unmarshal(w.Absent, &rm.Absent); err != nil {
+			rm.decodeErr = errors.New("absent: must be a list of strings")
+		}
+	}
 	if w.Query == nil {
 		return nil
 	}

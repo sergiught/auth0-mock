@@ -34,7 +34,8 @@ func (rm *RequestMatcher) IsEmpty() bool {
 // subset-matched (every matcher key must be present with an equal value;
 // extras allowed). A query value matches when any of the request's values
 // for that key equals it; a query list needs every listed value present.
-// The body is subset-matched recursively.
+// The body is subset-matched recursively. Every path in Absent must be
+// missing from the request.
 //
 // Header lookup is case-insensitive — http.Header.Get canonicalises the key
 // against the canonical MIME header form, so matcher entry "X-Tenant: acme"
