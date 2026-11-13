@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 const (
@@ -15,6 +17,26 @@ const (
 	absentHeaderPrefix = "headers."
 	absentBodyPrefix   = "body."
 )
+
+// unmatchableHeaders are headers Go moves out of the request's header map
+// (Host into Request.Host; Transfer-Encoding and Trailer while reading the
+// body), so the matcher would always see them as absent.
+var unmatchableHeaders = map[string]bool{"Host": true, "Transfer-Encoding": true, "Trailer": true}
+
+// validateAbsentForOp rejects body.* absent paths on the event stream: its
+// stubs are looked up without reading a body, so such a path would always
+// count as absent.
+func (rm *RequestMatcher) validateAbsentForOp(op spec.Operation) error {
+	if rm == nil || op.Op.OperationID != spec.SubscribeEventsOperationID {
+		return nil
+	}
+	for _, p := range rm.Absent {
+		if strings.HasPrefix(p, absentBodyPrefix) {
+			return fmt.Errorf("absent %q: GET /api/v2/events stubs are matched without a body", p)
+		}
+	}
+	return nil
+}
 
 // canonicalAbsent returns an absent path with a header name in canonical form,
 // so "headers.x-foo" and "headers.X-Foo" are the same path. Other paths are
@@ -95,8 +117,8 @@ func (rm *RequestMatcher) validateAbsentPath(p string, body any, hasBody bool) e
 		if name == "" {
 			return errors.New("header name is empty")
 		}
-		if name == "Host" {
-			return errors.New("the Host header cannot be checked for absence")
+		if unmatchableHeaders[name] {
+			return fmt.Errorf("the %s header cannot be checked for absence", name)
 		}
 		for h := range rm.Headers {
 			if http.CanonicalHeaderKey(h) == name {

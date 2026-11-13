@@ -1,6 +1,7 @@
 package matches
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -98,7 +99,7 @@ func prepareMatcher(v *spec.Validator, op spec.Operation, in *RequestMatcher) (*
 			"request matcher query is invalid: " + err.Error(), "invalid_request_match",
 		}
 	}
-	if err := req.validateAbsent(); err != nil {
+	if err := errors.Join(req.validateAbsent(), req.validateAbsentForOp(op)); err != nil {
 		return nil, &RegistrationError{
 			"request matcher absent is invalid: " + err.Error(), "invalid_request_match",
 		}
