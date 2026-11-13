@@ -97,6 +97,24 @@ Feature: Authentication API endpoints
     When I send "GET /userinfo" without a bearer
     Then I receive a 401 response
 
+  Scenario: POST /userinfo accepts the bearer header
+    Given I have a valid bearer token
+    When I send "POST /userinfo" with a valid bearer
+    Then I receive a 200 response
+    And the response JSON path "sub" exists
+
+  Scenario: POST /userinfo accepts the token as a form field
+    Given I have a valid bearer token
+    When I post "/userinfo" with my bearer as the access_token form field
+    Then I receive a 200 response
+    And the response JSON path "sub" exists
+
+  Scenario: POST /userinfo rejects a token sent two ways
+    Given I have a valid bearer token
+    When I post "/userinfo" with my bearer in both the header and the access_token form field
+    Then I receive a 400 response
+    And the response body contains "invalid_request"
+
   Scenario: /v2/logout redirects to returnTo
     When I send "GET /v2/logout?returnTo=https%3A%2F%2Fapp%2Fbye" without a bearer
     Then I receive a 302 response

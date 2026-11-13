@@ -101,6 +101,42 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: Resolve the authenticated user from an access token (OIDC Core 5.3.1).
+      description: >-
+        Same response as GET. The token goes either in the `Authorization:
+        Bearer` header or, per RFC 6750 section 2.2, in an `access_token` field
+        of an `application/x-www-form-urlencoded` body. Sending it both ways
+        is a 400 `invalid_request`.
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                access_token: { type: string }
+      responses:
+        "200":
+          description: OIDC user claims.
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Token sent in both the header and the body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /.well-known/openid-configuration:
     get:
       tags: ["OAuth & OIDC"]

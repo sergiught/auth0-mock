@@ -1,8 +1,11 @@
 package authapi
 
 import (
+	"io"
 	"maps"
+	"mime"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/render"
 
@@ -20,9 +23,39 @@ type UserInfoHandler struct {
 	Sessions *session.Store
 }
 
+// bodyForm parses a form-encoded request body, ignoring the URL query.
+// Other content types yield no values.
+func bodyForm(r *http.Request) (url.Values, error) {
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/x-www-form-urlencoded" {
+		return nil, nil
+	}
+	body, err := io.ReadAll(r.Body) // capped by the global MAX_REQUEST_BODY_BYTES middleware
+	if err != nil {
+		return nil, err
+	}
+	return url.ParseQuery(string(body))
+}
+
 func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hdr := r.Header.Get("Authorization")
 	token, ok := bearer.Token(hdr)
+	if r.Method == http.MethodPost {
+		// RFC 6750 2.2: the token may instead be an access_token field in a
+		// form-encoded body. Only the body is parsed, so a bad query string
+		// cannot fail the request (GET ignores it too).
+		form, err := bodyForm(r)
+		if err != nil {
+			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "malformed request body")
+			return
+		}
+		if formToken := form.Get("access_token"); formToken != "" {
+			if ok {
+				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "access token must be sent using only one method")
+				return
+			}
+			token, ok = formToken, true
+		}
+	}
 	if !ok {
 		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", "missing bearer token")
 		return

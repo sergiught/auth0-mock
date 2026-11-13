@@ -442,6 +442,17 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	// RFC 6750 2.2: my bearer sent as an access_token form field, no header.
+	sc.Step(`^I post "([^"]+)" with my bearer as the access_token form field$`, func(path string) error {
+		c.DoForm("POST", path, url.Values{"access_token": {c.BearerTok}}, false)
+		return nil
+	})
+
+	sc.Step(`^I post "([^"]+)" with my bearer in both the header and the access_token form field$`, func(path string) error {
+		c.DoForm("POST", path, url.Values{"access_token": {c.BearerTok}}, true)
+		return nil
+	})
+
 	// JSON-body request with an explicit verb (covers PUT/DELETE for admin0).
 	sc.Step(`^I (PUT|POST|DELETE|PATCH) "([^"]+)" with body:$`, func(method, path string, body *godog.DocString) error {
 		c.Do(method, path, body.Content, false)

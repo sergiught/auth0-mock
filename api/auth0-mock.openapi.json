@@ -115774,6 +115774,65 @@
         "tags": [
           "OAuth \u0026 OIDC"
         ]
+      },
+      "post": {
+        "description": "Same response as GET. The token goes either in the `Authorization: Bearer` header or, per RFC 6750 section 2.2, in an `access_token` field of an `application/x-www-form-urlencoded` body. Sending it both ways is a 400 `invalid_request`.",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "access_token": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OIDC user claims."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Token sent in both the header and the body."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing or invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {}
+        ],
+        "summary": "Resolve the authenticated user from an access token (OIDC Core 5.3.1).",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
       }
     },
     "/v2/logout": {
