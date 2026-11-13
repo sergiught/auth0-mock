@@ -104,3 +104,32 @@ func TestStore_NewStore_NoOptions_UsesTimeNow(t *testing.T) {
 	_, ok := s.Consume(tok)
 	assert.True(t, ok)
 }
+
+func TestStore_PeekDoesNotConsume(t *testing.T) {
+	s := NewStore()
+	tok := s.Issue(Context{ClientID: "demo"})
+	_, ok := s.Peek(tok)
+	require.True(t, ok)
+	_, ok = s.Peek(tok)
+	require.True(t, ok)
+	_, ok = s.Consume(tok)
+	require.True(t, ok)
+	_, ok = s.Peek(tok)
+	assert.False(t, ok)
+}
+
+func TestStore_PeekExpiredIsPermanent(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	s := NewStore(WithNow(func() time.Time { return now }))
+	tok := s.Issue(Context{ClientID: "demo"})
+
+	now = now.Add(DefaultTokenTTL + time.Second)
+	_, ok := s.Peek(tok)
+	require.False(t, ok)
+
+	// Rewinding the clock must not revive a token already rejected as expired.
+	now = now.Add(-DefaultTokenTTL)
+	_, ok = s.Peek(tok)
+	assert.False(t, ok)
+}

@@ -222,7 +222,7 @@ When `mfa.Store.IsRequired()` is true, `password` and `password-realm` don't min
    | `http://auth0.com/oauth/grant-type/mfa-oob` | `oob_code` (any) + `binding_code` | `123456` |
    | `http://auth0.com/oauth/grant-type/mfa-recovery-code` | `recovery_code` | `ABCDEFGHIJKLMNOP` |
 
-   The handler `Consume`s the mfa_token (which expires/removes it), validates the factor against the canned constant, and mints normally using the stored `Context`. The minted token carries `gty=mfa-otp` (or `mfa-oob` / `mfa-recovery-code`) so downstream services can tell step-up tokens apart.
+   The handler `Peek`s the mfa_token (a wrong code leaves it usable for a retry), validates the factor against the canned constant, then `Consume`s the token (single-use) and mints normally using the stored `Context`. The minted token carries `gty=mfa-otp` (or `mfa-oob` / `mfa-recovery-code`) so downstream services can tell step-up tokens apart.
 
 This mirrors Auth0's actual MFA flow shape end-to-end. The canned factors are the only "mocky" part; real Auth0 stores a per-user secret and checks TOTP.
 

@@ -12,15 +12,23 @@ import (
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
+// mfaRejection is the 4xx a request with a wrong or missing MFA code gets
+// once its mfa_token has been found valid.
+type mfaRejection struct {
+	status int
+	code   string
+	desc   string
+}
+
 // respondMFAOTP handles grant_type=http://auth0.com/oauth/grant-type/mfa-otp.
 // Trades a previously-issued mfa_token + a TOTP/HOTP code for an access_token.
 func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
-	ctx, ok := h.consumeMFAToken(w, req.MFAToken)
-	if !ok {
-		return
-	}
+	var reject *mfaRejection
 	if req.OTP != mfa.AcceptedOTP {
-		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong otp")
+		reject = &mfaRejection{http.StatusForbidden, "invalid_grant", "Wrong otp"}
+	}
+	ctx, ok := h.redeemMFAToken(w, req.MFAToken, reject)
+	if !ok {
 		return
 	}
 	h.mintFromMFA(w, r, ctx, "mfa-otp", req.Params)
@@ -29,18 +37,17 @@ func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req
 // respondMFAOOB handles grant_type=http://auth0.com/oauth/grant-type/mfa-oob
 // (out-of-band challenge — push notification or SMS confirmation).
 func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
-	ctx, ok := h.consumeMFAToken(w, req.MFAToken)
-	if !ok {
-		return
-	}
-	if req.OOBCode == "" {
-		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "missing oob_code")
-		return
-	}
+	var reject *mfaRejection
+	switch {
+	case req.OOBCode == "":
+		reject = &mfaRejection{http.StatusBadRequest, "invalid_request", "missing oob_code"}
 	// Binding_code is required when the user is asked to type a number they
 	// see on a second device (e.g. SMS code, push-with-numbers).
-	if req.BindingCode != mfa.AcceptedBindingCode {
-		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong binding code")
+	case req.BindingCode != mfa.AcceptedBindingCode:
+		reject = &mfaRejection{http.StatusForbidden, "invalid_grant", "Wrong binding code"}
+	}
+	ctx, ok := h.redeemMFAToken(w, req.MFAToken, reject)
+	if !ok {
 		return
 	}
 	h.mintFromMFA(w, r, ctx, "mfa-oob", req.Params)
@@ -49,20 +56,24 @@ func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req
 // respondMFARecoveryCode handles
 // grant_type=http://auth0.com/oauth/grant-type/mfa-recovery-code.
 func (h *TokenHandler) respondMFARecoveryCode(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
-	ctx, ok := h.consumeMFAToken(w, req.MFAToken)
-	if !ok {
-		return
-	}
+	var reject *mfaRejection
 	if req.RecoveryCode != mfa.AcceptedRecoveryCode {
-		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Wrong recovery code")
+		reject = &mfaRejection{http.StatusForbidden, "invalid_grant", "Wrong recovery code"}
+	}
+	ctx, ok := h.redeemMFAToken(w, req.MFAToken, reject)
+	if !ok {
 		return
 	}
 	h.mintFromMFA(w, r, ctx, "mfa-recovery-code", req.Params)
 }
 
-// consumeMFAToken validates and consumes an mfa_token. On failure, writes the
-// appropriate 4xx response and returns ok=false.
-func (h *TokenHandler) consumeMFAToken(w http.ResponseWriter, token string) (mfa.Context, bool) {
+// redeemMFAToken validates an mfa_token and, when reject is nil (the code was
+// accepted), consumes it. A rejected code only peeks at the token, so it can
+// be retried, and gets reject as its response once the token is known valid.
+// Consume is atomic, so of several concurrent correct submissions only one
+// wins; the others get the same error as a reused token. On failure, writes
+// the 4xx response and returns ok=false.
+func (h *TokenHandler) redeemMFAToken(w http.ResponseWriter, token string, reject *mfaRejection) (mfa.Context, bool) {
 	if h.MFA == nil {
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "mfa not configured on this server")
 		return mfa.Context{}, false
@@ -71,9 +82,17 @@ func (h *TokenHandler) consumeMFAToken(w http.ResponseWriter, token string) (mfa
 		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "missing mfa_token")
 		return mfa.Context{}, false
 	}
-	ctx, ok := h.MFA.Consume(token)
+	lookup := h.MFA.Consume
+	if reject != nil {
+		lookup = h.MFA.Peek
+	}
+	ctx, ok := lookup(token)
 	if !ok {
 		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", "Malformed or expired mfa_token")
+		return mfa.Context{}, false
+	}
+	if reject != nil {
+		httperr.WriteAuth(w, reject.status, reject.code, reject.desc)
 		return mfa.Context{}, false
 	}
 	return ctx, true
