@@ -29,7 +29,7 @@ func bodyForm(r *http.Request) (url.Values, error) {
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/x-www-form-urlencoded" {
 		return nil, nil
 	}
-	body, err := io.ReadAll(r.Body) // capped by the global MAX_REQUEST_BODY_BYTES middleware
+	body, err := io.ReadAll(r.Body) // Capped by the global MAX_REQUEST_BODY_BYTES middleware.
 	if err != nil {
 		return nil, err
 	}
