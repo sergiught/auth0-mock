@@ -3,6 +3,7 @@ package matches
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,4 +80,32 @@ func TestArrays_JSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"arrays":5}`), &wrongType))
 	require.Error(t, wrongType.validateArrays())
 	require.NoError(t, (&RequestMatcher{Arrays: "exact"}).validateArrays())
+}
+
+func TestArrayContains_FailsFastOnLargeArrays(t *testing.T) {
+	t.Parallel()
+	want := make([]any, 0, 11)
+	for range 10 {
+		want = append(want, "a")
+	}
+	want = append(want, "b")
+	got := make([]any, 20)
+	for i := range got {
+		got[i] = "a"
+	}
+	done := make(chan bool, 1)
+	go func() { done <- arrayContains(want, got) }()
+	select {
+	case ok := <-done:
+		assert.False(t, ok)
+	case <-time.After(2 * time.Second):
+		t.Fatal("arrayContains did not finish within 2s")
+	}
+}
+
+func TestArrayContains_PairsAroundGreedyChoice(t *testing.T) {
+	t.Parallel()
+	want := []any{map[string]any{"a": 1.0}, map[string]any{"a": 1.0, "b": 2.0}}
+	got := []any{map[string]any{"a": 1.0, "b": 2.0}, map[string]any{"a": 1.0}}
+	assert.True(t, arrayContains(want, got))
 }

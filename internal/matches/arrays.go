@@ -34,26 +34,47 @@ func (rm *RequestMatcher) validateArrays() error {
 
 // arrayContains reports whether every item of want can be paired with a
 // different item of got that matches it (objects subset-matched, arrays
-// by arrayContains, scalars equal).
+// by arrayContains, scalars equal). It finds a maximum pairing with
+// augmenting paths, so a large request array cannot make it blow up.
 func arrayContains(want, got []any) bool {
-	return assignItems(want, got, make([]bool, len(got)))
+	if len(want) > len(got) {
+		return false
+	}
+	fits := make([][]int, len(want))
+	for w := range want {
+		for g := range got {
+			if len(explainValue("", want[w], got[g], true)) == 0 {
+				fits[w] = append(fits[w], g)
+			}
+		}
+		if len(fits[w]) == 0 {
+			return false
+		}
+	}
+	owner := make([]int, len(got))
+	for g := range owner {
+		owner[g] = -1
+	}
+	for w := range want {
+		if !augment(w, fits, owner, make([]bool, len(got))) {
+			return false
+		}
+	}
+	return true
 }
 
-// assignItems pairs want[0] with each unused matching item of got in
-// turn and recurses on the rest, backtracking when a pairing dead-ends.
-func assignItems(want, got []any, used []bool) bool {
-	if len(want) == 0 {
-		return true
-	}
-	for i, g := range got {
-		if used[i] || len(explainValue("", want[0], g, true)) > 0 {
+// augment tries to give want item w a request item, moving earlier
+// pairings to other items they also fit when needed.
+func augment(w int, fits [][]int, owner []int, seen []bool) bool {
+	for _, g := range fits[w] {
+		if seen[g] {
 			continue
 		}
-		used[i] = true
-		if assignItems(want[1:], got, used) {
+		seen[g] = true
+		if owner[g] == -1 || augment(owner[g], fits, owner, seen) {
+			owner[g] = w
 			return true
 		}
-		used[i] = false
 	}
 	return false
 }
