@@ -907,3 +907,78 @@ func TestUserinfoAutoIssuerOpaqueToken(t *testing.T) {
 	assert.Equal(t, http.StatusOK, userinfoAt("hosta.test:1111"))
 	assert.Equal(t, http.StatusUnauthorized, userinfoAt("hostb.test:2222"))
 }
+
+// postClientCredentials posts a client_credentials request for
+// https://api/ with the given extra params and returns the decoded response
+// body and the verified access-token claims.
+func postClientCredentials(t *testing.T, r chi.Router, ks *jwks.KeySet, extra url.Values) (tokenResponse, *jwks.Claims) {
+	t.Helper()
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_id", "abc")
+	form.Set("client_secret", "x")
+	form.Set("audience", "https://api/")
+	maps.Copy(form, extra)
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	c, err := ks.Verify(body.AccessToken, jwks.VerifyOpts{})
+	require.NoError(t, err)
+	return body, c
+}
+
+func newClientCredentialsRouter(t *testing.T, perms *permissions.Store) (chi.Router, *jwks.KeySet) {
+	t.Helper()
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks,
+		Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log:         zerolog.Nop(),
+		Permissions: perms,
+	})
+	return r, ks
+}
+
+func TestToken_ClientCredentials_DefaultScopeFromPermissions(t *testing.T) {
+	perms := permissions.NewStore()
+	perms.Set("https://api/", []string{"read:users", "write:users"})
+	r, ks := newClientCredentialsRouter(t, perms)
+
+	body, c := postClientCredentials(t, r, ks, nil)
+	assert.Equal(t, "read:users write:users", c.Scope)
+	assert.Equal(t, "read:users write:users", body.Scope)
+
+	body, c = postClientCredentials(t, r, ks, url.Values{"scope": []string{""}})
+	assert.Equal(t, "read:users write:users", c.Scope, "empty scope falls back to permissions")
+	assert.Equal(t, "read:users write:users", body.Scope)
+
+	body, c = postClientCredentials(t, r, ks, url.Values{"scope": []string{"  "}})
+	assert.Equal(t, "read:users write:users", c.Scope, "whitespace-only scope falls back to permissions")
+	assert.Equal(t, "read:users write:users", body.Scope)
+}
+
+func TestToken_ClientCredentials_RequestedScopeWinsOverPermissions(t *testing.T) {
+	perms := permissions.NewStore()
+	perms.Set("https://api/", []string{"read:users", "write:users"})
+	r, ks := newClientCredentialsRouter(t, perms)
+
+	body, c := postClientCredentials(t, r, ks, url.Values{"scope": []string{"read:users"}})
+	assert.Equal(t, "read:users", c.Scope)
+	assert.Equal(t, "read:users", body.Scope)
+}
+
+func TestToken_ClientCredentials_NoPermissionsNoScope(t *testing.T) {
+	r, ks := newClientCredentialsRouter(t, permissions.NewStore())
+
+	body, c := postClientCredentials(t, r, ks, nil)
+	assert.Empty(t, c.Scope)
+	assert.Empty(t, body.Scope)
+}
