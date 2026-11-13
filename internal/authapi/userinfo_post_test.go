@@ -107,3 +107,15 @@ func TestUserinfo_GetIgnoresQueryAccessToken(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+func TestUserinfo_PostRepeatedFormTokenIsInvalidRequest(t *testing.T) {
+	r, _, _ := newNonceRouter(t)
+	code := authorizeCode(t, r, url.Values{"login_hint": {"alice@example.com"}})
+	tok := accessTokenOf(t, exchangeCode(r, code, ""))
+
+	// RFC 6750 3.1: a parameter sent more than once is invalid_request, even
+	// when the first value is a valid token.
+	w := postUserinfo(r, "", url.Values{"access_token": {tok, "other"}}.Encode())
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"error":"invalid_request","error_description":"access_token must be sent only once"}`, w.Body.String())
+}

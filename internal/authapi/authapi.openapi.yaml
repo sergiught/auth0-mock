@@ -107,8 +107,8 @@ paths:
       description: >-
         Same response as GET. The token goes either in the `Authorization:
         Bearer` header or, per RFC 6750 section 2.2, in an `access_token` field
-        of an `application/x-www-form-urlencoded` body. Sending it both ways
-        is a 400 `invalid_request`.
+        of an `application/x-www-form-urlencoded` body. Sending it both ways,
+        or sending `access_token` more than once, is a 400 `invalid_request`.
       security:
         - bearerAuth: []
         - {}
@@ -128,7 +128,7 @@ paths:
               schema:
                 type: object
         "400":
-          description: Token sent in both the header and the body.
+          description: Token sent in both the header and the body, or `access_token` repeated, or a malformed body.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }

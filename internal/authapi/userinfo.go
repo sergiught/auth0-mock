@@ -36,25 +36,38 @@ func bodyForm(r *http.Request) (url.Values, error) {
 	return url.ParseQuery(string(body))
 }
 
+// userinfoToken returns the access token from the Authorization header or,
+// on POST, from an access_token field in a form-encoded body (RFC 6750 2.2).
+// Only the body is parsed, so a bad query string cannot fail the request (GET
+// ignores it too). A non-empty problem is the description for a 400
+// invalid_request.
+func userinfoToken(r *http.Request) (token string, ok bool, problem string) {
+	token, ok = bearer.Token(r.Header.Get("Authorization"))
+	if r.Method != http.MethodPost {
+		return token, ok, ""
+	}
+	form, err := bodyForm(r)
+	if err != nil {
+		return "", false, "malformed request body"
+	}
+	// RFC 6750 3.1: a repeated parameter is invalid_request.
+	if len(form["access_token"]) > 1 {
+		return "", false, "access_token must be sent only once"
+	}
+	if formToken := form.Get("access_token"); formToken != "" {
+		if ok {
+			return "", false, "access token must be sent using only one method"
+		}
+		return formToken, true, ""
+	}
+	return token, ok, ""
+}
+
 func (h *UserInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	hdr := r.Header.Get("Authorization")
-	token, ok := bearer.Token(hdr)
-	if r.Method == http.MethodPost {
-		// RFC 6750 2.2: the token may instead be an access_token field in a
-		// form-encoded body. Only the body is parsed, so a bad query string
-		// cannot fail the request (GET ignores it too).
-		form, err := bodyForm(r)
-		if err != nil {
-			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "malformed request body")
-			return
-		}
-		if formToken := form.Get("access_token"); formToken != "" {
-			if ok {
-				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "access token must be sent using only one method")
-				return
-			}
-			token, ok = formToken, true
-		}
+	token, ok, problem := userinfoToken(r)
+	if problem != "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", problem)
+		return
 	}
 	if !ok {
 		httperr.WriteAuth(w, http.StatusUnauthorized, "invalid_token", "missing bearer token")
