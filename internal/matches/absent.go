@@ -1,0 +1,184 @@
+package matches
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"slices"
+	"strings"
+)
+
+const (
+	absentQueryPrefix  = "query."
+	absentHeaderPrefix = "headers."
+	absentBodyPrefix   = "body."
+)
+
+// canonicalAbsent returns an absent path with a header name in canonical form,
+// so "headers.x-foo" and "headers.X-Foo" are the same path. Other paths are
+// returned unchanged.
+func canonicalAbsent(path string) string {
+	if name, ok := strings.CutPrefix(path, absentHeaderPrefix); ok {
+		return absentHeaderPrefix + http.CanonicalHeaderKey(name)
+	}
+	return path
+}
+
+// canonicalAbsentList returns the paths in canonical form, keeping order.
+func canonicalAbsentList(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = canonicalAbsent(p)
+	}
+	return out
+}
+
+// absentEqual reports whether two absent lists hold the same paths,
+// ignoring order and duplicates.
+func absentEqual(a, b []string) bool {
+	norm := func(l []string) []string {
+		l = canonicalAbsentList(l)
+		slices.Sort(l)
+		return slices.Compact(l)
+	}
+	return slices.Equal(norm(a), norm(b))
+}
+
+// absentQueryKeys returns the query keys named by "query.<key>" absent paths.
+func (rm *RequestMatcher) absentQueryKeys() []string {
+	var keys []string
+	for _, p := range rm.Absent {
+		if k, ok := strings.CutPrefix(p, absentQueryPrefix); ok {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
+// validateAbsent checks every absent path: it needs a known prefix and no
+// empty segment, and must not name something the matcher also requires. A nil
+// matcher is valid.
+func (rm *RequestMatcher) validateAbsent() error {
+	if rm == nil {
+		return nil
+	}
+	var body any
+	hasBody := false
+	if b := bytes.TrimSpace(rm.Body); len(b) > 0 && string(b) != "null" {
+		hasBody = json.Unmarshal(b, &body) == nil
+	}
+	for _, p := range rm.Absent {
+		if err := rm.validateAbsentPath(p, body, hasBody); err != nil {
+			return fmt.Errorf("absent %q: %w", p, err)
+		}
+	}
+	return nil
+}
+
+func (rm *RequestMatcher) validateAbsentPath(p string, body any, hasBody bool) error {
+	switch {
+	case strings.HasPrefix(p, absentQueryPrefix):
+		key := strings.TrimPrefix(p, absentQueryPrefix)
+		if key == "" {
+			return errors.New("query key is empty")
+		}
+		if _, ok := rm.Query[key]; ok {
+			return errors.New("the matcher also requires this query parameter")
+		}
+	case strings.HasPrefix(p, absentHeaderPrefix):
+		name := http.CanonicalHeaderKey(strings.TrimPrefix(p, absentHeaderPrefix))
+		if name == "" {
+			return errors.New("header name is empty")
+		}
+		for h := range rm.Headers {
+			if http.CanonicalHeaderKey(h) == name {
+				return errors.New("the matcher also requires this header")
+			}
+		}
+	case strings.HasPrefix(p, absentBodyPrefix):
+		segs := strings.Split(strings.TrimPrefix(p, absentBodyPrefix), ".")
+		if slices.Contains(segs, "") {
+			return errors.New("path has an empty segment")
+		}
+		if hasBody && bodySets(body, segs) {
+			return errors.New("the matcher's body also sets this path")
+		}
+	default:
+		return errors.New("path must start with query, headers or body followed by a dot")
+	}
+	return nil
+}
+
+// bodySets reports whether the matcher body sets the value at segs, or an
+// ancestor of it. A scalar met on the way down fixes everything below it, so
+// that counts as set too.
+func bodySets(body any, segs []string) bool {
+	for _, s := range segs {
+		obj, isObj := body.(map[string]any)
+		if !isObj {
+			return true
+		}
+		next, present := obj[s]
+		if !present {
+			return false
+		}
+		body = next
+	}
+	return true
+}
+
+// bodyValue returns the value at the dotted path in a request body, JSON null
+// included. A missing or non-JSON body holds nothing.
+func bodyValue(raw []byte, path string) (any, bool) {
+	var cur any
+	if len(bytes.TrimSpace(raw)) == 0 || json.Unmarshal(raw, &cur) != nil {
+		return nil, false
+	}
+	for _, s := range strings.Split(strings.TrimPrefix(path, absentBodyPrefix), ".") {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if cur, ok = obj[s]; !ok {
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
+// explainAbsent returns a "present" difference for each absent path the
+// request does carry.
+func (rm *RequestMatcher) explainAbsent(req MatchableRequest) []Difference {
+	var diffs []Difference
+	for _, p := range canonicalAbsentList(rm.Absent) {
+		var got json.RawMessage
+		var present bool
+		switch {
+		case strings.HasPrefix(p, absentQueryPrefix):
+			var vals []string
+			if vals, present = req.Query[strings.TrimPrefix(p, absentQueryPrefix)]; present {
+				got = rawValues(vals)
+			}
+		case strings.HasPrefix(p, absentHeaderPrefix):
+			name := strings.TrimPrefix(p, absentHeaderPrefix)
+			var vals []string
+			if vals, present = req.Headers[name]; present {
+				got = rawString(strings.Join(vals, ", "))
+				if IsRedactedHeader(name) {
+					got = rawString(RedactedValue)
+				}
+			}
+		case strings.HasPrefix(p, absentBodyPrefix):
+			var v any
+			if v, present = bodyValue(req.Body, p); present {
+				got = rawJSON(v)
+			}
+		}
+		if present {
+			diffs = append(diffs, Difference{Field: p, Reason: "present", Got: got})
+		}
+	}
+	return diffs
+}

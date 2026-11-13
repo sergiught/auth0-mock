@@ -801,7 +801,7 @@ components:
       required: [field, reason]
       properties:
         field: { type: string, example: body.blocked }
-        reason: { type: string, enum: [mismatch, missing, invalid_json] }
+        reason: { type: string, enum: [mismatch, missing, present, invalid_json] }
         want: { description: Value the stub required (raw JSON). }
         got: { description: Value the request carried (raw JSON). }
     Expectation:
@@ -858,6 +858,17 @@ components:
             extras allowed; a repeated value must appear that many times. A
             one-element list is the same as the string. An empty list or a
             non-string item is rejected with `invalid_request_match`.
+        absent:
+          type: array
+          items: { type: string }
+          description: |
+            Field paths the request must not carry: `query.<key>`,
+            `headers.<Name>` (case-insensitive) or `body.<a>.<b>` (a dotted
+            object path, no array indexing). A field is present when it exists,
+            even with an empty value or JSON null. A matcher with only `absent`
+            is not a catch-all. A path without one of those prefixes, with an
+            empty segment, naming an undeclared query parameter, or that the
+            matcher also requires is rejected with `invalid_request_match`.
         body:
           description: JSON the request body must contain (subset match).
     ResponseDef:

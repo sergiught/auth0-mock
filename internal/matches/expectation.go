@@ -79,6 +79,9 @@ type RequestMatcher struct {
 	Query   map[string][]string `json:"query,omitempty"`
 	Headers map[string]string   `json:"headers,omitempty"`
 	Body    json.RawMessage     `json:"body,omitempty"`
+	// Absent lists field paths the request must not carry: "query.<key>",
+	// "headers.<Name>" or "body.<a>.<b>".
+	Absent []string `json:"absent,omitempty"`
 
 	// The decodeErr field is the first invalid query value UnmarshalJSON met; Prepare
 	// reports it as invalid_request_match.

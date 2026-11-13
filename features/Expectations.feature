@@ -190,6 +190,45 @@ Feature: Expectation registration and lookup
     Then I receive a 400 response
     And the response body contains "invalid_request_match"
 
+  Scenario: An absent matcher only matches when the field is not in the request
+    Given the mock is running
+    And I have a valid bearer token
+    And I register an expectation for "POST /api/v2/users" with response:
+      """
+      {"status":201,"body":{"user_id":"auth0|catchall"}}
+      """
+    And I register the expectation "POST /api/v2/users":
+      """
+      {"request":{"absent":["body.password"]},"response":{"status":201,"body":{"user_id":"auth0|nopassword"}}}
+      """
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"a@x","connection":"Username-Password-Authentication"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "user_id" equals "auth0|nopassword"
+    When I send "POST /api/v2/users" with body and a valid bearer:
+      """
+      {"email":"a@x","connection":"Username-Password-Authentication","password":"s3cret"}
+      """
+    Then I receive a 201 response
+    And the response JSON path "user_id" equals "auth0|catchall"
+
+  Scenario: An absent path that is malformed or also required is rejected
+    Given the mock is running
+    When I attempt to register the expectation "POST /api/v2/users":
+      """
+      {"request":{"absent":["password"]},"response":{"status":201,"body":{"user_id":"auth0|x"}}}
+      """
+    Then I receive a 400 response
+    And the response body contains "invalid_request_match"
+    When I attempt to register the expectation "POST /api/v2/users":
+      """
+      {"request":{"body":{"email":"a@x"},"absent":["body.email"]},"response":{"status":201,"body":{"user_id":"auth0|x"}}}
+      """
+    Then I receive a 400 response
+    And the response body contains "invalid_request_match"
+
   Scenario: A sequenced stub answers in order and repeats its last answer
     Given the mock is running
     And I have a valid bearer token

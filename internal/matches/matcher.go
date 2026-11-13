@@ -25,6 +25,7 @@ func (rm *RequestMatcher) IsEmpty() bool {
 	body := bytes.TrimSpace(rm.Body)
 	return len(rm.Query) == 0 &&
 		len(rm.Headers) == 0 &&
+		len(rm.Absent) == 0 &&
 		(len(body) == 0 || string(body) == "null")
 }
 
@@ -44,7 +45,7 @@ func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
 
 // requestMatcherEqual reports whether two matchers are equivalent. Two nil
 // (catch-all) matchers are equal; otherwise the query and header maps must
-// be equal (query lists as multisets) and the bodies must be semantically equal JSON.
+// be equal (query lists as multisets), absent paths the same set, and the bodies must be semantically equal JSON.
 func requestMatcherEqual(a, b *RequestMatcher) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -53,6 +54,9 @@ func requestMatcherEqual(a, b *RequestMatcher) bool {
 		return false
 	}
 	if !reflect.DeepEqual(a.Headers, b.Headers) {
+		return false
+	}
+	if !absentEqual(a.Absent, b.Absent) {
 		return false
 	}
 	return jsonEqual(a.Body, b.Body)

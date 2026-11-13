@@ -86,6 +86,17 @@ func (b *ExpectationBuilder) WithQueryAll(key string, values ...string) *Expecta
 	return b
 }
 
+// WithoutField narrows the matcher to requests that do not carry the field at
+// path: "query.<key>", "headers.<Name>" (case-insensitive) or
+// "body.<a>.<b>" (a dotted object path; no array indexing). A field is
+// present when it exists, even with an empty value or JSON null. Repeated
+// calls add more paths. The server rejects a path the matcher also requires.
+func (b *ExpectationBuilder) WithoutField(path string) *ExpectationBuilder {
+	b.ensureRequest()
+	b.exp.Request.Absent = append(b.exp.Request.Absent, path)
+	return b
+}
+
 // WithBodyJSON narrows the matcher to requests whose JSON body is a
 // superset of v. V is marshalled with json.Marshal — if marshalling
 // fails (chan / func / cyclic value) the error is captured on the
