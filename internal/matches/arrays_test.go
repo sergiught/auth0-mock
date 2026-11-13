@@ -2,6 +2,7 @@ package matches
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,4 +151,15 @@ func TestArrayContains_MixesScalarsAndObjects(t *testing.T) {
 	assert.True(t, arrayContains(want, got, newContainsBudget()))
 	assert.False(t, arrayContains(append(want, "a"), got, newContainsBudget()))
 	assert.False(t, arrayContains([]any{map[string]any{}}, []any{"a"}, newContainsBudget()))
+}
+
+func TestArrayContains_CandidatePairsBuildNoDiagnostics(t *testing.T) {
+	// Not parallel: testing.AllocsPerRun panics in a parallel test.
+	want := []any{map[string]any{"big": strings.Repeat("x", 500<<10)}}
+	got := make([]any, 10_000)
+	for i := range got {
+		got[i] = map[string]any{}
+	}
+	allocs := testing.AllocsPerRun(1, func() { arrayContains(want, got, newContainsBudget()) })
+	assert.Less(t, allocs, 100.0, "candidate pairs must not serialize mismatches")
 }

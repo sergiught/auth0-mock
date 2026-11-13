@@ -2,6 +2,7 @@ package matches
 
 import (
 	"fmt"
+	"reflect"
 )
 
 // Values of RequestMatcher.Arrays. An omitted value means ArraysExact.
@@ -35,7 +36,8 @@ func (rm *RequestMatcher) validateArrays() error {
 }
 
 // maxContainsWork caps the work one contains-mode body match may do: every
-// array item looked at, value compared and pairing step costs one unit. A
+// array item looked at, value compared by fitsValue and pairing step costs
+// one unit. A
 // body that needs more does not match, so a huge request array cannot hold
 // the store's read lock for long.
 const maxContainsWork = 100_000
@@ -84,6 +86,34 @@ func arrayContains(want, got []any, cb *containsBudget) bool {
 	return pairComposites(wantComposite, gotComposite, cb)
 }
 
+// fitsValue reports whether got matches want in contains mode: objects
+// subset-matched, arrays by arrayContains, everything else deeply equal.
+// Unlike explainValue it builds no differences, so comparing a candidate
+// pair costs only the values it visits, each one unit of cb.
+func fitsValue(want, got any, cb *containsBudget) bool {
+	if !cb.spend(1) {
+		return false
+	}
+	switch w := want.(type) {
+	case map[string]any:
+		g, ok := got.(map[string]any)
+		if !ok {
+			return false
+		}
+		for k, wv := range w {
+			gv, present := g[k]
+			if !present || !fitsValue(wv, gv, cb) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		g, ok := got.([]any)
+		return ok && arrayContains(w, g, cb)
+	}
+	return reflect.DeepEqual(want, got)
+}
+
 // isComposite reports whether v is a JSON object or array.
 func isComposite(v any) bool {
 	switch v.(type) {
@@ -102,7 +132,7 @@ func pairComposites(want, got []any, cb *containsBudget) bool {
 	fits := make([][]int, len(want))
 	for w := range want {
 		for g := range got {
-			fit := len(explainValue("", want[w], got[g], cb)) == 0
+			fit := fitsValue(want[w], got[g], cb)
 			if cb.left < 0 {
 				return false
 			}

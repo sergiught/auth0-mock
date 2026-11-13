@@ -112,12 +112,9 @@ func (rm *RequestMatcher) explainBody(gotBody []byte) []Difference {
 
 // explainValue walks want against got: object keys recurse (subset
 // semantics), arrays follow arrayContains when cb is set (contains mode),
-// everything else must be deeply equal. In contains mode each value costs
-// one unit of cb, and a spent budget reports a mismatch.
+// everything else must be deeply equal. It builds differences only along
+// the request body itself; candidate array pairs go through fitsValue.
 func explainValue(field string, want, got any, cb *containsBudget) []Difference {
-	if cb != nil && !cb.spend(1) {
-		return []Difference{{Field: field, Reason: "mismatch", Want: rawJSON(want), Got: rawJSON(got)}}
-	}
 	if wantArr, ok := want.([]any); ok && cb != nil {
 		if gotArr, ok := got.([]any); ok && arrayContains(wantArr, gotArr, cb) {
 			return nil
