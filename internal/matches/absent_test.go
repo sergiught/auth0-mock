@@ -75,6 +75,13 @@ func TestAbsent_Explain(t *testing.T) {
 	}, diffs)
 }
 
+func TestAbsent_ExplainReportsDuplicatePathOnce(t *testing.T) {
+	t.Parallel()
+	rm := &RequestMatcher{Absent: []string{"headers.x-foo", "headers.X-Foo"}}
+	diffs := rm.Explain(MatchableRequest{Headers: http.Header{"X-Foo": {"v"}}})
+	assert.Equal(t, []Difference{{Field: "headers.X-Foo", Reason: "present", Got: raw(`"v"`)}}, diffs)
+}
+
 func TestAbsent_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 	var rm RequestMatcher

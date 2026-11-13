@@ -26,11 +26,14 @@ func canonicalAbsent(path string) string {
 	return path
 }
 
-// canonicalAbsentList returns the paths in canonical form, keeping order.
+// canonicalAbsentList returns the paths in canonical form, keeping the
+// first occurrence of each in order and dropping repeats.
 func canonicalAbsentList(paths []string) []string {
-	out := make([]string, len(paths))
-	for i, p := range paths {
-		out[i] = canonicalAbsent(p)
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if c := canonicalAbsent(p); !slices.Contains(out, c) {
+			out = append(out, c)
+		}
 	}
 	return out
 }
