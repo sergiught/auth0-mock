@@ -84,6 +84,8 @@ func TestQueryListRegistrationRejections(t *testing.T) {
 		"non-string item": `{"query":{"fields":["a",1]}}`,
 		"number value":    `{"query":{"fields":5}}`,
 		"object value":    `{"query":{"fields":{"a":"b"}}}`,
+		"null value":      `{"query":{"fields":null}}`,
+		"null item":       `{"query":{"fields":["a",null]}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var reg matches.Registration

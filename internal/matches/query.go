@@ -74,12 +74,13 @@ func decodeQueryValue(raw json.RawMessage) ([]string, error) {
 		}
 		return []string{s}, nil
 	case len(raw) > 0 && raw[0] == '[':
-		var vals []string
-		if err := json.Unmarshal(raw, &vals); err != nil {
+		var items []*string
+		if err := json.Unmarshal(raw, &items); err != nil || slices.Contains(items, nil) {
 			return nil, errors.New("list entries must all be strings")
 		}
-		if vals == nil {
-			vals = []string{}
+		vals := make([]string, len(items))
+		for i, v := range items {
+			vals[i] = *v
 		}
 		return vals, nil
 	}
