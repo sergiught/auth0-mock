@@ -34,20 +34,27 @@ type Deps struct {
 	Permissions      *permissions.Store
 	PKCE             *pkce.Store
 	MFA              *mfa.Store
-	// Sessions may be nil (no remembered profiles).
+	// Sessions may be nil (no remembered profiles). With
+	// TokenEndpointStrict, Mount creates one when it is nil.
 	Sessions                     *session.Store
 	LogoutAllowedURLs            []string
 	AuthorizeAllowedRedirectURIs []string
 	// AuthorizeErrors may be nil (no /authorize failure rules).
 	AuthorizeErrors *authorizeerr.Store
 	// TokenEndpointStrict turns on the authorization-code checks at
-	// /oauth/token and drops refresh_token without offline_access (see
+	// /oauth/token, drops refresh_token without offline_access, rotates
+	// refresh tokens and makes /oauth/revoke end the chain (see
 	// TokenHandler.Strict).
 	TokenEndpointStrict bool
 }
 
 // Mount registers all Auth API endpoints on d.Router.
 func Mount(d Deps) {
+	if d.TokenEndpointStrict && d.Sessions == nil {
+		// Strict refresh tokens are only valid once stored, so strict mode
+		// needs a session store to issue usable ones.
+		d.Sessions = session.NewStore()
+	}
 	tok := &TokenHandler{
 		Keys:             d.Keys,
 		Issuer:           d.Issuer,
@@ -78,7 +85,7 @@ func Mount(d Deps) {
 	oidcLogout := &OIDCLogoutHandler{Keys: d.Keys, AllowedReturnURLs: d.LogoutAllowedURLs, Sessions: d.Sessions}
 	d.Router.Method(http.MethodGet, "/oidc/logout", oidcLogout)
 	d.Router.Method(http.MethodPost, "/oidc/logout", oidcLogout)
-	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{})
+	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{Strict: d.TokenEndpointStrict, Sessions: d.Sessions})
 	d.Router.Method(http.MethodPost, "/dbconnections/signup", &DBConnectionsSignupHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/change_password", &DBConnectionsChangePasswordHandler{})
 	d.Router.Method(http.MethodPost, "/passwordless/start", &PasswordlessStartHandler{})

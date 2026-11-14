@@ -433,6 +433,65 @@ func TestDebugDump_EndToEndRedaction(t *testing.T) {
 	assert.Contains(t, sb.String(), "legit=value")
 }
 
+// TestDebugDump_RedactsRevokeToken checks that the `token` field of an
+// /oauth/revoke body (a refresh token) is scrubbed in form and JSON bodies.
+func TestDebugDump_RedactsRevokeToken(t *testing.T) {
+	cases := []struct {
+		name, contentType, body, want string
+	}{
+		{"form", "application/x-www-form-urlencoded", "client_id=abc&token=rt-secret-123", "token=<redacted>"},
+		{"json", "application/json", `{"client_id":"abc","token":"rt-secret-123"}`, `"token": "<redacted>"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var sb strings.Builder
+			var bodyBuf bytes.Buffer
+			h := DebugDump(zerolog.New(&sb), &bodyBuf)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest("POST", "/oauth/revoke", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			h.ServeHTTP(httptest.NewRecorder(), req)
+
+			combined := sb.String() + bodyBuf.String()
+			assert.NotContains(t, combined, "rt-secret-123", "revoke token value leaks")
+			assert.Contains(t, bodyBuf.String(), tc.want)
+			assert.Contains(t, bodyBuf.String(), "abc", "client_id stays readable")
+		})
+	}
+}
+
+// TestRedact_EncodedKeys checks that a sensitive key spelled with
+// percent-encoding (form, query) or a JSON \u escape is still redacted.
+func TestRedact_EncodedKeys(t *testing.T) {
+	form := string(redactSensitiveInBody([]byte("client_id=abc&to%6Ben=rt-secret-1&refresh%5ftoken=rt-secret-2")))
+	assert.NotContains(t, form, "rt-secret")
+	assert.Contains(t, form, "client_id=abc")
+	assert.Contains(t, form, "to%6Ben=<redacted>")
+
+	query := scrubSensitiveQuery("legit=value&access%5Ftoken=at-secret")
+	assert.NotContains(t, query, "at-secret")
+	assert.Contains(t, query, "legit=value")
+
+	js := string(redactSensitiveInBody([]byte(`{"client_id":"abc","token":"rt-secret-3"}`)))
+	assert.NotContains(t, js, "rt-secret")
+	assert.Contains(t, js, `"client_id":"abc"`)
+}
+
+// A body cut off by MaxBodyBytes or debugCaptureCap can end inside a
+// sensitive string value, with no closing quote.
+func TestRedact_TruncatedJSONValue(t *testing.T) {
+	for _, body := range []string{
+		`{"client_id":"abc","token":"rt-secret-tail`,
+		`{"client_id":"abc","refresh_token": "rt-secret-esc\`,
+		`{"client_id":"abc","password":"rt-secret-\"quoted`,
+	} {
+		js := string(redactSensitiveInBody([]byte(body)))
+		assert.NotContains(t, js, "rt-secret", body)
+		assert.Contains(t, js, `"client_id":"abc"`, body)
+	}
+}
+
 func TestFlatHeaders_RedactsAndSorts(t *testing.T) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")

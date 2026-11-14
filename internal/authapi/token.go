@@ -60,12 +60,26 @@ type TokenHandler struct {
 	// Strict makes the authorization_code grant fail with 403 invalid_grant
 	// when the code is unknown, used or expired, or when redirect_uri or
 	// client_id differ from the /authorize request. It also omits
-	// refresh_token when the scope lacks offline_access. Needs PKCE to be set.
+	// refresh_token when the scope lacks offline_access, rotates refresh
+	// tokens on every use, and fails a reused, revoked or unknown refresh
+	// token, or a different client_id, with 403 invalid_grant. Needs PKCE to
+	// be set.
 	Strict bool
 }
 
 // errInvalidAuthCode is the error_description of a strict-mode code failure.
 const errInvalidAuthCode = "Invalid authorization code"
+
+// errUnknownRefreshToken is the error_description of a strict-mode refresh
+// failure for a token that is unknown, already used or revoked.
+const errUnknownRefreshToken = "Unknown or invalid refresh token."
+
+// refreshClientMismatch is the error_description when a refresh token is
+// presented by a client other than the one it was issued to.
+func refreshClientMismatch(issued, requested string) string {
+	return "The client associated with this refresh token (" + issued +
+		") is different than the one sent in the request (" + requested + ")."
+}
 
 // strictCodeError reports whether strict mode must reject the code exchange.
 func strictCodeError(entry pkce.Entry, found bool, req *tokenRequest) bool {
@@ -92,12 +106,18 @@ func (h *TokenHandler) rememberProfile(subject string, extra map[string]any) {
 // remembers the grant so the refresh_token grant can return the same user. Call
 // it only after the mints succeeded.
 func (h *TokenHandler) issueRefreshToken(g session.Grant, idExtra map[string]any) string {
-	token := uuid.NewString()
+	token, g := newRefreshGrant(g, idExtra)
 	if h.Sessions != nil {
-		g.Profile = profileOf(idExtra)
 		h.Sessions.RememberRefresh(token, g)
 	}
 	return token
+}
+
+// newRefreshGrant returns a fresh refresh token and g with the profile of
+// the id_token claims idExtra.
+func newRefreshGrant(g session.Grant, idExtra map[string]any) (string, session.Grant) {
+	g.Profile = profileOf(idExtra)
+	return uuid.NewString(), g
 }
 
 // offlineRefreshToken is issueRefreshToken for the non-refresh grants. In
@@ -591,6 +611,10 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 }
 
 func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	if h.Strict {
+		h.respondStrictRefreshToken(w, r, req, aud)
+		return
+	}
 	var grant session.Grant
 	var known bool
 	if h.Sessions != nil {
@@ -600,6 +624,42 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 		h.respondUnknownRefreshToken(w, r, req, aud)
 		return
 	}
+	h.mintRefreshGrant(w, r, req, aud, grant, h.issueRefreshToken)
+}
+
+// respondStrictRefreshToken redeems the refresh token once, answers 403
+// invalid_grant for unknown, reused or other-client tokens, and rotates the
+// token within its chain.
+func (h *TokenHandler) respondStrictRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	if req.RefreshToken == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: refresh_token")
+		return
+	}
+	var grant session.Grant
+	result := session.RedeemUnknown
+	if h.Sessions != nil {
+		grant, result = h.Sessions.RedeemRefresh(req.RefreshToken, req.ClientID)
+	}
+	switch result {
+	case session.RedeemOK:
+	case session.RedeemClientMismatch:
+		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", refreshClientMismatch(grant.ClientID, req.ClientID))
+		return
+	default:
+		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", errUnknownRefreshToken)
+		return
+	}
+	h.mintRefreshGrant(w, r, req, aud, grant, func(g session.Grant, idExtra map[string]any) string {
+		token, g := newRefreshGrant(g, idExtra)
+		h.Sessions.RotateRefresh(req.RefreshToken, token, g)
+		return token
+	})
+}
+
+// mintRefreshGrant mints the refresh_token grant response for a stored grant.
+// Issue returns the refresh token to hand back, called only after the mints
+// succeeded.
+func (h *TokenHandler) mintRefreshGrant(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string, grant session.Grant, issue func(session.Grant, map[string]any) string) {
 	// Request values win; an omitted audience/scope falls back to the stored
 	// one when non-empty (not the defaulted aud, which would always shadow it);
 	// otherwise the already-defaulted aud stands.
@@ -653,7 +713,7 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(grant, idExtra),
+		RefreshToken: issue(grant, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        scope,

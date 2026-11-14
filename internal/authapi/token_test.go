@@ -1119,3 +1119,110 @@ func TestAuthCode_Lenient_UnknownCodeStillWorks(t *testing.T) {
 	w := postCodeExchange(h, codeForm("nope"), "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
+
+func refreshReq(r chi.Router, rt, clientID string) *httptest.ResponseRecorder {
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}}
+	if clientID != "" {
+		form.Set("client_id", clientID)
+	}
+	return postTokenForm(r, form)
+}
+
+func refreshOK(t *testing.T, r chi.Router, rt, clientID string) string {
+	t.Helper()
+	w := refreshReq(r, rt, clientID)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	return resp.RefreshToken
+}
+
+func requireRefreshError(t *testing.T, w *httptest.ResponseRecorder, desc string) {
+	t.Helper()
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	var m map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &m))
+	assert.Equal(t, "invalid_grant", m["error"])
+	assert.Equal(t, desc, m["error_description"])
+}
+
+func requireUnknownRefresh(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	requireRefreshError(t, w, "Unknown or invalid refresh token.")
+}
+
+func TestRefresh_Strict_Unknown403(t *testing.T) {
+	r, _ := loginForRefresh(t, true)
+	requireUnknownRefresh(t, refreshReq(r, "nope", "demo"))
+}
+
+func TestRefresh_Strict_MissingRefreshToken400(t *testing.T) {
+	r, _ := loginForRefresh(t, true)
+	w := refreshReq(r, "", "demo")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	var m map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &m))
+	assert.Equal(t, "invalid_request", m["error"])
+	assert.Equal(t, "Missing required parameter: refresh_token", m["error_description"])
+}
+
+func TestRefresh_Strict_RotatesAndOldFails(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+	rt2 := refreshOK(t, r, rt1, "demo")
+	assert.NotEmpty(t, rt2)
+	assert.NotEqual(t, rt1, rt2)
+	requireUnknownRefresh(t, refreshReq(r, rt1, "demo"))
+	requireUnknownRefresh(t, refreshReq(r, rt2, "demo"))
+}
+
+func TestRefresh_Strict_ClientMismatch(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+	requireRefreshError(t, refreshReq(r, rt1, "other"),
+		"The client associated with this refresh token (demo) is different than the one sent in the request (other).")
+	assert.Equal(t, http.StatusOK, refreshReq(r, rt1, "demo").Code)
+}
+
+func TestRefresh_Strict_NoClientIDUsesStored(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+	w := refreshReq(r, rt1, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	parts := strings.Split(resp.IDToken, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var claims struct {
+		Aud any `json:"aud"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &claims))
+	switch aud := claims.Aud.(type) {
+	case string:
+		assert.Equal(t, "demo", aud)
+	case []any:
+		assert.Contains(t, aud, "demo")
+	default:
+		t.Fatalf("unexpected aud claim: %v", claims.Aud)
+	}
+}
+
+func TestRefresh_Strict_BasicAuthClient(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(
+		url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt1}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("other", "s")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	requireRefreshError(t, w,
+		"The client associated with this refresh token (demo) is different than the one sent in the request (other).")
+}
+
+func TestRefresh_Lenient_Unchanged(t *testing.T) {
+	r, rt1 := loginForRefresh(t, false)
+	assert.Equal(t, http.StatusOK, refreshReq(r, rt1, "demo").Code)
+	assert.Equal(t, http.StatusOK, refreshReq(r, rt1, "demo").Code)
+	w := refreshReq(r, "nope", "demo")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "access_token")
+}

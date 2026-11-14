@@ -222,3 +222,125 @@ func TestLoginEvictsOldest(t *testing.T) {
 	_, ok = s.Login(last)
 	assert.True(t, ok)
 }
+
+func TestRedeemRefresh_Unknown(t *testing.T) {
+	s := NewStore()
+	_, res := s.RedeemRefresh("nope", "demo")
+	assert.Equal(t, RedeemUnknown, res)
+}
+
+func TestRedeemRefresh_FirstUseOK_SecondUseReusedRevokesChain(t *testing.T) {
+	s := NewStore()
+	g := Grant{Subject: "alice", ClientID: "demo"}
+	s.RememberRefresh("t1", g)
+	s.RotateRefresh("t1", "t2", g)
+
+	got, res := s.RedeemRefresh("t1", "demo")
+	assert.Equal(t, RedeemOK, res)
+	assert.Equal(t, "alice", got.Subject)
+	_, res = s.RedeemRefresh("t1", "demo")
+	assert.Equal(t, RedeemReused, res)
+	_, res = s.RedeemRefresh("t2", "demo")
+	assert.Equal(t, RedeemUnknown, res)
+}
+
+func TestRedeemRefresh_ClientMismatchDoesNotBurn(t *testing.T) {
+	s := NewStore()
+	s.RememberRefresh("t1", Grant{Subject: "alice", ClientID: "demo"})
+
+	got, res := s.RedeemRefresh("t1", "other")
+	assert.Equal(t, RedeemClientMismatch, res)
+	assert.Equal(t, "demo", got.ClientID)
+	_, res = s.RedeemRefresh("t1", "demo")
+	assert.Equal(t, RedeemOK, res)
+}
+
+func TestRedeemRefresh_EmptyClientNeverMismatches(t *testing.T) {
+	s := NewStore()
+	s.RememberRefresh("t1", Grant{ClientID: "demo"})
+	s.RememberRefresh("t2", Grant{})
+	_, res := s.RedeemRefresh("t1", "")
+	assert.Equal(t, RedeemOK, res)
+	_, res = s.RedeemRefresh("t2", "x")
+	assert.Equal(t, RedeemOK, res)
+}
+
+func TestRotateRefresh_AfterRevokeStoresNothing(t *testing.T) {
+	s := NewStore()
+	s.RememberRefresh("t1", Grant{Subject: "alice"})
+	s.RevokeRefreshChain("t1")
+	s.RotateRefresh("t1", "t2", Grant{Subject: "alice"})
+	_, ok := s.Refresh("t2")
+	assert.False(t, ok)
+}
+
+func TestRevokeRefreshChain_FromAnyMember(t *testing.T) {
+	s := NewStore()
+	g := Grant{Subject: "alice", ClientID: "demo"}
+	s.RememberRefresh("t1", g)
+	s.RotateRefresh("t1", "t2", g)
+	s.RotateRefresh("t2", "t3", g)
+	s.RememberRefresh("u1", g)
+
+	s.RevokeRefreshChain("t2")
+	for _, tok := range []string{"t1", "t2", "t3"} {
+		_, res := s.RedeemRefresh(tok, "demo")
+		assert.Equal(t, RedeemUnknown, res, tok)
+	}
+	_, res := s.RedeemRefresh("u1", "demo")
+	assert.Equal(t, RedeemOK, res)
+	s.RevokeRefreshChain("missing")
+}
+
+func TestRedeemRefresh_Concurrent(t *testing.T) {
+	s := NewStore()
+	s.RememberRefresh("t1", Grant{ClientID: "demo"})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	counts := map[RedeemResult]int{}
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, res := s.RedeemRefresh("t1", "demo")
+			mu.Lock()
+			counts[res]++
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	assert.Equal(t, 1, counts[RedeemOK])
+	assert.Equal(t, 49, counts[RedeemReused]+counts[RedeemUnknown])
+}
+
+func TestRefreshChain_EvictionAndRevoke(t *testing.T) {
+	s := NewStore()
+	g := Grant{Subject: "u", ClientID: "demo"}
+	s.RememberRefresh("head", g)
+	s.RotateRefresh("head", "next", g)
+	for i := 0; i < MaxEntries-1; i++ {
+		s.RememberRefresh(fmt.Sprintf("f%d", i), g)
+	}
+	_, res := s.RedeemRefresh("head", "demo")
+	assert.Equal(t, RedeemUnknown, res)
+	_, ok := s.Refresh("next")
+	assert.True(t, ok)
+
+	s.RevokeRefreshChain("next")
+	_, ok = s.Refresh("next")
+	assert.False(t, ok)
+	assert.LessOrEqual(t, len(s.refreshOrder), MaxEntries)
+	assert.Equal(t, len(s.refresh), len(s.refreshOrder))
+}
+
+func TestClear_ForgetsChains(t *testing.T) {
+	s := NewStore()
+	g := Grant{ClientID: "demo"}
+	s.RememberRefresh("t1", g)
+	s.RotateRefresh("t1", "t2", g)
+	s.Clear()
+	for _, tok := range []string{"t1", "t2"} {
+		_, res := s.RedeemRefresh(tok, "demo")
+		assert.Equal(t, RedeemUnknown, res, tok)
+	}
+}
