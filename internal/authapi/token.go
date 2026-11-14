@@ -103,12 +103,18 @@ func (h *TokenHandler) rememberProfile(subject string, extra map[string]any) {
 // remembers the grant so the refresh_token grant can return the same user. Call
 // it only after the mints succeeded.
 func (h *TokenHandler) issueRefreshToken(g session.Grant, idExtra map[string]any) string {
-	token := uuid.NewString()
+	token, g := newRefreshGrant(g, idExtra)
 	if h.Sessions != nil {
-		g.Profile = profileOf(idExtra)
 		h.Sessions.RememberRefresh(token, g)
 	}
 	return token
+}
+
+// newRefreshGrant returns a fresh refresh token and g with the profile of
+// the id_token claims idExtra.
+func newRefreshGrant(g session.Grant, idExtra map[string]any) (string, session.Grant) {
+	g.Profile = profileOf(idExtra)
+	return uuid.NewString(), g
 }
 
 // offlineRefreshToken is issueRefreshToken for the non-refresh grants. In
@@ -641,8 +647,7 @@ func (h *TokenHandler) respondStrictRefreshToken(w http.ResponseWriter, r *http.
 		return
 	}
 	h.mintRefreshGrant(w, r, req, aud, grant, func(g session.Grant, idExtra map[string]any) string {
-		token := uuid.NewString()
-		g.Profile = profileOf(idExtra)
+		token, g := newRefreshGrant(g, idExtra)
 		h.Sessions.RotateRefresh(req.RefreshToken, token, g)
 		return token
 	})
