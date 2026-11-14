@@ -478,6 +478,20 @@ func TestRedact_EncodedKeys(t *testing.T) {
 	assert.Contains(t, js, `"client_id":"abc"`)
 }
 
+// A body cut off by MaxBodyBytes or debugCaptureCap can end inside a
+// sensitive string value, with no closing quote.
+func TestRedact_TruncatedJSONValue(t *testing.T) {
+	for _, body := range []string{
+		`{"client_id":"abc","token":"rt-secret-tail`,
+		`{"client_id":"abc","refresh_token": "rt-secret-esc\`,
+		`{"client_id":"abc","password":"rt-secret-\"quoted`,
+	} {
+		js := string(redactSensitiveInBody([]byte(body)))
+		assert.NotContains(t, js, "rt-secret", body)
+		assert.Contains(t, js, `"client_id":"abc"`, body)
+	}
+}
+
 func TestFlatHeaders_RedactsAndSorts(t *testing.T) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")

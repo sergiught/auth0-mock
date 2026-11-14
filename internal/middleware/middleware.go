@@ -582,9 +582,11 @@ func isSensitiveField(name string) bool {
 
 // jsonPairRE matches "key":"value" inside JSON-encoded bodies. Both
 // character classes `[^"\\]*(?:\\.[^"\\]*)*` skip over escapes such as
-// `\"` and `\u006b`, so neither close-quote is mis-detected.
+// `\"` and `\u006b`, so neither close-quote is mis-detected. The value
+// may also run to the end of the body (a dangling `\` included): a body
+// cut off by MaxBodyBytes or debugCaptureCap can end mid-value.
 var jsonPairRE = regexp.MustCompile(
-	`"([^"\\]*(?:\\.[^"\\]*)*)"(\s*:\s*)"[^"\\]*(?:\\.[^"\\]*)*"`,
+	`"([^"\\]*(?:\\.[^"\\]*)*)"(\s*:\s*)"[^"\\]*(?:\\.[^"\\]*)*(?:"|\\?\z)`,
 )
 
 // formPairRE matches key=value inside x-www-form-urlencoded request
