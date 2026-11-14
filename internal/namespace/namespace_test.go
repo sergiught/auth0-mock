@@ -167,6 +167,16 @@ func TestDispatcher_EncodedPrefixWithoutRest(t *testing.T) {
 	}
 }
 
+func TestDispatcher_EncodedSlashInPrefixRejected(t *testing.T) {
+	f := newFixture(10)
+	for _, p := range []string{"/ns%2Fa/api/v2/users/x%2Fy", "/ns%2Fa/x", "/ns/a%2Fb/x"} {
+		w := f.do(http.MethodGet, p, "")
+		assert.Equal(t, http.StatusBadRequest, w.Code, p)
+		assert.Equal(t, "invalid_namespace", errCode(t, w), p)
+	}
+	assert.Zero(t, f.builds.Load())
+}
+
 func TestDispatcher_ConcurrentCreateBuildsOnce(t *testing.T) {
 	f := newFixture(10)
 	var wg sync.WaitGroup
