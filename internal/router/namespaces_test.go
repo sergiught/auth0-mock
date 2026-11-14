@@ -197,6 +197,56 @@ func TestNamespaces_SeedApplied(t *testing.T) {
 	assert.Contains(t, getUser(t, h, "").Body.String(), "seeded")
 }
 
+func TestNamespaces_SeedApplied_PlainResetReseeds(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "seed.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("expectations:\n  - method: GET\n    path: /api/v2/users/1\n    response: {status: 200, body: {name: seeded}}\n"), 0o600))
+	h := newNamespaceRouter(t, 3, path)
+
+	rec := nsDo(t, h, http.MethodPost, "/admin0/expectations", "a",
+		`{"method":"GET","path":"/api/v2/users/2","response":{"status":200,"body":{"name":"extra"}}}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	tok := nsToken(t, h, "a")
+	get := func(p string) *httptest.ResponseRecorder {
+		return nsDo(t, h, http.MethodGet, p, "a", "", "Authorization", "Bearer "+tok)
+	}
+	require.Equal(t, http.StatusOK, get("/api/v2/users/2").Code)
+
+	require.Equal(t, http.StatusNoContent, nsDo(t, h, http.MethodPost, "/admin0/reset", "a", "").Code)
+	assert.Contains(t, get("/api/v2/users/1").Body.String(), "seeded")
+	assert.Equal(t, http.StatusNotFound, get("/api/v2/users/2").Code)
+}
+
+func TestNamespaces_JournalIsolated(t *testing.T) {
+	t.Parallel()
+	h := newNamespaceRouter(t, 3, "")
+	tokA, tokD := nsToken(t, h, "a"), nsToken(t, h, "")
+	nsDo(t, h, http.MethodGet, "/api/v2/users/in-a", "a", "", "Authorization", "Bearer "+tokA)
+	nsDo(t, h, http.MethodGet, "/api/v2/users/in-default", "", "", "Authorization", "Bearer "+tokD)
+
+	inA := nsDo(t, h, http.MethodGet, "/admin0/journal", "a", "").Body.String()
+	inDef := nsDo(t, h, http.MethodGet, "/admin0/journal", "", "").Body.String()
+	assert.Contains(t, inA, "in-a")
+	assert.NotContains(t, inA, "in-default")
+	assert.Contains(t, inDef, "in-default")
+	assert.NotContains(t, inDef, "in-a")
+}
+
+func TestNamespaces_AuthorizeErrorsIsolated(t *testing.T) {
+	t.Parallel()
+	h := newNamespaceRouter(t, 3, "")
+	rec := nsDo(t, h, http.MethodPost, "/admin0/authorize-errors", "a",
+		`{"match":{"client_id":"abc"},"error":"access_denied"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	const q = "/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&response_type=code"
+	inA := nsDo(t, h, http.MethodGet, q, "a", "")
+	assert.Contains(t, inA.Header().Get("Location"), "error=access_denied")
+	for _, ns := range []string{"", "header:b"} {
+		assert.NotContains(t, nsDo(t, h, http.MethodGet, q, ns, "").Header().Get("Location"), "access_denied", ns)
+	}
+}
+
 func TestNamespaces_DeleteClosesEvents(t *testing.T) {
 	t.Parallel()
 	h := newNamespaceRouter(t, 3, "")
