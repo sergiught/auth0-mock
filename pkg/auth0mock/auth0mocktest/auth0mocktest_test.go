@@ -96,7 +96,8 @@ type fakeT struct {
 	cleanups     []func()
 }
 
-func (f *fakeT) Helper() {}
+func (f *fakeT) Helper()      {}
+func (f *fakeT) Name() string { return "fake" }
 func (f *fakeT) Fatalf(format string, args ...any) {
 	f.fatalCalled.Store(true)
 	f.fatalText = fmt.Sprintf(format, args...)
@@ -329,6 +330,11 @@ func TestMustFindCall_FailsWithNone(t *testing.T) {
 // newNamespaceMock runs the real router with room for many namespaces.
 func newNamespaceMock(t *testing.T) (*httptest.Server, *auth0mock.Client) {
 	t.Helper()
+	return newNamespaceMockMax(t, 16)
+}
+
+func newNamespaceMockMax(t *testing.T, namespaceMax int) (*httptest.Server, *auth0mock.Client) {
+	t.Helper()
 	const issuer = "https://mock/"
 	openapiSpec, err := spec.Load(api.ManagementOpenAPIJSON)
 	require.NoError(t, err)
@@ -342,7 +348,7 @@ func newNamespaceMock(t *testing.T) (*httptest.Server, *auth0mock.Client) {
 		Permissions: permissions.NewStore(), PKCE: pkce.NewStore(pkce.WithNow(clk.Now)), MFA: mfa.NewStore(mfa.WithNow(clk.Now)),
 		Keys: ks, Spec: openapiSpec, Validator: validator, Clock: clk,
 		Issuer: issuer, DefaultAudience: issuer + "api/v2/",
-		Journal: journal.New(10), EventsReplayBuffer: 10, NamespaceMax: 16,
+		Journal: journal.New(10), EventsReplayBuffer: 10, NamespaceMax: namespaceMax,
 	})
 	require.NoError(t, err)
 	srv := httptest.NewServer(h)
@@ -400,4 +406,12 @@ func TestIsolate_IDShape(t *testing.T) {
 		ns := auth0mocktest.Isolate(t, root)
 		assert.Regexp(t, regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`), ns.NamespaceID())
 	})
+}
+
+func TestIsolate_FailsWhenNamespacesOff(t *testing.T) {
+	_, root := newNamespaceMockMax(t, 0)
+	ft := &fakeT{}
+	auth0mocktest.Isolate(ft, root)
+	require.True(t, ft.fatalCalled.Load())
+	assert.Contains(t, ft.fatalText, "the mock does not serve namespaces")
 }

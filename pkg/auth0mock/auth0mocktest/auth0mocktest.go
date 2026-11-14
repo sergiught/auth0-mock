@@ -33,7 +33,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -230,12 +232,23 @@ func Isolate(t testing.TB, c *auth0mock.Client) *auth0mock.Client {
 	if err != nil {
 		t.Fatalf("auth0mocktest: create namespace: %v", err)
 	}
-	// Cleanups run last-in first-out: verify runs before delete.
+	// Cleanups run last-in first-out: verify runs before delete. Delete is
+	// registered first so a failed probe below still removes the namespace.
 	t.Cleanup(func() {
 		if err := ns.DeleteNamespace(context.Background()); err != nil {
 			t.Errorf("auth0mocktest: delete namespace %s: %v", ns.NamespaceID(), err)
 		}
 	})
+	// One cheap call creates the namespace server-side, so a cap error or a
+	// server without namespaces surfaces here rather than at the first stub.
+	if _, err := ns.Expectations.List(context.Background()); err != nil {
+		var apiErr *auth0mock.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			t.Fatalf("auth0mocktest: Isolate: the mock does not serve namespaces (NAMESPACE_MAX=0, or a server older than namespaces)")
+		} else {
+			t.Fatalf("auth0mocktest: Isolate: %v", err)
+		}
+	}
 	t.Cleanup(func() { MustVerify(t, ns) })
 	return ns
 }
