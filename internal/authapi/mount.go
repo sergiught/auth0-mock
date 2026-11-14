@@ -34,7 +34,8 @@ type Deps struct {
 	Permissions      *permissions.Store
 	PKCE             *pkce.Store
 	MFA              *mfa.Store
-	// Sessions may be nil (no remembered profiles).
+	// Sessions may be nil (no remembered profiles). With
+	// TokenEndpointStrict, Mount creates one when it is nil.
 	Sessions                     *session.Store
 	LogoutAllowedURLs            []string
 	AuthorizeAllowedRedirectURIs []string
@@ -49,6 +50,11 @@ type Deps struct {
 
 // Mount registers all Auth API endpoints on d.Router.
 func Mount(d Deps) {
+	if d.TokenEndpointStrict && d.Sessions == nil {
+		// Strict refresh tokens are only valid once stored, so strict mode
+		// needs a session store to issue usable ones.
+		d.Sessions = session.NewStore()
+	}
 	tok := &TokenHandler{
 		Keys:             d.Keys,
 		Issuer:           d.Issuer,

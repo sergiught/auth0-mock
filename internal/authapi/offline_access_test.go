@@ -172,3 +172,22 @@ func loginForRefresh(t *testing.T, strict bool) (chi.Router, string) {
 	require.NotEmpty(t, rt)
 	return r, rt
 }
+
+// TestMount_StrictWithoutSessionsCanRefresh checks that strict mode mounted
+// without a session store still issues refresh tokens that work.
+func TestMount_StrictWithoutSessionsCanRefresh(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), PKCE: pkce.NewStore(), MFA: mfa.NewStore(), TokenEndpointStrict: true,
+	})
+	login := rawBody(t, r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"},
+		"password": {"x"}, "scope": {"openid offline_access"},
+	})
+	rt, _ := login["refresh_token"].(string)
+	require.NotEmpty(t, rt)
+	refreshOK(t, r, rt, "demo")
+}
