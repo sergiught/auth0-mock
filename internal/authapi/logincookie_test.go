@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
@@ -24,6 +25,18 @@ func TestSetLoginCookieHTTP(t *testing.T) {
 	assert.True(t, c[0].HttpOnly)
 	assert.False(t, c[0].Secure)
 	assert.Equal(t, http.SameSiteLaxMode, c[0].SameSite)
+}
+
+func TestSetLoginCookieNamespacePath(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/authorize", nil)
+	r = r.WithContext(jwks.WithIssuerPath(r.Context(), "ns/a/"))
+	w := httptest.NewRecorder()
+	setLoginCookie(w, r, "abc")
+	clearLoginCookie(w, r)
+	c := w.Result().Cookies()
+	require.Len(t, c, 2)
+	assert.Equal(t, "/ns/a/", c[0].Path)
+	assert.Equal(t, "/ns/a/", c[1].Path)
 }
 
 func TestSetLoginCookieHTTPS(t *testing.T) {

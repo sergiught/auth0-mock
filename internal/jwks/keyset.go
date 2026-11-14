@@ -34,6 +34,13 @@ func WithIssuerPath(ctx context.Context, path string) context.Context {
 	return context.WithValue(ctx, issuerPathKey{}, path)
 }
 
+// IssuerPath returns the issuer path carried by ctx (see WithIssuerPath), or
+// "" when there is none.
+func IssuerPath(ctx context.Context) string {
+	path, _ := ctx.Value(issuerPathKey{}).(string)
+	return path
+}
+
 // ResolveIssuer returns configured, unless it is AutoIssuer; then it returns
 // scheme://host/ built from r (https when r.TLS is set, host lowercased, port
 // kept as sent). When r's context carries an issuer path (WithIssuerPath),
