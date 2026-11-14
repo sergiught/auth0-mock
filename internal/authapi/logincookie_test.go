@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/namespace"
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
@@ -37,6 +38,49 @@ func TestSetLoginCookieNamespacePath(t *testing.T) {
 	require.Len(t, c, 2)
 	assert.Equal(t, "/ns/a/", c[0].Path)
 	assert.Equal(t, "/ns/a/", c[1].Path)
+}
+
+func TestLoginCookieNamePerNamespace(t *testing.T) {
+	cases := []struct{ name, id, issuerPath, wantName, wantPath string }{
+		{"default", "", "", "auth0", "/"},
+		{"header", "a", "", "auth0_ns_a", "/"},
+		{"prefix", "a", "ns/a/", "auth0_ns_a", "/ns/a/"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/authorize", nil)
+			ctx := r.Context()
+			if c.id != "" {
+				ctx = namespace.WithID(ctx, c.id)
+			}
+			if c.issuerPath != "" {
+				ctx = jwks.WithIssuerPath(ctx, c.issuerPath)
+			}
+			r = r.WithContext(ctx)
+			w := httptest.NewRecorder()
+			setLoginCookie(w, r, "abc")
+			clearLoginCookie(w, r)
+			cs := w.Result().Cookies()
+			require.Len(t, cs, 2)
+			for _, ck := range cs {
+				assert.Equal(t, c.wantName, ck.Name)
+				assert.Equal(t, c.wantPath, ck.Path)
+			}
+		})
+	}
+}
+
+func TestCurrentLoginNamespaceCookie(t *testing.T) {
+	s := session.NewStore()
+	id := s.StartLogin("auth0|a", time.Now())
+	r := httptest.NewRequest(http.MethodGet, "/authorize", nil)
+	r = r.WithContext(namespace.WithID(r.Context(), "a"))
+	r.AddCookie(&http.Cookie{Name: "auth0", Value: id})
+	_, _, ok := currentLogin(r, s)
+	assert.False(t, ok, "a plain auth0 cookie must be ignored in a named namespace")
+	r.AddCookie(&http.Cookie{Name: "auth0_ns_a", Value: id})
+	_, _, ok = currentLogin(r, s)
+	assert.True(t, ok)
 }
 
 func TestSetLoginCookieHTTPS(t *testing.T) {

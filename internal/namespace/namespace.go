@@ -132,10 +132,25 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	r2 = r2.WithContext(WithID(r2.Context(), id))
 	if viaPrefix {
 		r2 = r2.WithContext(jwks.WithIssuerPath(r2.Context(), "ns/"+id+"/"))
 	}
 	inst.Handler.ServeHTTP(w, r2)
+}
+
+type idKey struct{}
+
+// WithID returns ctx carrying the selected namespace id.
+func WithID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, idKey{}, id)
+}
+
+// ID returns the namespace id selected for the request, or "" for the
+// default namespace.
+func ID(ctx context.Context) string {
+	id, _ := ctx.Value(idKey{}).(string)
+	return id
 }
 
 // unprefixed returns path without a leading "/ns/<id>" segment pair.
