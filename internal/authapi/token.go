@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/go-chi/render"
@@ -94,6 +95,16 @@ func (h *TokenHandler) issueRefreshToken(g session.Grant, idExtra map[string]any
 		h.Sessions.RememberRefresh(token, g)
 	}
 	return token
+}
+
+// offlineRefreshToken is issueRefreshToken for the non-refresh grants. In
+// strict mode it returns "" (and remembers nothing) unless the grant's scope
+// includes offline_access.
+func (h *TokenHandler) offlineRefreshToken(g session.Grant, idExtra map[string]any) string {
+	if h.Strict && !slices.Contains(strings.Fields(g.Scope), "offline_access") {
+		return ""
+	}
+	return h.issueRefreshToken(g, idExtra)
 }
 
 // mfaChallengeResponse is the body returned alongside the 403 mfa_required.
@@ -240,7 +251,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -313,7 +324,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -569,7 +580,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -753,7 +764,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        scope,
