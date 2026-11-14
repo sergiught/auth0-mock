@@ -53,8 +53,10 @@ func canonicalAbsent(path string) string {
 // first occurrence of each in order and dropping repeats.
 func canonicalAbsentList(paths []string) []string {
 	out := make([]string, 0, len(paths))
+	seen := make(map[string]bool, len(paths))
 	for _, p := range paths {
-		if c := canonicalAbsent(p); !slices.Contains(out, c) {
+		if c := canonicalAbsent(p); !seen[c] {
+			seen[c] = true
 			out = append(out, c)
 		}
 	}

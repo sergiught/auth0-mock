@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -155,4 +156,21 @@ func TestAbsent_ExplainDecodesBodyOnce(t *testing.T) {
 	one := allocs([]string{"body.x0"})
 	many := allocs([]string{"body.x0", "body.x1", "body.x2", "body.x3", "body.x4", "body.x5", "body.x6", "body.x7"})
 	assert.Less(t, many, 2*one, "eight body paths should not decode the body eight times")
+}
+
+func TestAbsent_ExplainScalesLinearlyWithPaths(t *testing.T) {
+	t.Parallel()
+	paths := make([]string, 50_000)
+	for i := range paths {
+		paths[i] = "query.k" + strconv.Itoa(i)
+	}
+	rm := &RequestMatcher{Absent: paths}
+	done := make(chan []Difference, 1)
+	go func() { done <- rm.Explain(MatchableRequest{}) }()
+	select {
+	case diffs := <-done:
+		assert.Empty(t, diffs)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Explain with 50,000 absent paths did not finish within 2s")
+	}
 }
