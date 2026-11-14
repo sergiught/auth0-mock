@@ -1,7 +1,11 @@
 package authapi
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/sergiught/auth0-mock/internal/session"
 )
@@ -16,13 +20,30 @@ type RevokeHandler struct {
 
 func (h *RevokeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Strict && h.Sessions != nil {
-		// Reuse the /oauth/token parser: it reads a JSON or form body into
-		// Params. A malformed body just means nothing to revoke.
-		if req, err := parseTokenBody(r); err == nil {
-			if token, _ := req.Params["token"].(string); token != "" {
-				h.Sessions.RevokeRefreshChain(token)
-			}
+		if token := revokeToken(r); token != "" {
+			h.Sessions.RevokeRefreshChain(token)
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// revokeToken reads `token` from a JSON or form body. It looks at nothing
+// else: unrelated fields of any type, malformed pairs and the URL query are
+// ignored. It returns "" when there is no token to revoke.
+func revokeToken(r *http.Request) string {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return ""
+	}
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		var fields map[string]any
+		if json.Unmarshal(body, &fields) != nil {
+			return ""
+		}
+		token, _ := fields["token"].(string)
+		return token
+	}
+	// ParseQuery keeps every well-formed pair even when another one fails.
+	values, _ := url.ParseQuery(string(body))
+	return values.Get("token")
 }

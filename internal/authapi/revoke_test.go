@@ -55,3 +55,33 @@ func TestRevoke_Lenient_NoOp(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, refreshReq(r, rt1, "demo").Code)
 }
+
+func TestRevoke_Strict_IgnoresUnrelatedJSONFields(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+
+	w := postRevoke(r, "application/json", `{"token":"`+rt1+`","scope":[],"client_id":123}`)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	requireUnknownRefresh(t, refreshReq(r, rt1, "demo"))
+}
+
+func TestRevoke_Strict_IgnoresMalformedQuery(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+
+	req := httptest.NewRequest("POST", "/oauth/revoke?unused=%ZZ", strings.NewReader(url.Values{"token": {rt1}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	requireUnknownRefresh(t, refreshReq(r, rt1, "demo"))
+}
+
+func TestRevoke_Strict_MalformedFormPairStillRevokes(t *testing.T) {
+	r, rt1 := loginForRefresh(t, true)
+
+	w := postRevoke(r, "application/x-www-form-urlencoded", "junk=%ZZ&token="+url.QueryEscape(rt1))
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	requireUnknownRefresh(t, refreshReq(r, rt1, "demo"))
+}
