@@ -145,15 +145,17 @@ func (s *Store) revokeChain(chain string) {
 	})
 }
 
-// RememberRefresh stores copy of g under refresh token, starting a new
-// chain. It is bounded by MaxEntries like profiles, evicting oldest token first.
+// RememberRefresh stores a copy of g under the refresh token, starting a new
+// chain. It is bounded by MaxEntries like profiles, evicting the oldest token
+// first.
 func (s *Store) RememberRefresh(token string, g Grant) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.storeRefresh(token, refreshEntry{grant: g, chain: token})
 }
 
-// Refresh returns copy of grant remembered refresh token, used or not.
+// Refresh returns a copy of the grant remembered for the refresh token, used
+// or not.
 func (s *Store) Refresh(token string) (Grant, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
