@@ -190,6 +190,7 @@ Refresh tokens follow Auth0's rotation rules in strict mode:
 
 - Every refresh rotates. The response has a new `refresh_token` and the old one is used up, whatever the scope.
 - Using a used token again revokes the whole chain, so the newest token stops working too.
+- A missing `refresh_token` gets `400 invalid_request` with "Missing required parameter: refresh_token".
 - A refresh token the mock did not issue is rejected.
 - A refresh with a different `client_id` is rejected but does not use up the token. A missing `client_id` is not a mismatch.
 - `POST /oauth/revoke` with the `token` (form or JSON body) ends the whole chain. It always answers `200` with an empty body.

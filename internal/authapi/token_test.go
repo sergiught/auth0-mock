@@ -1156,6 +1156,16 @@ func TestRefresh_Strict_Unknown403(t *testing.T) {
 	requireUnknownRefresh(t, refreshReq(r, "nope", "demo"))
 }
 
+func TestRefresh_Strict_MissingRefreshToken400(t *testing.T) {
+	r, _ := loginForRefresh(t, true)
+	w := refreshReq(r, "", "demo")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	var m map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &m))
+	assert.Equal(t, "invalid_request", m["error"])
+	assert.Equal(t, "Missing required parameter: refresh_token", m["error_description"])
+}
+
 func TestRefresh_Strict_RotatesAndOldFails(t *testing.T) {
 	r, rt1 := loginForRefresh(t, true)
 	rt2 := refreshOK(t, r, rt1, "demo")

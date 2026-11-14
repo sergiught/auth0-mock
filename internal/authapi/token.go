@@ -622,6 +622,10 @@ func (h *TokenHandler) respondRefreshToken(w http.ResponseWriter, r *http.Reques
 // invalid_grant for unknown, reused or other-client tokens, and rotates the
 // token within its chain.
 func (h *TokenHandler) respondStrictRefreshToken(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
+	if req.RefreshToken == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: refresh_token")
+		return
+	}
 	var grant session.Grant
 	result := session.RedeemUnknown
 	if h.Sessions != nil {
