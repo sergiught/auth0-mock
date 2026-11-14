@@ -3,6 +3,7 @@
 package jwks
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -25,18 +26,31 @@ const AutoIssuer = "auto"
 // and the caller gave no per-request issuer.
 var ErrIssuerUnresolved = errors.New(`jwks: ISSUER_URL is "auto" but no per-request issuer was given`)
 
+type issuerPathKey struct{}
+
+// WithIssuerPath returns a context carrying an issuer path such as "ns/abc/";
+// ResolveIssuer appends it to the issuer of requests using that context.
+func WithIssuerPath(ctx context.Context, path string) context.Context {
+	return context.WithValue(ctx, issuerPathKey{}, path)
+}
+
 // ResolveIssuer returns configured, unless it is AutoIssuer; then it returns
 // scheme://host/ built from r (https when r.TLS is set, host lowercased, port
-// kept as sent).
+// kept as sent). When r's context carries an issuer path (WithIssuerPath),
+// the path is appended to that base.
 func ResolveIssuer(configured string, r *http.Request) string {
-	if configured != AutoIssuer {
-		return configured
+	base := configured
+	if configured == AutoIssuer {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		base = scheme + "://" + strings.ToLower(r.Host) + "/"
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+	if path, ok := r.Context().Value(issuerPathKey{}).(string); ok && path != "" {
+		return strings.TrimSuffix(base, "/") + "/" + path
 	}
-	return scheme + "://" + strings.ToLower(r.Host) + "/"
+	return base
 }
 
 // IssuerFor returns the issuer for r: ResolveIssuer on the configured issuer.
@@ -105,6 +119,14 @@ func NewKeySet(cfg Config) (*KeySet, error) {
 	}
 	ks.jwksJSON = ks.buildJWKSJSON()
 	return ks, nil
+}
+
+// WithNow returns a copy of k that shares its key, key id and JWKS but reads
+// the time from now.
+func (k *KeySet) WithNow(now func() time.Time) *KeySet {
+	view := *k
+	view.cfg.Now = now
+	return &view
 }
 
 // PublicKey exposes the active RSA public key.

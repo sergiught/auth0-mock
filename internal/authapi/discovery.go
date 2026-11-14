@@ -17,16 +17,17 @@ import (
 // In auto mode (issuer == jwks.AutoIssuer) the document is built per request
 // from the address the request was sent to.
 type DiscoveryHandler struct {
-	doc  []byte // Nil in auto mode.
-	auto bool
+	issuer string
+	doc    []byte // Nil in auto mode.
+	auto   bool
 }
 
 // NewDiscoveryHandler builds the OIDC discovery document for issuer once.
 func NewDiscoveryHandler(issuer string) *DiscoveryHandler {
 	if issuer == jwks.AutoIssuer {
-		return &DiscoveryHandler{auto: true}
+		return &DiscoveryHandler{issuer: issuer, auto: true}
 	}
-	return &DiscoveryHandler{doc: discoveryDoc(issuer)}
+	return &DiscoveryHandler{issuer: issuer, doc: discoveryDoc(issuer)}
 }
 
 // discoveryDoc marshals the discovery document for issuer.
@@ -69,8 +70,8 @@ func discoveryDoc(issuer string) []byte {
 
 func (h *DiscoveryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	doc := h.doc
-	if h.auto {
-		doc = discoveryDoc(jwks.ResolveIssuer(jwks.AutoIssuer, r))
+	if resolved := jwks.ResolveIssuer(h.issuer, r); h.auto || resolved != h.issuer {
+		doc = discoveryDoc(resolved)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(doc)

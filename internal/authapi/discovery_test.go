@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sergiught/auth0-mock/internal/jwks"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,4 +98,21 @@ func TestDiscoveryAutoTLS(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	assert.Equal(t, "https://localhost:32768/", doc["issuer"])
 	assert.Equal(t, "https://localhost:32768/.well-known/jwks.json", doc["jwks_uri"])
+}
+
+func TestDiscovery_PrefixedIssuer(t *testing.T) {
+	h := NewDiscoveryHandler("https://mock/")
+
+	req := httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
+	req = req.WithContext(jwks.WithIssuerPath(req.Context(), "ns/abc/"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, "https://mock/ns/abc/", doc["issuer"])
+	assert.Equal(t, "https://mock/ns/abc/.well-known/jwks.json", doc["jwks_uri"])
+
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, httptest.NewRequest("GET", "/.well-known/openid-configuration", nil))
+	assert.Equal(t, discoveryDoc("https://mock/"), w2.Body.Bytes())
 }
