@@ -36,11 +36,14 @@ func revokeToken(r *http.Request) string {
 		return ""
 	}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		var fields map[string]any
+		// Keep unrelated values raw so none of them (an overflowing number,
+		// say) can fail the decode.
+		var fields map[string]json.RawMessage
 		if json.Unmarshal(body, &fields) != nil {
 			return ""
 		}
-		token, _ := fields["token"].(string)
+		var token string
+		_ = json.Unmarshal(fields["token"], &token)
 		return token
 	}
 	// ParseQuery keeps every well-formed pair even when another one fails.

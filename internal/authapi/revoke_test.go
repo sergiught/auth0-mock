@@ -59,7 +59,7 @@ func TestRevoke_Lenient_NoOp(t *testing.T) {
 func TestRevoke_Strict_IgnoresUnrelatedJSONFields(t *testing.T) {
 	r, rt1 := loginForRefresh(t, true)
 
-	w := postRevoke(r, "application/json", `{"token":"`+rt1+`","scope":[],"client_id":123}`)
+	w := postRevoke(r, "application/json", `{"token":"`+rt1+`","scope":[],"client_id":123,"unrelated":1e1000}`)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	requireUnknownRefresh(t, refreshReq(r, rt1, "demo"))
