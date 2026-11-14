@@ -158,20 +158,26 @@ func bodySets(body any, segs []string) bool {
 	return true
 }
 
-// bodyValue returns the value at the dotted path in a request body, JSON null
-// included. A missing or non-JSON body holds nothing. Numbers stay
-// json.Number, so one too large for float64 cannot hide the path and the
-// value is reported as sent.
-func bodyValue(raw []byte, path string) (any, bool) {
-	var cur any
+// decodeBody parses a request body for absent checks. A missing or
+// non-JSON body decodes to nil, which holds nothing. Numbers stay json.Number, so one too large
+// for a float64 cannot hide a path or change the value reported as sent.
+func decodeBody(raw []byte) any {
+	var doc any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
-	if dec.Decode(&cur) != nil {
-		return nil, false
+	if dec.Decode(&doc) != nil {
+		return nil
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, false
+		return nil
 	}
+	return doc
+}
+
+// bodyValue returns the value at the dotted path in a decoded request
+// body, JSON null included.
+func bodyValue(doc any, path string) (any, bool) {
+	cur := doc
 	for _, s := range strings.Split(strings.TrimPrefix(path, absentBodyPrefix), ".") {
 		obj, ok := cur.(map[string]any)
 		if !ok {
@@ -185,9 +191,12 @@ func bodyValue(raw []byte, path string) (any, bool) {
 }
 
 // explainAbsent returns a "present" difference for each absent path the
-// request does carry.
+// request does carry. The body is decoded at most once, however many body
+// paths are listed.
 func (rm *RequestMatcher) explainAbsent(req MatchableRequest) []Difference {
 	var diffs []Difference
+	var doc any
+	decoded := false
 	for _, p := range canonicalAbsentList(rm.Absent) {
 		var got json.RawMessage
 		var present bool
@@ -207,8 +216,12 @@ func (rm *RequestMatcher) explainAbsent(req MatchableRequest) []Difference {
 				}
 			}
 		case strings.HasPrefix(p, absentBodyPrefix):
+			if !decoded {
+				doc = decodeBody(req.Body)
+				decoded = true
+			}
 			var v any
-			if v, present = bodyValue(req.Body, p); present {
+			if v, present = bodyValue(doc, p); present {
 				got = rawJSON(v)
 			}
 		}

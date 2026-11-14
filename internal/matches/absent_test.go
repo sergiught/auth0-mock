@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -137,4 +139,20 @@ func TestAbsent_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAbsent_ExplainDecodesBodyOnce(t *testing.T) {
+	// Not parallel: testing.AllocsPerRun panics in a parallel test.
+	fields := make([]string, 500)
+	for i := range fields {
+		fields[i] = `"f` + strconv.Itoa(i) + `":` + strconv.Itoa(i)
+	}
+	req := MatchableRequest{Body: []byte("{" + strings.Join(fields, ",") + "}")}
+	allocs := func(paths []string) float64 {
+		rm := &RequestMatcher{Absent: paths}
+		return testing.AllocsPerRun(5, func() { rm.Explain(req) })
+	}
+	one := allocs([]string{"body.x0"})
+	many := allocs([]string{"body.x0", "body.x1", "body.x2", "body.x3", "body.x4", "body.x5", "body.x6", "body.x7"})
+	assert.Less(t, many, 2*one, "eight body paths should not decode the body eight times")
 }
