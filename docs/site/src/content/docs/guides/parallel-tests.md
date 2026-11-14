@@ -19,20 +19,35 @@ An id is 1 to 64 characters from `A-Z a-z 0-9 _ -`. A namespace is created the f
 ## Header or prefix
 
 - **Header**: use it when you control the HTTP client. The issuer stays the same.
-- **Prefix**: use it when an SDK only takes a domain or issuer URL and you can't add a header. Point the SDK at `localhost:8080/ns/<id>` (auth0-spa-js, express-openid-connect and nextjs-auth0 all work this way).
+- **Prefix**: use it when an SDK only takes a domain or issuer URL and you can't add a header. Point the SDK at `localhost:8443/ns/<id>` (auth0-spa-js, express-openid-connect and nextjs-auth0 all work this way).
 
 SDKs that build every URL from the host alone, such as go-auth0, can't carry a prefix. Send the header instead, with `option.WithHTTPHeader` (or a custom HTTP client):
 
 ```go
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"net/http"
+	"os"
 
 	client "github.com/auth0/go-auth0/v3/management/client"
 	"github.com/auth0/go-auth0/v3/management/option"
 )
 
-mgmt, err := client.New("localhost:8080",
+// Trust the mock's self-signed certificate (.auth0-mock/tls.crt).
+pem, err := os.ReadFile(".auth0-mock/tls.crt")
+if err != nil {
+	return err
+}
+pool := x509.NewCertPool()
+pool.AppendCertsFromPEM(pem)
+httpClient := &http.Client{Transport: &http.Transport{
+	TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+}}
+
+mgmt, err := client.New("localhost:8443",
 	option.WithClientCredentials(ctx, "demo", "x"),
+	option.WithHTTPClient(httpClient),
 	option.WithHTTPHeader(http.Header{"X-Auth0-Mock-Namespace": []string{"test-42"}}),
 )
 ```
@@ -61,19 +76,23 @@ A [seed file](/auth0-mock/guides/seed-file/) is applied when a namespace is crea
 
 ## Lifecycle
 
-These routes are global. They never create a namespace.
+These routes are global. They never create a namespace and ignore the header and prefix.
 
 | Route | Effect |
 | --- | --- |
 | `GET /admin0/namespaces` | List `[{"id","created_at","last_used_at"}]` |
 | `DELETE /admin0/namespaces/{id}` | 204, or 404 `namespace_not_found`. Open event streams of that namespace end. |
-| `DELETE /admin0/namespaces` | 204, deletes all |
+| `DELETE /admin0/namespaces` | 204, deletes all. Refused with 400 `invalid_namespace` if the request names a namespace by header or prefix. |
 
 Deleting a namespace does not wait for requests already in flight inside it.
 
 ## The cap
 
-`NAMESPACE_MAX` (default `256`) limits how many namespaces can exist. At the cap, a request for a new one gets `429 too_many_namespaces` with `namespace limit reached (NAMESPACE_MAX=<n>); delete unused namespaces with DELETE /admin0/namespaces/{id}`. Existing namespaces keep working, and nothing is evicted for you, so delete namespaces when a test ends. `0` turns namespaces off.
+`NAMESPACE_MAX` (default `256`) limits how many namespaces can exist. At the cap, a request for a new one gets `429 too_many_namespaces` with `namespace limit reached (NAMESPACE_MAX=<n>); delete unused namespaces with DELETE /admin0/namespaces/{id}`. Existing namespaces keep working, and nothing is evicted for you, so delete namespaces when a test ends.
+
+Each namespace costs roughly 0.5 MB (about 300 KiB of stores plus up to about 200 KiB of journal at the default `JOURNAL` size), so the default cap of 256 is about 130 MB worst case. Delete namespaces you no longer need.
+
+`NAMESPACE_MAX=0` turns namespaces off.
 
 ## Walkthrough
 
