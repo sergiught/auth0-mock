@@ -54,7 +54,30 @@ mgmt, err := client.New("localhost:8443",
 
 The token request may go to the default namespace. That is fine in header mode, because the issuer is the same.
 
-<!-- go-sdk -->
+## Go: `auth0mocktest.Isolate`
+
+In Go tests, `auth0mocktest.Isolate` gives each test its own namespace. It checks your stubs when the test ends, then deletes the namespace. Stub through `ns`, and hand `ns.Transport(base)` to the code under test: it adds the header to every request.
+
+```go
+func TestCreateUser(t *testing.T) {
+	t.Parallel()
+	ns := auth0mocktest.Isolate(t, mock) // mock is the shared *auth0mock.Client
+
+	auth0mocktest.MustApply(t, ns.ExpectPost("/api/v2/users").
+		Respond(201).
+		JSON(map[string]any{"user_id": "auth0|1"}))
+
+	// base trusts the mock's certificate, as in the example above.
+	httpClient := &http.Client{Transport: ns.Transport(base)}
+	mgmt, err := client.New("localhost:8443",
+		option.WithClientCredentials(ctx, "demo", "x"),
+		option.WithHTTPClient(httpClient),
+	)
+	// ... call mgmt from the code under test ...
+}
+```
+
+The imports are `github.com/auth0/go-auth0/v3/management/client` and `github.com/auth0/go-auth0/v3/management/option`.
 
 ## What is shared and what is private
 

@@ -15,7 +15,7 @@ var namespaceIDRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Namespace returns a client scoped to the isolated namespace id: it targets
 // <base>/ns/<id>, so every sub-client (expectations, claims, reset, verify,
-// journal, clock, events, ...) Only sees that namespace's state. The new
+// journal, clock, events and the rest) only sees that namespace's state. The new
 // client shares c's *http.Client but keeps its own verification ledger.
 //
 // Id must match [A-Za-z0-9_-]{1,64}. An already-namespaced client cannot be

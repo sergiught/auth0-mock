@@ -233,3 +233,23 @@ func ExampleClient_Expect_resolutionRules() {
 		JSON(map[string]any{"id": "u_alice"}).
 		Apply(ctx)
 }
+
+// ExampleClient_Namespace shows a client scoped to a private namespace, and a
+// transport that routes a system under test into it with a header.
+func ExampleClient_Namespace() {
+	c, _ := auth0mock.NewClient("http://localhost:8080")
+	ns, err := c.Namespace("test-42")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() { _ = ns.DeleteNamespace(context.Background()) }()
+
+	// Stubs registered through ns are visible only in that namespace.
+	_, _ = ns.ExpectGet("/api/v2/users/1").
+		Respond(200).
+		JSON(map[string]any{"user_id": "1"}).
+		Apply(context.Background())
+
+	// The system under test talks to the mock root; the header picks the namespace.
+	_ = &http.Client{Transport: ns.Transport(nil)}
+}

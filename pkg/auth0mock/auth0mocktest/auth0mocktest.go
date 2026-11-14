@@ -31,7 +31,10 @@ package auth0mocktest
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -199,4 +202,40 @@ func MustFindCall(t testing.TB, c *auth0mock.Client, method, path string) auth0m
 	}
 	t.Fatalf("%s", b.String())
 	return auth0mock.JournalEntry{}
+}
+
+var nonIDChars = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+
+// Isolate returns a client scoped to a fresh namespace named after the test,
+// so parallel tests can share one running mock without seeing each other's
+// stubs. The namespace is new, so there is nothing to reset. At test end the
+// stubs are verified, then the namespace is deleted.
+//
+//	func TestFoo(t *testing.T) {
+//		t.Parallel()
+//		ns := auth0mocktest.Isolate(t, mock)
+//		// stub through ns, point the system under test at ns.Transport(nil)
+//	}
+func Isolate(t testing.TB, c *auth0mock.Client) *auth0mock.Client {
+	t.Helper()
+	name := nonIDChars.ReplaceAllString(t.Name(), "-")
+	if len(name) > 47 {
+		name = name[:47]
+	}
+	suffix := make([]byte, 8)
+	if _, err := rand.Read(suffix); err != nil {
+		t.Fatalf("auth0mocktest: random namespace suffix: %v", err)
+	}
+	ns, err := c.Namespace(name + "-" + hex.EncodeToString(suffix))
+	if err != nil {
+		t.Fatalf("auth0mocktest: create namespace: %v", err)
+	}
+	// Cleanups run last-in first-out: verify runs before delete.
+	t.Cleanup(func() {
+		if err := ns.DeleteNamespace(context.Background()); err != nil {
+			t.Errorf("auth0mocktest: delete namespace %s: %v", ns.NamespaceID(), err)
+		}
+	})
+	t.Cleanup(func() { MustVerify(t, ns) })
+	return ns
 }

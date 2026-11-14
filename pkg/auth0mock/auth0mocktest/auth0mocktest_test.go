@@ -1,10 +1,12 @@
 package auth0mocktest_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -12,9 +14,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/api"
+	"github.com/sergiught/auth0-mock/internal/claims"
+	"github.com/sergiught/auth0-mock/internal/clock"
+	"github.com/sergiught/auth0-mock/internal/journal"
+	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/router"
+	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/pkg/auth0mock"
 	"github.com/sergiught/auth0-mock/pkg/auth0mock/auth0mocktest"
 )
@@ -310,4 +324,80 @@ func TestMustFindCall_FailsWithNone(t *testing.T) {
 	auth0mocktest.MustFindCall(ft, c, "GET", "/api/v2/users")
 	require.True(t, ft.fatalCalled.Load())
 	assert.Contains(t, ft.fatalText, "(none)")
+}
+
+// newNamespaceMock runs the real router with room for many namespaces.
+func newNamespaceMock(t *testing.T) (*httptest.Server, *auth0mock.Client) {
+	t.Helper()
+	const issuer = "https://mock/"
+	openapiSpec, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	validator, err := spec.NewValidator(openapiSpec)
+	require.NoError(t, err)
+	clk := clock.NewControlled()
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: issuer, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, Now: clk.Now})
+	require.NoError(t, err)
+	h, err := router.New(router.Deps{
+		Log: zerolog.Nop(), Store: matches.NewStore(), Claims: claims.NewStore(), ClaimMappings: claims.NewMappingStore(),
+		Permissions: permissions.NewStore(), PKCE: pkce.NewStore(pkce.WithNow(clk.Now)), MFA: mfa.NewStore(mfa.WithNow(clk.Now)),
+		Keys: ks, Spec: openapiSpec, Validator: validator, Clock: clk,
+		Issuer: issuer, DefaultAudience: issuer + "api/v2/",
+		Journal: journal.New(10), EventsReplayBuffer: 10, NamespaceMax: 16,
+	})
+	require.NoError(t, err)
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+	return srv, c
+}
+
+func TestIsolate_ParallelSubtests(t *testing.T) {
+	srv, root := newNamespaceMock(t)
+
+	t.Run("group", func(t *testing.T) {
+		for i := range 8 {
+			t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+				t.Parallel()
+				ns := auth0mocktest.Isolate(t, root)
+				want := fmt.Sprintf("body-%d", i)
+				auth0mocktest.MustApply(t, ns.ExpectGet("/api/v2/users/1").
+					Respond(200).JSON(map[string]any{"name": want}))
+
+				hc := &http.Client{Transport: ns.Transport(nil)}
+				tok, err := hc.Post(srv.URL+"/oauth/token", "application/x-www-form-urlencoded",
+					strings.NewReader("grant_type=client_credentials&client_id=c&client_secret=s&audience=https://mock/api/v2/"))
+				require.NoError(t, err)
+				var tokBody struct {
+					AccessToken string `json:"access_token"`
+				}
+				require.NoError(t, json.NewDecoder(tok.Body).Decode(&tokBody))
+				_ = tok.Body.Close()
+				req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v2/users/1", http.NoBody)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+tokBody.AccessToken)
+				resp, err := hc.Do(req)
+				require.NoError(t, err)
+				defer func() { _ = resp.Body.Close() }()
+				var got map[string]string
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+				assert.Equal(t, want, got["name"])
+			})
+		}
+	})
+
+	resp, err := http.Get(srv.URL + "/admin0/namespaces")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var list []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&list))
+	assert.Empty(t, list)
+}
+
+func TestIsolate_IDShape(t *testing.T) {
+	_, root := newNamespaceMock(t)
+	t.Run("a name/with spaces "+strings.Repeat("x", 100), func(t *testing.T) {
+		ns := auth0mocktest.Isolate(t, root)
+		assert.Regexp(t, regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`), ns.NamespaceID())
+	})
 }
