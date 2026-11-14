@@ -73,6 +73,8 @@ type bootOptions struct {
 	issuerFor func(addr string) string
 	// seedFile, when set, is loaded as SEED_FILE before the router is built.
 	seedFile string
+	// tokenStrict sets TOKEN_ENDPOINT_STRICT.
+	tokenStrict bool
 }
 
 // nonFollowingClient is used by all step requests so the tests can assert on
@@ -142,6 +144,16 @@ func New(t *testing.T, sc *godog.ScenarioContext) *Context {
 func (c *Context) RestartWithIssuer(issuer string) {
 	c.shutdown()
 	c.mustBoot(bootOptions{issuerFor: func(string) string { return issuer }})
+}
+
+// RestartStrict stops the scenario's server and boots a fresh one with
+// TOKEN_ENDPOINT_STRICT on.
+func (c *Context) RestartStrict() {
+	c.shutdown()
+	c.mustBoot(bootOptions{
+		issuerFor:   func(addr string) string { return "http://" + addr + "/" },
+		tokenStrict: true,
+	})
 }
 
 // RestartWithSeed stops the scenario's server and boots a fresh one whose
@@ -261,7 +273,8 @@ func (c *Context) boot(o bootOptions) error {
 		Issuer:               issuer,
 		DefaultAudience:      "http://" + addr + "/api/v2/",
 		SpecValidationStrict: true,
-		BearerRequireScopes:  true,    // the production default
+		BearerRequireScopes:  true, // the production default
+		TokenEndpointStrict:  o.tokenStrict,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
 		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},
