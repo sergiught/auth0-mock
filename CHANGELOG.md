@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.235.0](https://github.com/sergiught/auth0-mock/compare/v0.234.0...v0.235.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mgmtapi:** **Management API calls now need the right scope.** A token whose `scope` lacks every scope the endpoint lists gets `403 insufficient_scope` instead of reaching your stub. `client_credentials` tokens for a Management API audience (any http or https `<host>/api/v2/`) get all Management scopes by default, so plain tokens keep working, but a `client_credentials` token minted for a non-Management audience (for example `DEFAULT_AUDIENCE` set to your own API, or a token for `https://my-api/` reused on `/api/v2`) used to work and now gets 403: mint a separate token for `https://<host>/api/v2/`, or request the scopes you need. Permissions registered for the Management audience via `/admin0/permissions` or `SEED_FILE` now narrow that token's scope, so other endpoints can return 403. Tokens from other grants (password, authorization code, refresh) get no default scope, so request the scopes they need. Set `BEARER_REQUIRE_SCOPES=false` to turn the check off; tokens still carry the default `scope` claim.
+
+### Features
+
+* **authapi:** accept POST on /userinfo ([#114](https://github.com/sergiught/auth0-mock/issues/114)) ([97def25](https://github.com/sergiught/auth0-mock/commit/97def25a8fb579148edc24c56a54f61ccf81e3da))
+* **authapi:** add TOKEN_ENDPOINT_STRICT for auth codes and offline_access ([#121](https://github.com/sergiught/auth0-mock/issues/121)) ([d01f83f](https://github.com/sergiught/auth0-mock/commit/d01f83fbba79b089fe96ba3f438b82350eb12d60))
+* **authapi:** put the audience's registered permissions in the M2M token scope ([#113](https://github.com/sergiught/auth0-mock/issues/113)) ([32f6658](https://github.com/sergiught/auth0-mock/commit/32f66581c48b3cf884e9b69cff0e81b035f54430))
+* **authapi:** rotate refresh tokens with reuse detection and revoke chains in strict mode ([#122](https://github.com/sergiught/auth0-mock/issues/122)) ([4a521fe](https://github.com/sergiught/auth0-mock/commit/4a521feea05d418f1673a7338001c81e546aa481))
+* **matches:** add an absent list so a stub can require a field to be missing ([#119](https://github.com/sergiught/auth0-mock/issues/119)) ([fbba6dc](https://github.com/sergiught/auth0-mock/commit/fbba6dcf69ca876240212d23a9ac530801f471cf))
+* **matches:** add an arrays contains mode for body matchers ([#120](https://github.com/sergiught/auth0-mock/issues/120)) ([cda1554](https://github.com/sergiught/auth0-mock/commit/cda1554b08aae2d68f57bc18dd8e32f5c1522a52))
+* **matches:** let query matchers match repeated keys and lists of values ([#118](https://github.com/sergiught/auth0-mock/issues/118)) ([a779b7d](https://github.com/sergiught/auth0-mock/commit/a779b7dc0b6dcd0be88d0b2b286c24ae73b6ddc2))
+* **mgmtapi:** reject Management API calls whose token lacks the required scope ([#115](https://github.com/sergiught/auth0-mock/issues/115)) ([97f24ef](https://github.com/sergiught/auth0-mock/commit/97f24efd36422bdff93d38d90ace0cc82185df5e))
+
+
+### Bug fixes
+
+* **authapi:** let a wrong MFA code be retried with the same mfa_token ([#112](https://github.com/sergiught/auth0-mock/issues/112)) ([252526b](https://github.com/sergiught/auth0-mock/commit/252526bdd9760f260343ec373331964c049f7265))
+
 ## [0.234.0](https://github.com/sergiught/auth0-mock/compare/v0.233.0...v0.234.0) (2026-11-11)
 
 
