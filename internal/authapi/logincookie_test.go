@@ -28,23 +28,11 @@ func TestSetLoginCookieHTTP(t *testing.T) {
 	assert.Equal(t, http.SameSiteLaxMode, c[0].SameSite)
 }
 
-func TestSetLoginCookieNamespacePath(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/authorize", nil)
-	r = r.WithContext(jwks.WithIssuerPath(r.Context(), "ns/a/"))
-	w := httptest.NewRecorder()
-	setLoginCookie(w, r, "abc")
-	clearLoginCookie(w, r)
-	c := w.Result().Cookies()
-	require.Len(t, c, 2)
-	assert.Equal(t, "/ns/a/", c[0].Path)
-	assert.Equal(t, "/ns/a/", c[1].Path)
-}
-
 func TestLoginCookieNamePerNamespace(t *testing.T) {
 	cases := []struct{ name, id, issuerPath, wantName, wantPath string }{
 		{"default", "", "", "auth0", "/"},
 		{"header", "a", "", "auth0_ns_a", "/"},
-		{"prefix", "a", "ns/a/", "auth0_ns_a", "/ns/a/"},
+		{"prefix", "a", "ns/a/", "auth0_ns_a", "/"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

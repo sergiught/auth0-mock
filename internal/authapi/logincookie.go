@@ -2,9 +2,7 @@ package authapi
 
 import (
 	"net/http"
-	"strings"
 
-	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/namespace"
 	"github.com/sergiught/auth0-mock/internal/session"
 )
@@ -14,7 +12,8 @@ const loginCookieName = "auth0"
 
 // loginCookieNameFor is loginCookieName in the default namespace and
 // "auth0_ns_<id>" in a named one, so a shared cookie jar keeps one login
-// per namespace even when they all share Path "/".
+// per namespace. The name, not the path, separates them: a path scoped to
+// "/ns/<id>/" would miss requests that spell the prefix percent-encoded.
 func loginCookieNameFor(r *http.Request) string {
 	if id := namespace.ID(r.Context()); id != "" {
 		return loginCookieName + "_ns_" + id
@@ -37,13 +36,7 @@ func clearLoginCookie(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginCookie(r *http.Request, value string) *http.Cookie {
-	path := "/"
-	if p := jwks.IssuerPath(r.Context()); p != "" {
-		// Scope the cookie to the namespace prefix ("/ns/<id>/") so a shared
-		// cookie jar does not send it to other namespaces.
-		path = "/" + strings.TrimPrefix(strings.TrimSuffix(p, "/")+"/", "/")
-	}
-	c := &http.Cookie{Name: loginCookieNameFor(r), Value: value, Path: path, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+	c := &http.Cookie{Name: loginCookieNameFor(r), Value: value, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	if r.TLS != nil {
 		c.Secure = true
 		c.SameSite = http.SameSiteNoneMode
