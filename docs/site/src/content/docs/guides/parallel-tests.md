@@ -21,23 +21,23 @@ An id is 1 to 64 characters from `A-Z a-z 0-9 _ -`. A namespace is created the f
 - **Header**: use it when you control the HTTP client. The issuer stays the same.
 - **Prefix**: use it when an SDK only takes a domain or issuer URL and you can't add a header. Point the SDK at `localhost:8080/ns/<id>` (auth0-spa-js, express-openid-connect and nextjs-auth0 all work this way).
 
-SDKs that build every URL from the host alone, such as go-auth0, can't carry a prefix. Give them a custom HTTP client that adds the header, via `management.WithClient`:
+SDKs that build every URL from the host alone, such as go-auth0, can't carry a prefix. Send the header instead, with `option.WithHTTPHeader` (or a custom HTTP client):
 
 ```go
-type nsTransport struct{ id string }
+import (
+	"net/http"
 
-func (t nsTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	r.Header.Set("X-Auth0-Mock-Namespace", t.id)
-	return http.DefaultTransport.RoundTrip(r)
-}
+	client "github.com/auth0/go-auth0/v3/management/client"
+	"github.com/auth0/go-auth0/v3/management/option"
+)
 
-api, err := management.New("localhost:8080",
-	management.WithInsecure(),
-	management.WithClient(&http.Client{Transport: nsTransport{"test-42"}}),
-	// ...credentials
+mgmt, err := client.New("localhost:8080",
+	option.WithClientCredentials(ctx, "demo", "x"),
+	option.WithHTTPHeader(http.Header{"X-Auth0-Mock-Namespace": []string{"test-42"}}),
 )
 ```
+
+The token request may go to the default namespace. That is fine in header mode, because the issuer is the same.
 
 <!-- go-sdk -->
 
@@ -47,7 +47,7 @@ api, err := management.New("localhost:8080",
 | --- | --- |
 | Stubs and expectations, claims, claim mappings, permissions, the MFA flag, PKCE codes, sessions and refresh tokens, authorize-error rules, the request journal, the event stream, the clock | The signing key, the OpenAPI spec and validator, the environment config |
 
-Because the key is shared, a token minted in one namespace still verifies in another, as long as the `iss` matches (see below).
+The signing key is shared, but a token only verifies where its issuer matches. With the header, the issuer is the same in every namespace, so a token minted in one verifies in another. With the prefix, the issuer includes `/ns/<id>/`, so a token from the default namespace or from another prefix is rejected under `/ns/<id>/`: mint the token under the same prefix you call. A token minted while a namespace's clock is moved carries that clock's `iat` and `exp`.
 
 `/healthz` and `/readyz` are shared too.
 
@@ -80,10 +80,21 @@ Deleting a namespace does not wait for requests already in flight inside it.
 ```bash
 # Different stubs in two namespaces.
 curl -X POST http://localhost:8080/ns/a/admin0/expectations \
+  -H 'Content-Type: application/json' \
   -d '{"method":"GET","path":"/api/v2/users/auth0|1","response":{"status":200,"body":{"user_id":"auth0|1","email":"a@x"}}}'
 curl -X POST http://localhost:8080/admin0/expectations \
   -H 'X-Auth0-Mock-Namespace: b' \
+  -H 'Content-Type: application/json' \
   -d '{"method":"GET","path":"/api/v2/users/auth0|1","response":{"status":200,"body":{"user_id":"auth0|1","email":"b@x"}}}'
+
+# Mint a token per namespace (under the prefix, or with the header).
+TOKEN_A=$(curl -s -X POST http://localhost:8080/ns/a/oauth/token \
+  -d 'grant_type=client_credentials&client_id=demo&client_secret=x&audience=http://localhost:8080/api/v2/' \
+  | jq -r .access_token)
+TOKEN_B=$(curl -s -X POST http://localhost:8080/oauth/token \
+  -H 'X-Auth0-Mock-Namespace: b' \
+  -d 'grant_type=client_credentials&client_id=demo&client_secret=x&audience=http://localhost:8080/api/v2/' \
+  | jq -r .access_token)
 
 # Each answers from its own stubs.
 curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:8080/ns/a/api/v2/users/auth0%7C1
