@@ -461,6 +461,23 @@ func TestDebugDump_RedactsRevokeToken(t *testing.T) {
 	}
 }
 
+// TestRedact_EncodedKeys checks that a sensitive key spelled with
+// percent-encoding (form, query) or a JSON \u escape is still redacted.
+func TestRedact_EncodedKeys(t *testing.T) {
+	form := string(redactSensitiveInBody([]byte("client_id=abc&to%6Ben=rt-secret-1&refresh%5ftoken=rt-secret-2")))
+	assert.NotContains(t, form, "rt-secret")
+	assert.Contains(t, form, "client_id=abc")
+	assert.Contains(t, form, "to%6Ben=<redacted>")
+
+	query := scrubSensitiveQuery("legit=value&access%5Ftoken=at-secret")
+	assert.NotContains(t, query, "at-secret")
+	assert.Contains(t, query, "legit=value")
+
+	js := string(redactSensitiveInBody([]byte(`{"client_id":"abc","token":"rt-secret-3"}`)))
+	assert.NotContains(t, js, "rt-secret")
+	assert.Contains(t, js, `"client_id":"abc"`)
+}
+
 func TestFlatHeaders_RedactsAndSorts(t *testing.T) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")

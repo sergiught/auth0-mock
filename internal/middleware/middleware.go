@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"runtime/debug"
@@ -574,18 +575,47 @@ var sensitiveBodyFields = []string{
 	"token", // /oauth/revoke carries a refresh token under this name.
 }
 
-// jsonSensitiveRE matches "field":"value" inside JSON-encoded bodies.
-// The character class `[^"\\]*(?:\\.[^"\\]*)*` skips over `\"` inside
-// the value so the close-quote isn't mis-detected.
-var jsonSensitiveRE = regexp.MustCompile(
-	`"(` + strings.Join(sensitiveBodyFields, "|") + `)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`,
+// isSensitiveField reports whether name is one of sensitiveBodyFields.
+func isSensitiveField(name string) bool {
+	return slices.Contains(sensitiveBodyFields, name)
+}
+
+// jsonPairRE matches "key":"value" inside JSON-encoded bodies. Both
+// character classes `[^"\\]*(?:\\.[^"\\]*)*` skip over escapes such as
+// `\"` and `\u006b`, so neither close-quote is mis-detected.
+var jsonPairRE = regexp.MustCompile(
+	`"([^"\\]*(?:\\.[^"\\]*)*)"(\s*:\s*)"[^"\\]*(?:\\.[^"\\]*)*"`,
 )
 
-// formSensitiveRE matches field=value inside x-www-form-urlencoded
-// request bodies (and the same shape in URL query strings).
-var formSensitiveRE = regexp.MustCompile(
-	`(^|&)(` + strings.Join(sensitiveBodyFields, "|") + `)=([^&]+)`,
-)
+// formPairRE matches key=value inside x-www-form-urlencoded request
+// bodies (and the same shape in URL query strings).
+var formPairRE = regexp.MustCompile(`(^|&)([^=&]+)=([^&]+)`)
+
+// redactJSON redacts the value of every JSON pair whose key, after
+// decoding escapes like `\u006b`, is a sensitive field.
+func redactJSON(b []byte) []byte {
+	return jsonPairRE.ReplaceAllFunc(b, func(m []byte) []byte {
+		sub := jsonPairRE.FindSubmatch(m)
+		key, err := strconv.Unquote(`"` + string(sub[1]) + `"`)
+		if err != nil || !isSensitiveField(key) {
+			return m
+		}
+		return []byte(`"` + string(sub[1]) + `"` + string(sub[2]) + `"<redacted>"`)
+	})
+}
+
+// redactForm redacts the value of every form pair whose key, after
+// percent-decoding (so `to%6Ben` counts as `token`), is a sensitive field.
+func redactForm(b []byte) []byte {
+	return formPairRE.ReplaceAllFunc(b, func(m []byte) []byte {
+		sub := formPairRE.FindSubmatch(m)
+		key, err := url.QueryUnescape(string(sub[2]))
+		if err != nil || !isSensitiveField(key) {
+			return m
+		}
+		return []byte(string(sub[1]) + string(sub[2]) + "=<redacted>")
+	})
+}
 
 // redactSensitiveInBody replaces values of sensitiveBodyFields with
 // "<redacted>" in both JSON and form-encoded bodies. Pass-through for
@@ -594,9 +624,7 @@ func redactSensitiveInBody(b []byte) []byte {
 	if len(b) == 0 {
 		return b
 	}
-	out := jsonSensitiveRE.ReplaceAll(b, []byte(`"$1":"<redacted>"`))
-	out = formSensitiveRE.ReplaceAll(out, []byte(`${1}${2}=<redacted>`))
-	return out
+	return redactForm(redactJSON(b))
 }
 
 // scrubSensitiveQuery applies form-style redaction to a URL query string
@@ -607,7 +635,7 @@ func scrubSensitiveQuery(q string) string {
 	if q == "" {
 		return ""
 	}
-	return string(formSensitiveRE.ReplaceAll([]byte(q), []byte(`${1}${2}=<redacted>`)))
+	return string(redactForm([]byte(q)))
 }
 
 // Logging emits one structured log line per request. The action
