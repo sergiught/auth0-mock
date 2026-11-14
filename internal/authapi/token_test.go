@@ -1071,6 +1071,11 @@ func TestAuthCode_Strict_ClientMismatch403(t *testing.T) {
 	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1", "client_id", "other"), ""))
 }
 
+func TestAuthCode_Strict_CodeWithoutClientRejectsAnyClient(t *testing.T) {
+	h := strictCodeHandler(t, true, pkce.Entry{Redirect: "https://app/cb"})
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
+}
+
 func TestAuthCode_Strict_BasicAuthClientMatches(t *testing.T) {
 	h := strictCodeHandler(t, true, demoEntry())
 	f := codeForm("c1")

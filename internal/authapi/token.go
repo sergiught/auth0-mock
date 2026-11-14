@@ -75,7 +75,9 @@ func strictCodeError(entry pkce.Entry, found bool, req *tokenRequest) bool {
 	if entry.Redirect != "" && req.RedirectURI != entry.Redirect {
 		return true
 	}
-	return entry.ClientID != "" && req.ClientID != entry.ClientID
+	// Compare clients exactly: a code issued without a client_id (allowed for
+	// response_type=code) must not be redeemable by any client.
+	return req.ClientID != entry.ClientID
 }
 
 // rememberProfile records the profile claims of an id_token's extra for
