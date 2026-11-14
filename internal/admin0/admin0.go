@@ -158,6 +158,7 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Deps.Seed != nil {
 		h.Deps.Seed.Reset(r.Context(), keep)
 	} else {
+		// Not atomic against concurrent requests to this store set, unlike Manager.Reset, which holds its lock across wipe and apply.
 		wipe(r.Context(), h.Deps)
 		if keep && h.Deps.SeedTemplate != nil {
 			h.Deps.SeedTemplate.ApplyTo(seed.Stores{

@@ -608,3 +608,13 @@ func TestReset_SeedTemplate(t *testing.T) {
 	assert.Empty(t, d.Matches.List())
 	assert.Len(t, own.Matches.List(), 1)
 }
+
+func TestExport_NoSeedManager(t *testing.T) {
+	d := newDeps()
+	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429}})
+	w := httptest.NewRecorder()
+	newRouter(d).ServeHTTP(w, httptest.NewRequest("GET", "/admin0/export", nil))
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "/api/v2/users")
+	assert.Contains(t, w.Body.String(), "429")
+}
