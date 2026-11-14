@@ -71864,7 +71864,7 @@
         "type": "object"
       },
       "RequestMatcher": {
-        "description": "Optional conditions the incoming request must satisfy for the\nexpectation to apply. Omit it (or send `{}`) for a catch-all. `query`\nand `body` are subset-matched: every key you specify must be present\nand equal in the real request; extra keys are allowed. Arrays and\nscalars must match exactly. The matcher is validated against the\noperation's request schema (with `required` relaxed) at registration.\n",
+        "description": "Optional conditions the incoming request must satisfy for the\nexpectation to apply. Omit it (or send `{}`) for a catch-all. `query`\nand `body` are subset-matched: every key you specify must be present\nand equal in the real request; extra keys are allowed. Scalars must\nmatch exactly. Arrays must too, unless `arrays` is `contains`. The matcher is validated against the\noperation's request schema (with `required` relaxed) at registration.\n",
         "properties": {
           "absent": {
             "description": "Field paths the request must not carry: `query.\u003ckey\u003e`,\n`headers.\u003cName\u003e` (case-insensitive) or `body.\u003ca\u003e.\u003cb\u003e` (a dotted\nobject path, no array indexing). A field is present when it exists,\neven with an empty value or JSON null. A matcher with only `absent`\nis not a catch-all. A path without one of those prefixes, with an\nempty segment, naming an undeclared query parameter, naming\nthe Host, Transfer-Encoding or Trailer header, a body path on a\nGET /api/v2/events stub, or that the matcher also requires is\nrejected with `invalid_request_match`.\n",
@@ -71872,6 +71872,14 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "arrays": {
+            "description": "How arrays in `body` are compared. `exact` (the default) needs\nequal arrays. `contains` needs every wanted item to pair with a\ndifferent request item (subset-matched objects, any order, extras\nallowed; `[\"a\",\"a\"]` needs two `a`). It has no effect without a\n`body`. Any other value, including null or \"\", is rejected with\n`invalid_request_match`. The work is capped at about 100,000 steps\nper request, shared by every array in the body (each item looked\nat, object compared, wanted key checked or pairing step counts\none); past that the body does not match.\n",
+            "enum": [
+              "exact",
+              "contains"
+            ],
+            "type": "string"
           },
           "body": {
             "description": "JSON the request body must contain (subset match)."

@@ -99,6 +99,15 @@ func (b *ExpectationBuilder) WithoutField(path string) *ExpectationBuilder {
 	return b
 }
 
+// WithArraysContaining makes arrays in the matcher body match when every
+// wanted item pairs with a different item of the request's array, in any
+// order and with extra items allowed. Without it arrays must match exactly.
+func (b *ExpectationBuilder) WithArraysContaining() *ExpectationBuilder {
+	b.ensureRequest()
+	b.exp.Request.Arrays = ArraysContains
+	return b
+}
+
 // WithBodyJSON narrows the matcher to requests whose JSON body is a
 // superset of v. V is marshalled with json.Marshal — if marshalling
 // fails (chan / func / cyclic value) the error is captured on the

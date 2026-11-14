@@ -51,6 +51,9 @@ func TestPrepareErrors(t *testing.T) {
 		{"absent undeclared query", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 200, Body: []byte(`[]`)},
 			Request: &matches.RequestMatcher{Absent: []string{"query.bogus_param"}}},
 			"request matcher query is invalid: ", true, "invalid_request_match"},
+		{"arrays invalid", matches.Registration{Method: "POST", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
+			Request: &matches.RequestMatcher{Arrays: "all", Body: []byte(`{"email":"a@x"}`)}},
+			"request matcher arrays is invalid: ", true, "invalid_request_match"},
 		{"request query", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
 			Request: &matches.RequestMatcher{Query: map[string][]string{"bogus_param": {"x"}}}},
 			"request matcher query is invalid: ", true, "invalid_request_match"},
@@ -281,4 +284,28 @@ func TestPrepareAbsent(t *testing.T) {
 	exp, err = matches.Prepare(v, reg([]string{}))
 	require.NoError(t, err)
 	require.Nil(t, exp.Request, "an empty absent list is a catch-all")
+}
+
+func TestPrepareNormalisesArrays(t *testing.T) {
+	v := newValidator(t)
+	prepare := func(m *matches.RequestMatcher) matches.Expectation {
+		t.Helper()
+		e, err := matches.Prepare(v, matches.Registration{
+			Method: "POST", Path: "/api/v2/users", Request: m, Response: matches.ResponseDef{Status: 429},
+		})
+		require.NoError(t, err)
+		return e
+	}
+	a := prepare(&matches.RequestMatcher{Arrays: "exact", Body: []byte(`{"email":"a@x"}`)})
+	b := prepare(&matches.RequestMatcher{Body: []byte(`{"email":"a@x"}`)})
+	require.Empty(t, a.Request.Arrays)
+	require.True(t, matches.SameTarget(a, b))
+	c := prepare(&matches.RequestMatcher{Arrays: "contains", Body: []byte(`{"email":"a@x"}`)})
+	require.False(t, matches.SameTarget(a, c))
+	require.Nil(t, prepare(&matches.RequestMatcher{Arrays: "contains"}).Request)
+	d := prepare(&matches.RequestMatcher{Arrays: "contains", Absent: []string{"body.password"}})
+	require.Empty(t, d.Request.Arrays, "arrays has no effect without a body")
+	require.True(t, matches.SameTarget(d, prepare(&matches.RequestMatcher{Absent: []string{"body.password"}})))
+	e := prepare(&matches.RequestMatcher{Arrays: "contains", Body: []byte(" null "), Absent: []string{"body.password"}})
+	require.Empty(t, e.Request.Arrays, "a null body padded with spaces is still no body")
 }

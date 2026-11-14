@@ -83,6 +83,14 @@ type RequestMatcher struct {
 	// "headers.<Name>" or "body.<a>.<b>".
 	Absent []string `json:"absent,omitempty"`
 
+	// Arrays selects how body arrays are compared: "exact" (the default
+	// when omitted) or "contains". It has no effect without a body.
+	Arrays string `json:"arrays,omitempty"`
+
+	// The arraysErr field is set when UnmarshalJSON met an arrays value that
+	// is not a string; Prepare reports it as invalid_request_match.
+	arraysErr error
+
 	// The decodeErr field is the first invalid query value UnmarshalJSON met; Prepare
 	// reports it as invalid_request_match.
 	decodeErr error

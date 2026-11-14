@@ -18,12 +18,16 @@ type wireMatcher struct {
 	Headers map[string]string          `json:"headers,omitempty"`
 	Body    json.RawMessage            `json:"body,omitempty"`
 	Absent  []string                   `json:"absent,omitempty"`
+	Arrays  json.RawMessage            `json:"arrays,omitempty"`
 }
 
 // MarshalJSON writes a one-element query list as a plain string, so a matcher
 // registered with strings reads back unchanged.
 func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
 	w := wireMatcher{Headers: rm.Headers, Body: rm.Body, Absent: rm.Absent}
+	if rm.Arrays != "" {
+		w.Arrays, _ = json.Marshal(rm.Arrays)
+	}
 	if len(rm.Query) > 0 {
 		w.Query = make(map[string]json.RawMessage, len(rm.Query))
 		for k, vals := range rm.Query {
@@ -66,6 +70,14 @@ func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
 			if v != nil {
 				rm.Absent = append(rm.Absent, *v)
 			}
+		}
+	}
+	if len(w.Arrays) > 0 {
+		var mode *string
+		if json.Unmarshal(w.Arrays, &mode) != nil || mode == nil || *mode == "" {
+			rm.arraysErr = errArraysInvalid
+		} else {
+			rm.Arrays = *mode
 		}
 	}
 	if w.Query == nil {

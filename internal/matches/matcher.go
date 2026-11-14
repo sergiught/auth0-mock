@@ -35,7 +35,8 @@ func (rm *RequestMatcher) IsEmpty() bool {
 // extras allowed). A query value matches when any of the request's values
 // for that key equals it; a query list needs every listed value present.
 // The body is subset-matched recursively. Every path in Absent must be
-// missing from the request.
+// missing from the request. With Arrays set to ArraysContains, body arrays
+// match when every wanted item pairs with a different request item.
 //
 // Header lookup is case-insensitive — http.Header.Get canonicalises the key
 // against the canonical MIME header form, so matcher entry "X-Tenant: acme"
@@ -46,7 +47,8 @@ func (rm *RequestMatcher) Matches(req MatchableRequest) bool {
 
 // requestMatcherEqual reports whether two matchers are equivalent. Two nil
 // (catch-all) matchers are equal; otherwise the query and header maps must
-// be equal (query lists as multisets), absent paths the same set, and the bodies must be semantically equal JSON.
+// be equal (query lists as multisets), absent paths the same set, arrays
+// modes the same, and the bodies semantically equal JSON.
 func requestMatcherEqual(a, b *RequestMatcher) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -55,6 +57,9 @@ func requestMatcherEqual(a, b *RequestMatcher) bool {
 		return false
 	}
 	if !reflect.DeepEqual(a.Headers, b.Headers) {
+		return false
+	}
+	if a.Arrays != b.Arrays {
 		return false
 	}
 	if !absentEqual(a.Absent, b.Absent) {

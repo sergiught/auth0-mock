@@ -137,6 +137,9 @@ func TestExplain_AgreesWithMatches(t *testing.T) {
 		{"nested body", &RequestMatcher{Body: raw(`{"user":{"blocked":true}}`)}, MatchableRequest{Body: []byte(`{"user":{"blocked":false}}`)}},
 		{"array equal", &RequestMatcher{Body: raw(`{"roles":["a"]}`)}, MatchableRequest{Body: []byte(`{"roles":["a"]}`)}},
 		{"array superset", &RequestMatcher{Body: raw(`{"roles":["a"]}`)}, MatchableRequest{Body: []byte(`{"roles":["a","b"]}`)}},
+		{"contains reordered", &RequestMatcher{Arrays: "contains", Body: raw(`{"roles":["a","b"]}`)}, MatchableRequest{Body: []byte(`{"roles":["b","c","a"]}`)}},
+		{"contains missing", &RequestMatcher{Arrays: "contains", Body: raw(`{"roles":["a","z"]}`)}, MatchableRequest{Body: []byte(`{"roles":["b","a"]}`)}},
+		{"contains objects", &RequestMatcher{Arrays: "contains", Body: raw(`{"i":[{"a":1},{"b":2}]}`)}, MatchableRequest{Body: []byte(`{"i":[{"a":1,"b":2},{"a":1}]}`)}},
 		{"root type mismatch", &RequestMatcher{Body: raw(`{"a":1}`)}, MatchableRequest{Body: []byte(`[1]`)}},
 		{"invalid request json", &RequestMatcher{Body: raw(`{"a":1}`)}, MatchableRequest{Body: []byte(`not json`)}},
 		{"scalar body", &RequestMatcher{Body: raw(`"x"`)}, MatchableRequest{Body: []byte(`"x"`)}},
@@ -180,7 +183,7 @@ func oracleMatches(rm *RequestMatcher, req MatchableRequest) bool {
 	if json.Unmarshal(body, &w) != nil || json.Unmarshal(req.Body, &g) != nil {
 		return false
 	}
-	return subsetMatch(w, g)
+	return subsetMatchArrays(w, g, rm.Arrays == ArraysContains)
 }
 
 func oracleHeader(h http.Header, key string) string {

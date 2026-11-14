@@ -3,6 +3,7 @@ package matches
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"reflect"
 	"slices"
@@ -103,12 +104,24 @@ func (rm *RequestMatcher) explainBody(gotBody []byte) []Difference {
 	if err := json.Unmarshal(gotBody, &got); err != nil {
 		return []Difference{{Field: "body", Reason: "invalid_json"}}
 	}
-	return explainValue("body", want, got)
+	var cb *containsBudget
+	if rm.Arrays == ArraysContains {
+		cb = newContainsBudget()
+	}
+	return explainValue("body", want, got, cb)
 }
 
 // explainValue walks want against got: object keys recurse (subset
-// semantics), everything else must be deeply equal.
-func explainValue(field string, want, got any) []Difference {
+// semantics), arrays follow arrayContains when cb is set (contains mode),
+// everything else must be deeply equal. It builds differences only along
+// the request body itself; candidate array pairs go through fitsValue.
+func explainValue(field string, want, got any, cb *containsBudget) []Difference {
+	if wantArr, ok := want.([]any); ok && cb != nil {
+		if gotArr, ok := got.([]any); ok && arrayContains(wantArr, gotArr, cb) {
+			return nil
+		}
+		return []Difference{{Field: field, Reason: "mismatch", Want: rawJSON(want), Got: rawJSON(got)}}
+	}
 	wantObj, ok := want.(map[string]any)
 	if !ok {
 		if reflect.DeepEqual(want, got) {
@@ -121,13 +134,16 @@ func explainValue(field string, want, got any) []Difference {
 		return []Difference{{Field: field, Reason: "mismatch", Want: rawJSON(want), Got: rawJSON(got)}}
 	}
 	var diffs []Difference
-	for k, w := range wantObj {
+	// Sorted keys keep the contains budget spent in the same order on
+	// every run, so the result never depends on map iteration order.
+	for _, k := range slices.Sorted(maps.Keys(wantObj)) {
+		w := wantObj[k]
 		g, present := gotObj[k]
 		if !present {
 			diffs = append(diffs, Difference{Field: field + "." + k, Reason: "missing", Want: rawJSON(w)})
 			continue
 		}
-		diffs = append(diffs, explainValue(field+"."+k, w, g)...)
+		diffs = append(diffs, explainValue(field+"."+k, w, g, cb)...)
 	}
 	return diffs
 }

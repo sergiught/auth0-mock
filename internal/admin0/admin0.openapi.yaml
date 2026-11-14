@@ -841,8 +841,8 @@ components:
         Optional conditions the incoming request must satisfy for the
         expectation to apply. Omit it (or send `{}`) for a catch-all. `query`
         and `body` are subset-matched: every key you specify must be present
-        and equal in the real request; extra keys are allowed. Arrays and
-        scalars must match exactly. The matcher is validated against the
+        and equal in the real request; extra keys are allowed. Scalars must
+        match exactly. Arrays must too, unless `arrays` is `contains`. The matcher is validated against the
         operation's request schema (with `required` relaxed) at registration.
       properties:
         query:
@@ -871,6 +871,19 @@ components:
             the Host, Transfer-Encoding or Trailer header, a body path on a
             GET /api/v2/events stub, or that the matcher also requires is
             rejected with `invalid_request_match`.
+        arrays:
+          type: string
+          enum: [exact, contains]
+          description: |
+            How arrays in `body` are compared. `exact` (the default) needs
+            equal arrays. `contains` needs every wanted item to pair with a
+            different request item (subset-matched objects, any order, extras
+            allowed; `["a","a"]` needs two `a`). It has no effect without a
+            `body`. Any other value, including null or "", is rejected with
+            `invalid_request_match`. The work is capped at about 100,000 steps
+            per request, shared by every array in the body (each item looked
+            at, object compared, wanted key checked or pairing step counts
+            one); past that the body does not match.
         body:
           description: JSON the request body must contain (subset match).
     ResponseDef:
