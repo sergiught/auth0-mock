@@ -515,6 +515,17 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the access_token claim "([^"]+)" ends with "([^"]*)"$`, func(claim, suffix string) error {
+		got, err := claimValueFromAccessToken(c.LastBody, claim)
+		if err != nil {
+			return err
+		}
+		if !strings.HasSuffix(got.String(), suffix) {
+			return fmt.Errorf("claim %q: got %q, want suffix %q", claim, got.String(), suffix)
+		}
+		return nil
+	})
+
 	// True absence check — `equals ""` can't tell absent from empty/null
 	// (gjson's Result.String() returns "" for all three).
 	sc.Step(`^the access_token claim "([^"]+)" is absent$`, func(claim string) error {
