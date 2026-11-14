@@ -1,6 +1,7 @@
 package router_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -36,6 +37,11 @@ const nsIssuer = "https://mock/"
 
 func newNamespaceRouter(t *testing.T, limit int, seedFile string) http.Handler {
 	t.Helper()
+	return newNamespaceRouterWith(t, limit, seedFile, nil)
+}
+
+func newNamespaceRouterWith(t *testing.T, limit int, seedFile string, tweak func(*router.Deps)) http.Handler {
+	t.Helper()
 	openapiSpec, err := spec.Load(api.ManagementOpenAPIJSON)
 	require.NoError(t, err)
 	validator, err := spec.NewValidator(openapiSpec)
@@ -57,14 +63,18 @@ func newNamespaceRouter(t *testing.T, limit int, seedFile string) http.Handler {
 		}, zerolog.Nop())
 		require.NoError(t, err)
 	}
-	h, err := router.New(router.Deps{
+	deps := router.Deps{
 		Log: zerolog.Nop(), Store: store, Claims: claimsStore, ClaimMappings: mappings,
 		Permissions: perms, PKCE: pkce.NewStore(pkce.WithNow(clk.Now)), MFA: mfaStore,
 		Keys: ks, Spec: openapiSpec, Validator: validator, Clock: clk,
 		Issuer: nsIssuer, DefaultAudience: nsIssuer + "api/v2/",
 		Journal: journal.New(10), EventsReplayBuffer: 10, Seed: mgr, NamespaceMax: limit,
 		CORSAllowedOrigins: []string{"http://localhost:3000"},
-	})
+	}
+	if tweak != nil {
+		tweak(&deps)
+	}
+	h, err := router.New(deps)
 	require.NoError(t, err)
 	return h
 }
@@ -312,4 +322,18 @@ func TestNamespaces_LifecyclePreflight(t *testing.T) {
 	assert.NotEqual(t, http.StatusMethodNotAllowed, rec.Code)
 	assert.Equal(t, "http://localhost:3000", rec.Header().Get("Access-Control-Allow-Origin"))
 	assert.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), "DELETE")
+}
+
+func TestNamespaces_DispatcherErrorsBoundDebugBody(t *testing.T) {
+	var logs bytes.Buffer
+	h := newNamespaceRouterWith(t, 5, "", func(d *router.Deps) {
+		d.Debug = true
+		d.Log = zerolog.New(&logs)
+		d.MaxRequestBodyBytes = 64
+	})
+	rec := nsDo(t, h, http.MethodPost, "/oauth/token", "header:bad id!", strings.Repeat("X", 20000))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	// DebugDump reads the body it logs; the limit must cap that read.
+	assert.Contains(t, logs.String(), `"body_bytes":64`)
+	assert.NotContains(t, logs.String(), `"body_bytes":20000`)
 }

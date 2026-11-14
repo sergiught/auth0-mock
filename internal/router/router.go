@@ -161,7 +161,7 @@ func New(d Deps) (http.Handler, error) {
 	}
 	return namespace.New(def, factory, d.NamespaceMax,
 		namespace.WithLogger(d.Log),
-		namespace.WithMiddleware(middleware.RequestID, cors, middleware.Recovery(d.Log), logging),
+		namespace.WithMiddleware(middleware.RequestID, middleware.MaxBodyBytes(d.MaxRequestBodyBytes), cors, middleware.Recovery(d.Log), logging),
 	), nil
 }
 
