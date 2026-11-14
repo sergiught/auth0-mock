@@ -149,13 +149,22 @@ func TestDispatcher_PrefixKeepsEscapedPath(t *testing.T) {
 	assert.Equal(t, "/api/v2/users/a%2Fb", e.Raw)
 }
 
-func TestDispatcher_EncodedPrefixKeepsPathConsistent(t *testing.T) {
+func TestDispatcher_EncodedPrefixKeepsEscapedPath(t *testing.T) {
 	f := newFixture(10)
 	e := f.echo(t, "/%6Es/a/x%2Fy", "")
 	assert.Equal(t, "a", e.ID)
 	assert.Equal(t, "/x/y", e.Path)
-	assert.Contains(t, []string{"", "/x%2Fy"}, e.Raw)
-	assert.Equal(t, "/x/y", e.Escaped)
+	assert.Equal(t, "/x%2Fy", e.Escaped)
+}
+
+func TestDispatcher_EncodedPrefixWithoutRest(t *testing.T) {
+	f := newFixture(10)
+	for _, p := range []string{"/%6Es/a", "/%6Es/a/"} {
+		e := f.echo(t, p, "")
+		assert.Equal(t, "a", e.ID, p)
+		assert.Equal(t, "/", e.Path, p)
+		assert.Equal(t, "/", e.Escaped, p)
+	}
 }
 
 func TestDispatcher_ConcurrentCreateBuildsOnce(t *testing.T) {

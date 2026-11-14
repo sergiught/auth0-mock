@@ -165,13 +165,28 @@ func resolve(r *http.Request) (id, path, rawPath string, viaPrefix bool, msg str
 		return "", "", "", false, "namespace header " + quote(id) + " differs from path prefix " + quote(pid)
 	}
 	if rawPath != "" {
-		if strings.HasPrefix(rawPath, prefix) {
-			rawPath = "/" + afterSegment(rawPath[len(prefix):])
-		} else {
-			rawPath = "" // Prefix arrived percent-encoded; route on Path.
-		}
+		rawPath = unprefixedRaw(r.URL.EscapedPath(), pid)
 	}
 	return pid, "/" + tail, rawPath, true, ""
+}
+
+// unprefixedRaw strips the "/ns/<pid>" segments from the escaped path, which
+// may spell them percent-encoded. It returns "" (route on Path) when the
+// prefix itself contains an encoded slash.
+func unprefixedRaw(esc, pid string) string {
+	parts := strings.SplitN(esc, "/", 4)
+	if len(parts) < 3 {
+		return ""
+	}
+	s1, err1 := url.PathUnescape(parts[1])
+	s2, err2 := url.PathUnescape(parts[2])
+	if err1 != nil || err2 != nil || s1 != "ns" || s2 != pid {
+		return ""
+	}
+	if len(parts) == 3 {
+		return "/"
+	}
+	return "/" + parts[3]
 }
 
 // acquireErr is a response acquire could not avoid.
