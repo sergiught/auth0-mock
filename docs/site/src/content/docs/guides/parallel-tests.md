@@ -90,7 +90,7 @@ Deleting a namespace does not wait for requests already in flight inside it.
 
 `NAMESPACE_MAX` (default `256`) limits how many namespaces can exist. At the cap, a request for a new one gets `429 too_many_namespaces` with `namespace limit reached (NAMESPACE_MAX=<n>); delete unused namespaces with DELETE /admin0/namespaces/{id}`. Existing namespaces keep working, and nothing is evicted for you, so delete namespaces when a test ends.
 
-Each namespace costs roughly 0.5 MB (about 300 KiB of stores plus up to about 200 KiB of journal at the default `JOURNAL` size), so the default cap of 256 is about 130 MB worst case. Delete namespaces you no longer need.
+Each namespace keeps its own request journal: up to `REQUEST_JOURNAL_SIZE` entries (default 1000), each storing up to 64 KiB of request body. A namespace with small requests costs well under 1 MB, but one that keeps receiving large bodies can reach about 62.5 MiB, or about 16 GiB across 256 namespaces. If your tests send large bodies, lower `REQUEST_JOURNAL_SIZE` or `NAMESPACE_MAX`. Delete namespaces you no longer need.
 
 `NAMESPACE_MAX=0` turns namespaces off.
 
