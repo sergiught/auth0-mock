@@ -71874,7 +71874,7 @@
             "type": "array"
           },
           "arrays": {
-            "description": "How arrays in `body` are compared. `exact` (the default) needs\nequal arrays. `contains` needs every wanted item to pair with a\ndifferent request item (subset-matched objects, any order, extras\nallowed; `[\"a\",\"a\"]` needs two `a`). It has no effect without a\n`body`. Any other value, including null or \"\", is rejected with\n`invalid_request_match`. Pairing objects is capped at about 100,000\ncomparisons per request; past that the body does not match.\n",
+            "description": "How arrays in `body` are compared. `exact` (the default) needs\nequal arrays. `contains` needs every wanted item to pair with a\ndifferent request item (subset-matched objects, any order, extras\nallowed; `[\"a\",\"a\"]` needs two `a`). It has no effect without a\n`body`. Any other value, including null or \"\", is rejected with\n`invalid_request_match`. The work is capped at about 100,000 steps\nper request, shared by every array in the body (each item looked\nat, object compared or pairing step counts one); past that the\nbody does not match.\n",
             "enum": [
               "exact",
               "contains"
