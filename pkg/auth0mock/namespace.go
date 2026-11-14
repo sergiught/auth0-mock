@@ -3,6 +3,7 @@ package auth0mock
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 )
@@ -19,7 +20,17 @@ var namespaceIDRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // client shares c's *http.Client but keeps its own verification ledger.
 //
 // Id must match [A-Za-z0-9_-]{1,64}. An already-namespaced client cannot be
-// namespaced again.
+// namespaced again. Namespace makes no request, so a server with namespaces
+// off shows up at the first call.
+//
+// Namespace is the supported way to scope a client. A client built with
+// NewClient(".../ns/abc") works for admin calls but does not know its id:
+// NamespaceID is "" and Transport is a no-op.
+//
+// The client's BaseURL is <root>/ns/<id> (prefix mode). Tokens used against it,
+// including the auth0mocktest.SubscribeEvents bearer, must be minted under that
+// prefix. A token minted through Transport (header mode, default issuer) only
+// works through Transport.
 func (c *Client) Namespace(id string) (*Client, error) {
 	if c.namespace != "" {
 		return nil, fmt.Errorf("auth0mock: Namespace: client is already scoped to namespace %q", c.namespace)
@@ -58,7 +69,10 @@ func (c *Client) DeleteNamespace(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("auth0mock: DELETE /admin0/namespaces/%s: %w", c.namespace, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_, _ = io.CopyN(io.Discard, resp.Body, maxDrainBytes)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
@@ -92,4 +106,12 @@ func (t nsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r := req.Clone(req.Context())
 	r.Header.Set(NamespaceHeader, t.id)
 	return t.base.RoundTrip(r)
+}
+
+// CloseIdleConnections passes through to the base transport when it supports
+// it, so http.Client.CloseIdleConnections still reaches the real transport.
+func (t nsTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
 }

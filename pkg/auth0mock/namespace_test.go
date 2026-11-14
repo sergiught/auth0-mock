@@ -73,7 +73,7 @@ func mintTokenWith(t *testing.T, hc *http.Client, base string) string {
 }
 
 // getStatus GETs path under base+prefix with a token minted in that same
-// scope (each namespace has its own keys).
+// scope (a prefix-mode token's issuer must match the prefix it is used under).
 func getStatus(t *testing.T, hc *http.Client, base, prefix, path string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, base+prefix+path, http.NoBody)
@@ -168,4 +168,19 @@ func TestNamespace_ResetAndVerifyScoped(t *testing.T) {
 	require.NoError(t, err)
 	re.Times(1)
 	require.Error(t, ns.Expectations.Verify(t.Context()))
+}
+
+type idleRT struct{ closed bool }
+
+func (r *idleRT) RoundTrip(*http.Request) (*http.Response, error) { return nil, io.EOF }
+func (r *idleRT) CloseIdleConnections()                           { r.closed = true }
+
+func TestNamespace_TransportCloseIdleConnections(t *testing.T) {
+	t.Parallel()
+	_, c := newNamespaceServer(t)
+	ns, err := c.Namespace("t1")
+	require.NoError(t, err)
+	base := &idleRT{}
+	(&http.Client{Transport: ns.Transport(base)}).CloseIdleConnections()
+	assert.True(t, base.closed)
 }
