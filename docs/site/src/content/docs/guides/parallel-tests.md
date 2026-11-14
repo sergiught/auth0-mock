@@ -41,9 +41,10 @@ if err != nil {
 }
 pool := x509.NewCertPool()
 pool.AppendCertsFromPEM(pem)
-httpClient := &http.Client{Transport: &http.Transport{
+base := &http.Transport{
 	TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
-}}
+}
+httpClient := &http.Client{Transport: base}
 
 mgmt, err := client.New("localhost:8443",
 	option.WithClientCredentials(ctx, "demo", "x"),
@@ -67,7 +68,9 @@ func TestCreateUser(t *testing.T) {
 		Respond(201).
 		JSON(map[string]any{"user_id": "auth0|1"}))
 
-	// base trusts the mock's certificate, as in the example above.
+	// base is the certificate-trusting transport from the example above.
+	// ns.Transport sends the header on the token request too, so the token
+	// comes from the test's own namespace.
 	httpClient := &http.Client{Transport: ns.Transport(base)}
 	mgmt, err := client.New("localhost:8443",
 		option.WithClientCredentials(ctx, "demo", "x"),
