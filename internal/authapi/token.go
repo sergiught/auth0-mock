@@ -60,7 +60,10 @@ type TokenHandler struct {
 	// Strict makes the authorization_code grant fail with 403 invalid_grant
 	// when the code is unknown, used or expired, or when redirect_uri or
 	// client_id differ from the /authorize request. It also omits
-	// refresh_token when the scope lacks offline_access. Needs PKCE to be set.
+	// refresh_token when the scope lacks offline_access, rotates refresh
+	// tokens on every use, and fails a reused, revoked or unknown refresh
+	// token, or a different client_id, with 403 invalid_grant. Needs PKCE to
+	// be set.
 	Strict bool
 }
 
