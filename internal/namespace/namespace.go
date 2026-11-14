@@ -119,7 +119,11 @@ func resolve(w http.ResponseWriter, r *http.Request) (id, path, rawPath string, 
 		return "", "", "", false, false
 	}
 	if rawPath != "" {
-		rawPath = "/" + afterSegment(rawPath[len(prefix):])
+		if strings.HasPrefix(rawPath, prefix) {
+			rawPath = "/" + afterSegment(rawPath[len(prefix):])
+		} else {
+			rawPath = "" // prefix arrived percent-encoded; route on Path
+		}
 	}
 	return pid, "/" + tail, rawPath, true, true
 }
@@ -129,6 +133,7 @@ func resolve(w http.ResponseWriter, r *http.Request) (id, path, rawPath string, 
 func (d *Dispatcher) acquire(w http.ResponseWriter, id string) (*Instance, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	now := time.Now()
 	e, ok := d.ns[id]
 	if !ok {
 		if d.max > 0 && len(d.ns) >= d.max {
@@ -143,11 +148,10 @@ func (d *Dispatcher) acquire(w http.ResponseWriter, id string) (*Instance, bool)
 				"building namespace "+quote(id)+" failed: "+err.Error(), "namespace_build_failed")
 			return nil, false
 		}
-		now := time.Now()
 		e = &entry{inst: inst, created: now}
 		d.ns[id] = e
 	}
-	e.lastUsed = time.Now()
+	e.lastUsed = now
 	return e.inst, true
 }
 
