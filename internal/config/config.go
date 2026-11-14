@@ -97,6 +97,13 @@ type Specification struct {
 	// suites can swap audiences freely.
 	BearerRequireAudience string `env:"BEARER_REQUIRE_AUDIENCE"`
 
+	// TokenEndpointStrict makes the authorization_code grant at /oauth/token
+	// reject, with 403 invalid_grant, a code that is unknown, already used or
+	// expired, or whose redirect_uri or client_id differ from the /authorize
+	// request, as Auth0 does. Off (default) keeps the lenient behaviour where
+	// any code is accepted, so test suites can fabricate codes freely.
+	TokenEndpointStrict bool `env:"TOKEN_ENDPOINT_STRICT"`
+
 	// BearerRequireScopes makes the Mgmt-API bearer check enforce token
 	// scopes as Auth0 does: a token carrying none of the scopes an
 	// operation lists gets 403 insufficient_scope. On by default;

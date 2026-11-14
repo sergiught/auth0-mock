@@ -127,6 +127,7 @@ func run() error {
 		AuthorizeAllowedRedirectURIs: cfg.AuthorizeAllowedCallbacks,
 		CORSAllowedOrigins:           cfg.CORSAllowedOrigins,
 		BearerRequireAudience:        cfg.BearerRequireAudience,
+		TokenEndpointStrict:          cfg.TokenEndpointStrict,
 		BearerRequireScopes:          cfg.BearerRequireScopes,
 		Debug:                        cfg.Debug,
 		EventsReplayBuffer:           cfg.EventsReplayBuffer,

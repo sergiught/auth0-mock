@@ -56,6 +56,24 @@ type TokenHandler struct {
 	// is remembered per subject so /userinfo can return it, and each refresh
 	// token's grant is remembered so refreshes keep the same user.
 	Sessions *session.Store
+	// Strict makes the authorization_code grant fail with 403 invalid_grant
+	// when the code is unknown, used or expired, or when redirect_uri or
+	// client_id differ from the /authorize request. Needs PKCE to be set.
+	Strict bool
+}
+
+// errInvalidAuthCode is the error_description of a strict-mode code failure.
+const errInvalidAuthCode = "Invalid authorization code"
+
+// strictCodeError reports whether strict mode must reject the code exchange.
+func strictCodeError(entry pkce.Entry, found bool, req *tokenRequest) bool {
+	if !found {
+		return true
+	}
+	if entry.Redirect != "" && req.RedirectURI != entry.Redirect {
+		return true
+	}
+	return entry.ClientID != "" && req.ClientID != entry.ClientID
 }
 
 // rememberProfile records the profile claims of an id_token's extra for
@@ -652,6 +670,23 @@ func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http
 	})
 }
 
+// pkceFailure applies the PKCE matrix documented in respondAuthorizationCode
+// and returns the error_description of a failure, or "" when the exchange may
+// proceed.
+func pkceFailure(entry pkce.Entry, hasEntry bool, verifier string) string {
+	hasChallenge := hasEntry && entry.Challenge != ""
+	if !hasChallenge && verifier == "" {
+		return ""
+	}
+	if !hasChallenge {
+		return "PKCE verification failed: no stored challenge for this authorization_code (expired or never issued)"
+	}
+	if err := entry.Verify(verifier); err != nil {
+		return "PKCE verification failed: " + err.Error()
+	}
+	return ""
+}
+
 func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	// PKCE verification. The matrix ("stored" means an entry with a challenge):
 	//   - challenge stored + verifier supplied → must match (existing-correct path)
@@ -667,18 +702,13 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	var hasEntry bool
 	if h.PKCE != nil && req.Code != "" {
 		entry, hasEntry = h.PKCE.Consume(req.Code)
-		hasChallenge := hasEntry && entry.Challenge != ""
-		if hasChallenge || req.CodeVerifier != "" {
-			if !hasChallenge {
-				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
-					"PKCE verification failed: no stored challenge for this authorization_code (expired or never issued)")
-				return
-			}
-			if err := entry.Verify(req.CodeVerifier); err != nil {
-				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
-					"PKCE verification failed: "+err.Error())
-				return
-			}
+		if h.Strict && strictCodeError(entry, hasEntry, req) {
+			httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", errInvalidAuthCode)
+			return
+		}
+		if msg := pkceFailure(entry, hasEntry, req.CodeVerifier); msg != "" {
+			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant", msg)
+			return
 		}
 	}
 	subject := DefaultSubject

@@ -71,6 +71,9 @@ type Deps struct {
 	// middleware reject tokens whose `aud` claim doesn't contain this
 	// value. Opt-in to preserve the documented test-friendly default.
 	BearerRequireAudience string
+	// TokenEndpointStrict turns on Auth0-like authorization-code checks at
+	// /oauth/token. Opt-in; see config.Config.TokenEndpointStrict.
+	TokenEndpointStrict bool
 	// BearerRequireScopes makes the Mgmt-API enforce each operation's
 	// required token scopes (403 insufficient_scope).
 	BearerRequireScopes bool
@@ -185,6 +188,7 @@ func New(d Deps) (http.Handler, error) {
 		Issuer:                       d.Issuer,
 		DefaultAudience:              d.DefaultAudience,
 		ManagementScopes:             d.Spec.ManagementScopes(),
+		TokenEndpointStrict:          d.TokenEndpointStrict,
 		Log:                          d.Log,
 		Claims:                       d.Claims,
 		ClaimMappings:                d.ClaimMappings,
