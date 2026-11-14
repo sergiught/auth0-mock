@@ -2,6 +2,8 @@
 package router
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -22,6 +24,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/mgmtapi"
 	"github.com/sergiught/auth0-mock/internal/middleware"
+	"github.com/sergiught/auth0-mock/internal/namespace"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/seed"
@@ -105,10 +108,82 @@ type Deps struct {
 
 	// Seed is the loaded SEED_FILE; nil means none.
 	Seed *seed.Manager
+	// SeedTemplate is the shared seed that /admin0/reset restores when Seed
+	// is nil. Set for namespaces; the default instance leaves it nil.
+	SeedTemplate *seed.Manager
+	// NamespaceMax caps live namespaces served behind the
+	// X-Auth0-Mock-Namespace header and /ns/<id>/ prefix. Zero turns
+	// namespaces off.
+	NamespaceMax int
 }
 
-// New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API mounts.
+// New constructs the http.Handler with admin0, JWKS, Auth API, Mgmt API
+// mounts. When d.NamespaceMax > 0 the handler also serves isolated
+// namespaces, each a private copy of the state built from d.
 func New(d Deps) (http.Handler, error) {
+	def, _, err := build(d)
+	if err != nil {
+		return nil, err
+	}
+	if d.NamespaceMax <= 0 {
+		return def, nil
+	}
+	factory := func(id string) (*namespace.Instance, error) {
+		nd, err := d.forNamespace(id)
+		if err != nil {
+			return nil, err
+		}
+		h, hub, err := build(nd)
+		if err != nil {
+			return nil, err
+		}
+		if d.Seed != nil {
+			d.Seed.ApplyTo(seed.Stores{
+				Matches: nd.Store, Claims: nd.Claims, ClaimMappings: nd.ClaimMappings,
+				Permissions: nd.Permissions, MFA: nd.MFA,
+			})
+		}
+		return &namespace.Instance{Handler: h, Close: func(ctx context.Context) {
+			if err := hub.Shutdown(ctx); err != nil {
+				nd.Log.Debug().Err(err).Msg("namespace events shutdown")
+			}
+		}}, nil
+	}
+	return namespace.New(def, factory, d.NamespaceMax), nil
+}
+
+// forNamespace returns Deps for a private copy of the router state.
+func (d Deps) forNamespace(id string) (Deps, error) {
+	if d.Keys == nil {
+		return Deps{}, errors.New("namespaces require signing keys")
+	}
+	clk := clock.NewControlled()
+	nd := d
+	nd.Log = d.Log.With().Str("namespace", id).Logger()
+	nd.Store = matches.NewStore()
+	nd.Claims = claims.NewStore()
+	nd.ClaimMappings = claims.NewMappingStore()
+	nd.Permissions = permissions.NewStore()
+	nd.PKCE = pkce.NewStore(pkce.WithNow(clk.Now))
+	nd.MFA = mfa.NewStore(mfa.WithNow(clk.Now))
+	nd.Sessions = nil
+	nd.AuthorizeErrors = nil
+	nd.Clock = clk
+	nd.Keys = d.Keys.WithNow(clk.Now)
+	size := 0
+	if d.Journal != nil {
+		size = d.Journal.Size()
+	}
+	nd.Journal = journal.New(size)
+	nd.Seed = nil
+	nd.SeedTemplate = d.Seed
+	nd.NamespaceMax = 0
+	return nd, nil
+}
+
+// build constructs the handler for one set of stores and returns its
+// events hub so callers can shut it down.
+func build(d Deps) (http.Handler, *events.Hub, error) {
 	r := chi.NewRouter()
 	// Off-by-default journal for callers (tests) that don't wire one; the
 	// middleware must be installed before any route registration.
@@ -121,7 +196,7 @@ func New(d Deps) (http.Handler, error) {
 	// are answered before any of them runs.
 	cors, err := middleware.CORS(d.CORSAllowedOrigins)
 	if err != nil {
-		return nil, fmt.Errorf("cors: %w", err)
+		return nil, nil, fmt.Errorf("cors: %w", err)
 	}
 	r.Use(cors)
 	// Recovery sits inside the journal so a recovered panic's 500 is
@@ -148,7 +223,7 @@ func New(d Deps) (http.Handler, error) {
 	}
 	hub, err := events.NewHub(d.EventsReplayBuffer, clockNow, events.WithReconnectHint(d.EventsReconnectHint))
 	if err != nil {
-		return nil, fmt.Errorf("events hub: %w", err)
+		return nil, nil, fmt.Errorf("events hub: %w", err)
 	}
 
 	// Claim mappings are off-by-default (empty map = feature off), so a
@@ -178,10 +253,11 @@ func New(d Deps) (http.Handler, error) {
 		Events:          hub,
 		Journal:         d.Journal,
 		Seed:            d.Seed,
+		SeedTemplate:    d.SeedTemplate,
 	})
 	mountJWKS(r, d.Keys, d.Log)
 	if err := MountOpenAPI(r); err != nil {
-		return nil, fmt.Errorf("mount openapi: %w", err)
+		return nil, nil, fmt.Errorf("mount openapi: %w", err)
 	}
 
 	authapi.Mount(authapi.Deps{
@@ -211,10 +287,10 @@ func New(d Deps) (http.Handler, error) {
 		EventsHandler:   hub.Handler(),
 		Now:             clockNow,
 	}); err != nil {
-		return nil, fmt.Errorf("mount mgmtapi: %w", err)
+		return nil, nil, fmt.Errorf("mount mgmtapi: %w", err)
 	}
 
-	return r, nil
+	return r, hub, nil
 }
 
 func mountJWKS(r chi.Router, keys *jwks.KeySet, log zerolog.Logger) {
