@@ -37,10 +37,9 @@ func (rm *RequestMatcher) validateArrays() error {
 }
 
 // maxContainsWork caps the work one contains-mode body match may do: every
-// array item looked at, value compared by fitsValue and pairing step costs
-// one unit. A
-// body that needs more does not match, so a huge request array cannot hold
-// the store's read lock for long.
+// array item looked at, value compared by fitsValue, object key prepared
+// and pairing step costs one unit. A body that needs more does not match,
+// so a huge request cannot hold the store's read lock for long.
 const maxContainsWork = 100_000
 
 // containsBudget is the work a contains-mode body match has left. A nil
@@ -98,12 +97,14 @@ func fitsValue(want, got any, cb *containsBudget) bool {
 	switch w := want.(type) {
 	case map[string]any:
 		g, ok := got.(map[string]any)
-		if !ok {
+		if !ok || !cb.spend(len(w)) {
 			return false
 		}
 		// Sorted keys keep the budget spent in the same order on every
-		// run, so a near-cap comparison always gives the same answer. The
-		// stack buffer spares small objects an allocation per candidate.
+		// run, so a near-cap comparison always gives the same answer. Each
+		// key was charged above, so collecting and sorting them stays
+		// within the cap. The stack buffer spares small objects an
+		// allocation per candidate.
 		var buf [16]string
 		keys := buf[:0]
 		for k := range w {

@@ -2,6 +2,7 @@ package matches
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -202,5 +203,25 @@ func TestArrays_ExplainSpendsBudgetInKeyOrder(t *testing.T) {
 			fields = append(fields, d.Field)
 		}
 		require.Equal(t, []string{"body.d", "body.e", "body.f", "body.g", "body.h"}, fields)
+	}
+}
+
+func TestArrayContains_WideObjectsSpendBudgetPerKey(t *testing.T) {
+	t.Parallel()
+	wide := make(map[string]any, 10_000)
+	for i := range 10_000 {
+		wide["k"+strconv.Itoa(i)] = 1.0
+	}
+	got := make([]any, 20_000)
+	for i := range got {
+		got[i] = map[string]any{}
+	}
+	done := make(chan bool, 1)
+	go func() { done <- arrayContains([]any{wide}, got, newContainsBudget()) }()
+	select {
+	case ok := <-done:
+		assert.False(t, ok)
+	case <-time.After(2 * time.Second):
+		t.Fatal("preparing the keys of a wide object was not charged to the budget")
 	}
 }

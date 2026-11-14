@@ -882,8 +882,8 @@ components:
             `body`. Any other value, including null or "", is rejected with
             `invalid_request_match`. The work is capped at about 100,000 steps
             per request, shared by every array in the body (each item looked
-            at, object compared or pairing step counts one); past that the
-            body does not match.
+            at, object compared, wanted key checked or pairing step counts
+            one); past that the body does not match.
         body:
           description: JSON the request body must contain (subset match).
     ResponseDef:
