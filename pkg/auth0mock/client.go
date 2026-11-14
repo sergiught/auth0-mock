@@ -26,6 +26,9 @@ const defaultTimeout = 30 * time.Second
 type Client struct {
 	baseURL string
 	http    *http.Client
+	// Namespace is the isolation id this client is scoped to; empty for a
+	// root client. Kept explicitly rather than parsed back out of baseURL.
+	namespace string
 
 	// Expectations is the typed entry point for the
 	// /admin0/expectations CRUD surface.
