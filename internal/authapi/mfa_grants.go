@@ -152,7 +152,7 @@ func (h *TokenHandler) mintFromMFA(w http.ResponseWriter, r *http.Request, ctx m
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: ctx.Subject, ClientID: ctx.ClientID, Audience: ctx.Audience, Scope: ctx.Scope, Realm: ctx.Realm, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: ctx.Subject, ClientID: ctx.ClientID, Audience: ctx.Audience, Scope: ctx.Scope, Realm: ctx.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        ctx.Scope,

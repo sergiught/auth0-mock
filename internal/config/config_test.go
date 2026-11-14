@@ -235,3 +235,18 @@ func TestLoad_AdminAllowRemote_DefaultsToFalse(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, spec.AdminAllowRemote)
 }
+
+func TestLoad_TokenEndpointStrict_DefaultsToFalse(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.False(t, spec.TokenEndpointStrict)
+}
+
+func TestLoad_TokenEndpointStrict_FromEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("TOKEN_ENDPOINT_STRICT", "true")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.True(t, spec.TokenEndpointStrict)
+}

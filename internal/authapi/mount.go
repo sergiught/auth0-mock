@@ -40,6 +40,10 @@ type Deps struct {
 	AuthorizeAllowedRedirectURIs []string
 	// AuthorizeErrors may be nil (no /authorize failure rules).
 	AuthorizeErrors *authorizeerr.Store
+	// TokenEndpointStrict turns on the authorization-code checks at
+	// /oauth/token and drops refresh_token without offline_access (see
+	// TokenHandler.Strict).
+	TokenEndpointStrict bool
 }
 
 // Mount registers all Auth API endpoints on d.Router.
@@ -56,6 +60,7 @@ func Mount(d Deps) {
 		PKCE:             d.PKCE,
 		MFA:              d.MFA,
 		Sessions:         d.Sessions,
+		Strict:           d.TokenEndpointStrict,
 	}
 	d.Router.Method(http.MethodPost, "/oauth/token", tok)
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{

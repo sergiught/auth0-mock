@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,6 +35,11 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 
 	sc.Step(`^the mock is running with ISSUER_URL "([^"]+)"$`, func(issuer string) error {
 		c.RestartWithIssuer(issuer)
+		return nil
+	})
+
+	sc.Step(`^the mock is running with TOKEN_ENDPOINT_STRICT$`, func() error {
+		c.RestartStrict()
 		return nil
 	})
 
@@ -265,6 +271,37 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 	// Form-encoded POST. The DocString is a sequence of "key=value" lines.
 	sc.Step(`^I post to "([^"]+)" with form body:$`, func(path string, body *godog.DocString) error {
 		c.DoForm("POST", path, parseFormDocString(body.Content), false)
+		return nil
+	})
+
+	// Same as the form step, with each {{name}} replaced by a saved value.
+	sc.Step(`^I post to "([^"]+)" with form body using saved values:$`, func(path string, body *godog.DocString) error {
+		content := body.Content
+		var missing string
+		content = savedPlaceholder.ReplaceAllStringFunc(content, func(m string) string {
+			name := savedPlaceholder.FindStringSubmatch(m)[1]
+			v, ok := c.SavedValues[name]
+			if !ok && missing == "" {
+				missing = name
+			}
+			return v
+		})
+		if missing != "" {
+			return fmt.Errorf("no saved value named %q", missing)
+		}
+		c.DoForm("POST", path, parseFormDocString(content), false)
+		return nil
+	})
+
+	sc.Step(`^I save the code from the redirect as "([^"]+)"$`, func(name string) error {
+		code, err := codeFromLastLocation(c)
+		if err != nil {
+			return err
+		}
+		if c.SavedValues == nil {
+			c.SavedValues = map[string]string{}
+		}
+		c.SavedValues[name] = code
 		return nil
 	})
 
@@ -1015,6 +1052,9 @@ func nestedExpectationBody(target, nestedJSON string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// savedPlaceholder matches {{name}} in a doc string.
+var savedPlaceholder = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
 // parseFormDocString reads a DocString of "key=value" lines into form values.
 func parseFormDocString(content string) url.Values {

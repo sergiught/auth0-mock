@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/go-chi/render"
@@ -56,6 +57,27 @@ type TokenHandler struct {
 	// is remembered per subject so /userinfo can return it, and each refresh
 	// token's grant is remembered so refreshes keep the same user.
 	Sessions *session.Store
+	// Strict makes the authorization_code grant fail with 403 invalid_grant
+	// when the code is unknown, used or expired, or when redirect_uri or
+	// client_id differ from the /authorize request. It also omits
+	// refresh_token when the scope lacks offline_access. Needs PKCE to be set.
+	Strict bool
+}
+
+// errInvalidAuthCode is the error_description of a strict-mode code failure.
+const errInvalidAuthCode = "Invalid authorization code"
+
+// strictCodeError reports whether strict mode must reject the code exchange.
+func strictCodeError(entry pkce.Entry, found bool, req *tokenRequest) bool {
+	if !found {
+		return true
+	}
+	if entry.Redirect != "" && req.RedirectURI != entry.Redirect {
+		return true
+	}
+	// Compare clients exactly: a code issued without a client_id (allowed for
+	// response_type=code) must not be redeemable by any client.
+	return req.ClientID != entry.ClientID
 }
 
 // rememberProfile records the profile claims of an id_token's extra for
@@ -76,6 +98,16 @@ func (h *TokenHandler) issueRefreshToken(g session.Grant, idExtra map[string]any
 		h.Sessions.RememberRefresh(token, g)
 	}
 	return token
+}
+
+// offlineRefreshToken is issueRefreshToken for the non-refresh grants. In
+// strict mode it returns "" (and remembers nothing) unless the grant's scope
+// includes offline_access.
+func (h *TokenHandler) offlineRefreshToken(g session.Grant, idExtra map[string]any) string {
+	if h.Strict && !slices.Contains(strings.Fields(g.Scope), "offline_access") {
+		return ""
+	}
+	return h.issueRefreshToken(g, idExtra)
 }
 
 // mfaChallengeResponse is the body returned alongside the 403 mfa_required.
@@ -222,7 +254,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -295,7 +327,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Realm: req.Realm, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -551,7 +583,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: req.Scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        req.Scope,
@@ -652,6 +684,23 @@ func (h *TokenHandler) respondUnknownRefreshToken(w http.ResponseWriter, r *http
 	})
 }
 
+// pkceFailure applies the PKCE matrix documented in respondAuthorizationCode
+// and returns the error_description of a failure, or "" when the exchange may
+// proceed.
+func pkceFailure(entry pkce.Entry, hasEntry bool, verifier string) string {
+	hasChallenge := hasEntry && entry.Challenge != ""
+	if !hasChallenge && verifier == "" {
+		return ""
+	}
+	if !hasChallenge {
+		return "PKCE verification failed: no stored challenge for this authorization_code (expired or never issued)"
+	}
+	if err := entry.Verify(verifier); err != nil {
+		return "PKCE verification failed: " + err.Error()
+	}
+	return ""
+}
+
 func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.Request, req *tokenRequest, aud string) {
 	// PKCE verification. The matrix ("stored" means an entry with a challenge):
 	//   - challenge stored + verifier supplied → must match (existing-correct path)
@@ -663,29 +712,28 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	//     here closes a real bypass: a stolen `code` from a non-PKCE flow
 	//     would otherwise be redeemable.
 	//   - no challenge stored + no verifier       → legitimate non-PKCE flow → pass.
+	if h.Strict && req.Code == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: code")
+		return
+	}
 	var entry pkce.Entry
 	var hasEntry bool
 	if h.PKCE != nil && req.Code != "" {
 		entry, hasEntry = h.PKCE.Consume(req.Code)
-		hasChallenge := hasEntry && entry.Challenge != ""
-		if hasChallenge || req.CodeVerifier != "" {
-			if !hasChallenge {
-				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
-					"PKCE verification failed: no stored challenge for this authorization_code (expired or never issued)")
-				return
-			}
-			if err := entry.Verify(req.CodeVerifier); err != nil {
-				httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant",
-					"PKCE verification failed: "+err.Error())
-				return
-			}
+		if h.Strict && strictCodeError(entry, hasEntry, req) {
+			httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", errInvalidAuthCode)
+			return
+		}
+		if msg := pkceFailure(entry, hasEntry, req.CodeVerifier); msg != "" {
+			httperr.WriteAuth(w, http.StatusBadRequest, "invalid_grant", msg)
+			return
 		}
 	}
 	subject := DefaultSubject
 	if hasEntry && entry.LoginHint != "" {
 		subject = entry.LoginHint
 	}
-	aud, scope := codeAudienceScope(entry, aud, req.Scope)
+	aud, scope := codeAudienceScope(entry, aud, req.Scope, h.Strict && hasEntry)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
@@ -723,7 +771,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.issueRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        scope,
@@ -733,11 +781,13 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 // codeAudienceScope returns the audience and scope for a code exchange. The
 // code carries the /authorize audience and scope, which win over the token
 // request's, as on Auth0. A zero entry (no stored code) keeps the request's.
-func codeAudienceScope(entry pkce.Entry, aud, scope string) (string, string) {
+// With storedScope set (strict mode) the scope is the stored one even when
+// empty, and the request's scope is ignored.
+func codeAudienceScope(entry pkce.Entry, aud, scope string, storedScope bool) (string, string) {
 	if entry.Audience != "" {
 		aud = entry.Audience
 	}
-	if entry.Scope != "" {
+	if entry.Scope != "" || storedScope {
 		scope = entry.Scope
 	}
 	return aud, scope

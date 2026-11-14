@@ -20,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
@@ -981,4 +982,140 @@ func TestToken_ClientCredentials_NoPermissionsNoScope(t *testing.T) {
 	body, c := postClientCredentials(t, r, ks, nil)
 	assert.Empty(t, c.Scope)
 	assert.Empty(t, body.Scope)
+}
+
+// strictCodeHandler builds a TokenHandler with a real PKCE store holding the
+// code "c1" issued to client "demo" for https://app/cb.
+func strictCodeHandler(t *testing.T, strict bool, entry pkce.Entry, opts ...pkce.Option) *TokenHandler {
+	t.Helper()
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	store := pkce.NewStore(opts...)
+	store.Put("c1", entry)
+	return &TokenHandler{
+		Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), PKCE: store, Strict: strict,
+	}
+}
+
+func postCodeExchange(h *TokenHandler, form url.Values, auth string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w
+}
+
+func codeForm(code string, kv ...string) url.Values {
+	f := url.Values{
+		"grant_type": {"authorization_code"}, "code": {code},
+		"client_id": {"demo"}, "redirect_uri": {"https://app/cb"},
+	}
+	for i := 0; i+1 < len(kv); i += 2 {
+		f.Set(kv[i], kv[i+1])
+	}
+	return f
+}
+
+func demoEntry() pkce.Entry {
+	return pkce.Entry{ClientID: "demo", Redirect: "https://app/cb"}
+}
+
+func requireInvalidAuthCode(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "invalid_grant", body["error"])
+	assert.Equal(t, "Invalid authorization code", body["error_description"])
+}
+
+func TestAuthCode_Strict_UnknownCode403(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("nope"), ""))
+}
+
+func TestAuthCode_Strict_ReusedCode403(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	require.Equal(t, http.StatusOK, postCodeExchange(h, codeForm("c1"), "").Code)
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
+}
+
+func TestAuthCode_Strict_ExpiredCode403(t *testing.T) {
+	now := time.Now()
+	h := strictCodeHandler(t, true, demoEntry(), pkce.WithNow(func() time.Time { return now }))
+	now = now.Add(pkce.DefaultTTL + time.Second)
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
+}
+
+func TestAuthCode_Strict_RedirectMismatch403(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1", "redirect_uri", "https://evil/cb"), ""))
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
+}
+
+func TestAuthCode_Strict_RedirectMissing403(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	f := codeForm("c1")
+	f.Del("redirect_uri")
+	requireInvalidAuthCode(t, postCodeExchange(h, f, ""))
+}
+
+func TestAuthCode_Strict_ClientMismatch403(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1", "client_id", "other"), ""))
+}
+
+func TestAuthCode_Strict_CodeWithoutClientRejectsAnyClient(t *testing.T) {
+	h := strictCodeHandler(t, true, pkce.Entry{Redirect: "https://app/cb"})
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
+}
+
+func TestAuthCode_Strict_BasicAuthClientMatches(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	f := codeForm("c1")
+	f.Del("client_id")
+	w := postCodeExchange(h, f, basicHeader("demo", "secret"))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestAuthCode_Strict_UnknownCodeWithVerifier403(t *testing.T) {
+	h := strictCodeHandler(t, true, demoEntry())
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("nope", "code_verifier", "x"), ""))
+}
+
+func TestAuthCode_Strict_PKCEErrorsUnchanged(t *testing.T) {
+	e := demoEntry()
+	e.Challenge, e.Method = "some-challenge", pkce.MethodS256
+	h := strictCodeHandler(t, true, e)
+	w := postCodeExchange(h, codeForm("c1", "code_verifier", "wrong"), "")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "PKCE verification failed: S256 mismatch")
+}
+
+func TestAuthCode_Strict_MissingCode400(t *testing.T) {
+	f := codeForm("")
+	f.Del("code")
+	w := postCodeExchange(strictCodeHandler(t, true, demoEntry()), f, "")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"error":"invalid_request","error_description":"Missing required parameter: code"}`, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "access_token")
+}
+
+func TestAuthCode_Lenient_MissingCodeStillWorks(t *testing.T) {
+	f := codeForm("")
+	f.Del("code")
+	w := postCodeExchange(strictCodeHandler(t, false, demoEntry()), f, "")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestAuthCode_Lenient_UnknownCodeStillWorks(t *testing.T) {
+	h := strictCodeHandler(t, false, demoEntry())
+	w := postCodeExchange(h, codeForm("nope"), "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
