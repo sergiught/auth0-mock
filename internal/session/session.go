@@ -23,8 +23,8 @@ type Store struct {
 	profiles map[string]map[string]any
 	order    []string // Subjects in insertion order, oldest first.
 
-	refresh      map[string]Grant
-	refreshOrder []string // Refresh tokens in insertion order, oldest first.
+	refresh      map[string]refreshEntry // Refresh tokens with their chain and used flag.
+	refreshOrder []string                // Refresh tokens in insertion order, oldest first.
 
 	access      map[string]Access
 	accessOrder []string // Opaque access tokens in insertion order, oldest first.
@@ -57,7 +57,7 @@ type Grant struct {
 
 // NewStore returns an empty Store.
 func NewStore() *Store {
-	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]Grant{}, access: map[string]Access{}, logins: map[string]Login{}}
+	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]refreshEntry{}, access: map[string]Access{}, logins: map[string]Login{}}
 }
 
 // RememberProfile stores a copy of profile for subject; last write wins.
@@ -91,7 +91,7 @@ func (s *Store) Clear() {
 	defer s.mu.Unlock()
 	s.profiles = map[string]map[string]any{}
 	s.order = nil
-	s.refresh = map[string]Grant{}
+	s.refresh = map[string]refreshEntry{}
 	s.refreshOrder = nil
 	s.access = map[string]Access{}
 	s.accessOrder = nil
@@ -99,11 +99,28 @@ func (s *Store) Clear() {
 	s.loginOrder = nil
 }
 
-// RememberRefresh stores a copy of g under the refresh token. It is bounded
-// by MaxEntries like profiles, evicting the oldest token first.
-func (s *Store) RememberRefresh(token string, g Grant) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// refreshEntry is a stored refresh token: its grant, the chain it belongs to
+// (the first token issued by a login) and whether strict mode has redeemed it.
+type refreshEntry struct {
+	grant Grant
+	chain string
+	used  bool
+}
+
+// RedeemResult is the outcome of RedeemRefresh.
+type RedeemResult int
+
+// Outcomes of RedeemRefresh.
+const (
+	RedeemOK             RedeemResult = iota
+	RedeemUnknown                     // never issued, evicted, or its chain was revoked
+	RedeemClientMismatch              // grant returned so the caller can name the issuing client; nothing changes
+	RedeemReused                      // token was already used; its chain is now revoked
+)
+
+// storeRefresh inserts e under token, evicting the oldest token at the cap.
+// The caller holds s.mu.
+func (s *Store) storeRefresh(token string, e refreshEntry) {
 	if _, exists := s.refresh[token]; !exists {
 		if len(s.refreshOrder) >= MaxEntries {
 			delete(s.refresh, s.refreshOrder[0])
@@ -111,20 +128,87 @@ func (s *Store) RememberRefresh(token string, g Grant) {
 		}
 		s.refreshOrder = append(s.refreshOrder, token)
 	}
-	g.Profile = maps.Clone(g.Profile)
-	s.refresh[token] = g
+	e.grant.Profile = maps.Clone(e.grant.Profile)
+	s.refresh[token] = e
 }
 
-// Refresh returns a copy of the grant remembered for the refresh token.
+// revokeChain deletes every token of chain. The caller holds s.mu.
+func (s *Store) revokeChain(chain string) {
+	for tok, e := range s.refresh {
+		if e.chain == chain {
+			delete(s.refresh, tok)
+		}
+	}
+	s.refreshOrder = slices.DeleteFunc(s.refreshOrder, func(tok string) bool {
+		_, ok := s.refresh[tok]
+		return !ok
+	})
+}
+
+// RememberRefresh stores copy of g under refresh token, starting a new
+// chain. It is bounded by MaxEntries like profiles, evicting oldest token first.
+func (s *Store) RememberRefresh(token string, g Grant) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.storeRefresh(token, refreshEntry{grant: g, chain: token})
+}
+
+// Refresh returns copy of grant remembered refresh token, used or not.
 func (s *Store) Refresh(token string) (Grant, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	g, ok := s.refresh[token]
+	e, ok := s.refresh[token]
 	if !ok {
 		return Grant{}, false
 	}
+	g := e.grant
 	g.Profile = maps.Clone(g.Profile)
 	return g, true
+}
+
+// RedeemRefresh atomically judges a strict refresh. Order: unknown,
+// client mismatch (only when clientID and the stored client are both
+// non-empty), already used (revokes the chain), else marks the token used.
+func (s *Store) RedeemRefresh(token, clientID string) (Grant, RedeemResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.refresh[token]
+	if !ok {
+		return Grant{}, RedeemUnknown
+	}
+	g := e.grant
+	g.Profile = maps.Clone(g.Profile)
+	if clientID != "" && g.ClientID != "" && clientID != g.ClientID {
+		return g, RedeemClientMismatch
+	}
+	if e.used {
+		s.revokeChain(e.chain)
+		return g, RedeemReused
+	}
+	e.used = true
+	s.refresh[token] = e
+	return g, RedeemOK
+}
+
+// RotateRefresh stores token as the next member of old's chain. When old is
+// no longer stored (evicted or revoked) it stores nothing.
+func (s *Store) RotateRefresh(old, token string, g Grant) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, ok := s.refresh[old]
+	if !ok {
+		return
+	}
+	s.storeRefresh(token, refreshEntry{grant: g, chain: prev.chain})
+}
+
+// RevokeRefreshChain deletes every token in token's chain. Unknown tokens are ignored.
+func (s *Store) RevokeRefreshChain(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e, ok := s.refresh[token]; ok {
+		s.revokeChain(e.chain)
+	}
 }
 
 // RememberAccess stores a under the opaque access token. It is bounded by
