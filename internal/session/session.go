@@ -113,9 +113,9 @@ type RedeemResult int
 // Outcomes of RedeemRefresh.
 const (
 	RedeemOK             RedeemResult = iota
-	RedeemUnknown                     // never issued, evicted, or its chain was revoked
-	RedeemClientMismatch              // grant returned so the caller can name the issuing client; nothing changes
-	RedeemReused                      // token was already used; its chain is now revoked
+	RedeemUnknown                     // Never issued, evicted, or its chain was revoked.
+	RedeemClientMismatch              // Grant returned so the caller can name the issuing client; nothing changes.
+	RedeemReused                      // Token was already used; its chain is now revoked.
 )
 
 // storeRefresh inserts e under token, evicting the oldest token at the cap.
