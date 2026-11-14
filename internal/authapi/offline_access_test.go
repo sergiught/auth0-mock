@@ -159,3 +159,16 @@ func TestOfflineAccess_Lenient_AlwaysIssues(t *testing.T) {
 		})
 	}
 }
+
+// loginForRefresh logs in with offline_access and returns the first refresh token.
+func loginForRefresh(t *testing.T, strict bool) (chi.Router, string) {
+	t.Helper()
+	r, _, _ := newOfflineRouter(t, strict)
+	login := rawBody(t, r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice@example.com"},
+		"password": {"x"}, "scope": {"openid offline_access"},
+	})
+	rt, _ := login["refresh_token"].(string)
+	require.NotEmpty(t, rt)
+	return r, rt
+}

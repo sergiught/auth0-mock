@@ -78,7 +78,7 @@ func Mount(d Deps) {
 	oidcLogout := &OIDCLogoutHandler{Keys: d.Keys, AllowedReturnURLs: d.LogoutAllowedURLs, Sessions: d.Sessions}
 	d.Router.Method(http.MethodGet, "/oidc/logout", oidcLogout)
 	d.Router.Method(http.MethodPost, "/oidc/logout", oidcLogout)
-	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{})
+	d.Router.Method(http.MethodPost, "/oauth/revoke", &RevokeHandler{Strict: d.TokenEndpointStrict, Sessions: d.Sessions})
 	d.Router.Method(http.MethodPost, "/dbconnections/signup", &DBConnectionsSignupHandler{})
 	d.Router.Method(http.MethodPost, "/dbconnections/change_password", &DBConnectionsChangePasswordHandler{})
 	d.Router.Method(http.MethodPost, "/passwordless/start", &PasswordlessStartHandler{})
