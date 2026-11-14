@@ -3,6 +3,7 @@ package matches
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"reflect"
 	"slices"
@@ -133,7 +134,10 @@ func explainValue(field string, want, got any, cb *containsBudget) []Difference 
 		return []Difference{{Field: field, Reason: "mismatch", Want: rawJSON(want), Got: rawJSON(got)}}
 	}
 	var diffs []Difference
-	for k, w := range wantObj {
+	// Sorted keys keep the contains budget spent in the same order on
+	// every run, so the result never depends on map iteration order.
+	for _, k := range slices.Sorted(maps.Keys(wantObj)) {
+		w := wantObj[k]
 		g, present := gotObj[k]
 		if !present {
 			diffs = append(diffs, Difference{Field: field + "." + k, Reason: "missing", Want: rawJSON(w)})

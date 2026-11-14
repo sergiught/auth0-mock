@@ -163,3 +163,44 @@ func TestArrayContains_CandidatePairsBuildNoDiagnostics(t *testing.T) {
 	allocs := testing.AllocsPerRun(1, func() { arrayContains(want, got, newContainsBudget()) })
 	assert.Less(t, allocs, 100.0, "candidate pairs must not serialize mismatches")
 }
+
+func TestArrayContains_ObjectKeysSpendBudgetInOrder(t *testing.T) {
+	t.Parallel()
+	// Each decoy fails on "a" for 2 units, but costs about 800 units when
+	// "z" is checked first. With 2,000 decoys only the sorted order stays
+	// under the budget, so a random key order would sometimes miss.
+	z := make([]any, 400)
+	for i := range z {
+		z[i] = float64(i)
+	}
+	want := []any{map[string]any{"a": 1.0, "z": z}}
+	got := make([]any, 0, 2_001)
+	for range 2_000 {
+		got = append(got, map[string]any{"a": 2.0, "z": z})
+	}
+	got = append(got, map[string]any{"a": 1.0, "z": z})
+	for range 20 {
+		require.True(t, arrayContains(want, got, newContainsBudget()))
+	}
+}
+
+func TestArrays_ExplainSpendsBudgetInKeyOrder(t *testing.T) {
+	t.Parallel()
+	// Each of the eight lists fits alone, but the budget covers only three,
+	// so it runs out on whichever comes fourth. Sorted keys make the
+	// failing set always d to h, whatever order the map yields.
+	list := "[0" + strings.Repeat(",0", 14_000-1) + "]"
+	var parts []string
+	for _, k := range strings.Split("abcdefgh", "") {
+		parts = append(parts, `"`+k+`":`+list)
+	}
+	body := []byte("{" + strings.Join(parts, ",") + "}")
+	rm := &RequestMatcher{Arrays: "contains", Body: body}
+	for range 5 {
+		var fields []string
+		for _, d := range rm.Explain(MatchableRequest{Body: body}) {
+			fields = append(fields, d.Field)
+		}
+		require.Equal(t, []string{"body.d", "body.e", "body.f", "body.g", "body.h"}, fields)
+	}
+}

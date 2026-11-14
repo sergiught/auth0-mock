@@ -1,6 +1,7 @@
 package matches
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"net/url"
@@ -118,7 +119,8 @@ func prepareMatcher(v *spec.Validator, op spec.Operation, in *RequestMatcher) (*
 		if len(c.Absent) > 0 {
 			c.Absent = canonicalAbsentList(c.Absent)
 		}
-		if c.Arrays == ArraysExact || len(c.Body) == 0 || string(c.Body) == "null" {
+		body := bytes.TrimSpace(c.Body)
+		if c.Arrays == ArraysExact || len(body) == 0 || string(body) == "null" {
 			c.Arrays = ""
 		}
 		req = &c

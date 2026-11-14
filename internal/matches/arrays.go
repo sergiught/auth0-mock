@@ -3,6 +3,7 @@ package matches
 import (
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // Values of RequestMatcher.Arrays. An omitted value means ArraysExact.
@@ -100,9 +101,18 @@ func fitsValue(want, got any, cb *containsBudget) bool {
 		if !ok {
 			return false
 		}
-		for k, wv := range w {
+		// Sorted keys keep the budget spent in the same order on every
+		// run, so a near-cap comparison always gives the same answer. The
+		// stack buffer spares small objects an allocation per candidate.
+		var buf [16]string
+		keys := buf[:0]
+		for k := range w {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for _, k := range keys {
 			gv, present := g[k]
-			if !present || !fitsValue(wv, gv, cb) {
+			if !present || !fitsValue(w[k], gv, cb) {
 				return false
 			}
 		}

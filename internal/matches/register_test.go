@@ -306,4 +306,6 @@ func TestPrepareNormalisesArrays(t *testing.T) {
 	d := prepare(&matches.RequestMatcher{Arrays: "contains", Absent: []string{"body.password"}})
 	require.Empty(t, d.Request.Arrays, "arrays has no effect without a body")
 	require.True(t, matches.SameTarget(d, prepare(&matches.RequestMatcher{Absent: []string{"body.password"}})))
+	e := prepare(&matches.RequestMatcher{Arrays: "contains", Body: []byte(" null "), Absent: []string{"body.password"}})
+	require.Empty(t, e.Request.Arrays, "a null body padded with spaces is still no body")
 }
