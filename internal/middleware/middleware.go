@@ -571,6 +571,7 @@ func redact(v string) string {
 var sensitiveBodyFields = []string{
 	"access_token", "id_token", "refresh_token", "mfa_token",
 	"client_secret", "password", "code_verifier", "client_assertion",
+	"token", // /oauth/revoke carries a refresh token under this name.
 }
 
 // jsonSensitiveRE matches "field":"value" inside JSON-encoded bodies.

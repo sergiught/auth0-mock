@@ -433,6 +433,34 @@ func TestDebugDump_EndToEndRedaction(t *testing.T) {
 	assert.Contains(t, sb.String(), "legit=value")
 }
 
+// TestDebugDump_RedactsRevokeToken checks that the `token` field of an
+// /oauth/revoke body (a refresh token) is scrubbed in form and JSON bodies.
+func TestDebugDump_RedactsRevokeToken(t *testing.T) {
+	cases := []struct {
+		name, contentType, body, want string
+	}{
+		{"form", "application/x-www-form-urlencoded", "client_id=abc&token=rt-secret-123", "token=<redacted>"},
+		{"json", "application/json", `{"client_id":"abc","token":"rt-secret-123"}`, `"token": "<redacted>"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var sb strings.Builder
+			var bodyBuf bytes.Buffer
+			h := DebugDump(zerolog.New(&sb), &bodyBuf)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest("POST", "/oauth/revoke", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			h.ServeHTTP(httptest.NewRecorder(), req)
+
+			combined := sb.String() + bodyBuf.String()
+			assert.NotContains(t, combined, "rt-secret-123", "revoke token value leaks")
+			assert.Contains(t, bodyBuf.String(), tc.want)
+			assert.Contains(t, bodyBuf.String(), "abc", "client_id stays readable")
+		})
+	}
+}
+
 func TestFlatHeaders_RedactsAndSorts(t *testing.T) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
