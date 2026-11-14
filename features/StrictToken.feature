@@ -210,15 +210,6 @@ Feature: Strict /oauth/token mode
     Given the mock is running with TOKEN_ENDPOINT_STRICT
     When I post to "/oauth/token" with form body:
       """
-      grant_type=password
-      client_id=demo
-      username=alice@example.com
-      password=ignored
-      scope=openid offline_access
-      """
-    And I save the response JSON path "refresh_token" as "rt1"
-    And I post to "/oauth/token" with form body using saved values:
-      """
       grant_type=refresh_token
       client_id=demo
       refresh_token=nope

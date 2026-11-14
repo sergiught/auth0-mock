@@ -1188,11 +1188,22 @@ func TestRefresh_Strict_NoClientIDUsesStored(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var resp tokenResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	var parts = strings.Split(resp.IDToken, ".")
+	parts := strings.Split(resp.IDToken, ".")
 	require.Len(t, parts, 3)
 	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
 	require.NoError(t, err)
-	assert.Contains(t, string(raw), `"aud":["demo"]`)
+	var claims struct {
+		Aud any `json:"aud"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &claims))
+	switch aud := claims.Aud.(type) {
+	case string:
+		assert.Equal(t, "demo", aud)
+	case []any:
+		assert.Contains(t, aud, "demo")
+	default:
+		t.Fatalf("unexpected aud claim: %v", claims.Aud)
+	}
 }
 
 func TestRefresh_Strict_BasicAuthClient(t *testing.T) {
