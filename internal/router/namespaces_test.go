@@ -63,6 +63,7 @@ func newNamespaceRouter(t *testing.T, limit int, seedFile string) http.Handler {
 		Keys: ks, Spec: openapiSpec, Validator: validator, Clock: clk,
 		Issuer: nsIssuer, DefaultAudience: nsIssuer + "api/v2/",
 		Journal: journal.New(10), EventsReplayBuffer: 10, Seed: mgr, NamespaceMax: limit,
+		CORSAllowedOrigins: []string{"http://localhost:3000"},
 	})
 	require.NoError(t, err)
 	return h
@@ -291,4 +292,24 @@ func TestNamespaces_Disabled(t *testing.T) {
 
 	stub(t, h, "", "default")
 	assert.Contains(t, getUser(t, h, "header:b").Body.String(), "default")
+}
+
+func TestNamespaces_DispatcherErrorsGetMiddleware(t *testing.T) {
+	h := newNamespaceRouter(t, 5, "")
+
+	rec := nsDo(t, h, http.MethodGet, "/oauth/token", "header:bad id!", "",
+		"Origin", "http://localhost:3000")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "http://localhost:3000", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.NotEmpty(t, rec.Header().Get("X-Request-Id"))
+}
+
+func TestNamespaces_LifecyclePreflight(t *testing.T) {
+	h := newNamespaceRouter(t, 5, "")
+
+	rec := nsDo(t, h, http.MethodOptions, "/admin0/namespaces/a", "", "",
+		"Origin", "http://localhost:3000", "Access-Control-Request-Method", "DELETE")
+	assert.NotEqual(t, http.StatusMethodNotAllowed, rec.Code)
+	assert.Equal(t, "http://localhost:3000", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), "DELETE")
 }

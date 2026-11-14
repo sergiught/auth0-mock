@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 )
@@ -33,7 +35,7 @@ var idRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // Instance is one namespace's handler and its optional cleanup.
 type Instance struct {
 	Handler http.Handler
-	Close   func(context.Context) // may be nil
+	Close   func(context.Context) // May be nil.
 }
 
 // Factory builds the instance for a namespace id.
@@ -51,26 +53,62 @@ type Dispatcher struct {
 	def   http.Handler
 	build Factory
 	max   int
+	log   zerolog.Logger
+	mws   []func(http.Handler) http.Handler
 
 	mu sync.Mutex
 	ns map[string]*entry
 }
 
-// New returns a Dispatcher. max caps the number of live namespaces; a max
-// below 1 means unlimited.
-func New(def http.Handler, build Factory, limit int) *Dispatcher {
-	return &Dispatcher{def: def, build: build, max: limit, ns: map[string]*entry{}}
+// Option configures a Dispatcher.
+type Option func(*Dispatcher)
+
+// WithMiddleware wraps only the responses the Dispatcher writes itself
+// (errors and the lifecycle routes), outermost first. Requests forwarded to
+// the default or a namespace handler are not wrapped.
+func WithMiddleware(mws ...func(http.Handler) http.Handler) Option {
+	return func(d *Dispatcher) { d.mws = append(d.mws, mws...) }
+}
+
+// WithLogger sets the logger for build failures and limit rejections.
+func WithLogger(l zerolog.Logger) Option {
+	return func(d *Dispatcher) { d.log = l }
+}
+
+// New returns a Dispatcher. The limit caps the number of live namespaces; a
+// limit below 1 means unlimited.
+func New(def http.Handler, build Factory, limit int, opts ...Option) *Dispatcher {
+	d := &Dispatcher{def: def, build: build, max: limit, log: zerolog.Nop(), ns: map[string]*entry{}}
+	for _, o := range opts {
+		o(d)
+	}
+	return d
+}
+
+// own serves a response the Dispatcher writes itself through its middleware.
+func (d *Dispatcher) own(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request)) {
+	var h http.Handler = http.HandlerFunc(fn)
+	for i := len(d.mws) - 1; i >= 0; i-- {
+		h = d.mws[i](h)
+	}
+	h.ServeHTTP(w, r)
 }
 
 // ServeHTTP implements http.Handler.
 func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	id, path, rawPath, viaPrefix, ok := resolve(w, r)
-	if !ok {
+	// Lifecycle routes are global: they ignore the namespace header and
+	// prefix for selection, so they are matched before either is validated.
+	if p := unprefixed(r.URL.Path); p == listPath || strings.HasPrefix(p, itemPath) {
+		d.own(w, r, func(w http.ResponseWriter, r *http.Request) {
+			named := r.Header.Get(Header) != "" || strings.HasPrefix(r.URL.Path, prefix)
+			d.lifecycle(w, r, p, named)
+		})
 		return
 	}
 
-	if path == listPath || strings.HasPrefix(path, itemPath) {
-		d.lifecycle(w, r, path)
+	id, path, rawPath, viaPrefix, msg := resolve(r)
+	if msg != "" {
+		d.own(w, r, func(w http.ResponseWriter, _ *http.Request) { invalid(w, msg) })
 		return
 	}
 
@@ -87,8 +125,11 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst, ok := d.acquire(w, id)
-	if !ok {
+	inst, aerr := d.acquire(id)
+	if aerr != nil {
+		d.own(w, r, func(w http.ResponseWriter, _ *http.Request) {
+			httperr.WriteMgmt(w, aerr.status, aerr.errStr, aerr.message, aerr.code)
+		})
 		return
 	}
 	if viaPrefix {
@@ -97,69 +138,88 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	inst.Handler.ServeHTTP(w, r2)
 }
 
-// resolve extracts the namespace id and the forwarded path from r. On an
-// invalid or conflicting id it has written the response and returns ok=false.
-func resolve(w http.ResponseWriter, r *http.Request) (id, path, rawPath string, viaPrefix, ok bool) {
+// unprefixed returns path without a leading "/ns/<id>" segment pair.
+func unprefixed(path string) string {
+	if !strings.HasPrefix(path, prefix) {
+		return path
+	}
+	return "/" + afterSegment(path[len(prefix):])
+}
+
+// resolve extracts the namespace id and the forwarded path from r. A
+// non-empty msg means the id is invalid or conflicting.
+func resolve(r *http.Request) (id, path, rawPath string, viaPrefix bool, msg string) {
 	id = r.Header.Get(Header)
 	path, rawPath = r.URL.Path, r.URL.RawPath
 	if !strings.HasPrefix(path, prefix) {
 		if id != "" && !idRE.MatchString(id) {
-			invalid(w, "invalid namespace id "+quote(id)+" in "+Header+" header")
-			return "", "", "", false, false
+			return "", "", "", false, "invalid namespace id " + quote(id) + " in " + Header + " header"
 		}
-		return id, path, rawPath, false, true
+		return id, path, rawPath, false, ""
 	}
 	pid, tail, _ := strings.Cut(path[len(prefix):], "/")
 	if !idRE.MatchString(pid) {
-		invalid(w, "invalid namespace id "+quote(pid)+" in path prefix")
-		return "", "", "", false, false
+		return "", "", "", false, "invalid namespace id \"" + quote(pid) + "\" in path prefix"
 	}
 	if id != "" && id != pid {
-		invalid(w, "namespace header "+quote(id)+" differs from path prefix "+quote(pid))
-		return "", "", "", false, false
+		return "", "", "", false, "namespace header " + quote(id) + " differs from path prefix " + quote(pid)
 	}
 	if rawPath != "" {
 		if strings.HasPrefix(rawPath, prefix) {
 			rawPath = "/" + afterSegment(rawPath[len(prefix):])
 		} else {
-			rawPath = "" // prefix arrived percent-encoded; route on Path
+			rawPath = "" // Prefix arrived percent-encoded; route on Path.
 		}
 	}
-	return pid, "/" + tail, rawPath, true, true
+	return pid, "/" + tail, rawPath, true, ""
+}
+
+// acquireErr is a response acquire could not avoid.
+type acquireErr struct {
+	status  int
+	errStr  string
+	message string
+	code    string
 }
 
 // acquire returns the instance for id, building it on first use and marking
-// it used. On failure it has written the response.
-func (d *Dispatcher) acquire(w http.ResponseWriter, id string) (*Instance, bool) {
+// it used.
+func (d *Dispatcher) acquire(id string) (*Instance, *acquireErr) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := time.Now()
 	e, ok := d.ns[id]
 	if !ok {
 		if d.max > 0 && len(d.ns) >= d.max {
-			httperr.WriteMgmt(w, http.StatusTooManyRequests, "Too Many Requests",
-				"namespace limit reached (NAMESPACE_MAX="+itoa(d.max)+"); delete unused namespaces with DELETE /admin0/namespaces/{id}",
-				"too_many_namespaces")
-			return nil, false
+			d.log.Warn().Str("namespace", id).Int("max", d.max).Msg("namespace limit reached")
+			return nil, &acquireErr{http.StatusTooManyRequests, "Too Many Requests",
+				"namespace limit reached (NAMESPACE_MAX=" + itoa(d.max) + "); delete unused namespaces with DELETE /admin0/namespaces/{id}",
+				"too_many_namespaces"}
 		}
 		inst, err := d.build(id)
 		if err != nil {
-			httperr.WriteMgmt(w, http.StatusInternalServerError, "Internal Server Error",
-				"building namespace "+quote(id)+" failed: "+err.Error(), "namespace_build_failed")
-			return nil, false
+			d.log.Error().Err(err).Str("namespace", id).Msg("namespace build failed")
+			return nil, &acquireErr{http.StatusInternalServerError, "Internal Server Error",
+				"building namespace " + quote(id) + " failed: " + err.Error(), "namespace_build_failed"}
 		}
 		e = &entry{inst: inst, created: now}
 		d.ns[id] = e
 	}
 	e.lastUsed = now
-	return e.inst, true
+	return e.inst, nil
 }
 
-func (d *Dispatcher) lifecycle(w http.ResponseWriter, r *http.Request, path string) {
+// lifecycle serves the global namespace routes. The named flag says whether the
+// request also selected a namespace by header or prefix.
+func (d *Dispatcher) lifecycle(w http.ResponseWriter, r *http.Request, path string, named bool) {
 	switch {
 	case path == listPath && r.Method == http.MethodGet:
 		d.list(w)
 	case path == listPath && r.Method == http.MethodDelete:
+		if named {
+			invalid(w, "DELETE /admin0/namespaces deletes every namespace; send it without a namespace header or /ns/ prefix")
+			return
+		}
 		d.mu.Lock()
 		old := d.ns
 		d.ns = map[string]*entry{}

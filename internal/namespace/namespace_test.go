@@ -230,6 +230,36 @@ func TestDispatcher_Lifecycle(t *testing.T) {
 	assert.JSONEq(t, "[]", w.Body.String())
 }
 
+func TestDispatcher_LifecycleIgnoresBadHeader(t *testing.T) {
+	f := newFixture(10)
+	f.echo(t, "/x", "a")
+	assert.Equal(t, http.StatusOK, f.do(http.MethodGet, "/admin0/namespaces", "bad id!").Code)
+	assert.Equal(t, http.StatusNoContent, f.do(http.MethodDelete, "/admin0/namespaces/a", "bad id!").Code)
+}
+
+func TestDispatcher_DeleteAllRefusesWhenNamespaceNamed(t *testing.T) {
+	f := newFixture(10)
+	f.echo(t, "/x", "a")
+	for _, c := range []struct{ path, header string }{
+		{"/admin0/namespaces", "a"},
+		{"/ns/a/admin0/namespaces", ""},
+	} {
+		w := f.do(http.MethodDelete, c.path, c.header)
+		assert.Equal(t, http.StatusBadRequest, w.Code, c.path)
+		assert.Equal(t, "invalid_namespace", errCode(t, w), c.path)
+	}
+	assert.Equal(t, http.StatusOK, f.do(http.MethodGet, "/ns/a/admin0/namespaces", "").Code)
+	assert.Equal(t, 0, f.closes["a"])
+	assert.Equal(t, http.StatusNoContent, f.do(http.MethodDelete, "/admin0/namespaces", "").Code)
+	assert.Equal(t, 1, f.closes["a"])
+}
+
+func TestDispatcher_EmptyPrefixIDMessage(t *testing.T) {
+	f := newFixture(10)
+	w := f.do(http.MethodGet, "/ns//x", "")
+	assert.Contains(t, w.Body.String(), `invalid namespace id \"\" in path prefix`)
+}
+
 func TestDispatcher_FactoryError(t *testing.T) {
 	f := newFixture(10)
 	f.fail.Store(true)

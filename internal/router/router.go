@@ -149,7 +149,20 @@ func New(d Deps) (http.Handler, error) {
 			}
 		}}, nil
 	}
-	return namespace.New(def, factory, d.NamespaceMax), nil
+	// Responses the dispatcher writes itself (errors, lifecycle routes) go
+	// through the same cross-cutting middleware a namespace router uses.
+	cors, err := middleware.CORS(d.CORSAllowedOrigins)
+	if err != nil {
+		return nil, fmt.Errorf("cors: %w", err)
+	}
+	logging := middleware.Logging(d.Log)
+	if d.Debug {
+		logging = middleware.DebugDump(d.Log, os.Stdout)
+	}
+	return namespace.New(def, factory, d.NamespaceMax,
+		namespace.WithLogger(d.Log),
+		namespace.WithMiddleware(middleware.RequestID, cors, middleware.Recovery(d.Log), logging),
+	), nil
 }
 
 // forNamespace returns Deps for a private copy of the router state.
