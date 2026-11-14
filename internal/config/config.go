@@ -48,6 +48,10 @@ type Specification struct {
 	// (the endpoint still works; resume params become no-ops).
 	EventsReplayBuffer int `env:"EVENTS_REPLAY_BUFFER" envDefault:"100"`
 
+	// NamespaceMax caps live namespaces (isolated copies of all state selected
+	// by X-Auth0-Mock-Namespace or /ns/<id>/). 0 turns namespaces off.
+	NamespaceMax int `env:"NAMESPACE_MAX" envDefault:"256"`
+
 	// RequestJournalSize caps the in-memory journal of /api/v2 calls served
 	// at GET /admin0/journal. <= 0 disables recording (the endpoints then
 	// return an empty list; the no_match 404 hint is unaffected).
@@ -152,6 +156,9 @@ func (s *Specification) Validate() error {
 	}
 	if s.TokenLeeway < 0 {
 		return fmt.Errorf("TOKEN_LEEWAY must not be negative, got %s", s.TokenLeeway)
+	}
+	if s.NamespaceMax < 0 {
+		return fmt.Errorf("NAMESPACE_MAX must not be negative, got %d", s.NamespaceMax)
 	}
 	if remote := s.RemoteListeners(); len(remote) > 0 && !s.AdminAllowRemote {
 		return fmt.Errorf("%s can be reached from other machines, but /admin0 is unauthenticated and can mint tokens; bind to 127.0.0.1, or set ADMIN_ALLOW_REMOTE=true to accept the risk (Docker needs this)", strings.Join(remote, " and "))

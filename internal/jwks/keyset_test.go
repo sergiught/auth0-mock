@@ -11,6 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,4 +99,36 @@ func TestResolveIssuer(t *testing.T) {
 			assert.Equal(t, tc.want, ResolveIssuer(tc.configured, tc.req))
 		})
 	}
+}
+
+func TestResolveIssuer_PathFromContext(t *testing.T) {
+	r := httptest.NewRequest("GET", "/x", nil)
+	r = r.WithContext(WithIssuerPath(r.Context(), "ns/abc/"))
+	assert.Equal(t, "https://mock/ns/abc/", ResolveIssuer("https://mock/", r))
+
+	r = httptest.NewRequest("GET", "http://localhost:8080/x", nil)
+	r = r.WithContext(WithIssuerPath(r.Context(), "ns/abc/"))
+	assert.Equal(t, "http://localhost:8080/ns/abc/", ResolveIssuer(AutoIssuer, r))
+
+	plain := httptest.NewRequest("GET", "/x", nil)
+	assert.Equal(t, "https://mock/", ResolveIssuer("https://mock/", plain))
+}
+
+func TestKeySet_WithNow(t *testing.T) {
+	ks, err := NewKeySet(Config{Issuer: "https://mock/", AccessTokenTTL: time.Hour})
+	require.NoError(t, err)
+	fixed := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	view := ks.WithNow(func() time.Time { return fixed })
+
+	tok, err := view.Mint(MintOpts{Subject: "u", Audience: []string{"a"}, TTL: time.Hour})
+	require.NoError(t, err)
+	parsed := jwt.MapClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(tok, parsed)
+	require.NoError(t, err)
+	assert.EqualValues(t, fixed.Unix(), parsed["iat"])
+
+	assert.NotEqual(t, fixed.Unix(), ks.Cfg().Now().Unix())
+	assert.Equal(t, ks.JWKSJSON(), view.JWKSJSON())
+	_, err = ks.Verify(tok, VerifyOpts{AllowExpired: true})
+	require.NoError(t, err)
 }

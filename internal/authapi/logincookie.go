@@ -3,11 +3,23 @@ package authapi
 import (
 	"net/http"
 
+	"github.com/sergiught/auth0-mock/internal/namespace"
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
 // loginCookieName is the cookie Auth0 uses for its login session.
 const loginCookieName = "auth0"
+
+// loginCookieNameFor is loginCookieName in the default namespace and
+// "auth0_ns_<id>" in a named one, so a shared cookie jar keeps one login
+// per namespace. The name, not the path, separates them: a path scoped to
+// "/ns/<id>/" would miss requests that spell the prefix percent-encoded.
+func loginCookieNameFor(r *http.Request) string {
+	if id := namespace.ID(r.Context()); id != "" {
+		return loginCookieName + "_ns_" + id
+	}
+	return loginCookieName
+}
 
 // setLoginCookie sends the login session id. Over TLS it is SameSite=None
 // and Secure so cross-site silent-auth iframes carry it; browsers reject
@@ -24,7 +36,7 @@ func clearLoginCookie(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginCookie(r *http.Request, value string) *http.Cookie {
-	c := &http.Cookie{Name: loginCookieName, Value: value, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode}
+	c := &http.Cookie{Name: loginCookieNameFor(r), Value: value, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	if r.TLS != nil {
 		c.Secure = true
 		c.SameSite = http.SameSiteNoneMode
@@ -37,7 +49,7 @@ func currentLogin(r *http.Request, s *session.Store) (string, session.Login, boo
 	if s == nil {
 		return "", session.Login{}, false
 	}
-	c, err := r.Cookie(loginCookieName)
+	c, err := r.Cookie(loginCookieNameFor(r))
 	if err != nil {
 		return "", session.Login{}, false
 	}

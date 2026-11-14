@@ -75,7 +75,7 @@ func clearEnv(t *testing.T) {
 		"DEFAULT_AUDIENCE", "ACCESS_TOKEN_TTL", "ID_TOKEN_TTL", "TOKEN_LEEWAY", "ADMIN_ALLOW_REMOTE", "LOG_LEVEL",
 		"SPEC_VALIDATION_STRICT", "READ_HEADER_TIMEOUT", "SHUTDOWN_TIMEOUT",
 		"EVENTS_REPLAY_BUFFER", "EVENTS_RECONNECT_HINT", "REQUEST_JOURNAL_SIZE",
-		"CORS_ALLOWED_ORIGINS", "SEED_FILE",
+		"CORS_ALLOWED_ORIGINS", "SEED_FILE", "NAMESPACE_MAX",
 	} {
 		_ = os.Unsetenv(k)
 	}
@@ -249,4 +249,16 @@ func TestLoad_TokenEndpointStrict_FromEnv(t *testing.T) {
 	spec, err := Load()
 	require.NoError(t, err)
 	assert.True(t, spec.TokenEndpointStrict)
+}
+
+func TestLoad_NamespaceMax(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 256, spec.NamespaceMax)
+
+	t.Setenv("NAMESPACE_MAX", "-1")
+	_, err = Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NAMESPACE_MAX")
 }

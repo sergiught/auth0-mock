@@ -3,6 +3,10 @@ info:
   title: auth0-mock admin0 control plane
   version: 1.0.0
 tags:
+  - name: Namespaces
+    description: |
+      Lifecycle of the isolated namespaces used for parallel tests. These
+      routes are global and ignore the namespace header and prefix.
   - name: Claims
     description: |
       Global custom-claim overlay. Claims set here are merged into every token
@@ -428,6 +432,48 @@ paths:
                 required: { type: boolean }
       responses:
         "204": { description: Flag updated. }
+  /admin0/namespaces:
+    get:
+      tags: [Namespaces]
+      summary: List the live namespaces.
+      description: |
+        Global route: it ignores the `X-Auth0-Mock-Namespace` header and the
+        `/ns/<id>/` prefix. Namespaces are created on first use.
+      responses:
+        "200":
+          description: Live namespaces sorted by id.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NamespaceInfo" }
+    delete:
+      tags: [Namespaces]
+      summary: Delete every namespace.
+      description: |
+        Global route. Refused when the request names a namespace, by header or
+        by `/ns/<id>/` prefix, so a test cannot wipe its siblings by accident.
+      responses:
+        "204": { description: Every namespace deleted. }
+        "400":
+          description: |
+            `errorCode: "invalid_namespace"` — the request named a namespace.
+            Send it without a namespace header or `/ns/` prefix.
+  /admin0/namespaces/{id}:
+    delete:
+      tags: [Namespaces]
+      summary: Delete one namespace and drop its state.
+      description: Global route, so it ignores the namespace header and prefix.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Namespace deleted. }
+        "404":
+          description: |
+            `errorCode: "namespace_not_found"` — no live namespace has this id.
   /admin0/clock:
     get:
       tags: [Clock]
@@ -715,6 +761,13 @@ paths:
             (no `?before=`) has no cursor to look up and never 404s.
 components:
   schemas:
+    NamespaceInfo:
+      type: object
+      required: [id, created_at, last_used_at]
+      properties:
+        id: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
     AuthorizeErrorRuleRequest:
       type: object
       additionalProperties: false

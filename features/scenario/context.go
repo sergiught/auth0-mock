@@ -281,6 +281,7 @@ func (c *Context) boot(o bootOptions) error {
 		EventsReplayBuffer:   50, // small but functional in scenario tests
 		Journal:              journal.New(100),
 		Seed:                 seedMgr,
+		NamespaceMax:         4, // small so a cap scenario is cheap
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)

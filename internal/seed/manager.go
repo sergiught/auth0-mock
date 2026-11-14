@@ -74,6 +74,17 @@ func (m *Manager) Reset(ctx context.Context, keepSeed bool) {
 	}
 }
 
+// ApplyTo applies the current seed to st without wiping it or touching the
+// manager's own stores. A manager with no seed does nothing.
+func (m *Manager) ApplyTo(st Stores) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == nil {
+		return
+	}
+	m.current.Apply(st)
+}
+
 // Export snapshots the stores in seed file shape while holding the lock Reset
 // and Poll hold, so it never sees a half-applied reload.
 func (m *Manager) Export(detail bool) File {

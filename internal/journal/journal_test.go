@@ -106,3 +106,8 @@ func TestJournal_ConcurrentAddListClear(t *testing.T) {
 	wg.Wait()
 	assert.LessOrEqual(t, len(j.List(Filter{})), 10)
 }
+
+func TestJournal_Size(t *testing.T) {
+	assert.Equal(t, 7, New(7).Size())
+	assert.Equal(t, 0, New(0).Size())
+}

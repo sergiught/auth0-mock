@@ -3,20 +3,26 @@ package admin0
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/session"
+	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 func newRouter(d Deps) chi.Router {
@@ -570,4 +576,45 @@ func TestPermissions_ListAndDeleteAll(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("DELETE", "/admin0/permissions", nil))
 	require.Equal(t, 204, w.Code)
 	assert.Empty(t, d.Permissions.All())
+}
+
+func TestReset_SeedTemplate(t *testing.T) {
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "seed.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("expectations:\n  - method: GET\n    path: /api/v2/users\n    response: {status: 429}\n"), 0o600))
+	own := newDeps()
+	mgr, err := seed.NewManager(path, v, seed.Stores{Matches: own.Matches, Claims: own.Claims,
+		ClaimMappings: own.ClaimMappings, Permissions: own.Permissions, MFA: own.MFA}, zerolog.Nop())
+	require.NoError(t, err)
+
+	d := newDeps()
+	d.SeedTemplate = mgr
+	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/x", Kind: matches.KindTemplate, Response: matches.ResponseDef{Status: 200}})
+	r := newRouter(d)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/admin0/reset", nil))
+	assert.Equal(t, 204, w.Code)
+	list := d.Matches.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, 429, list[0].Response.Status)
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/admin0/reset?keep_seed=false", nil))
+	assert.Equal(t, 204, w.Code)
+	assert.Empty(t, d.Matches.List())
+	assert.Len(t, own.Matches.List(), 1)
+}
+
+func TestExport_NoSeedManager(t *testing.T) {
+	d := newDeps()
+	d.Matches.Put(matches.Expectation{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429}})
+	w := httptest.NewRecorder()
+	newRouter(d).ServeHTTP(w, httptest.NewRequest("GET", "/admin0/export", nil))
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "/api/v2/users")
+	assert.Contains(t, w.Body.String(), "429")
 }

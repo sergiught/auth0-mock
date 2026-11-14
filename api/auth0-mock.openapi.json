@@ -69555,6 +69555,27 @@
         ],
         "type": "object"
       },
+      "NamespaceInfo": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "last_used_at"
+        ],
+        "type": "object"
+      },
       "NativeSocialLogin": {
         "additionalProperties": false,
         "minProperties": 1,
@@ -84948,6 +84969,72 @@
         "summary": "Set the MFA-required flag.",
         "tags": [
           "MFA"
+        ]
+      }
+    },
+    "/admin0/namespaces": {
+      "delete": {
+        "description": "Global route. Refused when the request names a namespace, by header or\nby `/ns/\u003cid\u003e/` prefix, so a test cannot wipe its siblings by accident.\n",
+        "responses": {
+          "204": {
+            "description": "Every namespace deleted."
+          },
+          "400": {
+            "description": "`errorCode: \"invalid_namespace\"` — the request named a namespace.\nSend it without a namespace header or `/ns/` prefix.\n"
+          }
+        },
+        "summary": "Delete every namespace.",
+        "tags": [
+          "Namespaces"
+        ]
+      },
+      "get": {
+        "description": "Global route: it ignores the `X-Auth0-Mock-Namespace` header and the\n`/ns/\u003cid\u003e/` prefix. Namespaces are created on first use.\n",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NamespaceInfo"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Live namespaces sorted by id."
+          }
+        },
+        "summary": "List the live namespaces.",
+        "tags": [
+          "Namespaces"
+        ]
+      }
+    },
+    "/admin0/namespaces/{id}": {
+      "delete": {
+        "description": "Global route, so it ignores the namespace header and prefix.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Namespace deleted."
+          },
+          "404": {
+            "description": "`errorCode: \"namespace_not_found\"` — no live namespace has this id.\n"
+          }
+        },
+        "summary": "Delete one namespace and drop its state.",
+        "tags": [
+          "Namespaces"
         ]
       }
     },
@@ -115922,6 +116009,10 @@
       "name": "Passwordless"
     },
     {
+      "description": "Lifecycle of the isolated namespaces used for parallel tests. These\nroutes are global and ignore the namespace header and prefix.\n",
+      "name": "Namespaces"
+    },
+    {
       "description": "Global custom-claim overlay. Claims set here are merged into every token\nthe mock mints, so tests can assert on claims without a real rule/action.\n",
       "name": "Claims"
     },
@@ -116003,6 +116094,7 @@
         "Keys",
         "Log Streams",
         "Logs",
+        "Namespaces",
         "Network Acls",
         "Organizations",
         "Prompts",
