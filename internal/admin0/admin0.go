@@ -44,6 +44,9 @@ type Deps struct {
 	Clock           *clock.Controlled
 	// Seed is the loaded SEED_FILE. Nil means no seed: reset wipes everything.
 	Seed *seed.Manager
+	// SeedTemplate is the shared seed a Seed-less store set (a namespace)
+	// resets back to. Used only when Seed is nil.
+	SeedTemplate *seed.Manager
 	// Events is the SSE hub for POST /admin0/events. Nil is fine for
 	// admin0 tests that don't exercise the events surface — the route
 	// only registers when both Events and Validator are non-nil, and
@@ -156,6 +159,15 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Deps.Seed.Reset(r.Context(), keep)
 	} else {
 		wipe(r.Context(), h.Deps)
+		if keep && h.Deps.SeedTemplate != nil {
+			h.Deps.SeedTemplate.ApplyTo(seed.Stores{
+				Matches:       h.Deps.Matches,
+				Claims:        h.Deps.Claims,
+				ClaimMappings: h.Deps.ClaimMappings,
+				Permissions:   h.Deps.Permissions,
+				MFA:           h.Deps.MFA,
+			})
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

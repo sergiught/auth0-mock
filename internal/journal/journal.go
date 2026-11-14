@@ -81,6 +81,9 @@ func New(size int) *Journal {
 	return &Journal{buf: make([]Entry, size)}
 }
 
+// Size reports the capacity the journal was created with.
+func (j *Journal) Size() int { return len(j.buf) }
+
 func (j *Journal) add(e Entry) {
 	j.mu.Lock()
 	defer j.mu.Unlock()

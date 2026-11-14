@@ -275,3 +275,13 @@ func TestExportWaitsForReset(t *testing.T) {
 	require.Len(t, got.Expectations, 1)
 	require.Equal(t, 429, got.Expectations[0].Response.Status)
 }
+
+func TestManager_ApplyTo(t *testing.T) {
+	f := newFixture(t, stub("429")+"claims:\n  role: admin\n")
+	b := newStores()
+	f.m.ApplyTo(b.Stores)
+	require.Len(t, b.Matches.List(), 1)
+	require.Equal(t, map[string]any{"role": "admin"}, b.Claims.Get())
+	require.Equal(t, []int{429}, f.statuses())
+	require.Equal(t, map[string]any{"role": "admin"}, f.st.Claims.Get())
+}
