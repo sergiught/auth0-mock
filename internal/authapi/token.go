@@ -59,7 +59,8 @@ type TokenHandler struct {
 	Sessions *session.Store
 	// Strict makes the authorization_code grant fail with 403 invalid_grant
 	// when the code is unknown, used or expired, or when redirect_uri or
-	// client_id differ from the /authorize request. Needs PKCE to be set.
+	// client_id differ from the /authorize request. It also omits
+	// refresh_token when the scope lacks offline_access. Needs PKCE to be set.
 	Strict bool
 }
 

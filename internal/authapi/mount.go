@@ -41,7 +41,8 @@ type Deps struct {
 	// AuthorizeErrors may be nil (no /authorize failure rules).
 	AuthorizeErrors *authorizeerr.Store
 	// TokenEndpointStrict turns on the authorization-code checks at
-	// /oauth/token (see TokenHandler.Strict).
+	// /oauth/token and drops refresh_token without offline_access (see
+	// TokenHandler.Strict).
 	TokenEndpointStrict bool
 }
 

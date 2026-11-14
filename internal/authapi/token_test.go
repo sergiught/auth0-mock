@@ -986,13 +986,13 @@ func TestToken_ClientCredentials_NoPermissionsNoScope(t *testing.T) {
 
 // strictCodeHandler builds a TokenHandler with a real PKCE store holding the
 // code "c1" issued to client "demo" for https://app/cb.
-func strictCodeHandler(t *testing.T, strict bool, entry pkce.Entry) *TokenHandler {
+func strictCodeHandler(t *testing.T, strict bool, entry pkce.Entry, opts ...pkce.Option) *TokenHandler {
 	t.Helper()
 	ks, err := jwks.NewKeySet(jwks.Config{
 		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
 	})
 	require.NoError(t, err)
-	store := pkce.NewStore()
+	store := pkce.NewStore(opts...)
 	store.Put("c1", entry)
 	return &TokenHandler{
 		Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
@@ -1043,6 +1043,13 @@ func TestAuthCode_Strict_UnknownCode403(t *testing.T) {
 func TestAuthCode_Strict_ReusedCode403(t *testing.T) {
 	h := strictCodeHandler(t, true, demoEntry())
 	require.Equal(t, http.StatusOK, postCodeExchange(h, codeForm("c1"), "").Code)
+	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
+}
+
+func TestAuthCode_Strict_ExpiredCode403(t *testing.T) {
+	now := time.Now()
+	h := strictCodeHandler(t, true, demoEntry(), pkce.WithNow(func() time.Time { return now }))
+	now = now.Add(pkce.DefaultTTL + time.Second)
 	requireInvalidAuthCode(t, postCodeExchange(h, codeForm("c1"), ""))
 }
 

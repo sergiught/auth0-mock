@@ -72,7 +72,8 @@ type Deps struct {
 	// value. Opt-in to preserve the documented test-friendly default.
 	BearerRequireAudience string
 	// TokenEndpointStrict turns on Auth0-like authorization-code checks at
-	// /oauth/token. Opt-in; see config.Config.TokenEndpointStrict.
+	// /oauth/token and drops refresh_token without offline_access. Opt-in; see
+	// config.Config.TokenEndpointStrict.
 	TokenEndpointStrict bool
 	// BearerRequireScopes makes the Mgmt-API enforce each operation's
 	// required token scopes (403 insufficient_scope).
