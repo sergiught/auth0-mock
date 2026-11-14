@@ -710,6 +710,10 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	//     here closes a real bypass: a stolen `code` from a non-PKCE flow
 	//     would otherwise be redeemable.
 	//   - no challenge stored + no verifier       → legitimate non-PKCE flow → pass.
+	if h.Strict && req.Code == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: code")
+		return
+	}
 	var entry pkce.Entry
 	var hasEntry bool
 	if h.PKCE != nil && req.Code != "" {
@@ -727,7 +731,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	if hasEntry && entry.LoginHint != "" {
 		subject = entry.LoginHint
 	}
-	aud, scope := codeAudienceScope(entry, aud, req.Scope)
+	aud, scope := codeAudienceScope(entry, aud, req.Scope, h.Strict && hasEntry)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
@@ -775,11 +779,13 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 // codeAudienceScope returns the audience and scope for a code exchange. The
 // code carries the /authorize audience and scope, which win over the token
 // request's, as on Auth0. A zero entry (no stored code) keeps the request's.
-func codeAudienceScope(entry pkce.Entry, aud, scope string) (string, string) {
+// With storedScope set (strict mode) the scope is the stored one even when
+// empty, and the request's scope is ignored.
+func codeAudienceScope(entry pkce.Entry, aud, scope string, storedScope bool) (string, string) {
 	if entry.Audience != "" {
 		aud = entry.Audience
 	}
-	if entry.Scope != "" {
+	if entry.Scope != "" || storedScope {
 		scope = entry.Scope
 	}
 	return aud, scope

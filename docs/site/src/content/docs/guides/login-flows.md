@@ -175,6 +175,8 @@ In strict mode:
 
 - An authorization code is rejected if it is unknown, expired or already used.
 - It is also rejected if `redirect_uri` is missing or differs from the one sent to `/authorize`, or if `client_id` differs.
+- A missing `code` gets `400 invalid_request` with "Missing required parameter: code".
+- On a code exchange, the scope sent to `/authorize` is used even when it is empty. The scope in the token request is ignored.
 - A code is used up by the first request, even when that request fails.
 - The password, password-realm, passwordless, authorization code and MFA grants issue a `refresh_token` only when the scope includes `offline_access`.
 

@@ -1093,12 +1093,20 @@ func TestAuthCode_Strict_PKCEErrorsUnchanged(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "PKCE verification failed: S256 mismatch")
 }
 
-func TestAuthCode_Strict_NoCodeKeepsTodaysHandling(t *testing.T) {
+func TestAuthCode_Strict_MissingCode400(t *testing.T) {
 	f := codeForm("")
 	f.Del("code")
-	lenient := postCodeExchange(strictCodeHandler(t, false, demoEntry()), f, "")
-	strict := postCodeExchange(strictCodeHandler(t, true, demoEntry()), f, "")
-	assert.Equal(t, lenient.Code, strict.Code)
+	w := postCodeExchange(strictCodeHandler(t, true, demoEntry()), f, "")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"error":"invalid_request","error_description":"Missing required parameter: code"}`, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "access_token")
+}
+
+func TestAuthCode_Lenient_MissingCodeStillWorks(t *testing.T) {
+	f := codeForm("")
+	f.Del("code")
+	w := postCodeExchange(strictCodeHandler(t, false, demoEntry()), f, "")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestAuthCode_Lenient_UnknownCodeStillWorks(t *testing.T) {

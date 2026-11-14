@@ -135,6 +135,22 @@ func TestOfflineAccess_Strict_RefreshGrantAlwaysRotates(t *testing.T) {
 	assert.NotEqual(t, rt, next)
 }
 
+func TestOfflineAccess_Strict_EmptyStoredScopeIgnoresRequestScope(t *testing.T) {
+	r, store, _ := newOfflineRouter(t, true)
+	forms := offlineForms(store, "", "openid offline_access")
+	m := rawBody(t, r, forms["authorization_code"])
+	assert.NotContains(t, m, "refresh_token")
+	assert.NotContains(t, m, "scope")
+}
+
+func TestOfflineAccess_Lenient_EmptyStoredScopeUsesRequestScope(t *testing.T) {
+	r, store, _ := newOfflineRouter(t, false)
+	forms := offlineForms(store, "", "openid offline_access")
+	m := rawBody(t, r, forms["authorization_code"])
+	assert.NotEmpty(t, m["refresh_token"])
+	assert.Equal(t, "openid offline_access", m["scope"])
+}
+
 func TestOfflineAccess_Lenient_AlwaysIssues(t *testing.T) {
 	r, store, _ := newOfflineRouter(t, false)
 	for name, form := range offlineForms(store, "openid profile", "openid profile") {
