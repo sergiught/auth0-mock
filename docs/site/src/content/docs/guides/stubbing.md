@@ -87,6 +87,21 @@ curl -X POST http://localhost:8080/admin0/expectations \
 
 In Go, use `WithQuery(key, value)` for the string form and `WithQueryAll(key, values...)` for a list.
 
+### Fields that must be absent
+
+`request.absent` lists fields the request must not carry: `query.<key>`, `headers.<Name>` (case-insensitive) and `body.<a>.<b>` (a dotted object path; no array indexing). A field is present when it exists, even with an empty value or a JSON `null`. A request with no JSON body has every `body.*` path absent. A matcher with only `absent` is not a catch-all.
+
+```bash
+# Matches a create-user request that has no password
+curl -X POST http://localhost:8080/admin0/expectations \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"POST","path":"/api/v2/users",
+       "request":{"absent":["body.password"]},
+       "response":{"status":201,"body":{"user_id":"auth0|nopassword","email":"a@example.com","email_verified":false}}}'
+```
+
+A path without one of the three prefixes, with an empty segment, naming an undeclared query parameter, naming the `Host`, `Transfer-Encoding` or `Trailer` header (Go strips them before matching), a `body.*` path on a `GET /api/v2/events` stub, or that the same matcher also requires is rejected with `400 invalid_request_match`. In Go, use `WithoutField(path)`.
+
 To clear all expectations for an operation at once (catch-all + every request-matched one):
 
 ```bash

@@ -23,7 +23,8 @@ type JournalFilter struct {
 // Difference is one way a request differed from a stub's matcher.
 // Field is "path", "query.<key>", "headers.<Canonical-Key>", "body"
 // or a dotted body path such as "body.blocked". Reason is "mismatch",
-// "missing" or "invalid_json".
+// "missing", "invalid_json" or "present" (a field the stub's absent list
+// forbids; Want is empty).
 type Difference struct {
 	Field  string          `json:"field"`
 	Reason string          `json:"reason"`
@@ -36,6 +37,9 @@ type Difference struct {
 func (d Difference) String() string {
 	if d.Reason == "invalid_json" {
 		return d.Field + ": request body is not valid JSON"
+	}
+	if d.Reason == "present" {
+		return fmt.Sprintf("%s: want absent, got %s", d.Field, d.Got)
 	}
 	got := "nothing"
 	if d.Reason != "missing" && len(d.Got) > 0 {

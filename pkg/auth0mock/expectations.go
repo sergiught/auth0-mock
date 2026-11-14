@@ -70,6 +70,11 @@ type RequestMatcher struct {
 	QueryAll map[string][]string
 	Headers  map[string]string
 	Body     json.RawMessage
+	// Absent lists field paths the request must not carry: "query.<key>",
+	// "headers.<Name>" or "body.<a>.<b>" (a dotted object path). A field is
+	// present when it exists, even with an empty value or JSON null. A
+	// matcher with only Absent is not a catch-all.
+	Absent []string
 }
 
 // wireRequestMatcher is the JSON shape of a RequestMatcher. Add new wire
@@ -78,12 +83,13 @@ type wireRequestMatcher struct {
 	Query   map[string]json.RawMessage `json:"query,omitempty"`
 	Headers map[string]string          `json:"headers,omitempty"`
 	Body    json.RawMessage            `json:"body,omitempty"`
+	Absent  []string                   `json:"absent,omitempty"`
 }
 
 // MarshalJSON writes Query and QueryAll as one "query" object: a one-value
 // key as a plain string, several values as a list.
 func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
-	w := wireRequestMatcher{Headers: rm.Headers, Body: rm.Body}
+	w := wireRequestMatcher{Headers: rm.Headers, Body: rm.Body, Absent: rm.Absent}
 	merged := make(map[string][]string, len(rm.Query)+len(rm.QueryAll))
 	for k, v := range rm.Query {
 		merged[k] = append(merged[k], v)
@@ -118,7 +124,7 @@ func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
-	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body}
+	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body, Absent: w.Absent}
 	for k, raw := range w.Query {
 		raw = bytes.TrimSpace(raw)
 		if len(raw) > 0 && raw[0] == '"' {

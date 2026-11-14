@@ -22,9 +22,10 @@ func IsRedactedHeader(name string) bool {
 // Difference describes one way a request failed to satisfy a stub.
 //
 // Field is "path", "query.<key>", "headers.<Canonical-Key>", "body" or a
-// dotted body path such as "body.a.b". Reason is "mismatch", "missing" or
-// "invalid_json" (a non-empty request body that is not valid JSON). Got is
-// omitted when Reason is "missing"; a request with no body at all is
+// dotted body path such as "body.a.b". Reason is "mismatch", "missing",
+// "present" (a field listed in absent that the request carries; Got is its
+// value, Want is omitted) or "invalid_json" (a non-empty request body that is
+// not valid JSON). Got is omitted when Reason is "missing"; a request with no body at all is
 // "missing" on Field "body". Want/Got values over maxDiffValue bytes are
 // truncated into a JSON string.
 type Difference struct {
@@ -82,6 +83,7 @@ func (rm *RequestMatcher) Explain(req MatchableRequest) []Difference {
 		diffs = append(diffs, d)
 	}
 	diffs = append(diffs, rm.explainBody(req.Body)...)
+	diffs = append(diffs, rm.explainAbsent(req)...)
 	slices.SortFunc(diffs, func(a, b Difference) int { return strings.Compare(a.Field, b.Field) })
 	return diffs
 }

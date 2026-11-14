@@ -96,6 +96,7 @@ func TestDifference_String(t *testing.T) {
 		{"mismatch", auth0mock.Difference{Field: "body.blocked", Reason: "mismatch", Want: []byte("true"), Got: []byte("false")}, "body.blocked: want true, got false"},
 		{"missing", auth0mock.Difference{Field: "headers.X-Tenant", Reason: "missing", Want: []byte(`"acme"`)}, `headers.X-Tenant: want "acme", got nothing`},
 		{"invalid_json", auth0mock.Difference{Field: "body", Reason: "invalid_json", Want: []byte(`{}`)}, "body: request body is not valid JSON"},
+		{"present", auth0mock.Difference{Field: "body.password", Reason: "present", Got: []byte(`"x"`)}, `body.password: want absent, got "x"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

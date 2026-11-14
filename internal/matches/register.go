@@ -1,6 +1,7 @@
 package matches
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -68,27 +69,9 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 	}
 	// Normalize an empty request matcher to nil so a catch-all has
 	// exactly one representation in the store.
-	req := r.Request
-	if err := req.validateQuery(); err != nil {
-		return Expectation{}, &RegistrationError{
-			"request matcher query is invalid: " + err.Error(), "invalid_request_match",
-		}
-	}
-	if req.IsEmpty() {
-		req = nil
-	}
-	req = dropEmptyMaps(req)
-	if req != nil {
-		if err := v.ValidateRequestMatcher(op, req.Body); err != nil {
-			return Expectation{}, &RegistrationError{
-				"request matcher body violates request schema: " + err.Error(), "invalid_request_match",
-			}
-		}
-		if err := v.ValidateQueryMatcher(op, req.queryKeys()); err != nil {
-			return Expectation{}, &RegistrationError{
-				"request matcher query is invalid: " + err.Error(), "invalid_request_match",
-			}
-		}
+	req, err := prepareMatcher(v, op, r.Request)
+	if err != nil {
+		return Expectation{}, err
 	}
 	kind := KindOf(r.Path)
 	storePath := r.Path
@@ -105,10 +88,51 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 	}, nil
 }
 
-// dropEmptyMaps returns m with an empty query or headers map set to nil, so
+// prepareMatcher validates a request matcher against the operation and returns
+// its stored form: nil when it carries no criteria, with empty fields dropped
+// and absent header paths canonicalised. The error is always a
+// *RegistrationError.
+func prepareMatcher(v *spec.Validator, op spec.Operation, in *RequestMatcher) (*RequestMatcher, error) {
+	req := in
+	if err := req.validateQuery(); err != nil {
+		return nil, &RegistrationError{
+			"request matcher query is invalid: " + err.Error(), "invalid_request_match",
+		}
+	}
+	if err := errors.Join(req.validateAbsent(), req.validateAbsentForOp(op)); err != nil {
+		return nil, &RegistrationError{
+			"request matcher absent is invalid: " + err.Error(), "invalid_request_match",
+		}
+	}
+	if req.IsEmpty() {
+		req = nil
+	}
+	req = dropEmptyMaps(req)
+	if req != nil && len(req.Absent) > 0 {
+		c := *req
+		c.Absent = canonicalAbsentList(req.Absent)
+		req = &c
+	}
+	if req != nil {
+		if err := v.ValidateRequestMatcher(op, req.Body); err != nil {
+			return nil, &RegistrationError{
+				"request matcher body violates request schema: " + err.Error(), "invalid_request_match",
+			}
+		}
+		if err := v.ValidateQueryMatcher(op, append(req.queryKeys(), req.absentQueryKeys()...)); err != nil {
+			return nil, &RegistrationError{
+				"request matcher query is invalid: " + err.Error(), "invalid_request_match",
+			}
+		}
+	}
+	return req, nil
+}
+
+// dropEmptyMaps returns m with an empty query, headers or absent field set to nil, so
 // {} and an omitted key are one matcher. It copies rather than modifies m.
 func dropEmptyMaps(m *RequestMatcher) *RequestMatcher {
-	if m == nil || (m.Query == nil || len(m.Query) > 0) && (m.Headers == nil || len(m.Headers) > 0) {
+	if m == nil || (m.Query == nil || len(m.Query) > 0) && (m.Headers == nil || len(m.Headers) > 0) &&
+		(m.Absent == nil || len(m.Absent) > 0) {
 		return m
 	}
 	c := *m
@@ -117,6 +141,9 @@ func dropEmptyMaps(m *RequestMatcher) *RequestMatcher {
 	}
 	if len(c.Headers) == 0 {
 		c.Headers = nil
+	}
+	if len(c.Absent) == 0 {
+		c.Absent = nil
 	}
 	return &c
 }

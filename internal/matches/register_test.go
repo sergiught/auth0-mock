@@ -42,6 +42,15 @@ func TestPrepareErrors(t *testing.T) {
 		{"request body schema", matches.Registration{Method: "POST", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
 			Request: &matches.RequestMatcher{Body: []byte(`{"email": 5}`)}},
 			"request matcher body violates request schema: ", true, "invalid_request_match"},
+		{"absent bad prefix", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 200, Body: []byte(`[]`)},
+			Request: &matches.RequestMatcher{Absent: []string{"page"}}},
+			"request matcher absent is invalid: ", true, "invalid_request_match"},
+		{"absent also required", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 200, Body: []byte(`[]`)},
+			Request: &matches.RequestMatcher{Headers: map[string]string{"X-A": "1"}, Absent: []string{"headers.x-a"}}},
+			"request matcher absent is invalid: ", true, "invalid_request_match"},
+		{"absent undeclared query", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 200, Body: []byte(`[]`)},
+			Request: &matches.RequestMatcher{Absent: []string{"query.bogus_param"}}},
+			"request matcher query is invalid: ", true, "invalid_request_match"},
 		{"request query", matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 429},
 			Request: &matches.RequestMatcher{Query: map[string][]string{"bogus_param": {"x"}}}},
 			"request matcher query is invalid: ", true, "invalid_request_match"},
@@ -256,4 +265,20 @@ func TestPrepareTemplateRequiredFieldFromBody(t *testing.T) {
 	}
 	require.Error(t, reg(`{}`, false), "success is required, so an empty body must fail")
 	require.NoError(t, reg(`{"success":"{{body.success}}"}`, true))
+}
+
+func TestPrepareAbsent(t *testing.T) {
+	v := newValidator(t)
+	reg := func(absent []string) matches.Registration {
+		return matches.Registration{Method: "GET", Path: "/api/v2/users", Response: matches.ResponseDef{Status: 200, Body: []byte(`[]`)},
+			Request: &matches.RequestMatcher{Absent: absent}}
+	}
+	exp, err := matches.Prepare(v, reg([]string{"headers.x-foo", "query.page", "body.a"}))
+	require.NoError(t, err)
+	require.NotNil(t, exp.Request, "an absent-only matcher is not a catch-all")
+	require.Equal(t, []string{"headers.X-Foo", "query.page", "body.a"}, exp.Request.Absent)
+
+	exp, err = matches.Prepare(v, reg([]string{}))
+	require.NoError(t, err)
+	require.Nil(t, exp.Request, "an empty absent list is a catch-all")
 }

@@ -17,12 +17,13 @@ type wireMatcher struct {
 	Query   map[string]json.RawMessage `json:"query,omitempty"`
 	Headers map[string]string          `json:"headers,omitempty"`
 	Body    json.RawMessage            `json:"body,omitempty"`
+	Absent  []string                   `json:"absent,omitempty"`
 }
 
 // MarshalJSON writes a one-element query list as a plain string, so a matcher
 // registered with strings reads back unchanged.
 func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
-	w := wireMatcher{Headers: rm.Headers, Body: rm.Body}
+	w := wireMatcher{Headers: rm.Headers, Body: rm.Body, Absent: rm.Absent}
 	if len(rm.Query) > 0 {
 		w.Query = make(map[string]json.RawMessage, len(rm.Query))
 		for k, vals := range rm.Query {
@@ -40,15 +41,33 @@ func (rm RequestMatcher) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
+// wireMatcherIn reads absent raw, so a mistyped list is reported like a
+// mistyped query value rather than failing the whole decode.
+type wireMatcherIn struct {
+	wireMatcher
+	Absent json.RawMessage `json:"absent,omitempty"`
+}
+
 // UnmarshalJSON reads each query value as a string or a list of strings. An
-// invalid value does not fail the decode; it is remembered and Prepare turns
-// it into an invalid_request_match error.
+// invalid query or absent value does not fail the decode; it is remembered
+// and Prepare turns it into an invalid_request_match error.
 func (rm *RequestMatcher) UnmarshalJSON(data []byte) error {
-	var w wireMatcher
+	var w wireMatcherIn
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
 	*rm = RequestMatcher{Headers: w.Headers, Body: w.Body}
+	if len(w.Absent) > 0 {
+		var items []*string
+		if err := json.Unmarshal(w.Absent, &items); err != nil || items == nil || slices.Contains(items, nil) {
+			rm.decodeErr = errors.New("absent: must be a list of strings")
+		}
+		for _, v := range items {
+			if v != nil {
+				rm.Absent = append(rm.Absent, *v)
+			}
+		}
+	}
 	if w.Query == nil {
 		return nil
 	}
