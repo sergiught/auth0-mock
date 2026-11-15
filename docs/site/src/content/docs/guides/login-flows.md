@@ -187,23 +187,37 @@ A strict user with no active otp or oob authenticator gets `400 association_requ
 
 #### Enroll and manage authenticators
 
-A client holding an `mfa_token` can enroll a factor with `POST /mfa/associate`. Send `Authorization: Bearer <mfa_token>` and a JSON or form body with `authenticator_types` (`otp` or `oob`), plus `oob_channels` (`sms`, `email`, `auth0`) and `phone_number` or `email` for oob.
+A client holding an `mfa_token` can enroll a factor with `POST /mfa/associate`. Send `Authorization: Bearer <mfa_token>` and a JSON or form body with `authenticator_types` (`otp` or `oob`), plus `oob_channels` (`sms`, `voice`, `email`, `auth0`) for oob, `phone_number` for sms and voice, and `email` for the email channel.
 
 ```bash
 curl -s -X POST http://localhost:8080/mfa/associate \
   -H "Authorization: Bearer ${MFA_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"authenticator_types":["otp"]}'
-# {"authenticator_type":"otp","secret":"...","barcode_uri":"otpauth://...","recovery_codes":["..."]}
+# {"authenticator_type":"otp","secret":"JBSWY3DPEHPK3PXP","barcode_uri":"otpauth://totp/<tenant>:<user>?secret=JBSWY3DPEHPK3PXP&issuer=<tenant>&algorithm=SHA1&digits=6&period=30","recovery_codes":["ABCDEFGHIJKLMNOP"]}
 ```
 
-An oob enrollment returns `oob_code` and `binding_method`. The first enrollment also returns `recovery_codes`. A user who already has an active authenticator gets `403 access_denied` "User is already enrolled."; a bad token gets `401 invalid_token`.
+`<tenant>` is the request host without the port, and `<user>` is the login. An oob enrollment returns an `oob_code`:
 
-The new authenticator stays inactive until confirmed. Confirm an otp one with the `mfa-otp` grant and `otp=123456`. Confirm an oob one with the `mfa-oob` grant, the `oob_code` from the associate response and `binding_code=123456`.
+```bash
+curl -s -X POST http://localhost:8080/mfa/associate \
+  -H "Authorization: Bearer ${MFA_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"authenticator_types":["oob"],"oob_channels":["sms"],"phone_number":"+15555550100"}'
+# {"authenticator_type":"oob","oob_channel":"sms","oob_code":"...","binding_method":"prompt","recovery_codes":["ABCDEFGHIJKLMNOP"]}
+```
 
-`GET /mfa/authenticators` lists the user's authenticators as `{id, authenticator_type, active, oob_channel?, name?}`, including inactive ones. Authenticate with an `mfa_token`, or with an access token whose audience is `<issuer>mfa/` and whose scope includes `read:authenticators`. `DELETE /mfa/authenticators/{id}` needs such an access token with `remove:authenticators`. It returns `204`, or `404 not_found` "Authenticator not found" for an unknown id.
+The email channel needs `email`. Push (`auth0`) has no `binding_method`, adds a `barcode_uri`, and creates a push and an otp authenticator together. `recovery_codes` appear only when the user had no recovery code yet, which is the first enrollment.
 
-Push enrollment polling is not supported.
+A user who already has an active authenticator gets `403 access_denied` "User is already enrolled.". A bad token gets `401 invalid_token`, and a bad type, channel, phone number or email gets `400 invalid_request`. Enrolling gives a legacy user a config, so later logins are checked strictly.
+
+New authenticators stay inactive until confirmed. Send `mfa-otp` with `otp=123456`, or `mfa-oob` with the returned `oob_code` and `binding_code=123456` (none for push). That activates every authenticator enrolled together.
+
+`GET /mfa/authenticators` lists the user's authenticators as `{id, authenticator_type, active, oob_channel?, name?}`, including inactive ones. Authenticate with an `mfa_token`, or with an access token whose audience is `<issuer>mfa/` and whose scope includes `read:authenticators`. `DELETE /mfa/authenticators/{id}` needs such an access token with `remove:authenticators`. It returns `204`, or `404 not_found` "Authenticator not found" for an unknown id. Deleting a push authenticator also deletes its otp. An `mfa_token` on DELETE gets `401 invalid_token`, and a token without the scope gets `403 insufficient_scope`.
+
+The access-token routes look the user up by the token's `sub`. For passwordless users, key the config by subject (`email|...`).
+
+Not supported: `/mfa/associate` accepts only an `mfa_token`, so enrolling a second factor with an access token fails. Add it with the admin API instead. Push enrollment polling is not supported either.
 
 From Go, use the SDK client:
 
