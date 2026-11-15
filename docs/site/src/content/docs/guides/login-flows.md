@@ -152,6 +152,50 @@ The accepted factor values are constants:
 
 Wrong factors return `403 invalid_grant`. The minted token carries `gty=mfa-otp` (or `mfa-oob` / `mfa-recovery-code`) so downstream services can identify stepped-up sessions.
 
+### Per-user MFA
+
+Set MFA for one user, no matter what the global switch says. The key is the `username` the password grant receives (or the subject of the user).
+
+```bash
+curl -X PUT http://localhost:8080/admin0/mfa/users/alice@example.com \
+  -H 'Content-Type: application/json' \
+  -d '{"required":true,"authenticators":[{"type":"otp"},{"type":"oob","oob_channel":"sms"}]}'
+```
+
+The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 unknown_user` when there is none. Authenticators are active unless you send `"active":false`.
+
+A per-user `required` beats the global `/admin0/mfa-required` switch in both directions. `"required":true` forces MFA for that user while the global switch is off. `"required":false` exempts that user while it is on. Users with no config follow the global switch.
+
+A user whose config has an `authenticators` list is a strict user. A user with no config (global switch only) is a legacy user and keeps the old behaviour:
+
+| Grant | Legacy user | Strict user |
+|---|---|---|
+| `mfa-otp` | `otp=123456` | Needs an active `otp` authenticator, else `403 invalid_grant` "User does not have an active otp authenticator" |
+| `mfa-oob` | Any `oob_code` plus `binding_code=123456` | The `oob_code` must come from `/mfa/challenge` for the same `mfa_token` |
+| `mfa-recovery-code` | `ABCDEFGHIJKLMNOP` | Needs an active recovery code |
+
+`POST /mfa/challenge` takes the `mfa_token` and returns the challenge for the user:
+
+```bash
+curl -s -X POST http://localhost:8080/mfa/challenge \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d "mfa_token=${MFA_TOKEN}&client_id=demo&challenge_type=oob"
+# {"challenge_type":"oob","oob_code":"...","binding_method":"prompt"}
+```
+
+A strict user with no active otp or oob authenticator gets `400 association_required`. `/mfa/associate` and `/mfa/authenticators` are not supported yet.
+
+From Go, use the SDK client:
+
+```go
+_, err := c.MFA.SetUser(ctx, "alice@example.com", auth0mock.MFAUser{
+	Required:       ptr(true),
+	Authenticators: []auth0mock.MFAAuthenticator{{Type: "otp"}},
+})
+```
+
+Seed the same config at startup with the `mfa_users` key. See the [seed file guide](/auth0-mock/guides/seed-file/).
+
 ## Test the password-realm grant
 
 Auth0 Native SDKs (auth0-android, auth0-swift, auth0-react-native) use the password-realm grant to target a specific connection.

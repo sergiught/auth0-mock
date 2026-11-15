@@ -176,3 +176,146 @@ Feature: MFA challenge flow
     When I send "GET /admin0/mfa-required" without a bearer
     Then I receive a 200 response
     And the response JSON path "required" equals "false"
+
+  Scenario: Per-user required applies while the global switch is off
+    When I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":true,"authenticators":[{"type":"otp"}]}
+      """
+    Then I receive a 200 response
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    Then I receive a 403 response
+    And the response JSON path "error" equals "mfa_required"
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=bob@example.com
+      password=ignored
+      """
+    Then I receive a 200 response
+    And the response JSON path "access_token" exists
+
+  Scenario: Per-user exemption applies while the global switch is on
+    When I PUT "/admin0/mfa-required" with body:
+      """
+      {"required":true}
+      """
+    And I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":false}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    Then I receive a 200 response
+    When I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=bob@example.com
+      password=ignored
+      """
+    Then I receive a 403 response
+    And the response JSON path "error" equals "mfa_required"
+
+  Scenario: A strict user without an active otp authenticator is rejected on mfa-otp
+    When I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":true,"authenticators":[{"type":"oob","oob_channel":"sms"}]}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    And I save the mfa_token from the response
+    And I exchange the mfa_token with grant "http://auth0.com/oauth/grant-type/mfa-otp" and form body:
+      """
+      otp=123456
+      client_id=demo
+      """
+    Then I receive a 403 response
+    And the response JSON path "error" equals "invalid_grant"
+    And the response JSON path "error_description" equals "User does not have an active otp authenticator"
+
+  Scenario: A strict user challenges an sms authenticator, then passes mfa-oob
+    When I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":true,"authenticators":[{"type":"oob","oob_channel":"sms"}]}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    And I save the response JSON path "mfa_token" as "mfa_token"
+    And I post to "/mfa/challenge" with form body using saved values:
+      """
+      mfa_token={{mfa_token}}
+      client_id=demo
+      challenge_type=oob
+      """
+    Then I receive a 200 response
+    And the response JSON path "challenge_type" equals "oob"
+    And the response JSON path "binding_method" equals "prompt"
+    And the response JSON path "oob_code" exists
+    When I save the response JSON path "oob_code" as "oob_code"
+    And I post to "/oauth/token" with form body using saved values:
+      """
+      grant_type=http://auth0.com/oauth/grant-type/mfa-oob
+      mfa_token={{mfa_token}}
+      oob_code={{oob_code}}
+      binding_code=123456
+      client_id=demo
+      """
+    Then I receive a 200 response
+    And the access_token claim "gty" equals "mfa-oob"
+
+  Scenario: A strict user with no authenticators gets association_required on challenge
+    When I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":true,"authenticators":[]}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    And I save the response JSON path "mfa_token" as "mfa_token"
+    And I post to "/mfa/challenge" with form body using saved values:
+      """
+      mfa_token={{mfa_token}}
+      client_id=demo
+      challenge_type=otp
+      """
+    Then I receive a 400 response
+    And the response JSON path "error" equals "association_required"
+
+  Scenario: Reset clears per-user MFA config
+    When I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":true,"authenticators":[{"type":"otp"}]}
+      """
+    And I GET "/admin0/mfa/users/alice@example.com"
+    Then I receive a 200 response
+    When I reset all mock state
+    And I GET "/admin0/mfa/users/alice@example.com"
+    Then I receive a 404 response
+    And the response JSON path "errorCode" equals "unknown_user"
