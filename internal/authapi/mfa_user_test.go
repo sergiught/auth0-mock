@@ -87,11 +87,11 @@ func TestStrictOTP(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	})
 
-	t.Run("inactive otp rejected", func(t *testing.T) {
-		r, _, _, tok := strictRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOTP, Active: boolPtr(false)})
+	t.Run("inactive otp is confirmed", func(t *testing.T) {
+		r, ms, _, tok := strictRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOTP, Active: boolPtr(false)})
 		w := postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, otp))
-		assert.Equal(t, http.StatusForbidden, w.Code)
-		assert.Contains(t, w.Body.String(), "User does not have an active otp authenticator")
+		assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.True(t, activeTypes(t, ms)[mfa.TypeOTP])
 	})
 }
 
@@ -186,4 +186,93 @@ func TestMFAGating_PasswordlessTrimsLogin(t *testing.T) {
 
 	padded := passwordlessForm(url.Values{"username": {" alice@example.com"}})
 	assert.Equal(t, http.StatusForbidden, postTokenForm(r, padded).Code)
+}
+
+// pendingRouter turns global MFA on and enrolls pending authenticators for
+// alice directly on the store, then returns a fresh mfa_token for her.
+func pendingRouter(t *testing.T, add ...mfa.AuthenticatorConfig) (chi.Router, *mfa.Store, []mfa.AuthenticatorConfig, string) {
+	t.Helper()
+	r, _, _, ms := newRefreshRouter(t)
+	ms.SetRequired(true)
+	enrolled, err := ms.Enroll("alice@example.com", add)
+	require.NoError(t, err)
+	return r, ms, enrolled, challengeToken(t, r, userPasswordForm("alice@example.com"))
+}
+
+func activeTypes(t *testing.T, ms *mfa.Store) map[string]bool {
+	t.Helper()
+	cfg, ok := ms.GetUser("alice@example.com")
+	require.True(t, ok)
+	got := map[string]bool{}
+	for _, a := range cfg.Authenticators {
+		got[a.Type] = a.Active != nil && *a.Active
+	}
+	return got
+}
+
+func TestConfirm_OTPActivatesPendingGroup(t *testing.T) {
+	r, ms, _, tok := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOTP})
+	assert.Equal(t, map[string]bool{mfa.TypeOTP: false, mfa.TypeRecoveryCode: false}, activeTypes(t, ms))
+
+	w := postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {mfa.AcceptedOTP}}))
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, map[string]bool{mfa.TypeOTP: true, mfa.TypeRecoveryCode: true}, activeTypes(t, ms))
+}
+
+func TestConfirm_WrongCodeLeavesPending(t *testing.T) {
+	r, ms, _, tok := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOTP})
+	w := postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {"000000"}}))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "Wrong otp")
+	assert.Equal(t, map[string]bool{mfa.TypeOTP: false, mfa.TypeRecoveryCode: false}, activeTypes(t, ms))
+
+	w = postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {mfa.AcceptedOTP}}))
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.True(t, activeTypes(t, ms)[mfa.TypeOTP])
+}
+
+func TestConfirm_LastPendingOTPWins(t *testing.T) {
+	r, ms, _, _ := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOTP})
+	_, err := ms.Enroll("alice@example.com", []mfa.AuthenticatorConfig{{Type: mfa.TypeOTP}})
+	require.NoError(t, err)
+	tok := challengeToken(t, r, userPasswordForm("alice@example.com"))
+
+	w := postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {mfa.AcceptedOTP}}))
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	cfg, _ := ms.GetUser("alice@example.com")
+	var otps []bool
+	for _, a := range cfg.Authenticators {
+		if a.Type == mfa.TypeOTP {
+			otps = append(otps, a.Active != nil && *a.Active)
+		}
+	}
+	assert.Equal(t, []bool{false, true}, otps)
+}
+
+func TestConfirm_OOBActivatesPending(t *testing.T) {
+	r, ms, added, tok := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOOB, OOBChannel: mfa.ChannelSMS})
+	code := ms.IssueOOB(tok, added[0].ID)
+	w := postTokenForm(r, mfaGrantForm(grantMFAOOB, tok, url.Values{
+		"oob_code": {code}, "binding_code": {mfa.AcceptedBindingCode},
+	}))
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, map[string]bool{mfa.TypeOOB: true, mfa.TypeRecoveryCode: true}, activeTypes(t, ms))
+}
+
+func TestConfirm_OOBCodeBoundToToken(t *testing.T) {
+	r, ms, added, tok := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOOB, OOBChannel: mfa.ChannelSMS})
+	foreign := ms.IssueOOB("some-other-token", added[0].ID)
+	w := postTokenForm(r, mfaGrantForm(grantMFAOOB, tok, url.Values{
+		"oob_code": {foreign}, "binding_code": {mfa.AcceptedBindingCode},
+	}))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid oob_code")
+	assert.False(t, activeTypes(t, ms)[mfa.TypeOOB])
+}
+
+func TestRecoveryCode_PendingStillRejected(t *testing.T) {
+	r, _, _, tok := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOTP})
+	w := postTokenForm(r, mfaGrantForm(grantMFARecovery, tok, url.Values{"recovery_code": {mfa.AcceptedRecoveryCode}}))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "User does not have an active recovery code")
 }
