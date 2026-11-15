@@ -492,3 +492,33 @@ func TestIsolate_DeleteFailureReported(t *testing.T) {
 	}
 	assert.Contains(t, et.errorText, "auth0mocktest: delete namespace")
 }
+
+// TestIsolate_CatchesUnmetConstraintThenDeletes pins the cleanup order: an
+// unhit Times(1) stub fails verification, and the namespace is still deleted.
+func TestIsolate_CatchesUnmetConstraintThenDeletes(t *testing.T) {
+	srv, root := newNamespaceMock(t)
+	ft := &fakeT{}
+	ns := auth0mocktest.Isolate(ft, root)
+	require.False(t, ft.fatalCalled.Load(), ft.fatalText)
+
+	reg, err := ns.ExpectGet("/api/v2/users/1").Respond(200).JSON(map[string]any{"name": "stub"}).Apply(t.Context())
+	require.NoError(t, err)
+	reg.Times(1)
+
+	// Fire cleanups in real LIFO order: last-registered first.
+	require.Len(t, ft.cleanups, 2)
+	for _, cleanup := range slices.Backward(ft.cleanups) {
+		cleanup()
+	}
+
+	require.True(t, ft.fatalCalled.Load(), "verify must run before delete and catch the unmet Times(1)")
+	assert.Contains(t, ft.fatalText, "auth0mocktest: verify expectations")
+	assert.Contains(t, ft.fatalText, "GET /api/v2/users/1")
+
+	resp, err := http.Get(srv.URL + "/admin0/namespaces")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var list []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&list))
+	assert.Empty(t, list, "the namespace must be deleted after verification")
+}
