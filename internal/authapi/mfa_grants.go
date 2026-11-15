@@ -45,7 +45,7 @@ func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req
 		if activeAuthenticator(cfg, isOTP) {
 			return nil
 		}
-		// No active otp: a correct code confirms the last pending one.
+		// No otp is active here, so every otp found is pending; confirm the last.
 		for i := len(cfg.Authenticators) - 1; i >= 0; i-- {
 			if isOTP(cfg.Authenticators[i]) {
 				key, pendingID = k, cfg.Authenticators[i].ID

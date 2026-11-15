@@ -276,3 +276,40 @@ func TestRecoveryCode_PendingStillRejected(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "User does not have an active recovery code")
 }
+
+func TestConfirm_ActiveOTPLeavesPendingUntouched(t *testing.T) {
+	r, ms, _, _ := pendingRouter(t)
+	// Enroll refuses users with an active factor, so seed the pending group directly.
+	_, err := ms.SetUser("alice@example.com", mfa.UserConfig{Required: boolPtr(true), Authenticators: []mfa.AuthenticatorConfig{
+		{Type: mfa.TypeOTP},
+		{Type: mfa.TypeOTP, Active: boolPtr(false), Group: "g1"},
+		{Type: mfa.TypeRecoveryCode, Active: boolPtr(false), Group: "g1"},
+	}})
+	require.NoError(t, err)
+	tok := challengeToken(t, r, userPasswordForm("alice@example.com"))
+
+	w := postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {mfa.AcceptedOTP}}))
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	cfg, _ := ms.GetUser("alice@example.com")
+	var otps []bool
+	for _, a := range cfg.Authenticators {
+		if a.Type == mfa.TypeOTP {
+			otps = append(otps, a.Active != nil && *a.Active)
+		}
+		if a.Group != "" {
+			assert.False(t, a.Active != nil && *a.Active, "pending group entry %s must stay inactive", a.Type)
+		}
+	}
+	assert.Equal(t, []bool{true, false}, otps)
+}
+
+func TestConfirm_OOBWrongBindingLeavesPending(t *testing.T) {
+	r, ms, added, tok := pendingRouter(t, mfa.AuthenticatorConfig{Type: mfa.TypeOOB, OOBChannel: mfa.ChannelSMS})
+	code := ms.IssueOOB(tok, added[0].ID)
+	w := postTokenForm(r, mfaGrantForm(grantMFAOOB, tok, url.Values{
+		"oob_code": {code}, "binding_code": {"000000"},
+	}))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "Wrong binding code")
+	assert.Equal(t, map[string]bool{mfa.TypeOOB: false, mfa.TypeRecoveryCode: false}, activeTypes(t, ms))
+}
