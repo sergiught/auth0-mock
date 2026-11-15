@@ -341,3 +341,23 @@ func TestGetUser_ReturnsCopy(t *testing.T) {
 	assert.True(t, s.DeleteUser("alice"))
 	assert.False(t, s.DeleteUser("alice"))
 }
+
+func TestSetUser_ReturnedCopySafeWithActivate(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	cfg := UserConfig{Authenticators: []AuthenticatorConfig{{ID: "totp|dev_a", Type: TypeOTP, Active: ptr(false)}}}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			s.Activate("alice", "totp|dev_a")
+		}
+	}()
+	for range 200 {
+		got, err := s.SetUser("alice", cfg)
+		require.NoError(t, err)
+		require.Len(t, got.Authenticators, 1)
+		_ = *got.Authenticators[0].Active
+	}
+	<-done
+}

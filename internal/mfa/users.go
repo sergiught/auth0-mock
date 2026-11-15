@@ -178,8 +178,8 @@ func (s *Store) SetUser(key string, cfg UserConfig) (UserConfig, error) {
 		}
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.users[key] = cfg
-	s.mu.Unlock()
 	return cloneConfig(cfg), nil
 }
 
