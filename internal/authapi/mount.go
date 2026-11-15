@@ -71,6 +71,7 @@ func Mount(d Deps) {
 	}
 	d.Router.Method(http.MethodPost, "/oauth/token", tok)
 	d.Router.Method(http.MethodPost, "/mfa/challenge", &MFAChallengeHandler{MFA: d.MFA})
+	d.Router.Method(http.MethodPost, "/mfa/associate", &MFAAssociateHandler{MFA: d.MFA})
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
 		PKCE:                d.PKCE,
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,

@@ -88,6 +88,48 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
+  /mfa/associate:
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: Enroll a user's first MFA factor.
+      description: |
+        Uses the `mfa_token` as the bearer; it is peeked, so it stays
+        redeemable at `/oauth/token`. The new authenticators are pending
+        until confirmed with the `mfa-otp` or `mfa-oob` grant. `secret` is
+        always the fixed mock value.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/MFAAssociateRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAAssociateRequest"
+      responses:
+        "200":
+          description: Authenticator enrolled (pending).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAAssociateResponse"
+        "400":
+          description: Invalid request or mfa not configured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: Missing, malformed or expired mfa_token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "403":
+          description: User is already enrolled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /authorize:
     get:
       tags: ["OAuth & OIDC"]
@@ -409,6 +451,31 @@ components:
         challenge_type: { type: string, enum: [otp, oob] }
         oob_code:       { type: string }
         binding_method: { type: string, description: "`prompt`; omitted for push (`auth0`) authenticators." }
+    MFAAssociateRequest:
+      type: object
+      required: [authenticator_types]
+      properties:
+        authenticator_types:
+          type: array
+          items: { type: string, enum: [otp, oob] }
+          description: Exactly one of `otp` or `oob`; a single string is accepted.
+        oob_channels:
+          type: array
+          items: { type: string, enum: [sms, voice, email, auth0] }
+          description: Exactly one channel; required for `oob`.
+        phone_number: { type: string, description: "Required for sms and voice." }
+        email: { type: string, description: "Required for the email channel." }
+    MFAAssociateResponse:
+      type: object
+      required: [authenticator_type]
+      properties:
+        authenticator_type: { type: string, enum: [otp, oob] }
+        secret: { type: string, description: "Fixed value; otp and push only." }
+        barcode_uri: { type: string, description: "otpauth URI; otp and push only." }
+        oob_channel: { type: string }
+        oob_code: { type: string }
+        binding_method: { type: string, description: "`prompt`; omitted for push (`auth0`)." }
+        recovery_codes: { type: array, items: { type: string } }
     OAuthTokenResponse:
       type: object
       required: [access_token, token_type]

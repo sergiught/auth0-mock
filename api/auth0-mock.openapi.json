@@ -69439,6 +69439,85 @@
         ],
         "type": "object"
       },
+      "MFAAssociateRequest": {
+        "properties": {
+          "authenticator_types": {
+            "description": "Exactly one of `otp` or `oob`; a single string is accepted.",
+            "items": {
+              "enum": [
+                "otp",
+                "oob"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "email": {
+            "description": "Required for the email channel.",
+            "type": "string"
+          },
+          "oob_channels": {
+            "description": "Exactly one channel; required for `oob`.",
+            "items": {
+              "enum": [
+                "sms",
+                "voice",
+                "email",
+                "auth0"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "phone_number": {
+            "description": "Required for sms and voice.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authenticator_types"
+        ],
+        "type": "object"
+      },
+      "MFAAssociateResponse": {
+        "properties": {
+          "authenticator_type": {
+            "enum": [
+              "otp",
+              "oob"
+            ],
+            "type": "string"
+          },
+          "barcode_uri": {
+            "description": "otpauth URI; otp and push only.",
+            "type": "string"
+          },
+          "binding_method": {
+            "description": "`prompt`; omitted for push (`auth0`).",
+            "type": "string"
+          },
+          "oob_channel": {
+            "type": "string"
+          },
+          "oob_code": {
+            "type": "string"
+          },
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "secret": {
+            "description": "Fixed value; otp and push only.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authenticator_type"
+        ],
+        "type": "object"
+      },
       "MFAAuthenticator": {
         "additionalProperties": false,
         "properties": {
@@ -115583,6 +115662,77 @@
         "summary": "Liveness probe.",
         "tags": [
           "Service"
+        ]
+      }
+    },
+    "/mfa/associate": {
+      "post": {
+        "description": "Uses the `mfa_token` as the bearer; it is peeked, so it stays\nredeemable at `/oauth/token`. The new authenticators are pending\nuntil confirmed with the `mfa-otp` or `mfa-oob` grant. `secret` is\nalways the fixed mock value.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAAssociateRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAAssociateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MFAAssociateResponse"
+                }
+              }
+            },
+            "description": "Authenticator enrolled (pending)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Invalid request or mfa not configured."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing, malformed or expired mfa_token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "User is already enrolled."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enroll a user's first MFA factor.",
+        "tags": [
+          "OAuth \u0026 OIDC"
         ]
       }
     },
