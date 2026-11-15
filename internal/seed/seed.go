@@ -35,11 +35,12 @@ type Stores struct {
 
 // File is the on-disk shape of a seed file, shared with the export.
 type File struct {
-	Expectations  []Item              `json:"expectations,omitempty"`
-	Claims        map[string]any      `json:"claims,omitempty"`
-	ClaimMappings map[string]string   `json:"claim_mappings,omitempty"`
-	Permissions   map[string][]string `json:"permissions,omitempty"`
-	MFARequired   bool                `json:"mfa_required,omitempty"`
+	Expectations  []Item                    `json:"expectations,omitempty"`
+	Claims        map[string]any            `json:"claims,omitempty"`
+	ClaimMappings map[string]string         `json:"claim_mappings,omitempty"`
+	Permissions   map[string][]string       `json:"permissions,omitempty"`
+	MFARequired   bool                      `json:"mfa_required,omitempty"`
+	MFAUsers      map[string]mfa.UserConfig `json:"mfa_users,omitempty"`
 }
 
 // Item is one expectation entry. ID and Hits appear in exports; they are
@@ -57,16 +58,18 @@ type Seed struct {
 	ClaimMappings map[string]string
 	Permissions   map[string][]string
 	MFARequired   bool
+	MFAUsers      map[string]mfa.UserConfig
 }
 
 // rawFile mirrors File but keeps items raw so each can be decoded strictly
 // and reported by index.
 type rawFile struct {
-	Expectations  []json.RawMessage   `json:"expectations"`
-	Claims        map[string]any      `json:"claims"`
-	ClaimMappings map[string]string   `json:"claim_mappings"`
-	Permissions   map[string][]string `json:"permissions"`
-	MFARequired   bool                `json:"mfa_required"`
+	Expectations  []json.RawMessage         `json:"expectations"`
+	Claims        map[string]any            `json:"claims"`
+	ClaimMappings map[string]string         `json:"claim_mappings"`
+	Permissions   map[string][]string       `json:"permissions"`
+	MFARequired   bool                      `json:"mfa_required"`
+	MFAUsers      map[string]mfa.UserConfig `json:"mfa_users"`
 }
 
 var unknownField = regexp.MustCompile(`json: unknown field "([^"]*)"`)
@@ -261,25 +264,55 @@ func Parse(data []byte, v *spec.Validator) (*Seed, error) {
 	}
 	items, _ := conv.(map[string]any)["expectations"].([]any)
 
-	s := &Seed{
-		Claims:        raw.Claims,
-		ClaimMappings: raw.ClaimMappings,
-		Permissions:   raw.Permissions,
-		MFARequired:   raw.MFARequired,
+	s, err := newSeed(raw)
+	if err != nil {
+		return nil, err
 	}
-	for i, r := range raw.Expectations {
+	if err := s.addExpectations(raw.Expectations, items, v); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// addExpectations parses and validates each expectation, rejecting duplicates.
+func (s *Seed) addExpectations(raws []json.RawMessage, items []any, v *spec.Validator) error {
+	for i, r := range raws {
 		exp, err := parseItem(r, items[i], v)
 		if err != nil {
-			return nil, errors.New("expectations[" + strconv.Itoa(i) + "]: " + err.Error())
+			return errors.New("expectations[" + strconv.Itoa(i) + "]: " + err.Error())
 		}
 		for j, prev := range s.Expectations {
 			if matches.SameTarget(prev, exp) {
-				return nil, fmt.Errorf("expectations[%d] and expectations[%d] have the same method, path and request matcher", j, i)
+				return fmt.Errorf("expectations[%d] and expectations[%d] have the same method, path and request matcher", j, i)
 			}
 		}
 		s.Expectations = append(s.Expectations, exp)
 	}
-	return s, nil
+	return nil
+}
+
+// newSeed copies the non-expectation sections of raw into a Seed.
+func newSeed(raw rawFile) (*Seed, error) {
+	if err := validateMFAUsers(raw.MFAUsers); err != nil {
+		return nil, err
+	}
+	return &Seed{
+		Claims:        raw.Claims,
+		ClaimMappings: raw.ClaimMappings,
+		Permissions:   raw.Permissions,
+		MFARequired:   raw.MFARequired,
+		MFAUsers:      raw.MFAUsers,
+	}, nil
+}
+
+// validateMFAUsers validates every per-user MFA entry in key order.
+func validateMFAUsers(users map[string]mfa.UserConfig) error {
+	for _, key := range slices.Sorted(maps.Keys(users)) {
+		if err := mfa.ValidateUserConfig(key, users[key]); err != nil {
+			return fmt.Errorf("mfa_users[%q]: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // parseItem decodes and validates one expectation. The generic argument is the
@@ -317,6 +350,9 @@ func (s *Seed) Apply(st Stores) {
 	if s.MFARequired {
 		st.MFA.SetRequired(true)
 	}
+	for key, cfg := range s.MFAUsers {
+		_, _ = st.MFA.SetUser(key, cfg) // Validated in Parse.
+	}
 }
 
 // Summary is a one-line description for logs.
@@ -335,6 +371,7 @@ func (s *Seed) Summary() string {
 	add(len(s.Claims), "claim", "claims")
 	add(len(s.ClaimMappings), "claim mapping", "claim mappings")
 	add(len(s.Permissions), "permission audience", "permission audiences")
+	add(len(s.MFAUsers), "mfa user", "mfa users")
 	if s.MFARequired {
 		parts = append(parts, "mfa required")
 	}

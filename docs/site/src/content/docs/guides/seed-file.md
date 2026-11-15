@@ -45,6 +45,13 @@ permissions:
   "https://api.example.test/":
     - read:things
 mfa_required: false
+mfa_users:
+  alice:
+    required: true
+    authenticators:
+      - type: otp
+      - type: oob
+        oob_channel: sms
 ```
 
 Start the stack and list the stubs:
@@ -65,6 +72,7 @@ The file is YAML. JSON works too, because JSON is valid YAML. All keys are optio
 | `claim_mappings` | Request-parameter to claim-name map, as for `PUT /admin0/claims/mappings` |
 | `permissions` | Audience mapped to a list of permissions |
 | `mfa_required` | `true` or `false` |
+| `mfa_users` | A map of user to `{required, authenticators}`. See [Per-user MFA](/auth0-mock/guides/login-flows/#test-an-mfa-challenge-flow) |
 
 The mock is strict about the file:
 
