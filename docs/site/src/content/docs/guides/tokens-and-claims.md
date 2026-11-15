@@ -45,6 +45,8 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.role, .org_id'
 # => "o-42"
 ```
 
+**Organization claims.** A login or `client_credentials` request with `organization` adds `org_id` (and `org_name` when a name was given) to the access and ID tokens; see [Organizations](/auth0-mock/guides/login-flows/#organizations). Global claims and claim mappings can override them on access tokens only; ID-token org claims stay as minted.
+
 **Custom claims overwrite reserved claims** (`gty`, `azp`, `permissions`, etc.) on purpose, so tests can override anything they need.
 
 ## Mint per-request claims from token-request parameters
