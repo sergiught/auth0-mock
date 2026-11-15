@@ -206,3 +206,26 @@ func TestNamespace_DeleteErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "DELETE /admin0/namespaces/t1")
 }
+
+type headerRT struct{ got string }
+
+func (h *headerRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	h.got = r.Header.Get(auth0mock.NamespaceHeader)
+	return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody, Request: r}, nil
+}
+
+func TestNamespace_TransportNilHeader(t *testing.T) {
+	t.Parallel()
+	_, c := newNamespaceServer(t)
+	ns, err := c.Namespace("t1")
+	require.NoError(t, err)
+	base := &headerRT{}
+	req, err := http.NewRequest(http.MethodGet, "http://example.invalid/", http.NoBody)
+	require.NoError(t, err)
+	req.Header = nil
+	resp, err := ns.Transport(base).RoundTrip(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, "t1", base.got)
+	assert.Nil(t, req.Header, "caller's request must be left unchanged")
+}

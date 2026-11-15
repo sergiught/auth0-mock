@@ -104,6 +104,9 @@ type nsTransport struct {
 
 func (t nsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r := req.Clone(req.Context())
+	if r.Header == nil {
+		r.Header = make(http.Header)
+	}
 	r.Header.Set(NamespaceHeader, t.id)
 	return t.base.RoundTrip(r)
 }
