@@ -319,3 +319,26 @@ Feature: MFA challenge flow
     And I GET "/admin0/mfa/users/alice@example.com"
     Then I receive a 404 response
     And the response JSON path "errorCode" equals "unknown_user"
+
+  Scenario: A strict user is rejected on mfa-oob with an oob_code the mock did not issue
+    When I PUT "/admin0/mfa/users/alice@example.com" with body:
+      """
+      {"required":true,"authenticators":[{"type":"oob","oob_channel":"sms"}]}
+      """
+    And I post to "/oauth/token" with form body:
+      """
+      grant_type=password
+      client_id=demo
+      username=alice@example.com
+      password=ignored
+      """
+    And I save the mfa_token from the response
+    And I exchange the mfa_token with grant "http://auth0.com/oauth/grant-type/mfa-oob" and form body:
+      """
+      oob_code=bogus
+      binding_code=123456
+      client_id=demo
+      """
+    Then I receive a 403 response
+    And the response JSON path "error" equals "invalid_grant"
+    And the response JSON path "error_description" equals "Invalid oob_code"

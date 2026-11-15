@@ -166,7 +166,7 @@ The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 u
 
 A per-user `required` beats the global `/admin0/mfa-required` switch in both directions. `"required":true` forces MFA for that user while the global switch is off. `"required":false` exempts that user while it is on. Users with no config follow the global switch.
 
-A user whose config has an `authenticators` list is a strict user. A user with no config (global switch only) is a legacy user and keeps the old behaviour:
+A user with any per-user config is a strict user, even if the config only sets `required`. A user with no config follows the global switch and is a legacy user, which keeps the old behaviour:
 
 | Grant | Legacy user | Strict user |
 |---|---|---|
@@ -188,8 +188,9 @@ A strict user with no active otp or oob authenticator gets `400 association_requ
 From Go, use the SDK client:
 
 ```go
+on := true
 _, err := c.MFA.SetUser(ctx, "alice@example.com", auth0mock.MFAUser{
-	Required:       ptr(true),
+	Required:       &on,
 	Authenticators: []auth0mock.MFAAuthenticator{{Type: "otp"}},
 })
 ```
