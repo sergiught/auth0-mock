@@ -58,10 +58,13 @@ mfa_users:
 func TestExport_MFAUsersRoundTrip(t *testing.T) {
 	st := newStores()
 	off := false
-	_, err := st.MFA.SetUser("alice", mfa.UserConfig{Authenticators: []mfa.AuthenticatorConfig{
+	_, err := st.MFA.SetUser("alice", mfa.UserConfig{Required: &off, Authenticators: []mfa.AuthenticatorConfig{
 		{ID: "otp|fixed", Type: "otp"},
 		{Type: "oob", OOBChannel: "sms", Active: &off},
 	}})
+	require.NoError(t, err)
+	on := true
+	_, err = st.MFA.SetUser("bob", mfa.UserConfig{Required: &on})
 	require.NoError(t, err)
 	want := st.MFA.Users()
 
