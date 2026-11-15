@@ -159,6 +159,22 @@ func TestActivate_Group(t *testing.T) {
 	assert.True(t, *b.Authenticators[0].Active)
 	assert.False(t, *b.Authenticators[1].Active)
 
+	_, err = s.Enroll("carol", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	second, err := s.Enroll("carol", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	require.Len(t, second, 1)
+	require.True(t, s.Activate("carol", second[0].ID))
+	c, _ := s.GetUser("carol")
+	recovery := 0
+	for _, a := range c.Authenticators {
+		if a.Type == TypeRecoveryCode {
+			recovery++
+			assert.True(t, *a.Active, "a pending recovery code is activated by any confirmation")
+		}
+	}
+	assert.Equal(t, 1, recovery)
+
 	assert.False(t, s.Activate("alice", "nope"))
 	assert.False(t, s.Activate("nobody", got[0].ID))
 }

@@ -219,7 +219,10 @@ func (s *Store) Enroll(key string, add []AuthenticatorConfig) ([]AuthenticatorCo
 	return cloneConfig(UserConfig{Authenticators: cfg.Authenticators[len(cfg.Authenticators)-len(added):]}).Authenticators, nil
 }
 
-// Activate marks id and every authenticator in its group active.
+// Activate marks id and every authenticator in its group active. The user's
+// recovery code is activated too: it belongs to the user, not to one
+// enrollment, so a repeated /mfa/associate before confirmation still leaves
+// the recovery code from the first call usable.
 func (s *Store) Activate(key, id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -233,7 +236,8 @@ func (s *Store) Activate(key, id string) bool {
 	}
 	group := cfg.Authenticators[idx].Group
 	for i := range cfg.Authenticators {
-		if i == idx || (group != "" && cfg.Authenticators[i].Group == group) {
+		a := cfg.Authenticators[i]
+		if i == idx || (group != "" && a.Group == group) || a.Type == TypeRecoveryCode {
 			v := true
 			cfg.Authenticators[i].Active = &v
 		}

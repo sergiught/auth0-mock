@@ -211,7 +211,7 @@ The email channel needs `email`. Push (`auth0`) has no `binding_method`, adds a 
 
 A user who already has an active authenticator gets `403 access_denied` "User is already enrolled.". A bad token gets `401 invalid_token`, and a bad type, channel, phone number or email gets `400 invalid_request`. Enrolling gives a legacy user a config, so later logins are checked strictly.
 
-New authenticators stay inactive until confirmed. Send `mfa-otp` with `otp=123456`, or `mfa-oob` with the returned `oob_code` and `binding_code=123456` (none for push). That activates every authenticator enrolled together.
+New authenticators stay inactive until confirmed. Send `mfa-otp` with `otp=123456`, or `mfa-oob` with the returned `oob_code` and `binding_code=123456` (none for push). That activates every authenticator enrolled together, and the user's recovery code.
 
 `GET /mfa/authenticators` lists the user's authenticators as `{id, authenticator_type, active, oob_channel?, name?}`, including inactive ones. Authenticate with an `mfa_token`, or with an access token whose audience is `<issuer>mfa/` and whose scope includes `read:authenticators`. `DELETE /mfa/authenticators/{id}` needs such an access token with `remove:authenticators`. It returns `204`, or `404 not_found` "Authenticator not found" for an unknown id. Deleting a push authenticator also deletes its otp. An `mfa_token` on DELETE gets `401 invalid_token`, and a token without the scope gets `403 insufficient_scope`.
 

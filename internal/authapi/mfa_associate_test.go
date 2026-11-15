@@ -120,6 +120,19 @@ func TestAssociate_SecondCallNoRecoveryCodes(t *testing.T) {
 	assert.Equal(t, 1, n)
 }
 
+func TestAssociate_RepeatedThenConfirmedActivatesRecoveryCode(t *testing.T) {
+	r, _, tok := associateSetup(t)
+	require.Equal(t, http.StatusOK, associateJSON(r, tok, `{"authenticator_types":["otp"]}`).Code)
+	require.Equal(t, http.StatusOK, associateJSON(r, tok, `{"authenticator_types":["otp"]}`).Code)
+
+	w := postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {mfa.AcceptedOTP}}))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	next := challengeToken(t, r, userPasswordForm("alice@example.com"))
+	w = postTokenForm(r, mfaGrantForm(grantMFARecovery, next, url.Values{"recovery_code": {mfa.AcceptedRecoveryCode}}))
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
 func TestAssociate_Errors(t *testing.T) {
 	r, ms, tok := associateSetup(t)
 	cases := []struct {
