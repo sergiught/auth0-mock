@@ -25,10 +25,13 @@ SDKs that build every URL from the host alone, such as go-auth0, can't carry a p
 
 ```go
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
 	"os"
+
+	"golang.org/x/oauth2"
 
 	client "github.com/auth0/go-auth0/v3/management/client"
 	"github.com/auth0/go-auth0/v3/management/option"
@@ -41,20 +44,57 @@ if err != nil {
 }
 pool := x509.NewCertPool()
 pool.AppendCertsFromPEM(pem)
-httpClient := &http.Client{Transport: &http.Transport{
+base := &http.Transport{
 	TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
-}}
+}
+httpClient := &http.Client{Transport: base}
 
+// go-auth0 fetches the token with the client stored in the context under
+// oauth2.HTTPClient, not with option.WithHTTPClient.
+ctx := context.Background()
+tokenCtx := context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 mgmt, err := client.New("localhost:8443",
-	option.WithClientCredentials(ctx, "demo", "x"),
+	option.WithClientCredentials(tokenCtx, "demo", "x"),
 	option.WithHTTPClient(httpClient),
 	option.WithHTTPHeader(http.Header{"X-Auth0-Mock-Namespace": []string{"test-42"}}),
 )
 ```
 
-The token request may go to the default namespace. That is fine in header mode, because the issuer is the same.
+`option.WithHTTPHeader` does not reach the token request, which goes to the default namespace. That is fine in header mode, because the issuer is the same. To send the token request to the namespace too, use a transport that adds the header, such as `ns.Transport(base)` in the next section.
 
-<!-- go-sdk -->
+## Go: `auth0mocktest.Isolate`
+
+In Go tests, `auth0mocktest.Isolate` gives each test its own namespace. It checks your stubs when the test ends, then deletes the namespace. Stub through `ns`, and hand `ns.Transport(base)` to the code under test: it adds the header to every request.
+
+```go
+func TestCreateUser(t *testing.T) {
+	t.Parallel()
+	ns := auth0mocktest.Isolate(t, mock) // mock is the shared *auth0mock.Client
+
+	auth0mocktest.MustApply(t, ns.ExpectPost("/api/v2/users").
+		Respond(201).
+		JSON(map[string]any{"user_id": "auth0|1"}))
+
+	// base is the certificate-trusting transport from the example above.
+	// go-auth0 fetches the token with the client in the context under
+	// oauth2.HTTPClient, so pass the same client there: ns.Transport then
+	// sends the header on the token request too, and the token comes from
+	// the test's own namespace.
+	httpClient := &http.Client{Transport: ns.Transport(base)}
+	tokenCtx := context.WithValue(t.Context(), oauth2.HTTPClient, httpClient)
+	mgmt, err := client.New("localhost:8443",
+		option.WithClientCredentials(tokenCtx, "demo", "x"),
+		option.WithHTTPClient(httpClient),
+	)
+	// ... call mgmt from the code under test ...
+}
+```
+
+The imports are `context`, `golang.org/x/oauth2`, `github.com/auth0/go-auth0/v3/management/client` and `github.com/auth0/go-auth0/v3/management/option`.
+
+`Isolate` fails the test straight away if the mock does not serve namespaces (`NAMESPACE_MAX=0`, or a server older than namespaces), and if the cap is reached it reports the server's message.
+
+A namespaced client's `BaseURL()` is `<root>/ns/<id>` (prefix mode). Tokens used against it, including the `auth0mocktest.SubscribeEvents` bearer, must be minted under that prefix; a token minted through `Transport` (header mode, default issuer) only works through `Transport`. Use `Client.Namespace` to scope a client: one built with `NewClient(".../ns/abc")` works for admin calls but does not know its id (`NamespaceID()` is `""` and `Transport` does nothing).
 
 ## What is shared and what is private
 
@@ -84,7 +124,7 @@ These routes are global. They never create a namespace and ignore the header and
 | `DELETE /admin0/namespaces/{id}` | 204, or 404 `namespace_not_found`. Open event streams of that namespace end. |
 | `DELETE /admin0/namespaces` | 204, deletes all. Refused with 400 `invalid_namespace` if the request names a namespace by header or prefix. |
 
-Deleting a namespace does not wait for requests already in flight inside it.
+Deleting a namespace does not wait for requests already in flight inside it. A request that names a namespace after it was deleted (for example from a goroutine left running past the test) recreates it, and it counts toward `NAMESPACE_MAX`.
 
 ## The cap
 

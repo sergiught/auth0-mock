@@ -1,10 +1,13 @@
 package auth0mocktest_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -12,9 +15,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/api"
+	"github.com/sergiught/auth0-mock/internal/claims"
+	"github.com/sergiught/auth0-mock/internal/clock"
+	"github.com/sergiught/auth0-mock/internal/journal"
+	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/permissions"
+	"github.com/sergiught/auth0-mock/internal/pkce"
+	"github.com/sergiught/auth0-mock/internal/router"
+	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/pkg/auth0mock"
 	"github.com/sergiught/auth0-mock/pkg/auth0mock/auth0mocktest"
 )
@@ -82,7 +97,8 @@ type fakeT struct {
 	cleanups     []func()
 }
 
-func (f *fakeT) Helper() {}
+func (f *fakeT) Helper()      {}
+func (f *fakeT) Name() string { return "fake" }
 func (f *fakeT) Fatalf(format string, args ...any) {
 	f.fatalCalled.Store(true)
 	f.fatalText = fmt.Sprintf(format, args...)
@@ -310,4 +326,199 @@ func TestMustFindCall_FailsWithNone(t *testing.T) {
 	auth0mocktest.MustFindCall(ft, c, "GET", "/api/v2/users")
 	require.True(t, ft.fatalCalled.Load())
 	assert.Contains(t, ft.fatalText, "(none)")
+}
+
+// newNamespaceMock runs the real router with room for many namespaces.
+func newNamespaceMock(t *testing.T) (*httptest.Server, *auth0mock.Client) {
+	t.Helper()
+	return newNamespaceMockMax(t, 16)
+}
+
+func newNamespaceMockMax(t *testing.T, namespaceMax int) (*httptest.Server, *auth0mock.Client) {
+	t.Helper()
+	const issuer = "https://mock/"
+	openapiSpec, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	validator, err := spec.NewValidator(openapiSpec)
+	require.NoError(t, err)
+	clk := clock.NewControlled()
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: issuer, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, Now: clk.Now})
+	require.NoError(t, err)
+	h, err := router.New(router.Deps{
+		Log: zerolog.Nop(), Store: matches.NewStore(), Claims: claims.NewStore(), ClaimMappings: claims.NewMappingStore(),
+		Permissions: permissions.NewStore(), PKCE: pkce.NewStore(pkce.WithNow(clk.Now)), MFA: mfa.NewStore(mfa.WithNow(clk.Now)),
+		Keys: ks, Spec: openapiSpec, Validator: validator, Clock: clk,
+		Issuer: issuer, DefaultAudience: issuer + "api/v2/",
+		Journal: journal.New(10), EventsReplayBuffer: 10, NamespaceMax: namespaceMax,
+	})
+	require.NoError(t, err)
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+	return srv, c
+}
+
+func TestIsolate_ParallelSubtests(t *testing.T) {
+	srv, root := newNamespaceMock(t)
+
+	t.Run("group", func(t *testing.T) {
+		for i := range 8 {
+			t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+				t.Parallel()
+				ns := auth0mocktest.Isolate(t, root)
+				want := fmt.Sprintf("body-%d", i)
+				auth0mocktest.MustApply(t, ns.ExpectGet("/api/v2/users/1").
+					Respond(200).JSON(map[string]any{"name": want}))
+
+				hc := &http.Client{Transport: ns.Transport(nil)}
+				tok, err := hc.Post(srv.URL+"/oauth/token", "application/x-www-form-urlencoded",
+					strings.NewReader("grant_type=client_credentials&client_id=c&client_secret=s&audience=https://mock/api/v2/"))
+				require.NoError(t, err)
+				var tokBody struct {
+					AccessToken string `json:"access_token"`
+				}
+				require.NoError(t, json.NewDecoder(tok.Body).Decode(&tokBody))
+				_ = tok.Body.Close()
+				req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v2/users/1", http.NoBody)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+tokBody.AccessToken)
+				resp, err := hc.Do(req)
+				require.NoError(t, err)
+				defer func() { _ = resp.Body.Close() }()
+				var got map[string]string
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+				assert.Equal(t, want, got["name"])
+			})
+		}
+	})
+
+	resp, err := http.Get(srv.URL + "/admin0/namespaces")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var list []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&list))
+	assert.Empty(t, list)
+}
+
+func TestIsolate_IDShape(t *testing.T) {
+	_, root := newNamespaceMock(t)
+	t.Run("a name/with spaces "+strings.Repeat("x", 100), func(t *testing.T) {
+		ns := auth0mocktest.Isolate(t, root)
+		assert.Regexp(t, regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`), ns.NamespaceID())
+	})
+}
+
+func TestIsolate_FailsWhenNamespacesOff(t *testing.T) {
+	_, root := newNamespaceMockMax(t, 0)
+	ft := &fakeT{}
+	auth0mocktest.Isolate(ft, root)
+	require.True(t, ft.fatalCalled.Load())
+	assert.Contains(t, ft.fatalText, "the mock does not serve namespaces")
+}
+
+// exitT stops the calling goroutine on Fatalf like a real *testing.T, so a
+// test can see which cleanups were registered before the failure.
+type exitT struct {
+	fakeT
+	errorText string
+}
+
+func (e *exitT) Fatalf(format string, args ...any) {
+	e.fakeT.Fatalf(format, args...)
+	runtime.Goexit()
+}
+
+func (e *exitT) Errorf(format string, args ...any) { e.errorText = fmt.Sprintf(format, args...) }
+
+func runIsolate(t *testing.T, et *exitT, c *auth0mock.Client) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		auth0mocktest.Isolate(et, c)
+	}()
+	<-done
+}
+
+func TestIsolate_FailsAtCapWithServerMessage(t *testing.T) {
+	_, root := newNamespaceMockMax(t, 1)
+	taken, err := root.Namespace("taken")
+	require.NoError(t, err)
+	_, err = taken.Expectations.List(t.Context())
+	require.NoError(t, err)
+
+	et := &exitT{}
+	runIsolate(t, et, root)
+	require.True(t, et.fatalCalled.Load())
+	assert.Contains(t, et.fatalText, "auth0mocktest: Isolate:")
+	assert.NotContains(t, et.fatalText, "does not serve namespaces")
+	// Only the delete cleanup is registered; verify is not.
+	assert.Len(t, et.cleanups, 1)
+}
+
+func TestIsolate_FailsOnNamespacedClient(t *testing.T) {
+	_, root := newNamespaceMock(t)
+	ns, err := root.Namespace("outer")
+	require.NoError(t, err)
+
+	et := &exitT{}
+	runIsolate(t, et, ns)
+	require.True(t, et.fatalCalled.Load())
+	assert.Contains(t, et.fatalText, "auth0mocktest: create namespace:")
+	assert.Empty(t, et.cleanups)
+}
+
+func TestIsolate_DeleteFailureReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","message":"boom"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"expectations":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	root, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+
+	et := &exitT{}
+	runIsolate(t, et, root)
+	require.False(t, et.fatalCalled.Load(), et.fatalText)
+	require.Len(t, et.cleanups, 2)
+	for i := len(et.cleanups) - 1; i >= 0; i-- {
+		et.cleanups[i]()
+	}
+	assert.Contains(t, et.errorText, "auth0mocktest: delete namespace")
+}
+
+// TestIsolate_CatchesUnmetConstraintThenDeletes pins the cleanup order: an
+// unhit Times(1) stub fails verification, and the namespace is still deleted.
+func TestIsolate_CatchesUnmetConstraintThenDeletes(t *testing.T) {
+	srv, root := newNamespaceMock(t)
+	ft := &fakeT{}
+	ns := auth0mocktest.Isolate(ft, root)
+	require.False(t, ft.fatalCalled.Load(), ft.fatalText)
+
+	reg, err := ns.ExpectGet("/api/v2/users/1").Respond(200).JSON(map[string]any{"name": "stub"}).Apply(t.Context())
+	require.NoError(t, err)
+	reg.Times(1)
+
+	// Fire cleanups in real LIFO order: last-registered first.
+	require.Len(t, ft.cleanups, 2)
+	for _, cleanup := range slices.Backward(ft.cleanups) {
+		cleanup()
+	}
+
+	require.True(t, ft.fatalCalled.Load(), "verify must run before delete and catch the unmet Times(1)")
+	assert.Contains(t, ft.fatalText, "auth0mocktest: verify expectations")
+	assert.Contains(t, ft.fatalText, "GET /api/v2/users/1")
+
+	resp, err := http.Get(srv.URL + "/admin0/namespaces")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var list []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&list))
+	assert.Empty(t, list, "the namespace must be deleted after verification")
 }
