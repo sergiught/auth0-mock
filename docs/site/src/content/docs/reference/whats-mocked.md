@@ -19,6 +19,10 @@ Every route answers CORS preflights and echoes the caller's `Origin` (see `CORS_
 | `/oidc/logout` | GET, POST | OIDC logout (also ends the login session and expires the `auth0` cookie): checks `id_token_hint` (expired is fine; access tokens and other clients' tokens get 400), 302 to `post_logout_redirect_uri` with `state` (needs `client_id` or `id_token_hint`), or a 200 "logged out" page; discovery's `end_session_endpoint`; tokens from before a restart fail the signature check unless `SIGNING_KEY_FILE` is set |
 | `/.well-known/jwks.json` | GET | Real JWKS for the in-process signing key |
 | `/.well-known/openid-configuration` | GET | OIDC discovery rooted at the configured issuer; lists only the grants, claims and auth methods the mock serves |
+| `/mfa/challenge` | POST | Issues an MFA challenge for the `mfa_token` (an `oob_code` for oob users). See [per-user MFA](/auth0-mock/guides/login-flows/#per-user-mfa) |
+| `/mfa/associate` | POST | Enrolls a user's first authenticator (otp, sms, voice, email or push); it stays pending until confirmed by the matching mfa grant. See [enroll and manage authenticators](/auth0-mock/guides/login-flows/#enroll-and-manage-authenticators) |
+| `/mfa/authenticators` | GET | Lists the user's authenticators; needs an access token with `read:authenticators` |
+| `/mfa/authenticators/{id}` | DELETE | Removes one authenticator; needs `remove:authenticators` |
 | `/dbconnections/signup` | POST | Returns `{_id, email, email_verified:false}` |
 | `/dbconnections/change_password` | POST | Returns the canned reset-email message |
 | `/passwordless/start` | POST | Returns `{_id, email, phone_number}` |
