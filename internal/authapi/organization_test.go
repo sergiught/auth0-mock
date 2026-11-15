@@ -57,6 +57,11 @@ func TestAddClaims(t *testing.T) {
 
 func newOrgRouter(t *testing.T) (chi.Router, *jwks.KeySet, *claims.Store) {
 	t.Helper()
+	return newOrgRouterStrict(t, false)
+}
+
+func newOrgRouterStrict(t *testing.T, strict bool) (chi.Router, *jwks.KeySet, *claims.Store) {
+	t.Helper()
 	ks, err := jwks.NewKeySet(jwks.Config{
 		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
 	})
@@ -65,7 +70,7 @@ func newOrgRouter(t *testing.T) (chi.Router, *jwks.KeySet, *claims.Store) {
 	r := chi.NewRouter()
 	Mount(Deps{
 		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
-		Log: zerolog.Nop(), PKCE: pkce.NewStore(), Sessions: session.NewStore(), Claims: store,
+		Log: zerolog.Nop(), PKCE: pkce.NewStore(), Sessions: session.NewStore(), Claims: store, TokenEndpointStrict: strict,
 	})
 	return r, ks, store
 }
@@ -127,8 +132,21 @@ func TestAuthorize_ImplicitHybridOrganization(t *testing.T) {
 	}
 	// the hybrid code carries it to the exchange too
 	frag := fragmentOf(t, r, implicitBase+"nonce=n&organization=acme&response_type=code%20id_token")
-	assert.Equal(t, acmeOrgID, verified(t, ks, frag.Get("id_token")).Extra["org_id"])
-	assert.Equal(t, "acme", verified(t, ks, frag.Get("id_token")).Extra["org_name"])
+	idc := verified(t, ks, frag.Get("id_token"))
+	assert.Equal(t, acmeOrgID, idc.Extra["org_id"])
+	assert.Equal(t, "acme", idc.Extra["org_name"])
+	w := postTokenForm(r, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {"demo"}, "code": {frag.Get("code")},
+		"redirect_uri": {"https://app/cb"}, "audience": {"https://api/"},
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	for _, tok := range []string{resp.AccessToken, resp.IDToken} {
+		c := verified(t, ks, tok)
+		assert.Equal(t, acmeOrgID, c.Extra["org_id"])
+		assert.Equal(t, "acme", c.Extra["org_name"])
+	}
 }
 
 func TestAuthorize_SilentLoginOrganization(t *testing.T) {
@@ -154,4 +172,70 @@ func TestAuthorize_GlobalClaimOverridesOrg(t *testing.T) {
 	access, id := orgCodeTokens(t, r, ks, url.Values{"organization": {"org_abc123"}}, nil)
 	assert.Equal(t, "org_global", access.Extra["org_id"])
 	assert.Equal(t, "org_abc123", id.Extra["org_id"])
+}
+
+func orgTokenPost(t *testing.T, r chi.Router, form url.Values) tokenResponse {
+	t.Helper()
+	w := postTokenForm(r, form)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	return resp
+}
+
+func TestRefreshKeepsOrganization(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		r, ks, _ := newOrgRouterStrict(t, strict)
+		code := authorizeCode(t, r, url.Values{"organization": {"acme"}, "scope": {"openid offline_access"}})
+		resp := orgTokenPost(t, r, url.Values{
+			"grant_type": {"authorization_code"}, "client_id": {"demo"}, "code": {code},
+			"redirect_uri": {"https://app/cb"}, "audience": {"https://api/"},
+		})
+		require.NotEmpty(t, resp.RefreshToken, "strict=%v", strict)
+		rt := resp.RefreshToken
+		for i := 0; i < 2; i++ {
+			resp = orgTokenPost(t, r, url.Values{
+				"grant_type": {"refresh_token"}, "client_id": {"demo"}, "refresh_token": {rt},
+				"organization": {"other"},
+			})
+			for _, tok := range []string{resp.AccessToken, resp.IDToken} {
+				c := verified(t, ks, tok)
+				assert.Equal(t, acmeOrgID, c.Extra["org_id"], "strict=%v i=%d", strict, i)
+				assert.Equal(t, "acme", c.Extra["org_name"], "strict=%v i=%d", strict, i)
+			}
+			if resp.RefreshToken != "" {
+				rt = resp.RefreshToken
+			}
+		}
+	}
+}
+
+func TestClientCredentialsOrganization(t *testing.T) {
+	r, ks, _ := newOrgRouter(t)
+	form := url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"demo"}, "client_secret": {"s"},
+		"audience": {"https://api/"}, "organization": {"acme"},
+	}
+	c := verified(t, ks, orgTokenPost(t, r, form).AccessToken)
+	assert.Equal(t, "client-credentials", c.Extra["gty"])
+	assert.Equal(t, acmeOrgID, c.Extra["org_id"])
+	assert.Equal(t, "acme", c.Extra["org_name"])
+
+	form.Del("organization")
+	c = verified(t, ks, orgTokenPost(t, r, form).AccessToken)
+	assert.NotContains(t, c.Extra, "org_id")
+	assert.NotContains(t, c.Extra, "org_name")
+}
+
+func TestPasswordIgnoresOrganization(t *testing.T) {
+	r, ks, _ := newOrgRouter(t)
+	resp := orgTokenPost(t, r, url.Values{
+		"grant_type": {"password"}, "client_id": {"demo"}, "username": {"alice"}, "password": {"x"},
+		"scope": {"openid"}, "audience": {"https://api/"}, "organization": {"acme"},
+	})
+	for _, tok := range []string{resp.AccessToken, resp.IDToken} {
+		c := verified(t, ks, tok)
+		assert.NotContains(t, c.Extra, "org_id")
+		assert.NotContains(t, c.Extra, "org_name")
+	}
 }

@@ -51,6 +51,7 @@ type Access struct {
 // refresh_token grant can return the same user.
 type Grant struct {
 	Subject, ClientID, Audience, Scope, Realm string
+	OrgID, OrgName                            string
 	AuthTime                                  time.Time
 	Profile                                   map[string]any
 }
