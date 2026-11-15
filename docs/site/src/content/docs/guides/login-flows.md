@@ -162,7 +162,7 @@ curl -X PUT http://localhost:8080/admin0/mfa/users/alice@example.com \
   -d '{"required":true,"authenticators":[{"type":"otp"},{"type":"oob","oob_channel":"sms"}]}'
 ```
 
-The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 unknown_user` when there is none. Authenticators are active unless you send `"active":false`.
+The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 unknown_user` when there is none. Authenticators are active unless you send `"active":false`. An inactive authenticator is confirmed by the matching mfa grant (see "Enroll and manage authenticators").
 
 A per-user `required` beats the global `/admin0/mfa-required` switch in both directions. `"required":true` forces MFA for that user while the global switch is off. `"required":false` exempts that user while it is on. Users with no config follow the global switch. The user key is case-sensitive, so `Alice@example.com` and `alice@example.com` are different users.
 
@@ -170,8 +170,8 @@ A user with any per-user config is a strict user, even if the config only sets `
 
 | Grant | Legacy user | Strict user |
 |---|---|---|
-| `mfa-otp` | `otp=123456` | Needs an active `otp` authenticator, else `403 invalid_grant` "User does not have an active otp authenticator" |
-| `mfa-oob` | Any `oob_code` plus `binding_code=123456` | The `oob_code` must come from `/mfa/challenge` for the same `mfa_token` |
+| `mfa-otp` | `otp=123456` | Needs an `otp` authenticator. An inactive one is confirmed (activated together with its group) by a correct `otp`. Otherwise `403 invalid_grant` "User does not have an active otp authenticator" |
+| `mfa-oob` | Any `oob_code` plus `binding_code=123456` | The `oob_code` must come from `/mfa/challenge` or `/mfa/associate` for the same `mfa_token` |
 | `mfa-recovery-code` | `ABCDEFGHIJKLMNOP` | Needs an active recovery code |
 
 `POST /mfa/challenge` takes the `mfa_token` and returns the challenge for the user:
