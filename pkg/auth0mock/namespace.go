@@ -52,7 +52,8 @@ func (c *Client) NamespaceID() string { return c.namespace }
 
 // DeleteNamespace removes the client's namespace and all its state. It is an
 // error on a root client. A namespace the server does not know (404) is
-// treated as already deleted.
+// treated as already deleted. On success it also drops the client's local Verify
+// ledger, as Reset does.
 func (c *Client) DeleteNamespace(ctx context.Context) error {
 	if c.namespace == "" {
 		return fmt.Errorf("auth0mock: DeleteNamespace: client is not namespaced")
@@ -73,12 +74,11 @@ func (c *Client) DeleteNamespace(ctx context.Context) error {
 		_, _ = io.CopyN(io.Discard, resp.Body, maxDrainBytes)
 		_ = resp.Body.Close()
 	}()
-	if resp.StatusCode == http.StatusNotFound {
-		return nil
-	}
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
 		return decodeError(resp)
 	}
+	// The namespace's stubs are gone, so drop the local Verify ledger too.
+	c.dropRegistered()
 	return nil
 }
 

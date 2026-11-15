@@ -229,3 +229,35 @@ func TestNamespace_TransportNilHeader(t *testing.T) {
 	assert.Equal(t, "t1", base.got)
 	assert.Nil(t, req.Header, "caller's request must be left unchanged")
 }
+
+func TestNamespace_DeleteDropsVerifyLedger(t *testing.T) {
+	t.Parallel()
+	_, c := newNamespaceServer(t)
+	stub := func(ns *auth0mock.Client, path string) *auth0mock.RegisteredExpectation {
+		reg, err := ns.ExpectGet(path).Respond(200).JSON(map[string]any{"name": "stub"}).Apply(t.Context())
+		require.NoError(t, err)
+		return reg
+	}
+
+	t.Run("deleted", func(t *testing.T) {
+		ns, err := c.Namespace("drop1")
+		require.NoError(t, err)
+		stub(ns, "/api/v2/users/1").Times(1)
+		require.Error(t, ns.Expectations.Verify(t.Context())) // Unmet, never hit.
+		require.NoError(t, ns.DeleteNamespace(t.Context()))
+		stub(ns, "/api/v2/users/2")
+		require.NoError(t, ns.Expectations.Verify(t.Context()))
+	})
+
+	t.Run("already gone", func(t *testing.T) {
+		ns, err := c.Namespace("drop2")
+		require.NoError(t, err)
+		stub(ns, "/api/v2/users/1").Times(1)
+		require.Error(t, ns.Expectations.Verify(t.Context()))
+		other, err := c.Namespace("drop2")
+		require.NoError(t, err)
+		require.NoError(t, other.DeleteNamespace(t.Context()))
+		require.NoError(t, ns.DeleteNamespace(t.Context())) // 404 path.
+		require.NoError(t, ns.Expectations.Verify(t.Context()))
+	})
+}
