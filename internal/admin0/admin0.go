@@ -117,6 +117,10 @@ func Mount(r chi.Router, d Deps) {
 
 	r.Method(http.MethodGet, "/admin0/mfa-required", &GetMFARequiredHandler{Store: d.MFA})
 	r.Method(http.MethodPut, "/admin0/mfa-required", &PutMFARequiredHandler{Store: d.MFA})
+	r.Method(http.MethodGet, "/admin0/mfa/users", &ListMFAUsersHandler{Store: d.MFA})
+	r.Method(http.MethodGet, "/admin0/mfa/users/{user}", &GetMFAUserHandler{Store: d.MFA})
+	r.Method(http.MethodPut, "/admin0/mfa/users/{user}", &PutMFAUserHandler{Store: d.MFA})
+	r.Method(http.MethodDelete, "/admin0/mfa/users/{user}", &DeleteMFAUserHandler{Store: d.MFA})
 
 	r.Method(http.MethodGet, "/admin0/clock", &GetClockHandler{Clock: d.Clock})
 	r.Method(http.MethodPut, "/admin0/clock", &PutClockHandler{Clock: d.Clock})

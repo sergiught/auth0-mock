@@ -44,7 +44,9 @@ type Context struct {
 	Audience string
 	Scope    string
 	Subject  string
-	Realm    string // Empty for plain password grant.
+	// Login is the username the grant received; empty when none.
+	Login string
+	Realm string // Empty for plain password grant.
 	// Profile, when set, is the id_token profile to use after step-up instead
 	// of one derived from Subject.
 	Profile   map[string]any
@@ -56,6 +58,8 @@ type Context struct {
 type Store struct {
 	mu       sync.Mutex
 	tokens   map[string]Context
+	users    map[string]UserConfig
+	oob      map[string]oobEntry
 	ttl      time.Duration
 	now      func() time.Time
 	required atomic.Bool
@@ -79,6 +83,8 @@ func WithNow(now func() time.Time) Option {
 func NewStore(opts ...Option) *Store {
 	s := &Store{
 		tokens: make(map[string]Context),
+		users:  make(map[string]UserConfig),
+		oob:    make(map[string]oobEntry),
 		ttl:    DefaultTokenTTL,
 		now:    time.Now,
 	}
@@ -142,11 +148,13 @@ func (s *Store) Peek(token string) (Context, bool) {
 	return ctx, true
 }
 
-// Reset clears every issued mfa_token AND turns enforcement off.
+// Reset clears every issued mfa_token, user config and oob code AND turns enforcement off.
 func (s *Store) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokens = make(map[string]Context)
+	s.users = make(map[string]UserConfig)
+	s.oob = make(map[string]oobEntry)
 	s.required.Store(false)
 }
 
@@ -155,6 +163,11 @@ func (s *Store) sweepLocked() {
 	for tok, ctx := range s.tokens {
 		if now.After(ctx.expiresAt) {
 			delete(s.tokens, tok)
+		}
+	}
+	for code, e := range s.oob {
+		if now.After(e.expiresAt) {
+			delete(s.oob, code)
 		}
 	}
 }

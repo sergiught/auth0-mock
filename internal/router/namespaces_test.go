@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -336,4 +337,19 @@ func TestNamespaces_DispatcherErrorsBoundDebugBody(t *testing.T) {
 	// DebugDump reads the body it logs; the limit must cap that read.
 	assert.Contains(t, logs.String(), `"body_bytes":64`)
 	assert.NotContains(t, logs.String(), `"body_bytes":20000`)
+}
+
+func TestNamespaceMFAUserKeyDecodedOnce(t *testing.T) {
+	h := newNamespaceRouter(t, 3, "")
+	cases := []struct{ path, key string }{
+		{"50%25off", "50%off"},
+		{"a%2Fb", "a/b"},
+		{"auth0%7C123", "auth0|123"},
+		{"auth0%7c123", "auth0|123"},
+	}
+	for _, c := range cases {
+		rec := nsDo(t, h, http.MethodPut, "/admin0/mfa/users/"+c.path, "a", `{"authenticators":[{"type":"otp"}]}`)
+		require.Equal(t, http.StatusOK, rec.Code, c.path+" "+rec.Body.String())
+		assert.Contains(t, rec.Body.String(), `"user":`+strconv.Quote(c.key))
+	}
 }

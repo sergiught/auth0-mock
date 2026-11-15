@@ -140,7 +140,7 @@ type mfaChallengeResponse struct {
 // requireMFA returns true (and writes the 403 challenge) if the MFA store
 // reports MFA enforcement is on. Caller must abort token minting when true.
 func (h *TokenHandler) requireMFA(w http.ResponseWriter, r *http.Request, ctx mfa.Context) bool {
-	if h.MFA == nil || !h.MFA.IsRequired() {
+	if h.MFA == nil || !h.MFA.Needed(ctx) {
 		return false
 	}
 	tok := h.MFA.Issue(ctx)
@@ -229,7 +229,7 @@ func (h *TokenHandler) respondPasswordRealm(w http.ResponseWriter, r *http.Reque
 		subject = "auth0|" + uuid.NewString()
 	}
 	if h.requireMFA(w, r, mfa.Context{
-		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm,
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm, Login: req.Username,
 	}) {
 		return
 	}
@@ -307,7 +307,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 	}
 	subject, profile := passwordlessUser(req.Realm, req.Username)
 	if h.requireMFA(w, r, mfa.Context{
-		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm, Profile: profile,
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm, Profile: profile, Login: strings.TrimSpace(req.Username),
 	}) {
 		return
 	}
@@ -564,7 +564,7 @@ func (h *TokenHandler) respondPassword(w http.ResponseWriter, r *http.Request, r
 		subject = "auth0|" + uuid.NewString()
 	}
 	if h.requireMFA(w, r, mfa.Context{
-		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject,
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Login: req.Username,
 	}) {
 		return
 	}

@@ -69439,6 +69439,90 @@
         ],
         "type": "object"
       },
+      "MFAAuthenticator": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "description": "Defaults to true.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Generated when omitted; unique per user.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "oob_channel": {
+            "description": "Required for `oob`.",
+            "enum": [
+              "sms",
+              "voice",
+              "email",
+              "auth0"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "otp",
+              "oob",
+              "recovery-code"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "MFAChallengeRequest": {
+        "properties": {
+          "authenticator_id": {
+            "type": "string"
+          },
+          "challenge_type": {
+            "description": "Space-separated list of `otp` and `oob`; empty means both.",
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          },
+          "mfa_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mfa_token"
+        ],
+        "type": "object"
+      },
+      "MFAChallengeResponse": {
+        "properties": {
+          "binding_method": {
+            "description": "`prompt`; omitted for push (`auth0`) authenticators.",
+            "type": "string"
+          },
+          "challenge_type": {
+            "enum": [
+              "otp",
+              "oob"
+            ],
+            "type": "string"
+          },
+          "oob_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_type"
+        ],
+        "type": "object"
+      },
       "MFAPolicyEnum": {
         "enum": [
           "all-applications",
@@ -69460,6 +69544,43 @@
             "type": "object"
           }
         ]
+      },
+      "MFAUser": {
+        "properties": {
+          "authenticators": {
+            "items": {
+              "$ref": "#/components/schemas/MFAAuthenticator"
+            },
+            "type": "array"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "authenticators"
+        ],
+        "type": "object"
+      },
+      "MFAUserConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticators": {
+            "items": {
+              "$ref": "#/components/schemas/MFAAuthenticator"
+            },
+            "type": "array"
+          },
+          "required": {
+            "description": "When set, overrides the global MFA-required flag for this user.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "MdlPresentationProperties": {
         "additionalProperties": true,
@@ -84967,6 +85088,109 @@
           }
         },
         "summary": "Set the MFA-required flag.",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/admin0/mfa/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MFAUser"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Configured users."
+          }
+        },
+        "summary": "List every per-user MFA config, sorted by user.",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/admin0/mfa/users/{user}": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Config deleted."
+          },
+          "404": {
+            "description": "No config for this user (`unknown_user`)."
+          }
+        },
+        "summary": "Delete one user's MFA config.",
+        "tags": [
+          "MFA"
+        ]
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MFAUser"
+                }
+              }
+            },
+            "description": "The stored config."
+          },
+          "404": {
+            "description": "No config for this user (`unknown_user`)."
+          }
+        },
+        "summary": "Read one user's MFA config.",
+        "tags": [
+          "MFA"
+        ]
+      },
+      "parameters": [
+        {
+          "description": "User key (the login or subject); percent-escapes are decoded.",
+          "in": "path",
+          "name": "user",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "Authenticator IDs are generated when omitted; `active` defaults to true.\nUnknown fields and invalid authenticators give 400 `invalid_body`.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAUserConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MFAUser"
+                }
+              }
+            },
+            "description": "The stored config, with IDs filled in."
+          },
+          "400": {
+            "description": "Invalid body (`invalid_body`)."
+          }
+        },
+        "summary": "Replace one user's MFA config.",
         "tags": [
           "MFA"
         ]
@@ -115359,6 +115583,62 @@
         "summary": "Liveness probe.",
         "tags": [
           "Service"
+        ]
+      }
+    },
+    "/mfa/challenge": {
+      "post": {
+        "description": "Peeks the `mfa_token` (it stays redeemable at `/oauth/token`). Users\nwithout per-user MFA config get an `otp` challenge when `otp` is\nrequested, else an `oob` one. Users with config are challenged with\nthe named or first matching active authenticator.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAChallengeRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MFAChallengeResponse"
+                }
+              }
+            },
+            "description": "Challenge issued."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Invalid request, unsupported challenge type, or association required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Malformed or expired mfa_token."
+          }
+        },
+        "summary": "Request an MFA challenge for an mfa_token.",
+        "tags": [
+          "OAuth \u0026 OIDC"
         ]
       }
     },

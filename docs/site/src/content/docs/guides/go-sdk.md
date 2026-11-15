@@ -50,7 +50,7 @@ What's covered:
 | `Expectations` | `List` | `Add`, fluent `ExpectGet/Post/Put/Patch/Delete(...).Respond(...).JSON(...).Then(...).Apply(ctx)` | `Clear`, `ClearOp(method, path)` | `Verify(ctx)`; per-stub: `Hits(ctx)`, `Times(n)`, `AtLeast(n)`, `AtMost(n)`, `AnyTimes()` |
 | `Claims` | `Get` | `Set` | `Clear` | — |
 | `Permissions` | `All`, `Get(audience)` | `Set(audience, perms)` | `Clear`, `Delete(audience)` | — |
-| `MFA` | `Get` | `Set` | (use `Set(ctx, false)`) | — |
+| `MFA` | `Get`, `GetUser`, `ListUsers` | `Set`, `SetUser` | `DeleteUser` (global: use `Set(ctx, false)`) | — |
 | `AuthorizeErrors` | `List` | `Add` | `Clear`, `Delete(id)` | — |
 | `Clock` | `Get` | `Freeze(ctx, t)`, `Offset(ctx, d)`, `Advance(ctx, d)` | `Reset` | — |
 | `Events` | `Subscribers` (live + lifetime counts; `auth0mocktest.WaitForActiveSubscribers(t, c, want, timeout)` polls until it settles) | `Push(ctx, payload)` | `ExpireEvents` / `ExpireEventsBefore(ctx, cursor)` age out replay cursors so a resume gets `410 event_aged_out`; top-level `Reset` drains subscribers + replay buffer | — |

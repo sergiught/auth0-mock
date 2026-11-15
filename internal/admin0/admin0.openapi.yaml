@@ -432,6 +432,59 @@ paths:
                 required: { type: boolean }
       responses:
         "204": { description: Flag updated. }
+  /admin0/mfa/users:
+    get:
+      tags: [MFA]
+      summary: List every per-user MFA config, sorted by user.
+      responses:
+        "200":
+          description: Configured users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MFAUser" }
+  /admin0/mfa/users/{user}:
+    parameters:
+      - name: user
+        in: path
+        required: true
+        description: User key (the login or subject); percent-escapes are decoded.
+        schema: { type: string }
+    get:
+      tags: [MFA]
+      summary: Read one user's MFA config.
+      responses:
+        "200":
+          description: The stored config.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAUser" }
+        "404": { description: No config for this user (`unknown_user`). }
+    put:
+      tags: [MFA]
+      summary: Replace one user's MFA config.
+      description: |
+        Authenticator IDs are generated when omitted; `active` defaults to true.
+        Unknown fields and invalid authenticators give 400 `invalid_body`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MFAUserConfig" }
+      responses:
+        "200":
+          description: The stored config, with IDs filled in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAUser" }
+        "400": { description: Invalid body (`invalid_body`). }
+    delete:
+      tags: [MFA]
+      summary: Delete one user's MFA config.
+      responses:
+        "204": { description: Config deleted. }
+        "404": { description: No config for this user (`unknown_user`). }
   /admin0/namespaces:
     get:
       tags: [Namespaces]
@@ -761,6 +814,35 @@ paths:
             (no `?before=`) has no cursor to look up and never 404s.
 components:
   schemas:
+    MFAAuthenticator:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        id: { type: string, description: Generated when omitted; unique per user. }
+        type: { type: string, enum: [otp, oob, recovery-code] }
+        oob_channel: { type: string, enum: [sms, voice, email, auth0], description: Required for `oob`. }
+        name: { type: string }
+        active: { type: boolean, description: Defaults to true. }
+    MFAUserConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        required:
+          type: boolean
+          description: When set, overrides the global MFA-required flag for this user.
+        authenticators:
+          type: array
+          items: { $ref: "#/components/schemas/MFAAuthenticator" }
+    MFAUser:
+      type: object
+      required: [user, authenticators]
+      properties:
+        user: { type: string }
+        required: { type: boolean }
+        authenticators:
+          type: array
+          items: { $ref: "#/components/schemas/MFAAuthenticator" }
     NamespaceInfo:
       type: object
       required: [id, created_at, last_used_at]

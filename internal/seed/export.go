@@ -44,6 +44,9 @@ func Export(st Stores, detail bool) File {
 		f.Permissions = p
 	}
 	f.MFARequired = st.MFA.IsRequired()
+	if u := st.MFA.Users(); len(u) > 0 {
+		f.MFAUsers = u
+	}
 	return f
 }
 
