@@ -4,8 +4,11 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/mail"
 	"net/url"
+	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/go-chi/render"
 
@@ -13,6 +16,10 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 )
+
+// e164 matches an E.164 phone number: a plus, then up to 15 digits with no
+// leading zero.
+var e164 = regexp.MustCompile(`^\+[1-9][0-9]{1,14}$`)
 
 // associateSecret is the fixed otp secret returned for otp enrollment.
 const associateSecret = //nolint:gosec // fixed mock value, not a credential
@@ -114,15 +121,22 @@ func associatePlan(r *http.Request, params map[string]any) (add []mfa.Authentica
 	channel = channels[0]
 	phone, _ := params["phone_number"].(string)
 	email, _ := params["email"].(string)
+	phone, email = strings.TrimSpace(phone), strings.TrimSpace(email)
 	switch channel {
 	case mfa.ChannelSMS, mfa.ChannelVoice:
 		if phone == "" {
 			return nil, "", "phone_number is required for the sms and voice channels"
 		}
+		if !e164.MatchString(phone) {
+			return nil, "", "phone_number must be an E.164 number such as +15551234567"
+		}
 		return []mfa.AuthenticatorConfig{{Type: mfa.TypeOOB, OOBChannel: channel, Name: phone}}, channel, ""
 	case mfa.ChannelEmail:
 		if email == "" {
 			return nil, "", "email is required for the email channel"
+		}
+		if addr, err := mail.ParseAddress(email); err != nil || addr.Name != "" || addr.Address != email {
+			return nil, "", "email must be a valid email address"
 		}
 		return []mfa.AuthenticatorConfig{{Type: mfa.TypeOOB, OOBChannel: channel, Name: email}}, channel, ""
 	}

@@ -521,8 +521,8 @@ components:
           type: array
           items: { type: string, enum: [sms, voice, email, auth0] }
           description: Exactly one channel; required for `oob`.
-        phone_number: { type: string, description: "Required for sms and voice." }
-        email: { type: string, description: "Required for the email channel." }
+        phone_number: { type: string, description: "Required for sms and voice; an E.164 number such as +15551234567." }
+        email: { type: string, description: "Required for the email channel; a plain address without a display name." }
     MFAAssociateResponse:
       type: object
       required: [authenticator_type]

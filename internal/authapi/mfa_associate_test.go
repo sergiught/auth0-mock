@@ -146,6 +146,12 @@ func TestAssociate_Errors(t *testing.T) {
 		{"oob without channel", tok, `{"authenticator_types":["oob"]}`, 400, "invalid_request", "oob_channels must be one of sms, voice, email, auth0"},
 		{"sms without phone", tok, `{"authenticator_types":["oob"],"oob_channels":["sms"]}`, 400, "invalid_request", "phone_number is required for the sms and voice channels"},
 		{"email without email", tok, `{"authenticator_types":["oob"],"oob_channels":["email"]}`, 400, "invalid_request", "email is required for the email channel"},
+		{"blank phone", tok, `{"authenticator_types":["oob"],"oob_channels":["voice"],"phone_number":"   "}`, 400, "invalid_request", "phone_number is required for the sms and voice channels"},
+		{"malformed phone", tok, `{"authenticator_types":["oob"],"oob_channels":["sms"],"phone_number":"not-a-number"}`, 400, "invalid_request", "phone_number must be an E.164 number such as +15551234567"},
+		{"phone without plus", tok, `{"authenticator_types":["oob"],"oob_channels":["sms"],"phone_number":"15551234567"}`, 400, "invalid_request", "phone_number must be an E.164 number such as +15551234567"},
+		{"blank email", tok, `{"authenticator_types":["oob"],"oob_channels":["email"],"email":" "}`, 400, "invalid_request", "email is required for the email channel"},
+		{"malformed email", tok, `{"authenticator_types":["oob"],"oob_channels":["email"],"email":"not-an-email"}`, 400, "invalid_request", "email must be a valid email address"},
+		{"email with display name", tok, `{"authenticator_types":["oob"],"oob_channels":["email"],"email":"Alice <alice@example.com>"}`, 400, "invalid_request", "email must be a valid email address"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

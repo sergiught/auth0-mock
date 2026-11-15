@@ -69453,7 +69453,7 @@
             "type": "array"
           },
           "email": {
-            "description": "Required for the email channel.",
+            "description": "Required for the email channel; a plain address without a display name.",
             "type": "string"
           },
           "oob_channels": {
@@ -69470,7 +69470,7 @@
             "type": "array"
           },
           "phone_number": {
-            "description": "Required for sms and voice.",
+            "description": "Required for sms and voice; an E.164 number such as +15551234567.",
             "type": "string"
           }
         },

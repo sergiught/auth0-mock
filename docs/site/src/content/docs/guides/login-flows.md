@@ -187,7 +187,7 @@ A strict user with no active otp or oob authenticator gets `400 association_requ
 
 #### Enroll and manage authenticators
 
-A client holding an `mfa_token` can enroll a factor with `POST /mfa/associate`. Send `Authorization: Bearer <mfa_token>` and a JSON or form body with `authenticator_types` (`otp` or `oob`), plus `oob_channels` (`sms`, `voice`, `email`, `auth0`) for oob, `phone_number` for sms and voice, and `email` for the email channel.
+A client holding an `mfa_token` can enroll a factor with `POST /mfa/associate`. Send `Authorization: Bearer <mfa_token>` and a JSON or form body with `authenticator_types` (`otp` or `oob`), plus `oob_channels` (`sms`, `voice`, `email`, `auth0`) for oob, `phone_number` (E.164, such as `+15551234567`) for sms and voice, and `email` for the email channel.
 
 ```bash
 curl -s -X POST http://localhost:8080/mfa/associate \
