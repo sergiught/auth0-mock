@@ -176,6 +176,23 @@ func TestAuthorize_GlobalClaimOverridesOrg(t *testing.T) {
 	assert.Equal(t, "org_abc123", id.Extra["org_id"])
 }
 
+func TestAuthorize_ClaimMappingOverridesOrg(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{
+		Issuer: "https://mock/", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour,
+	})
+	require.NoError(t, err)
+	mappings := claims.NewMappingStore()
+	mappings.Set(map[string]string{"tenant": "org_id"})
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), PKCE: pkce.NewStore(), Sessions: session.NewStore(), ClaimMappings: mappings,
+	})
+	access, id := orgCodeTokens(t, r, ks, url.Values{"organization": {"org_abc123"}}, url.Values{"tenant": {"org_mapped"}})
+	assert.Equal(t, "org_mapped", access.Extra["org_id"])
+	assert.Equal(t, "org_abc123", id.Extra["org_id"])
+}
+
 func orgTokenPost(t *testing.T, r chi.Router, form url.Values) tokenResponse {
 	t.Helper()
 	w := postTokenForm(r, form)
