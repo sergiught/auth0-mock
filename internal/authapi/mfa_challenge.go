@@ -47,6 +47,10 @@ func (h *MFAChallengeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if field := nonStringParam(req.Params, "challenge_type", "authenticator_id"); field != "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", field+" must be a string")
+		return
+	}
 	raw, _ := req.Params["challenge_type"].(string)
 	types := strings.Fields(raw)
 	if len(types) == 0 {
@@ -127,4 +131,17 @@ func pickAuthenticator(cfg mfa.UserConfig, types []string, id any) (mfa.Authenti
 		return mfa.AuthenticatorConfig{}, unsupported
 	}
 	return cfg.Authenticators[i], nil
+}
+
+// nonStringParam returns the first of names that is present in params with a
+// value other than a string, or "" when there is none.
+func nonStringParam(params map[string]any, names ...string) string {
+	for _, name := range names {
+		if v, present := params[name]; present {
+			if _, isString := v.(string); !isString {
+				return name
+			}
+		}
+	}
+	return ""
 }

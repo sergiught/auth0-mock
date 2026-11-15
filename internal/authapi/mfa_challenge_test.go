@@ -173,3 +173,18 @@ func TestChallenge_ThenOOBGrant(t *testing.T) {
 	w = postTokenForm(r, mfaGrantForm(grantMFAOOB, tok, url.Values{"oob_code": {code}}))
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
+
+func TestChallenge_JSONNonStringFields(t *testing.T) {
+	r, _, tok := legacyToken(t)
+	for field, desc := range map[string]string{
+		"challenge_type":   "challenge_type must be a string",
+		"authenticator_id": "authenticator_id must be a string",
+	} {
+		body := `{"mfa_token":"` + tok + `","` + field + `":5}`
+		req := httptest.NewRequest(http.MethodPost, "/mfa/challenge", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		requireChallengeError(t, w, http.StatusBadRequest, "invalid_request", desc)
+	}
+}
