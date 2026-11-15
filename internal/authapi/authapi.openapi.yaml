@@ -53,6 +53,41 @@ paths:
                 anyOf:
                   - { $ref: "#/components/schemas/MFARequiredError" }
                   - { $ref: "#/components/schemas/OAuthError" }
+  /mfa/challenge:
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: Request an MFA challenge for an mfa_token.
+      description: |
+        Peeks the `mfa_token` (it stays redeemable at `/oauth/token`). Users
+        without per-user MFA config get an `otp` challenge when `otp` is
+        requested, else an `oob` one. Users with config are challenged with
+        the named or first matching active authenticator.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/MFAChallengeRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAChallengeRequest"
+      responses:
+        "200":
+          description: Challenge issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAChallengeResponse"
+        "400":
+          description: Invalid request, unsupported challenge type, or association required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "403":
+          description: Malformed or expired mfa_token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /authorize:
     get:
       tags: ["OAuth & OIDC"]
@@ -358,6 +393,22 @@ components:
         oob_code:      { type: string }
         binding_code:  { type: string }
         recovery_code: { type: string }
+    MFAChallengeRequest:
+      type: object
+      required: [mfa_token]
+      properties:
+        mfa_token:        { type: string }
+        client_id:        { type: string }
+        client_secret:    { type: string }
+        challenge_type:   { type: string, description: "Space-separated list of `otp` and `oob`; empty means both." }
+        authenticator_id: { type: string }
+    MFAChallengeResponse:
+      type: object
+      required: [challenge_type]
+      properties:
+        challenge_type: { type: string, enum: [otp, oob] }
+        oob_code:       { type: string }
+        binding_method: { type: string, description: "`prompt`; omitted for push (`auth0`) authenticators." }
     OAuthTokenResponse:
       type: object
       required: [access_token, token_type]

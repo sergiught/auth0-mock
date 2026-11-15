@@ -70,6 +70,7 @@ func Mount(d Deps) {
 		Strict:           d.TokenEndpointStrict,
 	}
 	d.Router.Method(http.MethodPost, "/oauth/token", tok)
+	d.Router.Method(http.MethodPost, "/mfa/challenge", &MFAChallengeHandler{MFA: d.MFA})
 	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
 		PKCE:                d.PKCE,
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
