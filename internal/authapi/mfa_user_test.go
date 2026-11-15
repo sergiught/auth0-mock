@@ -178,3 +178,12 @@ func TestLegacyUserUnaffectedByOtherConfigs(t *testing.T) {
 	w = postTokenForm(r, mfaGrantForm(grantMFAOTP, tok, url.Values{"otp": {mfa.AcceptedOTP}}))
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
+
+func TestMFAGating_PasswordlessTrimsLogin(t *testing.T) {
+	r, _, _, ms := newRefreshRouter(t)
+	_, err := ms.SetUser("alice@example.com", mfa.UserConfig{Required: boolPtr(true)})
+	require.NoError(t, err)
+
+	padded := passwordlessForm(url.Values{"username": {" alice@example.com"}})
+	assert.Equal(t, http.StatusForbidden, postTokenForm(r, padded).Code)
+}

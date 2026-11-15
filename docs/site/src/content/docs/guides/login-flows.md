@@ -164,7 +164,7 @@ curl -X PUT http://localhost:8080/admin0/mfa/users/alice@example.com \
 
 The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 unknown_user` when there is none. Authenticators are active unless you send `"active":false`.
 
-A per-user `required` beats the global `/admin0/mfa-required` switch in both directions. `"required":true` forces MFA for that user while the global switch is off. `"required":false` exempts that user while it is on. Users with no config follow the global switch.
+A per-user `required` beats the global `/admin0/mfa-required` switch in both directions. `"required":true` forces MFA for that user while the global switch is off. `"required":false` exempts that user while it is on. Users with no config follow the global switch. The user key is case-sensitive, so `Alice@example.com` and `alice@example.com` are different users.
 
 A user with any per-user config is a strict user, even if the config only sets `required`. A user with no config follows the global switch and is a legacy user, which keeps the old behaviour:
 

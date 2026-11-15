@@ -307,7 +307,7 @@ func (h *TokenHandler) respondPasswordless(w http.ResponseWriter, r *http.Reques
 	}
 	subject, profile := passwordlessUser(req.Realm, req.Username)
 	if h.requireMFA(w, r, mfa.Context{
-		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm, Profile: profile, Login: req.Username,
+		ClientID: req.ClientID, Audience: aud, Scope: req.Scope, Subject: subject, Realm: req.Realm, Profile: profile, Login: strings.TrimSpace(req.Username),
 	}) {
 		return
 	}
