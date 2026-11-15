@@ -78,7 +78,7 @@ curl -s -o /dev/null -D - 'http://localhost:8080/authorize?client_id=my-app&redi
 ```
 
 - **Id or name.** A value starting with `org_` is an id and is used as is: you get `org_id` only. Any other value is a name, lowercased: you get `org_name` and an `org_id` derived from the name (`acme` becomes `org_822b33ad87c148a0`). The same name always gives the same id, but it will not match the id of an organization in a real tenant. Real Auth0 only accepts names when the "Allow Organization Names in Authentication API" tenant setting is on; the mock always accepts them. A blank value adds nothing.
-- **Which flows.** Code, implicit, hybrid and `prompt=none` on `/authorize`, and `client_credentials` (send `organization` in the form or JSON body). The claims go on the access token and the ID token. Opaque access tokens (no `audience`) carry no claims.
+- **Which flows.** Code, implicit, hybrid and `prompt=none` on `/authorize`, and `client_credentials` (send `organization` in the form or JSON body). The claims go on the access token, and on the ID token when the flow returns one. Opaque access tokens (no `audience`) carry no claims.
 - **Code exchange and refresh keep the org.** The organization is fixed at `/authorize`. An `organization` sent on the `/oauth/token` code request or on a refresh request is ignored, and every refreshed token keeps the original org, with or without `TOKEN_ENDPOINT_STRICT`.
 - **Password-style grants ignore it.** `password`, password-realm, passwordless and the `mfa-*` grants add no org claims and return no error, since Auth0 does not support Organizations there. Auth0 suggests Custom Token Exchange for that case.
 - **`invitation`** is accepted and ignored. The login completes as if the invitation was accepted.
