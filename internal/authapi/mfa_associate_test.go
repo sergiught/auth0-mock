@@ -56,6 +56,15 @@ func TestAssociate_OTP(t *testing.T) {
 	assert.Equal(t, map[string]bool{mfa.TypeOTP: false, mfa.TypeRecoveryCode: false}, activeTypes(t, ms))
 }
 
+func TestAssociate_PushHasNoSecret(t *testing.T) {
+	r, _, tok := associateSetup(t)
+	w := associateJSON(r, tok, `{"authenticator_types":["oob"],"oob_channels":["auth0"]}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	got := decodeMap(t, w)
+	assert.NotContains(t, got, "secret")
+	assert.NotEmpty(t, got["barcode_uri"])
+}
+
 func TestAssociate_SMS(t *testing.T) {
 	r, ms, tok := associateSetup(t)
 	w := associateJSON(r, tok, `{"authenticator_types":["oob"],"oob_channels":["sms"],"phone_number":"+15551234567"}`)

@@ -14,8 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/mfa"
 )
 
-// associateSecret is the fixed otp secret returned for every otp and push
-// enrollment.
+// associateSecret is the fixed otp secret returned for otp enrollment.
 const associateSecret = //nolint:gosec // fixed mock value, not a credential
 "JBSWY3DPEHPK3PXP"
 
@@ -76,8 +75,10 @@ func (h *MFAAssociateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	body := mfaAssociateBody{AuthenticatorType: mfa.TypeOTP}
-	if channel == "" || channel == mfa.ChannelPush {
+	if channel == "" {
 		body.Secret = associateSecret
+	}
+	if channel == "" || channel == mfa.ChannelPush {
 		body.BarcodeURI = barcodeURI(r, ctx)
 	}
 	if channel != "" {

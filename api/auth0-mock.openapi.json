@@ -69509,7 +69509,7 @@
             "type": "array"
           },
           "secret": {
-            "description": "Fixed value; otp and push only.",
+            "description": "Fixed value; otp only.",
             "type": "string"
           }
         },
@@ -115702,7 +115702,7 @@
     },
     "/mfa/associate": {
       "post": {
-        "description": "Uses the `mfa_token` as the bearer; it is peeked, so it stays\nredeemable at `/oauth/token`. The new authenticators are pending\nuntil confirmed with the `mfa-otp` or `mfa-oob` grant. `secret` is\nalways the fixed mock value.\n",
+        "description": "Uses the `mfa_token` as the bearer; it is peeked, so it stays\nredeemable at `/oauth/token`. The new authenticators are pending\nuntil confirmed with the `mfa-otp` or `mfa-oob` grant. `secret` is\nthe fixed mock value, returned for otp enrollment only.\n",
         "requestBody": {
           "content": {
             "application/json": {

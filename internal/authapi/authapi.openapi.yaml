@@ -96,7 +96,7 @@ paths:
         Uses the `mfa_token` as the bearer; it is peeked, so it stays
         redeemable at `/oauth/token`. The new authenticators are pending
         until confirmed with the `mfa-otp` or `mfa-oob` grant. `secret` is
-        always the fixed mock value.
+        the fixed mock value, returned for otp enrollment only.
       security:
         - bearerAuth: []
       requestBody:
@@ -528,7 +528,7 @@ components:
       required: [authenticator_type]
       properties:
         authenticator_type: { type: string, enum: [otp, oob] }
-        secret: { type: string, description: "Fixed value; otp and push only." }
+        secret: { type: string, description: "Fixed value; otp only." }
         barcode_uri: { type: string, description: "otpauth URI; otp and push only." }
         oob_channel: { type: string }
         oob_code: { type: string }
