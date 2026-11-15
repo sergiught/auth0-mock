@@ -48,6 +48,9 @@ type Entry struct {
 	// the code exchange uses them, as Auth0 does. May be empty.
 	Audience string
 	Scope    string
+	// OrgID and OrgName are the /authorize organization, resolved; they feed
+	// the org_id and org_name claims.
+	OrgID, OrgName string
 	// AuthTime is the login instant, set by /authorize (a reused session keeps
 	// its original one). Store.Put stamps the store clock only when it is
 	// zero. It becomes the id_token auth_time claim.

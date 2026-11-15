@@ -794,13 +794,17 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		subject = entry.LoginHint
 	}
 	aud, scope := codeAudienceScope(entry, aud, req.Scope, h.Strict && hasEntry)
+	// A zero entry (no stored code) has no organization.
+	org := organization{ID: entry.OrgID, Name: entry.OrgName}
+	accessBase := map[string]any{"gty": "authorization-code", "azp": req.ClientID}
+	org.addClaims(accessBase)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud, req.Params),
+		Extra:    h.augmentExtra(accessBase, aud, req.Params),
 	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -808,6 +812,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	}
 	idExtra := deriveProfile(subject)
 	idExtra["azp"] = req.ClientID
+	org.addClaims(idExtra)
 	authTime := h.Keys.Cfg().Now()
 	if hasEntry {
 		authTime = entry.AuthTime

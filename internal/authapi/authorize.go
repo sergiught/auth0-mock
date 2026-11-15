@@ -262,6 +262,7 @@ func (h *AuthorizeHandler) mintTokens(w http.ResponseWriter, r *http.Request, u 
 	if rt.idToken {
 		idExtra := deriveProfile(subject)
 		idExtra["azp"] = clientID
+		resolveOrganization(q.Get("organization")).addClaims(idExtra)
 		idExtra["nonce"] = q.Get("nonce")
 		idExtra["auth_time"] = authTime.Unix()
 		if access != "" {
@@ -296,13 +297,15 @@ func (h *AuthorizeHandler) accessToken(r *http.Request, q url.Values, subject, c
 	for k := range q {
 		params[k] = q.Get(k)
 	}
+	base := map[string]any{"azp": clientID}
+	resolveOrganization(q.Get("organization")).addClaims(base)
 	return h.Token.mintAccess(jwks.MintOpts{
 		Issuer:   h.Token.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    q.Get("scope"),
 		TTL:      h.Token.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.Token.augmentExtra(map[string]any{"azp": clientID}, aud, params),
+		Extra:    h.Token.augmentExtra(base, aud, params),
 	}, clientID)
 }
 
@@ -313,6 +316,7 @@ func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode, subject string, 
 	if h.PKCE == nil || issuedCode == "" {
 		return
 	}
+	org := resolveOrganization(q.Get("organization"))
 	entry := pkce.Entry{
 		ClientID:  q.Get("client_id"),
 		Redirect:  q.Get("redirect_uri"),
@@ -321,6 +325,8 @@ func (h *AuthorizeHandler) recordCode(q url.Values, issuedCode, subject string, 
 		AuthTime:  authTime,
 		Audience:  strings.TrimSpace(q.Get("audience")),
 		Scope:     q.Get("scope"),
+		OrgID:     org.ID,
+		OrgName:   org.Name,
 	}
 	if challenge := q.Get("code_challenge"); challenge != "" {
 		entry.Challenge = challenge
