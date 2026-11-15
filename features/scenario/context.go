@@ -408,6 +408,16 @@ func (c *Context) VerifyAccessTokenAgainstJWKS(tok string) error {
 
 // Do sends an HTTP request and stores the response on the context.
 func (c *Context) Do(method, path string, body string, withBearer bool) {
+	authorization := ""
+	if withBearer {
+		authorization = "Bearer " + c.BearerTok
+	}
+	c.DoWithAuthorization(method, path, body, authorization)
+}
+
+// DoWithAuthorization is Do with an explicit Authorization header value;
+// empty sends none.
+func (c *Context) DoWithAuthorization(method, path string, body string, authorization string) {
 	var rdr io.Reader
 	if body != "" {
 		rdr = strings.NewReader(body)
@@ -416,8 +426,8 @@ func (c *Context) Do(method, path string, body string, withBearer bool) {
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if withBearer {
-		req.Header.Set("Authorization", "Bearer "+c.BearerTok)
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
 	}
 	resp, err := c.client().Do(req)
 	if err != nil {

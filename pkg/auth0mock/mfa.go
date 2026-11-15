@@ -48,6 +48,9 @@ type MFAAuthenticator struct {
 	OOBChannel string `json:"oob_channel,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Active     *bool  `json:"active,omitempty"`
+	// Group ties authenticators enrolled together: confirming one activates
+	// all, and deleting the push authenticator removes the group's otp.
+	Group string `json:"group,omitempty"`
 }
 
 // MFAUser is the per-user MFA configuration. User is filled in by the

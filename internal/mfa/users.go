@@ -38,9 +38,12 @@ type AuthenticatorConfig struct {
 	OOBChannel string `json:"oob_channel,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Active     *bool  `json:"active,omitempty"`
-	// Group ties an authenticator to its own enrollment; set by SetUser.
-	Group string `json:"-"`
+	// Group ties authenticators that were enrolled together.
+	Group string `json:"group,omitempty"`
 }
+
+// ErrAlreadyEnrolled means the user already has an active authenticator.
+var ErrAlreadyEnrolled = errors.New("user is already enrolled")
 
 // UserConfig is the per-user MFA configuration.
 type UserConfig struct {
@@ -134,6 +137,30 @@ func cloneConfig(cfg UserConfig) UserConfig {
 	return out
 }
 
+// fillIDs gives every authenticator without an ID a unique generated one.
+func fillIDs(auths []AuthenticatorConfig) {
+	used := make(map[string]bool)
+	for _, a := range auths {
+		if a.ID != "" {
+			used[a.ID] = true
+		}
+	}
+	for i := range auths {
+		a := &auths[i]
+		if a.ID != "" {
+			continue
+		}
+		for {
+			id := idPrefix(*a) + "|dev_" + randomSuffix()
+			if !used[id] {
+				a.ID = id
+				used[id] = true
+				break
+			}
+		}
+	}
+}
+
 // SetUser validates and stores cfg for key, replacing any existing config. It
 // fills missing authenticator IDs, defaults Active to true and returns the
 // stored copy.
@@ -142,34 +169,102 @@ func (s *Store) SetUser(key string, cfg UserConfig) (UserConfig, error) {
 		return UserConfig{}, err
 	}
 	cfg = cloneConfig(cfg)
-	used := make(map[string]bool)
-	for _, a := range cfg.Authenticators {
-		if a.ID != "" {
-			used[a.ID] = true
-		}
-	}
+	fillIDs(cfg.Authenticators)
 	for i := range cfg.Authenticators {
 		a := &cfg.Authenticators[i]
-		if a.ID == "" {
-			for {
-				id := idPrefix(*a) + "|dev_" + randomSuffix()
-				if !used[id] {
-					a.ID = id
-					used[id] = true
-					break
-				}
-			}
-		}
 		if a.Active == nil {
 			v := true
 			a.Active = &v
 		}
-		a.Group = uuid.NewString()
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.users[key] = cfg
-	s.mu.Unlock()
 	return cloneConfig(cfg), nil
+}
+
+// Enroll appends pending authenticators sharing one new group to the config
+// for key, creating it when missing. A recovery code is added when the config
+// has none. It returns copies of the appended entries.
+func (s *Store) Enroll(key string, add []AuthenticatorConfig) ([]AuthenticatorConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg := UserConfig{}
+	if cur, ok := s.users[key]; ok {
+		cfg = cloneConfig(cur)
+	}
+	hasRecovery := false
+	for _, a := range cfg.Authenticators {
+		if a.Type == TypeRecoveryCode {
+			hasRecovery = true
+		} else if a.Active != nil && *a.Active {
+			return nil, ErrAlreadyEnrolled
+		}
+	}
+	added := cloneConfig(UserConfig{Authenticators: add}).Authenticators
+	if !hasRecovery {
+		added = append(added, AuthenticatorConfig{Type: TypeRecoveryCode})
+	}
+	group := uuid.NewString()
+	for i := range added {
+		added[i].Active = new(bool)
+		added[i].Group = group
+	}
+	cfg.Authenticators = append(cfg.Authenticators, added...)
+	if err := ValidateUserConfig(key, cfg); err != nil {
+		return nil, err
+	}
+	fillIDs(cfg.Authenticators)
+	s.users[key] = cfg
+	return cloneConfig(UserConfig{Authenticators: cfg.Authenticators[len(cfg.Authenticators)-len(added):]}).Authenticators, nil
+}
+
+// Activate marks id and every authenticator in its group active. The user's
+// recovery code is activated too: it belongs to the user, not to one
+// enrollment, so a repeated /mfa/associate before confirmation still leaves
+// the recovery code from the first call usable.
+func (s *Store) Activate(key, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, ok := s.users[key]
+	if !ok {
+		return false
+	}
+	idx := slices.IndexFunc(cfg.Authenticators, func(a AuthenticatorConfig) bool { return a.ID == id })
+	if idx < 0 {
+		return false
+	}
+	group := cfg.Authenticators[idx].Group
+	for i := range cfg.Authenticators {
+		a := cfg.Authenticators[i]
+		if i == idx || (group != "" && a.Group == group) || a.Type == TypeRecoveryCode {
+			v := true
+			cfg.Authenticators[i].Active = &v
+		}
+	}
+	return true
+}
+
+// RemoveAuthenticator deletes id. Removing a push authenticator also removes
+// the otp entries of its group.
+func (s *Store) RemoveAuthenticator(key, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, ok := s.users[key]
+	if !ok {
+		return false
+	}
+	idx := slices.IndexFunc(cfg.Authenticators, func(a AuthenticatorConfig) bool { return a.ID == id })
+	if idx < 0 {
+		return false
+	}
+	target := cfg.Authenticators[idx]
+	push := target.Type == TypeOOB && target.OOBChannel == ChannelPush && target.Group != ""
+	cfg.Authenticators = slices.DeleteFunc(cfg.Authenticators, func(a AuthenticatorConfig) bool {
+		return a.ID == id || (push && a.Type == TypeOTP && a.Group == target.Group)
+	})
+	s.users[key] = cfg
+	return true
 }
 
 // GetUser returns a copy of the config stored for key.

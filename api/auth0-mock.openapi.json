@@ -69439,12 +69439,95 @@
         ],
         "type": "object"
       },
+      "MFAAssociateRequest": {
+        "properties": {
+          "authenticator_types": {
+            "description": "Exactly one of `otp` or `oob`; a single string is accepted.",
+            "items": {
+              "enum": [
+                "otp",
+                "oob"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "email": {
+            "description": "Required for the email channel; a plain address without a display name.",
+            "type": "string"
+          },
+          "oob_channels": {
+            "description": "Exactly one channel; required for `oob`.",
+            "items": {
+              "enum": [
+                "sms",
+                "voice",
+                "email",
+                "auth0"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "phone_number": {
+            "description": "Required for sms and voice; an E.164 number such as +15551234567.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authenticator_types"
+        ],
+        "type": "object"
+      },
+      "MFAAssociateResponse": {
+        "properties": {
+          "authenticator_type": {
+            "enum": [
+              "otp",
+              "oob"
+            ],
+            "type": "string"
+          },
+          "barcode_uri": {
+            "description": "otpauth URI; otp and push only.",
+            "type": "string"
+          },
+          "binding_method": {
+            "description": "`prompt`; omitted for push (`auth0`).",
+            "type": "string"
+          },
+          "oob_channel": {
+            "type": "string"
+          },
+          "oob_code": {
+            "type": "string"
+          },
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "secret": {
+            "description": "Fixed value; otp only.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authenticator_type"
+        ],
+        "type": "object"
+      },
       "MFAAuthenticator": {
         "additionalProperties": false,
         "properties": {
           "active": {
             "description": "Defaults to true.",
             "type": "boolean"
+          },
+          "group": {
+            "description": "Authenticators sharing a group were enrolled together: confirming one activates all, and deleting the push authenticator removes the group's otp.",
+            "type": "string"
           },
           "id": {
             "description": "Generated when omitted; unique per user.",
@@ -69474,6 +69557,37 @@
         },
         "required": [
           "type"
+        ],
+        "type": "object"
+      },
+      "MFAAuthenticatorEntry": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "authenticator_type": {
+            "enum": [
+              "otp",
+              "oob",
+              "recovery-code"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "oob_channel": {
+            "description": "oob only.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "authenticator_type",
+          "active"
         ],
         "type": "object"
       },
@@ -115583,6 +115697,185 @@
         "summary": "Liveness probe.",
         "tags": [
           "Service"
+        ]
+      }
+    },
+    "/mfa/associate": {
+      "post": {
+        "description": "Uses the `mfa_token` as the bearer; it is peeked, so it stays\nredeemable at `/oauth/token`. The new authenticators are pending\nuntil confirmed with the `mfa-otp` or `mfa-oob` grant. `secret` is\nthe fixed mock value, returned for otp enrollment only.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAAssociateRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MFAAssociateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MFAAssociateResponse"
+                }
+              }
+            },
+            "description": "Authenticator enrolled (pending)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Invalid request or mfa not configured."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing, malformed or expired mfa_token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "User is already enrolled."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enroll a user's first MFA factor.",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
+    "/mfa/authenticators": {
+      "get": {
+        "description": "Bearer is an `mfa_token` (peeked) or an access token for audience\n`\u003cissuer\u003emfa/` with scope `read:authenticators`. Includes inactive\nentries. Users without a config get `[]`.\n",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MFAAuthenticatorEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Authenticators in list order."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing scope `read:authenticators`."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the user's MFA authenticators.",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
+    "/mfa/authenticators/{id}": {
+      "delete": {
+        "description": "Access token only: audience `\u003cissuer\u003emfa/`, scope\n`remove:authenticators`. Deleting a push authenticator also deletes\nits group's otp.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Authenticator removed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer, or an mfa_token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing scope `remove:authenticators`."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Unknown authenticator id."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete an MFA authenticator.",
+        "tags": [
+          "OAuth \u0026 OIDC"
         ]
       }
     },

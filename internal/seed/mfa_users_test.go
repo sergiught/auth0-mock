@@ -59,7 +59,7 @@ func TestExport_MFAUsersRoundTrip(t *testing.T) {
 	st := newStores()
 	off := false
 	_, err := st.MFA.SetUser("alice", mfa.UserConfig{Required: &off, Authenticators: []mfa.AuthenticatorConfig{
-		{ID: "otp|fixed", Type: "otp"},
+		{ID: "otp|fixed", Type: "otp", Group: "g1"},
 		{Type: "oob", OOBChannel: "sms", Active: &off},
 	}})
 	require.NoError(t, err)
@@ -74,15 +74,39 @@ func TestExport_MFAUsersRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	s.Apply(fresh.Stores)
 	got := fresh.MFA.Users()
-	// Group is internal and not exported, so it is not compared.
-	for _, users := range []map[string]mfa.UserConfig{want, got} {
-		for _, cfg := range users {
-			for i := range cfg.Authenticators {
-				cfg.Authenticators[i].Group = ""
-			}
-		}
-	}
 	require.Equal(t, want, got)
 
 	require.NotContains(t, string(mustBytes(t)(seed.Export(newStores().Stores, false).JSON())), "mfa_users")
+}
+
+func TestExport_MFAUsersKeepsGroup(t *testing.T) {
+	st := newStores()
+	added, err := st.MFA.Enroll("alice", []mfa.AuthenticatorConfig{{Type: mfa.TypeOOB, OOBChannel: mfa.ChannelPush}, {Type: mfa.TypeOTP}})
+	require.NoError(t, err)
+	var pushID string
+	for _, a := range added {
+		if a.Type == mfa.TypeOOB {
+			pushID = a.ID
+		}
+	}
+	require.NotEmpty(t, pushID)
+
+	js := mustBytes(t)(seed.Export(st.Stores, false).JSON())
+	fresh := newStores()
+	s, err := seed.Parse(js, newValidator(t))
+	require.NoError(t, err)
+	s.Apply(fresh.Stores)
+
+	require.True(t, fresh.MFA.Activate("alice", pushID))
+	cfg, ok := fresh.MFA.GetUser("alice")
+	require.True(t, ok)
+	grouped := 0
+	for _, a := range cfg.Authenticators {
+		if a.Type == mfa.TypeOTP || a.ID == pushID {
+			grouped++
+			require.NotNil(t, a.Active)
+			require.True(t, *a.Active, a.ID)
+		}
+	}
+	require.Equal(t, 2, grouped, "expected the otp and push authenticators")
 }

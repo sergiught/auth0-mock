@@ -824,6 +824,9 @@ components:
         oob_channel: { type: string, enum: [sms, voice, email, auth0], description: Required for `oob`. }
         name: { type: string }
         active: { type: boolean, description: Defaults to true. }
+        group:
+          type: string
+          description: "Authenticators sharing a group were enrolled together: confirming one activates all, and deleting the push authenticator removes the group's otp."
     MFAUserConfig:
       type: object
       additionalProperties: false

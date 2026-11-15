@@ -32,19 +32,33 @@ func activeAuthenticator(cfg mfa.UserConfig, match func(mfa.AuthenticatorConfig)
 // respondMFAOTP handles grant_type=http://auth0.com/oauth/grant-type/mfa-otp.
 // Trades a previously-issued mfa_token + TOTP/HOTP code for an access_token.
 func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
+	var key, pendingID string
 	ctx, ok := h.redeemMFAToken(w, req.MFAToken, func(c mfa.Context) *mfaRejection {
 		if req.OTP != mfa.AcceptedOTP {
 			return &mfaRejection{http.StatusForbidden, "invalid_grant", "Wrong otp"}
 		}
-		if _, cfg, ok := h.MFA.Lookup(c); ok && !activeAuthenticator(cfg, func(a mfa.AuthenticatorConfig) bool {
-			return a.Type == mfa.TypeOTP
-		}) {
-			return &mfaRejection{http.StatusForbidden, "invalid_grant", "User does not have an active otp authenticator"}
+		k, cfg, ok := h.MFA.Lookup(c)
+		if !ok {
+			return nil
 		}
-		return nil
+		isOTP := func(a mfa.AuthenticatorConfig) bool { return a.Type == mfa.TypeOTP }
+		if activeAuthenticator(cfg, isOTP) {
+			return nil
+		}
+		// No otp is active here, so every otp found is pending; confirm the last.
+		for i := len(cfg.Authenticators) - 1; i >= 0; i-- {
+			if isOTP(cfg.Authenticators[i]) {
+				key, pendingID = k, cfg.Authenticators[i].ID
+				return nil
+			}
+		}
+		return &mfaRejection{http.StatusForbidden, "invalid_grant", "User does not have an active otp authenticator"}
 	})
 	if !ok {
 		return
+	}
+	if pendingID != "" {
+		h.MFA.Activate(key, pendingID)
 	}
 	h.mintFromMFA(w, r, ctx, "mfa-otp", req.Params)
 }
@@ -52,6 +66,7 @@ func (h *TokenHandler) respondMFAOTP(w http.ResponseWriter, r *http.Request, req
 // respondMFAOOB handles grant_type=http://auth0.com/oauth/grant-type/mfa-oob
 // (out-of-band challenge — push notification or SMS confirmation).
 func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
+	var key, pendingID string
 	ctx, ok := h.redeemMFAToken(w, req.MFAToken, func(c mfa.Context) *mfaRejection {
 		if req.OOBCode == "" {
 			return &mfaRejection{http.StatusBadRequest, "invalid_request", "missing oob_code"}
@@ -59,27 +74,35 @@ func (h *TokenHandler) respondMFAOOB(w http.ResponseWriter, r *http.Request, req
 		// Binding_code is required when the user is asked to type a number they
 		// see on a second device (e.g. SMS code); push needs none in strict mode.
 		bindingRequired := true
-		if _, cfg, ok := h.MFA.Lookup(c); ok {
+		var pendingKey, pending string
+		if k, cfg, ok := h.MFA.Lookup(c); ok {
 			invalid := &mfaRejection{http.StatusForbidden, "invalid_grant", "Invalid oob_code"}
 			issued, found := h.MFA.OOB(req.OOBCode)
 			if !found || issued.MFAToken != req.MFAToken {
 				return invalid
 			}
 			idx := slices.IndexFunc(cfg.Authenticators, func(a mfa.AuthenticatorConfig) bool {
-				return a.ID == issued.AuthenticatorID && a.Type == mfa.TypeOOB && a.Active != nil && *a.Active
+				return a.ID == issued.AuthenticatorID && a.Type == mfa.TypeOOB
 			})
 			if idx < 0 {
 				return invalid
 			}
 			bindingRequired = cfg.Authenticators[idx].OOBChannel != mfa.ChannelPush
+			if a := cfg.Authenticators[idx]; a.Active == nil || !*a.Active {
+				pendingKey, pending = k, a.ID
+			}
 		}
 		if bindingRequired && req.BindingCode != mfa.AcceptedBindingCode {
 			return &mfaRejection{http.StatusForbidden, "invalid_grant", "Wrong binding code"}
 		}
+		key, pendingID = pendingKey, pending
 		return nil
 	})
 	if !ok {
 		return
+	}
+	if pendingID != "" {
+		h.MFA.Activate(key, pendingID)
 	}
 	h.mintFromMFA(w, r, ctx, "mfa-oob", req.Params)
 }

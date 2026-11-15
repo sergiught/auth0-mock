@@ -162,7 +162,7 @@ curl -X PUT http://localhost:8080/admin0/mfa/users/alice@example.com \
   -d '{"required":true,"authenticators":[{"type":"otp"},{"type":"oob","oob_channel":"sms"}]}'
 ```
 
-The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 unknown_user` when there is none. Authenticators are active unless you send `"active":false`.
+The response is the stored config. `GET /admin0/mfa/users/{user}` returns `404 unknown_user` when there is none. Authenticators are active unless you send `"active":false`. An inactive authenticator is confirmed by the matching mfa grant (see "Enroll and manage authenticators").
 
 A per-user `required` beats the global `/admin0/mfa-required` switch in both directions. `"required":true` forces MFA for that user while the global switch is off. `"required":false` exempts that user while it is on. Users with no config follow the global switch. The user key is case-sensitive, so `Alice@example.com` and `alice@example.com` are different users.
 
@@ -170,8 +170,8 @@ A user with any per-user config is a strict user, even if the config only sets `
 
 | Grant | Legacy user | Strict user |
 |---|---|---|
-| `mfa-otp` | `otp=123456` | Needs an active `otp` authenticator, else `403 invalid_grant` "User does not have an active otp authenticator" |
-| `mfa-oob` | Any `oob_code` plus `binding_code=123456` | The `oob_code` must come from `/mfa/challenge` for the same `mfa_token` |
+| `mfa-otp` | `otp=123456` | Needs an `otp` authenticator. An inactive one is confirmed (activated together with its group) by a correct `otp`. Otherwise `403 invalid_grant` "User does not have an active otp authenticator" |
+| `mfa-oob` | Any `oob_code` plus `binding_code=123456` | The `oob_code` must come from `/mfa/challenge` or `/mfa/associate` for the same `mfa_token` |
 | `mfa-recovery-code` | `ABCDEFGHIJKLMNOP` | Needs an active recovery code |
 
 `POST /mfa/challenge` takes the `mfa_token` and returns the challenge for the user:
@@ -183,7 +183,41 @@ curl -s -X POST http://localhost:8080/mfa/challenge \
 # {"challenge_type":"oob","oob_code":"...","binding_method":"prompt"}
 ```
 
-A strict user with no active otp or oob authenticator gets `400 association_required`. `/mfa/associate` and `/mfa/authenticators` are not supported yet.
+A strict user with no active otp or oob authenticator gets `400 association_required`.
+
+#### Enroll and manage authenticators
+
+A client holding an `mfa_token` can enroll a factor with `POST /mfa/associate`. Send `Authorization: Bearer <mfa_token>` and a JSON or form body with `authenticator_types` (`otp` or `oob`), plus `oob_channels` (`sms`, `voice`, `email`, `auth0`) for oob, `phone_number` (E.164, such as `+15551234567`) for sms and voice, and `email` for the email channel.
+
+```bash
+curl -s -X POST http://localhost:8080/mfa/associate \
+  -H "Authorization: Bearer ${MFA_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"authenticator_types":["otp"]}'
+# {"authenticator_type":"otp","secret":"JBSWY3DPEHPK3PXP","barcode_uri":"otpauth://totp/<tenant>:<user>?secret=JBSWY3DPEHPK3PXP&issuer=<tenant>&algorithm=SHA1&digits=6&period=30","recovery_codes":["ABCDEFGHIJKLMNOP"]}
+```
+
+`<tenant>` is the request host without the port, and `<user>` is the login. An oob enrollment returns an `oob_code`:
+
+```bash
+curl -s -X POST http://localhost:8080/mfa/associate \
+  -H "Authorization: Bearer ${MFA_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"authenticator_types":["oob"],"oob_channels":["sms"],"phone_number":"+15555550100"}'
+# {"authenticator_type":"oob","oob_channel":"sms","oob_code":"...","binding_method":"prompt","recovery_codes":["ABCDEFGHIJKLMNOP"]}
+```
+
+The email channel needs `email`. Push (`auth0`) has no `binding_method`, adds a `barcode_uri`, and creates a push and an otp authenticator together. `recovery_codes` appear only when the user had no recovery code yet, which is the first enrollment.
+
+A user who already has an active authenticator gets `403 access_denied` "User is already enrolled.". A bad token gets `401 invalid_token`, and a bad type, channel, phone number or email gets `400 invalid_request`. Enrolling gives a legacy user a config, so later logins are checked strictly.
+
+New authenticators stay inactive until confirmed. Send `mfa-otp` with `otp=123456`, or `mfa-oob` with the returned `oob_code` and `binding_code=123456` (none for push). That activates every authenticator enrolled together, and the user's recovery code.
+
+`GET /mfa/authenticators` lists the user's authenticators as `{id, authenticator_type, active, oob_channel?, name?}`, including inactive ones. Authenticate with an `mfa_token`, or with an access token whose audience is `<issuer>mfa/` and whose scope includes `read:authenticators`. `DELETE /mfa/authenticators/{id}` needs such an access token with `remove:authenticators`. It returns `204`, or `404 not_found` "Authenticator not found" for an unknown id. Deleting a push authenticator also deletes its otp. An `mfa_token` on DELETE gets `401 invalid_token`, and a token without the scope gets `403 insufficient_scope`.
+
+The access-token routes look the user up by the token's `sub`. For passwordless users, key the config by subject (`email|...`).
+
+Not supported: `/mfa/associate` accepts only an `mfa_token`, so enrolling a second factor with an access token fails. Add it with the admin API instead. Push enrollment polling is not supported either.
 
 From Go, use the SDK client:
 

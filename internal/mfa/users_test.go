@@ -48,19 +48,155 @@ func TestSetUser_NilAuthenticatorsStoredAsEmpty(t *testing.T) {
 	assert.Empty(t, got.Authenticators)
 }
 
-func TestSetUser_ReplacesAndGroupsPerEntry(t *testing.T) {
+func TestSetUser_Replaces(t *testing.T) {
 	t.Parallel()
 	s := NewStore()
-	got, err := s.SetUser("alice", UserConfig{Authenticators: []AuthenticatorConfig{{Type: TypeOTP}, {Type: TypeOTP}}})
+	_, err := s.SetUser("alice", UserConfig{Authenticators: []AuthenticatorConfig{{Type: TypeOTP}, {Type: TypeOTP}}})
 	require.NoError(t, err)
-	assert.NotEmpty(t, got.Authenticators[0].Group)
-	assert.NotEmpty(t, got.Authenticators[1].Group)
-	assert.NotEqual(t, got.Authenticators[0].Group, got.Authenticators[1].Group)
 
-	got, err = s.SetUser("alice", UserConfig{Required: ptr(true)})
+	got, err := s.SetUser("alice", UserConfig{Required: ptr(true)})
 	require.NoError(t, err)
 	assert.Empty(t, got.Authenticators)
 	assert.Len(t, s.Users(), 1)
+}
+
+func TestSetUser_KeepsGivenGroup(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	got, err := s.SetUser("alice", UserConfig{Authenticators: []AuthenticatorConfig{
+		{Type: TypeOTP, Group: "g1"}, {Type: TypeOTP, Group: "g1"}, {Type: TypeOTP},
+	}})
+	require.NoError(t, err)
+	assert.Equal(t, "g1", got.Authenticators[0].Group)
+	assert.Equal(t, "g1", got.Authenticators[1].Group)
+	assert.Empty(t, got.Authenticators[2].Group)
+}
+
+func TestEnroll_CreatesPendingGroupWithRecovery(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	got, err := s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Regexp(t, `^totp\|dev_`, got[0].ID)
+	assert.Regexp(t, `^recovery-code\|dev_`, got[1].ID)
+	assert.False(t, *got[0].Active)
+	assert.False(t, *got[1].Active)
+	assert.NotEmpty(t, got[0].Group)
+	assert.Equal(t, got[0].Group, got[1].Group)
+
+	cfg, ok := s.GetUser("alice")
+	require.True(t, ok)
+	assert.Nil(t, cfg.Required)
+	assert.Len(t, cfg.Authenticators, 2)
+}
+
+func TestEnroll_PendingTwiceKeepsOneRecoveryCode(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	_, err := s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	got, err := s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	assert.Len(t, got, 1)
+
+	cfg, _ := s.GetUser("alice")
+	n := 0
+	for _, a := range cfg.Authenticators {
+		if a.Type == TypeRecoveryCode {
+			n++
+		}
+	}
+	assert.Equal(t, 1, n)
+	assert.Len(t, cfg.Authenticators, 3)
+}
+
+func TestEnroll_AlreadyEnrolled(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	_, err := s.SetUser("alice", UserConfig{Authenticators: []AuthenticatorConfig{{Type: TypeOOB, OOBChannel: ChannelSMS}}})
+	require.NoError(t, err)
+	before, _ := s.GetUser("alice")
+	_, err = s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.ErrorIs(t, err, ErrAlreadyEnrolled)
+	after, _ := s.GetUser("alice")
+	assert.Equal(t, before, after)
+
+	_, err = s.SetUser("bob", UserConfig{Authenticators: []AuthenticatorConfig{{Type: TypeRecoveryCode}}})
+	require.NoError(t, err)
+	_, err = s.Enroll("bob", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+}
+
+func TestEnroll_InvalidRejected(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	_, err := s.Enroll("a", []AuthenticatorConfig{{Type: TypeOOB}})
+	require.Error(t, err)
+	_, ok := s.GetUser("a")
+	assert.False(t, ok)
+}
+
+func TestActivate_Group(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	got, err := s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOOB, OOBChannel: ChannelPush}, {Type: TypeOTP}})
+	require.NoError(t, err)
+	require.Len(t, got, 3)
+	require.True(t, s.Activate("alice", got[0].ID))
+	cfg, _ := s.GetUser("alice")
+	for _, a := range cfg.Authenticators {
+		assert.True(t, *a.Active)
+	}
+
+	_, err = s.SetUser("bob", UserConfig{Authenticators: []AuthenticatorConfig{
+		{Type: TypeOTP, Active: ptr(false)}, {Type: TypeOTP, Active: ptr(false)},
+	}})
+	require.NoError(t, err)
+	b, _ := s.GetUser("bob")
+	require.True(t, s.Activate("bob", b.Authenticators[0].ID))
+	b, _ = s.GetUser("bob")
+	assert.True(t, *b.Authenticators[0].Active)
+	assert.False(t, *b.Authenticators[1].Active)
+
+	_, err = s.Enroll("carol", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	second, err := s.Enroll("carol", []AuthenticatorConfig{{Type: TypeOTP}})
+	require.NoError(t, err)
+	require.Len(t, second, 1)
+	require.True(t, s.Activate("carol", second[0].ID))
+	c, _ := s.GetUser("carol")
+	recovery := 0
+	for _, a := range c.Authenticators {
+		if a.Type == TypeRecoveryCode {
+			recovery++
+			assert.True(t, *a.Active, "a pending recovery code is activated by any confirmation")
+		}
+	}
+	assert.Equal(t, 1, recovery)
+
+	assert.False(t, s.Activate("alice", "nope"))
+	assert.False(t, s.Activate("nobody", got[0].ID))
+}
+
+func TestRemoveAuthenticator_PushTakesGroupOTP(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	got, err := s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOOB, OOBChannel: ChannelPush}, {Type: TypeOTP}})
+	require.NoError(t, err)
+	require.True(t, s.RemoveAuthenticator("alice", got[0].ID))
+	cfg, _ := s.GetUser("alice")
+	require.Len(t, cfg.Authenticators, 1)
+	assert.Equal(t, TypeRecoveryCode, cfg.Authenticators[0].Type)
+
+	plain, err := s.Enroll("alice", []AuthenticatorConfig{{Type: TypeOTP}, {Type: TypeOTP}})
+	require.NoError(t, err)
+	require.True(t, s.RemoveAuthenticator("alice", plain[0].ID))
+	cfg, _ = s.GetUser("alice")
+	assert.Len(t, cfg.Authenticators, 2)
+
+	assert.False(t, s.RemoveAuthenticator("alice", "nope"))
+	assert.False(t, s.RemoveAuthenticator("nobody", plain[1].ID))
 }
 
 func TestValidateUserConfig_Errors(t *testing.T) {
@@ -204,4 +340,24 @@ func TestGetUser_ReturnsCopy(t *testing.T) {
 
 	assert.True(t, s.DeleteUser("alice"))
 	assert.False(t, s.DeleteUser("alice"))
+}
+
+func TestSetUser_ReturnedCopySafeWithActivate(t *testing.T) {
+	t.Parallel()
+	s := NewStore()
+	cfg := UserConfig{Authenticators: []AuthenticatorConfig{{ID: "totp|dev_a", Type: TypeOTP, Active: ptr(false)}}}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			s.Activate("alice", "totp|dev_a")
+		}
+	}()
+	for range 200 {
+		got, err := s.SetUser("alice", cfg)
+		require.NoError(t, err)
+		require.Len(t, got.Authenticators, 1)
+		_ = *got.Authenticators[0].Active
+	}
+	<-done
 }
