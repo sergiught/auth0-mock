@@ -132,7 +132,7 @@ func TestAuthorize_ImplicitHybridOrganization(t *testing.T) {
 			assert.NotContains(t, c.Extra, "org_name", rt)
 		}
 	}
-	// the hybrid code carries it to the exchange too
+	// The hybrid code carries it to the exchange too.
 	frag := fragmentOf(t, r, implicitBase+"nonce=n&organization=acme&response_type=code%20id_token")
 	idc := verified(t, ks, frag.Get("id_token"))
 	assert.Equal(t, acmeOrgID, idc.Extra["org_id"])
