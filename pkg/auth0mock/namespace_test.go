@@ -184,3 +184,25 @@ func TestNamespace_TransportCloseIdleConnections(t *testing.T) {
 	(&http.Client{Transport: ns.Transport(base)}).CloseIdleConnections()
 	assert.True(t, base.closed)
 }
+
+func TestNamespace_DeleteErrors(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","message":"boom"}`))
+	}))
+	c, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+	ns, err := c.Namespace("t1")
+	require.NoError(t, err)
+
+	var apiErr *auth0mock.APIError
+	require.ErrorAs(t, ns.DeleteNamespace(t.Context()), &apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+
+	srv.Close()
+	err = ns.DeleteNamespace(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DELETE /admin0/namespaces/t1")
+}

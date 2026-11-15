@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -414,4 +415,80 @@ func TestIsolate_FailsWhenNamespacesOff(t *testing.T) {
 	auth0mocktest.Isolate(ft, root)
 	require.True(t, ft.fatalCalled.Load())
 	assert.Contains(t, ft.fatalText, "the mock does not serve namespaces")
+}
+
+// exitT stops the calling goroutine on Fatalf like a real *testing.T, so a
+// test can see which cleanups were registered before the failure.
+type exitT struct {
+	fakeT
+	errorText string
+}
+
+func (e *exitT) Fatalf(format string, args ...any) {
+	e.fakeT.Fatalf(format, args...)
+	runtime.Goexit()
+}
+
+func (e *exitT) Errorf(format string, args ...any) { e.errorText = fmt.Sprintf(format, args...) }
+
+func runIsolate(t *testing.T, et *exitT, c *auth0mock.Client) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		auth0mocktest.Isolate(et, c)
+	}()
+	<-done
+}
+
+func TestIsolate_FailsAtCapWithServerMessage(t *testing.T) {
+	_, root := newNamespaceMockMax(t, 1)
+	taken, err := root.Namespace("taken")
+	require.NoError(t, err)
+	_, err = taken.Expectations.List(t.Context())
+	require.NoError(t, err)
+
+	et := &exitT{}
+	runIsolate(t, et, root)
+	require.True(t, et.fatalCalled.Load())
+	assert.Contains(t, et.fatalText, "auth0mocktest: Isolate:")
+	assert.NotContains(t, et.fatalText, "does not serve namespaces")
+	// Only the delete cleanup is registered; verify is not.
+	assert.Len(t, et.cleanups, 1)
+}
+
+func TestIsolate_FailsOnNamespacedClient(t *testing.T) {
+	_, root := newNamespaceMock(t)
+	ns, err := root.Namespace("outer")
+	require.NoError(t, err)
+
+	et := &exitT{}
+	runIsolate(t, et, ns)
+	require.True(t, et.fatalCalled.Load())
+	assert.Contains(t, et.fatalText, "auth0mocktest: create namespace:")
+	assert.Empty(t, et.cleanups)
+}
+
+func TestIsolate_DeleteFailureReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"statusCode":500,"error":"Internal Server Error","message":"boom"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"expectations":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	root, err := auth0mock.NewClient(srv.URL)
+	require.NoError(t, err)
+
+	et := &exitT{}
+	runIsolate(t, et, root)
+	require.False(t, et.fatalCalled.Load(), et.fatalText)
+	require.Len(t, et.cleanups, 2)
+	for i := len(et.cleanups) - 1; i >= 0; i-- {
+		et.cleanups[i]()
+	}
+	assert.Contains(t, et.errorText, "auth0mocktest: delete namespace")
 }
