@@ -183,7 +183,27 @@ curl -s -X POST http://localhost:8080/mfa/challenge \
 # {"challenge_type":"oob","oob_code":"...","binding_method":"prompt"}
 ```
 
-A strict user with no active otp or oob authenticator gets `400 association_required`. `/mfa/associate` and `/mfa/authenticators` are not supported yet.
+A strict user with no active otp or oob authenticator gets `400 association_required`.
+
+#### Enroll and manage authenticators
+
+A client holding an `mfa_token` can enroll a factor with `POST /mfa/associate`. Send `Authorization: Bearer <mfa_token>` and a JSON or form body with `authenticator_types` (`otp` or `oob`), plus `oob_channels` (`sms`, `email`, `auth0`) and `phone_number` or `email` for oob.
+
+```bash
+curl -s -X POST http://localhost:8080/mfa/associate \
+  -H "Authorization: Bearer ${MFA_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"authenticator_types":["otp"]}'
+# {"authenticator_type":"otp","secret":"...","barcode_uri":"otpauth://...","recovery_codes":["..."]}
+```
+
+An oob enrollment returns `oob_code` and `binding_method`. The first enrollment also returns `recovery_codes`. A user who already has an active authenticator gets `403 access_denied` "User is already enrolled."; a bad token gets `401 invalid_token`.
+
+The new authenticator stays inactive until confirmed. Confirm an otp one with the `mfa-otp` grant and `otp=123456`. Confirm an oob one with the `mfa-oob` grant, the `oob_code` from the associate response and `binding_code=123456`.
+
+`GET /mfa/authenticators` lists the user's authenticators as `{id, authenticator_type, active, oob_channel?, name?}`, including inactive ones. Authenticate with an `mfa_token`, or with an access token whose audience is `<issuer>mfa/` and whose scope includes `read:authenticators`. `DELETE /mfa/authenticators/{id}` needs such an access token with `remove:authenticators`. It returns `204`, or `404 not_found` "Authenticator not found" for an unknown id.
+
+Push enrollment polling is not supported.
 
 From Go, use the SDK client:
 

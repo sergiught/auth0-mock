@@ -612,6 +612,25 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	// MFA: call an endpoint with the saved mfa_token as the bearer.
+	sc.Step(`^I send "([^"]+)" with the saved mfa_token as bearer$`, func(target string) error {
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		c.DoWithAuthorization(method, path, "", "Bearer "+c.MFAToken)
+		return nil
+	})
+
+	sc.Step(`^I send "([^"]+)" with the saved mfa_token as bearer and body:$`, func(target string, body *godog.DocString) error {
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		c.DoWithAuthorization(method, path, body.Content, "Bearer "+c.MFAToken)
+		return nil
+	})
+
 	sc.Step(`^I save the refresh_token from the response$`, func() error {
 		tok := gjson.GetBytes(c.LastBody, "refresh_token").String()
 		if tok == "" {
