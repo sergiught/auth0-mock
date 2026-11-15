@@ -69556,6 +69556,37 @@
         ],
         "type": "object"
       },
+      "MFAAuthenticatorEntry": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "authenticator_type": {
+            "enum": [
+              "otp",
+              "oob",
+              "recovery-code"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "oob_channel": {
+            "description": "oob only.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "authenticator_type",
+          "active"
+        ],
+        "type": "object"
+      },
       "MFAChallengeRequest": {
         "properties": {
           "authenticator_id": {
@@ -115731,6 +115762,114 @@
           }
         ],
         "summary": "Enroll a user's first MFA factor.",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
+    "/mfa/authenticators": {
+      "get": {
+        "description": "Bearer is an `mfa_token` (peeked) or an access token for audience\n`\u003cissuer\u003emfa/` with scope `read:authenticators`. Includes inactive\nentries. Users without a config get `[]`.\n",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MFAAuthenticatorEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Authenticators in list order."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing scope `read:authenticators`."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the user's MFA authenticators.",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
+    "/mfa/authenticators/{id}": {
+      "delete": {
+        "description": "Access token only: audience `\u003cissuer\u003emfa/`, scope\n`remove:authenticators`. Deleting a push authenticator also deletes\nits group's otp.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Authenticator removed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer, or an mfa_token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing scope `remove:authenticators`."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Unknown authenticator id."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete an MFA authenticator.",
         "tags": [
           "OAuth \u0026 OIDC"
         ]

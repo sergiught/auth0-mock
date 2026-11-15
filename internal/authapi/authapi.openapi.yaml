@@ -130,6 +130,64 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
+  /mfa/authenticators:
+    get:
+      tags: ["OAuth & OIDC"]
+      summary: List the user's MFA authenticators.
+      description: |
+        Bearer is an `mfa_token` (peeked) or an access token for audience
+        `<issuer>mfa/` with scope `read:authenticators`. Includes inactive
+        entries. Users without a config get `[]`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authenticators in list order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MFAAuthenticatorEntry" }
+        "401":
+          description: Missing or invalid bearer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "403":
+          description: Missing scope `read:authenticators`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+  /mfa/authenticators/{id}:
+    delete:
+      tags: ["OAuth & OIDC"]
+      summary: Delete an MFA authenticator.
+      description: |
+        Access token only: audience `<issuer>mfa/`, scope
+        `remove:authenticators`. Deleting a push authenticator also deletes
+        its group's otp.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204":
+          description: Authenticator removed.
+        "401":
+          description: Missing or invalid bearer, or an mfa_token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "403":
+          description: Missing scope `remove:authenticators`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "404":
+          description: Unknown authenticator id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
   /authorize:
     get:
       tags: ["OAuth & OIDC"]
@@ -476,6 +534,15 @@ components:
         oob_code: { type: string }
         binding_method: { type: string, description: "`prompt`; omitted for push (`auth0`)." }
         recovery_codes: { type: array, items: { type: string } }
+    MFAAuthenticatorEntry:
+      type: object
+      required: [id, authenticator_type, active]
+      properties:
+        id: { type: string }
+        authenticator_type: { type: string, enum: [otp, oob, recovery-code] }
+        active: { type: boolean }
+        oob_channel: { type: string, description: "oob only." }
+        name: { type: string }
     OAuthTokenResponse:
       type: object
       required: [access_token, token_type]

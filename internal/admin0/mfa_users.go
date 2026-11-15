@@ -3,14 +3,13 @@ package admin0
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"sort"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/pathparam"
 )
 
 // mfaUserBody is the wire shape of one per-user MFA config.
@@ -19,16 +18,10 @@ type mfaUserBody struct {
 	mfa.UserConfig
 }
 
-// mfaUserParam reads the {user} path parameter, decoded exactly once. Chi
-// routes on RawPath only when it is set, so the param is still escaped then;
-// otherwise it comes from the already-decoded Path. It writes a 400 and
-// returns false when the escape is malformed.
+// mfaUserParam reads the {user} path parameter. It writes a 400 and returns
+// false when the escape is malformed.
 func mfaUserParam(w http.ResponseWriter, r *http.Request) (string, bool) {
-	user := chi.URLParam(r, "user")
-	if r.URL.RawPath == "" {
-		return user, true
-	}
-	user, err := url.PathUnescape(user)
+	user, err := pathparam.Get(r, "user")
 	if err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "invalid user: "+err.Error(), "invalid_body")
 		return "", false
