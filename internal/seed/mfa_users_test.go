@@ -81,7 +81,7 @@ func TestExport_MFAUsersRoundTrip(t *testing.T) {
 
 func TestExport_MFAUsersKeepsGroup(t *testing.T) {
 	st := newStores()
-	added, err := st.MFA.Enroll("alice", []mfa.AuthenticatorConfig{{Type: mfa.TypeOOB, OOBChannel: mfa.ChannelPush}})
+	added, err := st.MFA.Enroll("alice", []mfa.AuthenticatorConfig{{Type: mfa.TypeOOB, OOBChannel: mfa.ChannelPush}, {Type: mfa.TypeOTP}})
 	require.NoError(t, err)
 	var pushID string
 	for _, a := range added {
@@ -100,10 +100,13 @@ func TestExport_MFAUsersKeepsGroup(t *testing.T) {
 	require.True(t, fresh.MFA.Activate("alice", pushID))
 	cfg, ok := fresh.MFA.GetUser("alice")
 	require.True(t, ok)
+	grouped := 0
 	for _, a := range cfg.Authenticators {
 		if a.Type == mfa.TypeOTP || a.ID == pushID {
+			grouped++
 			require.NotNil(t, a.Active)
 			require.True(t, *a.Active, a.ID)
 		}
 	}
+	require.Equal(t, 2, grouped, "expected the otp and push authenticators")
 }
