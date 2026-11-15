@@ -3,7 +3,9 @@ package authapi
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -225,6 +227,18 @@ func TestClientCredentialsOrganization(t *testing.T) {
 	c = verified(t, ks, orgTokenPost(t, r, form).AccessToken)
 	assert.NotContains(t, c.Extra, "org_id")
 	assert.NotContains(t, c.Extra, "org_name")
+
+	body := `{"grant_type":"client_credentials","client_id":"demo","client_secret":"s","audience":"https://api/","organization":"acme"}`
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	c = verified(t, ks, resp.AccessToken)
+	assert.Equal(t, acmeOrgID, c.Extra["org_id"])
+	assert.Equal(t, "acme", c.Extra["org_name"])
 }
 
 func TestPasswordIgnoresOrganization(t *testing.T) {
