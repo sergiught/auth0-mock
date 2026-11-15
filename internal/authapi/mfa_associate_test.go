@@ -83,6 +83,32 @@ func TestAssociate_Push(t *testing.T) {
 	assert.Equal(t, mfa.ChannelPush, cfg.Authenticators[0].OOBChannel)
 	assert.Equal(t, mfa.TypeOTP, cfg.Authenticators[1].Type)
 	assert.Equal(t, cfg.Authenticators[0].Group, cfg.Authenticators[1].Group)
+	code, _ := got["oob_code"].(string)
+	rec, found := ms.OOB(code)
+	require.True(t, found)
+	assert.Equal(t, cfg.Authenticators[0].ID, rec.AuthenticatorID)
+	assert.Equal(t, tok, rec.MFAToken)
+}
+
+func TestAssociate_SecondCallNoRecoveryCodes(t *testing.T) {
+	r, ms, tok := associateSetup(t)
+	first := associateJSON(r, tok, `{"authenticator_types":["otp"]}`)
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	assert.Contains(t, decodeMap(t, first), "recovery_codes")
+
+	second := associateJSON(r, tok, `{"authenticator_types":["otp"]}`)
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	assert.NotContains(t, decodeMap(t, second), "recovery_codes")
+
+	cfg, ok := ms.GetUser("alice@example.com")
+	require.True(t, ok)
+	n := 0
+	for _, a := range cfg.Authenticators {
+		if a.Type == mfa.TypeRecoveryCode {
+			n++
+		}
+	}
+	assert.Equal(t, 1, n)
 }
 
 func TestAssociate_Errors(t *testing.T) {
@@ -90,20 +116,22 @@ func TestAssociate_Errors(t *testing.T) {
 	cases := []struct {
 		name, token, body string
 		status            int
-		code              string
+		code, desc        string
 	}{
-		{"no bearer", "", `{"authenticator_types":["otp"]}`, 401, "invalid_token"},
-		{"unknown token", "nope", `{"authenticator_types":["otp"]}`, 401, "invalid_token"},
-		{"bad type", tok, `{"authenticator_types":["sms"]}`, 400, "invalid_request"},
-		{"oob without channel", tok, `{"authenticator_types":["oob"]}`, 400, "invalid_request"},
-		{"sms without phone", tok, `{"authenticator_types":["oob"],"oob_channels":["sms"]}`, 400, "invalid_request"},
-		{"email without email", tok, `{"authenticator_types":["oob"],"oob_channels":["email"]}`, 400, "invalid_request"},
+		{"no bearer", "", `{"authenticator_types":["otp"]}`, 401, "invalid_token", "missing bearer token"},
+		{"unknown token", "nope", `{"authenticator_types":["otp"]}`, 401, "invalid_token", "Malformed or expired mfa_token"},
+		{"bad type", tok, `{"authenticator_types":["sms"]}`, 400, "invalid_request", `authenticator_types must be ["otp"] or ["oob"]`},
+		{"oob without channel", tok, `{"authenticator_types":["oob"]}`, 400, "invalid_request", "oob_channels must be one of sms, voice, email, auth0"},
+		{"sms without phone", tok, `{"authenticator_types":["oob"],"oob_channels":["sms"]}`, 400, "invalid_request", "phone_number is required for the sms and voice channels"},
+		{"email without email", tok, `{"authenticator_types":["oob"],"oob_channels":["email"]}`, 400, "invalid_request", "email is required for the email channel"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			w := associateJSON(r, tc.token, tc.body)
 			assert.Equal(t, tc.status, w.Code, w.Body.String())
-			assert.Equal(t, tc.code, decodeMap(t, w)["error"])
+			got := decodeMap(t, w)
+			assert.Equal(t, tc.code, got["error"])
+			assert.Equal(t, tc.desc, got["error_description"])
 		})
 	}
 
