@@ -72,7 +72,7 @@ The file is YAML. JSON works too, because JSON is valid YAML. All keys are optio
 | `claim_mappings` | Request-parameter to claim-name map, as for `PUT /admin0/claims/mappings` |
 | `permissions` | Audience mapped to a list of permissions |
 | `mfa_required` | `true` or `false` |
-| `mfa_users` | A map of user to `{required, authenticators}`. See [Per-user MFA](/auth0-mock/guides/login-flows/#per-user-mfa). Quote a phone-number key, as in `"+15551234567":`, because unquoted YAML reads it as a number and drops the leading `+`. Generated authenticator IDs change on every reset and in every new namespace, so set an explicit `id` on an authenticator when a test needs a stable one |
+| `mfa_users` | A map of user to `{required, authenticators}`. See [Per-user MFA](/auth0-mock/guides/login-flows/#per-user-mfa). Quote a phone-number key, as in `"+15551234567":`, because unquoted YAML reads it as a number and drops the leading `+`. Generated authenticator IDs change on every reset and in every new namespace, so set an explicit `id` on an authenticator when a test needs a stable one. Authenticators sharing a `group` were enrolled together, so activating one activates all of them; exports keep it |
 
 The mock is strict about the file:
 

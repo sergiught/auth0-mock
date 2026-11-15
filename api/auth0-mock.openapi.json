@@ -69525,6 +69525,10 @@
             "description": "Defaults to true.",
             "type": "boolean"
           },
+          "group": {
+            "description": "Authenticators sharing a group were enrolled together: confirming one activates all, and deleting the push authenticator removes the group's otp.",
+            "type": "string"
+          },
           "id": {
             "description": "Generated when omitted; unique per user.",
             "type": "string"

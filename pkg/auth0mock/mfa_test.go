@@ -103,3 +103,20 @@ func TestMFAUsers_SDKValidationError(t *testing.T) {
 	require.True(t, errors.As(err, &apiErr))
 	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 }
+
+func TestMFAUsers_SDKGroupRoundTrip(t *testing.T) {
+	t.Parallel()
+	_, c := newNamespaceServer(t)
+	ctx := t.Context()
+
+	set, err := c.MFA.SetUser(ctx, "auth0|123", auth0mock.MFAUser{
+		Authenticators: []auth0mock.MFAAuthenticator{
+			{Type: "otp", Group: "g1"},
+			{Type: "oob", OOBChannel: "sms", Group: "g1"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, set.Authenticators, 2)
+	assert.Equal(t, "g1", set.Authenticators[0].Group)
+	assert.Equal(t, "g1", set.Authenticators[1].Group)
+}
