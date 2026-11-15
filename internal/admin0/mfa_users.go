@@ -19,10 +19,16 @@ type mfaUserBody struct {
 	mfa.UserConfig
 }
 
-// mfaUserParam reads the {user} path parameter, path-unescaped. It writes a
-// 400 and returns false when the escape is malformed.
+// mfaUserParam reads the {user} path parameter, decoded exactly once. Chi
+// routes on RawPath only when it is set, so the param is still escaped then;
+// otherwise it comes from the already-decoded Path. It writes a 400 and
+// returns false when the escape is malformed.
 func mfaUserParam(w http.ResponseWriter, r *http.Request) (string, bool) {
-	user, err := url.PathUnescape(chi.URLParam(r, "user"))
+	user := chi.URLParam(r, "user")
+	if r.URL.RawPath == "" {
+		return user, true
+	}
+	user, err := url.PathUnescape(user)
 	if err != nil {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "invalid user: "+err.Error(), "invalid_body")
 		return "", false

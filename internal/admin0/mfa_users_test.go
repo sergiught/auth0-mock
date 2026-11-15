@@ -100,3 +100,31 @@ func TestMFAUsers_ResetClears(t *testing.T) {
 	require.Equal(t, 204, doMFAUsers(t, d, "POST", "/admin0/reset", "").Code)
 	assert.JSONEq(t, `[]`, doMFAUsers(t, d, "GET", "/admin0/mfa/users", "").Body.String())
 }
+
+func TestMFAUsers_KeyDecodedOnce(t *testing.T) {
+	cases := []struct{ path, key string }{
+		{"50%25off", "50%off"},
+		{"a%2Fb", "a/b"},
+		{"a%2541", "a%41"},
+		{"auth0%7C123", "auth0|123"},
+		{"auth0|123", "auth0|123"},
+		{"auth0%7c123", "auth0|123"},
+	}
+	for _, c := range cases {
+		t.Run(c.path, func(t *testing.T) {
+			d := newDeps()
+			w := doMFAUsers(t, d, "PUT", "/admin0/mfa/users/"+c.path, `{"authenticators":[{"type":"otp"}]}`)
+			require.Equal(t, 200, w.Code, w.Body.String())
+			_, ok := d.MFA.GetUser(c.key)
+			assert.True(t, ok)
+			assert.Equal(t, 200, doMFAUsers(t, d, "GET", "/admin0/mfa/users/"+c.path, "").Code)
+		})
+	}
+}
+
+func TestMFAUsers_EmptyAuthenticatorsSerialiseAsArray(t *testing.T) {
+	d := newDeps()
+	w := doMFAUsers(t, d, "PUT", "/admin0/mfa/users/alice", `{"required":true}`)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"authenticators":[]`)
+}
