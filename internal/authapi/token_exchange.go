@@ -60,7 +60,7 @@ func subjectFromToken(tok string, now time.Time) (sub string, profile map[string
 	if sub == "" {
 		return "", nil, false
 	}
-	if exp, has := payload["exp"].(float64); has && float64(now.Unix()) >= exp {
+	if exp, has := payload["exp"].(float64); has && float64(now.UnixNano())/1e9 >= exp {
 		return "", nil, false
 	}
 	return sub, profileOf(payload), true

@@ -122,6 +122,11 @@ func TestSubjectFromToken(t *testing.T) {
 	sub, _, ok = subjectFromToken("bnVsbA.e30.sig", now)
 	assert.True(t, ok)
 	assert.Equal(t, "bnVsbA.e30.sig", sub)
+
+	// A fractional exp counts the clock's fractional seconds too.
+	later := now.Add(700 * time.Millisecond)
+	_, _, ok = subjectFromToken(fakeJWT(t, map[string]any{"sub": "u", "exp": float64(now.Unix()) + 0.5}), later)
+	assert.False(t, ok)
 }
 
 func TestTokenExchange_LiteralSubject(t *testing.T) {
