@@ -127,6 +127,11 @@ func TestSubjectFromToken(t *testing.T) {
 	later := now.Add(700 * time.Millisecond)
 	_, _, ok = subjectFromToken(fakeJWT(t, map[string]any{"sub": "u", "exp": float64(now.Unix()) + 0.5}), later)
 	assert.False(t, ok)
+
+	// A clock past 2262, where UnixNano overflows, still rejects an expired token.
+	far := time.Date(2300, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, _, ok = subjectFromToken(fakeJWT(t, map[string]any{"sub": "u", "exp": far.Unix() - 60}), far)
+	assert.False(t, ok)
 }
 
 func TestTokenExchange_LiteralSubject(t *testing.T) {
