@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
@@ -57,6 +58,8 @@ type TokenHandler struct {
 	// is remembered per subject so /userinfo can return it, and each refresh
 	// token's grant is remembered so refreshes keep the same user.
 	Sessions *session.Store
+	// Devices holds the device authorization entries of /oauth/device/code.
+	Devices *session.Store
 	// Strict makes the authorization_code grant fail with 403 invalid_grant
 	// when the code is unknown, used or expired, or when redirect_uri or
 	// client_id differ from the /authorize request. It also omits
@@ -69,6 +72,9 @@ type TokenHandler struct {
 
 // errInvalidAuthCode is the error_description of a strict-mode code failure.
 const errInvalidAuthCode = "Invalid authorization code"
+
+// errInvalidDeviceCode is the error_description of an unknown device code.
+const errInvalidDeviceCode = "Invalid or expired device code."
 
 // errUnknownRefreshToken is the error_description of a strict-mode refresh
 // failure for a token that is unknown, already used or revoked.
@@ -205,6 +211,8 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.respondRefreshToken(w, r, req, aud)
 	case "authorization_code":
 		h.respondAuthorizationCode(w, r, req, aud)
+	case grantDeviceCode:
+		h.respondDeviceCode(w, r, req)
 	case "http://auth0.com/oauth/grant-type/mfa-otp":
 		h.respondMFAOTP(w, r, req)
 	case "http://auth0.com/oauth/grant-type/mfa-oob":
@@ -466,6 +474,7 @@ func parseTokenBody(r *http.Request) (*tokenRequest, error) {
 		OOBCode:          r.PostForm.Get("oob_code"),
 		BindingCode:      r.PostForm.Get("binding_code"),
 		RecoveryCode:     r.PostForm.Get("recovery_code"),
+		DeviceCode:       r.PostForm.Get("device_code"),
 	}, nil
 }
 
@@ -805,36 +814,56 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		subject = entry.LoginHint
 	}
 	aud, scope := codeAudienceScope(entry, aud, req.Scope, h.Strict && hasEntry)
-	// A zero entry (no stored code) has no organization.
-	org := organization{ID: entry.OrgID, Name: entry.OrgName}
-	accessBase := map[string]any{"gty": "authorization-code", "azp": req.ClientID}
-	org.addClaims(accessBase)
+	authTime := h.Keys.Cfg().Now()
+	if hasEntry {
+		authTime = entry.AuthTime
+	}
+	// A zero entry (no stored code) has no organization or nonce.
+	h.issueLoginTokens(w, r, req, loginTokens{
+		Subject: subject, Audience: aud, Scope: scope, Nonce: entry.Nonce, GTY: "authorization-code",
+		Org:      organization{ID: entry.OrgID, Name: entry.OrgName},
+		AuthTime: authTime,
+	})
+}
+
+// loginTokens is what a grant that logs a user in hands to issueLoginTokens.
+type loginTokens struct {
+	Subject, Audience, Scope, Nonce, GTY string
+	Org                                  organization
+	AuthTime                             time.Time
+}
+
+// issueLoginTokens mints the access and ID tokens and the offline refresh
+// token for a completed login and writes the token response. GTY is set as the
+// gty claim only when non-empty.
+func (h *TokenHandler) issueLoginTokens(w http.ResponseWriter, r *http.Request, req *tokenRequest, t loginTokens) {
+	accessBase := map[string]any{"azp": req.ClientID}
+	if t.GTY != "" {
+		accessBase["gty"] = t.GTY
+	}
+	t.Org.addClaims(accessBase)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
-		Subject:  subject,
-		Audience: []string{aud},
-		Scope:    scope,
+		Subject:  t.Subject,
+		Audience: []string{t.Audience},
+		Scope:    t.Scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(accessBase, aud, req.Params),
+		Extra:    h.augmentExtra(accessBase, t.Audience, req.Params),
 	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	idExtra := deriveProfile(subject)
+	idExtra := deriveProfile(t.Subject)
 	idExtra["azp"] = req.ClientID
-	org.addClaims(idExtra)
-	authTime := h.Keys.Cfg().Now()
-	if hasEntry {
-		authTime = entry.AuthTime
-		if entry.Nonce != "" {
-			idExtra["nonce"] = entry.Nonce
-		}
+	t.Org.addClaims(idExtra)
+	if t.Nonce != "" {
+		idExtra["nonce"] = t.Nonce
 	}
-	idExtra["auth_time"] = authTime.Unix()
+	idExtra["auth_time"] = t.AuthTime.Unix()
 	id, err := h.Keys.Mint(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
-		Subject:  subject,
+		Subject:  t.Subject,
 		Audience: []string{req.ClientID},
 		TTL:      h.Keys.Cfg().IDTokenTTL,
 		Extra:    idExtra,
@@ -843,15 +872,42 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	h.rememberProfile(subject, idExtra)
+	h.rememberProfile(t.Subject, idExtra)
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, OrgID: org.ID, OrgName: org.Name, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: t.Subject, ClientID: req.ClientID, Audience: t.Audience, Scope: t.Scope, OrgID: t.Org.ID, OrgName: t.Org.Name, AuthTime: t.AuthTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
-		Scope:        scope,
+		Scope:        t.Scope,
 	})
+}
+
+// respondDeviceCode answers a poll of the RFC 8628 device_code grant.
+func (h *TokenHandler) respondDeviceCode(w http.ResponseWriter, r *http.Request, req *tokenRequest) {
+	if req.DeviceCode == "" {
+		httperr.WriteAuth(w, http.StatusBadRequest, "invalid_request", "Missing required parameter: device_code")
+		return
+	}
+	if h.Devices == nil {
+		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", errInvalidDeviceCode)
+		return
+	}
+	d, res := h.Devices.PollDevice(req.DeviceCode, req.ClientID, h.Keys.Cfg().Now())
+	switch res {
+	case session.PollApproved:
+		h.issueLoginTokens(w, r, req, loginTokens{
+			Subject: d.Subject, Audience: d.Audience, Scope: d.Scope, AuthTime: d.AuthTime,
+		})
+	case session.PollExpired:
+		httperr.WriteAuth(w, http.StatusForbidden, "expired_token", "The device code has expired.")
+	case session.PollDenied:
+		httperr.WriteAuth(w, http.StatusForbidden, "access_denied", "User cancelled the confirmation prompt.")
+	case session.PollPending:
+		httperr.WriteAuth(w, http.StatusForbidden, "authorization_pending", "User has yet to authorize device code.")
+	default:
+		httperr.WriteAuth(w, http.StatusForbidden, "invalid_grant", errInvalidDeviceCode)
+	}
 }
 
 // codeAudienceScope returns the audience and scope for a code exchange. The

@@ -34,7 +34,11 @@ type Store struct {
 	loginOrder []string // Login ids in insertion order, oldest first.
 
 	pending      map[string]pendingLogin
-	pendingOrder []string // Pending login ids in insertion order, oldest first.
+	pendingOrder []string                // Pending login ids in insertion order, oldest first.
+	devices      map[string]*deviceEntry // Device entries by device code.
+	userCodes    map[string]string       // Canonical user code to device code.
+	deviceSteps  map[string]string       // Step id to device code.
+	deviceOrder  []string                // Device codes in insertion order, oldest first.
 }
 
 // pendingLogin is an /authorize query waiting for the login page to be filled in.
@@ -68,7 +72,7 @@ type Grant struct {
 
 // NewStore returns an empty Store.
 func NewStore() *Store {
-	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]refreshEntry{}, access: map[string]Access{}, logins: map[string]Login{}, pending: map[string]pendingLogin{}}
+	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]refreshEntry{}, access: map[string]Access{}, logins: map[string]Login{}, pending: map[string]pendingLogin{}, devices: map[string]*deviceEntry{}, userCodes: map[string]string{}, deviceSteps: map[string]string{}}
 }
 
 // RememberProfile stores a copy of profile for subject; last write wins.
@@ -110,6 +114,10 @@ func (s *Store) Clear() {
 	s.loginOrder = nil
 	s.pending = map[string]pendingLogin{}
 	s.pendingOrder = nil
+	s.devices = map[string]*deviceEntry{}
+	s.userCodes = map[string]string{}
+	s.deviceSteps = map[string]string{}
+	s.deviceOrder = nil
 }
 
 // refreshEntry is a stored refresh token: its grant, the chain it belongs to

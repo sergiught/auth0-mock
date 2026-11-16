@@ -384,6 +384,20 @@ func TestWriteBodyBlock_RedactionStillRuns(t *testing.T) {
 	assert.Contains(t, got, `"access_token": "<redacted>"`)
 }
 
+func TestWriteBodyBlock_RedactsDeviceCode(t *testing.T) {
+	var buf bytes.Buffer
+	body := []byte(`{"device_code":"SECRETDEVICECODE123","user_code":"ABCD-EFGH"}`)
+	writeBodyBlock(&buf, body, len(body), "application/json")
+	assert.NotContains(t, buf.String(), "SECRETDEVICECODE123")
+	assert.Contains(t, buf.String(), `"device_code": "<redacted>"`)
+
+	buf.Reset()
+	form := []byte("grant_type=device_code&device_code=SECRETDEVICECODE123&client_id=app")
+	writeBodyBlock(&buf, form, len(form), "application/x-www-form-urlencoded")
+	assert.NotContains(t, buf.String(), "SECRETDEVICECODE123")
+	assert.Contains(t, buf.String(), "device_code=<redacted>")
+}
+
 // TestDebugDump_EndToEndRedaction exercises the full middleware against
 // a realistic /oauth/token round-trip: form-encoded request with
 // client_secret + refresh_token, JSON response with a minted JWT. Every

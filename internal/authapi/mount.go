@@ -59,6 +59,12 @@ func Mount(d Deps) {
 		// needs a session store to issue usable ones.
 		d.Sessions = session.NewStore()
 	}
+	// Device entries live in the shared store when there is one; otherwise in a
+	// store only the device endpoints see.
+	devices := d.Sessions
+	if devices == nil {
+		devices = session.NewStore()
+	}
 	tok := &TokenHandler{
 		Keys:             d.Keys,
 		Issuer:           d.Issuer,
@@ -71,9 +77,11 @@ func Mount(d Deps) {
 		PKCE:             d.PKCE,
 		MFA:              d.MFA,
 		Sessions:         d.Sessions,
+		Devices:          devices,
 		Strict:           d.TokenEndpointStrict,
 	}
 	d.Router.Method(http.MethodPost, "/oauth/token", tok)
+	d.Router.Method(http.MethodPost, "/oauth/device/code", &DeviceCodeHandler{Token: tok, Devices: devices, LoginPage: d.LoginPage})
 	d.Router.Method(http.MethodPost, "/mfa/challenge", &MFAChallengeHandler{MFA: d.MFA})
 	d.Router.Method(http.MethodPost, "/mfa/associate", &MFAAssociateHandler{MFA: d.MFA})
 	authenticators := &MFAAuthenticatorsHandler{MFA: d.MFA, Keys: d.Keys}
@@ -92,6 +100,9 @@ func Mount(d Deps) {
 		loginPage := &LoginPageHandler{Authorize: authorizeHandler}
 		d.Router.Method(http.MethodGet, "/u/login", loginPage)
 		d.Router.Method(http.MethodPost, "/u/login", loginPage)
+		activate := &ActivateHandler{Authorize: authorizeHandler, Devices: devices}
+		d.Router.Method(http.MethodGet, "/activate", activate)
+		d.Router.Method(http.MethodPost, "/activate", activate)
 	}
 	userInfo := &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions}
 	d.Router.Method(http.MethodGet, "/userinfo", userInfo)

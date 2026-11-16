@@ -70309,6 +70309,10 @@
           "code_verifier": {
             "type": "string"
           },
+          "device_code": {
+            "description": "device_code grant only. The `device_code` from `/oauth/device/code`.",
+            "type": "string"
+          },
           "grant_type": {
             "description": "OAuth2/Auth0 grant type.",
             "type": "string"
@@ -84448,6 +84452,97 @@
           }
         },
         "summary": "OIDC discovery document.",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
+    "/activate": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Prefills the code field.",
+            "in": "query",
+            "name": "user_code",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The code form (`#code` and a submit button named `action`)."
+          }
+        },
+        "summary": "Show the device activation page (only with `LOGIN_PAGE` on).",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      },
+      "post": {
+        "description": "Without `state`, `code` is the user code and the answer is the login form (or the confirm screen if the browser has a live session). With `state` and `action=default`, `username` and `password` log in and the answer is the confirm screen. With `state` and `action=confirm` or `cancel`, the device is approved or denied.",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "default",
+                      "confirm",
+                      "cancel"
+                    ],
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The next page, or the \"you're all set\" or \"cancelled\" page."
+          },
+          "400": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Unknown or expired code or step, an empty field, or a failure rule; the page shows the error."
+          }
+        },
+        "summary": "Run a step of the device activation (only with `LOGIN_PAGE` on).",
         "tags": [
           "OAuth \u0026 OIDC"
         ]
@@ -115969,6 +116064,103 @@
         ]
       }
     },
+    "/oauth/device/code": {
+      "post": {
+        "description": "Returns a device code to poll `/oauth/token` with and a user code to type at `/activate`. With `LOGIN_PAGE` off, the code is already approved for `auth0|mock-user`. With it on, the code is pending until someone confirms it at `/activate`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "audience": {
+                    "type": "string"
+                  },
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "client_id"
+                ],
+                "type": "object"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "audience": {
+                    "type": "string"
+                  },
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "client_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "device_code": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "example": 900,
+                      "type": "integer"
+                    },
+                    "interval": {
+                      "example": 5,
+                      "type": "integer"
+                    },
+                    "user_code": {
+                      "example": "BCDF-GHJK",
+                      "type": "string"
+                    },
+                    "verification_uri": {
+                      "type": "string"
+                    },
+                    "verification_uri_complete": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Device code issued."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            },
+            "description": "Missing `client_id`."
+          }
+        },
+        "summary": "Start a device login (RFC 8628).",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      }
+    },
     "/oauth/revoke": {
       "post": {
         "requestBody": {
@@ -116008,7 +116200,7 @@
     },
     "/oauth/token": {
       "post": {
-        "description": "Supports every grant type the mock implements: `client_credentials`,\n`password`, `refresh_token`, `authorization_code` (with optional PKCE),\n`http://auth0.com/oauth/grant-type/password-realm`, the MFA\nstep-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`), and\n`urn:ietf:params:oauth:grant-type:token-exchange` (the subject token\nnames the user; its signature is not checked).\n",
+        "description": "Supports every grant type the mock implements: `client_credentials`,\n`password`, `refresh_token`, `authorization_code` (with optional PKCE),\n`http://auth0.com/oauth/grant-type/password-realm`, the MFA\nstep-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`), and\n`urn:ietf:params:oauth:grant-type:token-exchange` (the subject token\nnames the user; its signature is not checked), and\n`urn:ietf:params:oauth:grant-type:device_code` (poll with the\n`device_code` from `/oauth/device/code`).\n",
         "requestBody": {
           "content": {
             "application/json": {
@@ -116070,7 +116262,7 @@
                 }
               }
             },
-            "description": "MFA required, or access_denied for client_credentials with no audience and no default audience configured."
+            "description": "MFA required, access_denied for client_credentials with no audience and no default audience configured, or a device_code poll that is not done yet (`authorization_pending`, `access_denied`, `expired_token`, `invalid_grant`)."
           }
         },
         "summary": "Exchange credentials for an access token.",

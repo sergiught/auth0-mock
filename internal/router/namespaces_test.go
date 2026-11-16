@@ -184,6 +184,30 @@ func TestNamespaces_ClockIsolated(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), iat("header:b"), time.Minute)
 }
 
+func TestNamespaces_DeviceCodeIsolated(t *testing.T) {
+	t.Parallel()
+	h := newNamespaceRouter(t, 3, "")
+	rec := nsDo(t, h, http.MethodPost, "/oauth/device/code", "a", "client_id=app", "Content-Type", "application/x-www-form-urlencoded")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var dev struct {
+		DeviceCode      string `json:"device_code"`
+		VerificationURI string `json:"verification_uri"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &dev))
+	assert.Equal(t, "https://mock/ns/a/activate", dev.VerificationURI)
+
+	poll := "grant_type=urn:ietf:params:oauth:grant-type:device_code&client_id=app&device_code=" + dev.DeviceCode
+	other := nsDo(t, h, http.MethodPost, "/oauth/token", "b", poll)
+	assert.Equal(t, http.StatusForbidden, other.Code, other.Body.String())
+	assert.Contains(t, other.Body.String(), "invalid_grant")
+	def := nsDo(t, h, http.MethodPost, "/oauth/token", "", poll)
+	assert.Equal(t, http.StatusForbidden, def.Code, def.Body.String())
+	assert.Contains(t, def.Body.String(), `"error":"invalid_grant"`)
+
+	own := nsDo(t, h, http.MethodPost, "/oauth/token", "a", poll)
+	require.Equal(t, http.StatusOK, own.Code, own.Body.String())
+}
+
 func TestNamespaces_PrefixIssuer(t *testing.T) {
 	t.Parallel()
 	h := newNamespaceRouter(t, 3, "")

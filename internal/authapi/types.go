@@ -23,6 +23,7 @@ type tokenRequest struct {
 	OOBCode          string `json:"oob_code" form:"oob_code"`
 	BindingCode      string `json:"binding_code" form:"binding_code"`
 	RecoveryCode     string `json:"recovery_code" form:"recovery_code"`
+	DeviceCode       string `json:"device_code" form:"device_code"`
 
 	// Params holds every raw key/value pair from the request body — form
 	// values as strings, JSON values with their decoded types. Populated by

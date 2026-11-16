@@ -33,6 +33,7 @@ func TestDiscovery_PublishesIssuerAndEndpoints(t *testing.T) {
 
 	algs, _ := doc["id_token_signing_alg_values_supported"].([]any)
 	assert.Contains(t, algs, "RS256")
+	assert.Equal(t, "https://mock/oauth/device/code", doc["device_authorization_endpoint"])
 }
 
 func TestDiscovery_AdvertisesPKCEMethodsAndClaims(t *testing.T) {
@@ -58,6 +59,7 @@ var discoveryGrantTypes = []any{
 	"http://auth0.com/oauth/grant-type/mfa-otp",
 	"http://auth0.com/oauth/grant-type/mfa-recovery-code",
 	"urn:ietf:params:oauth:grant-type:token-exchange",
+	grantDeviceCode,
 }
 
 // implicit is served by /authorize, not /oauth/token, so it is skipped here.
