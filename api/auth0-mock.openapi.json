@@ -115435,6 +115435,7 @@
     },
     "/authorize": {
       "get": {
+        "description": "With `LOGIN_PAGE` on, a logged-out request (no session, `prompt=login`, or a different `login_hint`) stores its query and answers 302 to `u/login?state=\u003cid\u003e`. `prompt=none` and live sessions are unchanged.",
         "parameters": [
           {
             "in": "query",
@@ -116458,6 +116459,111 @@
         "summary": "Readiness probe.",
         "tags": [
           "Service"
+        ]
+      }
+    },
+    "/u/login": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Login id from the `/authorize` redirect.",
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The login form (`#username`, `#password`, and a submit button named `action`)."
+          },
+          "400": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Unknown or expired `state`."
+          }
+        },
+        "summary": "Show the login page (only with `LOGIN_PAGE` on).",
+        "tags": [
+          "OAuth \u0026 OIDC"
+        ]
+      },
+      "post": {
+        "description": "Any non-empty email and password logs in as that email. A matching authorize-error rule, or empty fields, re-renders the form with 400.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "example": "default",
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "form_post: auto-submitting form to `redirect_uri`; web_message: page that posts the response to `window.opener` or `window.parent`"
+          },
+          "302": {
+            "description": "Redirect to `redirect_uri` with the result, as `/authorize` does."
+          },
+          "400": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Unknown or expired `state`, an empty field, or a failure rule; the form is shown again with the error."
+          }
+        },
+        "summary": "Submit the login form and finish the stored `/authorize` (only with `LOGIN_PAGE` on).",
+        "tags": [
+          "OAuth \u0026 OIDC"
         ]
       }
     },

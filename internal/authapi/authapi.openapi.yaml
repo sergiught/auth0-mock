@@ -194,6 +194,10 @@ paths:
     get:
       tags: ["OAuth & OIDC"]
       summary: Start an Authorization Code, Implicit or Hybrid flow.
+      description: >-
+        With `LOGIN_PAGE` on, a logged-out request (no session, `prompt=login`,
+        or a different `login_hint`) stores its query and answers 302 to
+        `u/login?state=<id>`. `prompt=none` and live sessions are unchanged.
       parameters:
         - { name: response_type,        in: query, required: true,  schema: { type: string, description: "Space-separated set of code, token and id_token, in any order (Auth0 lists code, token, id_token, code token, code id_token, token id_token, code token id_token)." } }
         - { name: client_id,            in: query, required: true,  schema: { type: string } }
@@ -222,6 +226,54 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
+  /u/login:
+    get:
+      tags: ["OAuth & OIDC"]
+      summary: Show the login page (only with `LOGIN_PAGE` on).
+      parameters:
+        - { name: state, in: query, required: true, description: "Login id from the `/authorize` redirect.", schema: { type: string } }
+      responses:
+        "200":
+          description: The login form (`#username`, `#password`, and a submit button named `action`).
+          content:
+            text/html:
+              schema: { type: string }
+        "400":
+          description: Unknown or expired `state`.
+          content:
+            text/html:
+              schema: { type: string }
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: Submit the login form and finish the stored `/authorize` (only with `LOGIN_PAGE` on).
+      description: >-
+        Any non-empty email and password logs in as that email. A matching
+        authorize-error rule, or empty fields, re-renders the form with 400.
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                password: { type: string }
+                action:   { type: string, example: default }
+      responses:
+        "302":
+          description: Redirect to `redirect_uri` with the result, as `/authorize` does.
+        "200":
+          description: "form_post: auto-submitting form to `redirect_uri`; web_message: page that posts the response to `window.opener` or `window.parent`"
+          content:
+            text/html:
+              schema: { type: string }
+        "400":
+          description: Unknown or expired `state`, an empty field, or a failure rule; the form is shown again with the error.
+          content:
+            text/html:
+              schema: { type: string }
   /userinfo:
     get:
       tags: ["OAuth & OIDC"]
