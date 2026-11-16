@@ -113,6 +113,15 @@ func TestSubjectFromToken(t *testing.T) {
 	assert.Equal(t, "auth0|jane", sub)
 	_, _, ok = subjectFromToken("eyJhbGciOiJub25lIn0.!!!.sig", now)
 	assert.False(t, ok)
+
+	// A JSON-object header with an empty payload is a malformed JWT, not a literal.
+	_, _, ok = subjectFromToken("eyJhbGciOiJub25lIn0..sig", now)
+	assert.False(t, ok)
+
+	// A JSON null header is not an object, so the token is a literal.
+	sub, _, ok = subjectFromToken("bnVsbA.e30.sig", now)
+	assert.True(t, ok)
+	assert.Equal(t, "bnVsbA.e30.sig", sub)
 }
 
 func TestTokenExchange_LiteralSubject(t *testing.T) {

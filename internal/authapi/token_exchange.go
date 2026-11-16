@@ -45,7 +45,7 @@ func validSubjectTokenType(t string) bool {
 // only for a JWT-shaped token that is malformed, has no sub, or is expired.
 func subjectFromToken(tok string, now time.Time) (sub string, profile map[string]any, ok bool) {
 	parts := strings.Split(tok, ".")
-	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || !isJSONSegment(parts[0]) {
+	if len(parts) != 3 || !isJSONSegment(parts[0]) {
 		return tok, nil, true
 	}
 	raw, err := decodeSegment(parts[1])
@@ -78,7 +78,7 @@ func isJSONSegment(seg string) bool {
 		return false
 	}
 	var m map[string]any
-	return json.Unmarshal(raw, &m) == nil
+	return json.Unmarshal(raw, &m) == nil && m != nil
 }
 
 // respondTokenExchange handles the RFC 8693 token-exchange grant: the subject
