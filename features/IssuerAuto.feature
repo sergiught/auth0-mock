@@ -10,6 +10,7 @@ Feature: ISSUER_URL=auto derives the issuer from the request address
         "issuer":                 "http://other.test:1234/",
         "authorization_endpoint": "http://other.test:1234/authorize",
         "token_endpoint":         "http://other.test:1234/oauth/token",
+        "device_authorization_endpoint": "http://other.test:1234/oauth/device/code",
         "userinfo_endpoint":      "http://other.test:1234/userinfo",
         "jwks_uri":               "http://other.test:1234/.well-known/jwks.json",
         "end_session_endpoint":   "http://other.test:1234/oidc/logout",

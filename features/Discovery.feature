@@ -30,6 +30,7 @@ Feature: OIDC discovery and JWKS publication
         "issuer":                 "${BASE_URL}/",
         "authorization_endpoint": "${BASE_URL}/authorize",
         "token_endpoint":         "${BASE_URL}/oauth/token",
+        "device_authorization_endpoint": "${BASE_URL}/oauth/device/code",
         "userinfo_endpoint":      "${BASE_URL}/userinfo",
         "jwks_uri":               "${BASE_URL}/.well-known/jwks.json",
         "end_session_endpoint":   "${BASE_URL}/oidc/logout",
@@ -49,7 +50,8 @@ Feature: OIDC discovery and JWKS publication
           "http://auth0.com/oauth/grant-type/mfa-oob",
           "http://auth0.com/oauth/grant-type/mfa-otp",
           "http://auth0.com/oauth/grant-type/mfa-recovery-code",
-        "urn:ietf:params:oauth:grant-type:token-exchange"
+          "urn:ietf:params:oauth:grant-type:token-exchange",
+          "urn:ietf:params:oauth:grant-type:device_code"
         ],
         "code_challenge_methods_supported":      ["S256", "plain"],
         "response_modes_supported":              ["query", "fragment", "form_post"],

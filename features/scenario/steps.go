@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -297,6 +298,20 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		if !bytes.Contains(c.LastBody, []byte(`name="`+name+`"`)) {
 			return fmt.Errorf("no form field %q in body:\n%s", name, c.LastBody)
 		}
+		return nil
+	})
+
+	// Save the value of a named input from the last HTML page, for the hidden
+	// state of a page step.
+	sc.Step(`^I save the form field "([^"]+)" from the page as "([^"]+)"$`, func(field, name string) error {
+		m := regexp.MustCompile(`name="` + regexp.QuoteMeta(field) + `" value="([^"]*)"`).FindSubmatch(c.LastBody)
+		if m == nil {
+			return fmt.Errorf("no form field %q with a value in body:\n%s", field, c.LastBody)
+		}
+		if c.SavedValues == nil {
+			c.SavedValues = map[string]string{}
+		}
+		c.SavedValues[name] = html.UnescapeString(string(m[1]))
 		return nil
 	})
 
