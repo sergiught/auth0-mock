@@ -147,7 +147,8 @@ var loginPageTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log in</title>
-<style>\n` + pageCSS + `</style>
+<style>
+` + pageCSS + `</style>
 </head>
 <body>
 <main>

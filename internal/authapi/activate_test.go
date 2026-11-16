@@ -67,6 +67,23 @@ func TestActivate_GetPrefill(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `name="code"`)
 	assert.Contains(t, w.Body.String(), `value="BCDF-GHJK"`)
 	assert.Contains(t, w.Body.String(), "Activate your device")
+	assert.Contains(t, w.Body.String(), "<style>\nbody{")
+}
+
+func TestLoginPage_StylesheetIntact(t *testing.T) {
+	w := httptest.NewRecorder()
+	renderLoginPage(w, http.StatusOK, "app", "", "")
+	assert.Contains(t, w.Body.String(), "<style>\nbody{")
+}
+
+func TestActivate_ConfirmStateWithLoginAction(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	dc, uc := startDevice(t, r)
+	w := activateLogin(t, r, uc)
+	st := stateOf(t, w)
+	w = postActivate(r, nil, url.Values{"state": {st}, "username": {"mallory@example.com"}, "password": {"x"}, "action": {"default"}})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, pollDevice(r, dc, "app").Body.String(), "authorization_pending")
 }
 
 func TestActivate_GetEscapes(t *testing.T) {
@@ -185,10 +202,11 @@ func TestActivate_StepReplay(t *testing.T) {
 	assert.Equal(t, http.StatusOK, postActivate(r, nil, login).Code)
 	assert.Equal(t, http.StatusBadRequest, postActivate(r, nil, login).Code)
 
-	_, uc2 := startDevice(t, r)
+	dc2, uc2 := startDevice(t, r)
 	w = postActivate(r, nil, url.Values{"code": {uc2}, "action": {"default"}})
 	w2 := postActivate(r, nil, url.Values{"state": {stateOf(t, w)}, "action": {"confirm"}})
 	assert.Equal(t, http.StatusBadRequest, w2.Code)
+	assert.Contains(t, pollDevice(r, dc2, "app").Body.String(), "authorization_pending")
 
 	w = pollDevice(r, dc, "app")
 	assert.Contains(t, w.Body.String(), "authorization_pending")
