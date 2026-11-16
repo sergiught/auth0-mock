@@ -15,44 +15,28 @@ import (
 )
 
 const (
-	// GrantTokenExchange is the RFC 8693 token-exchange grant type.
+	// The grant type of the RFC 8693 token exchange, grantTokenExchange.
 	grantTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange" //nolint:gosec // grant-type URI, not a credential
-	// IssuedTokenTypeAccess is the issued_token_type of every exchange.
+	// The issued_token_type of every exchange.
 	issuedTokenTypeAccess = "urn:ietf:params:oauth:token-type:access_token" //nolint:gosec // token-type URI, not a credential
 )
 
 // validSubjectTokenType reports whether t is a https:// or urn: URI outside
-// the reserved auth0, okta and ietf namespaces, as Auth0 requires.
+// the reserved auth0, okta and ietf namespaces, by Auth0's prefix rule.
 func validSubjectTokenType(t string) bool {
 	lower := strings.ToLower(t)
-	switch {
-	case strings.HasPrefix(lower, "https://"):
-		host := strings.TrimPrefix(lower, "https://")
-		if i := strings.IndexAny(host, "/?#"); i >= 0 {
-			host = host[:i]
-		}
-		if host == "" {
-			return false
-		}
-		for _, r := range []string{"auth0.com", "okta.com"} {
-			if host == r || strings.HasSuffix(host, "."+r) {
-				return false
-			}
-		}
-		return true
-	case strings.HasPrefix(lower, "urn:"):
-		rest := t[len("urn:"):]
-		if rest == "" {
-			return false
-		}
-		ns, _, _ := strings.Cut(rest, ":")
-		switch strings.ToLower(ns) {
-		case "ietf", "auth0", "okta":
-			return false
-		}
-		return true
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "urn:") {
+		return false
 	}
-	return false
+	for _, p := range []string{
+		"http://auth0.com", "https://auth0.com", "http://okta.com", "https://okta.com",
+		"urn:ietf", "urn:auth0", "urn:okta",
+	} {
+		if strings.HasPrefix(lower, p) {
+			return false
+		}
+	}
+	return true
 }
 
 // subjectFromToken reads the user out of a subject token. A JWT-shaped token
@@ -61,10 +45,10 @@ func validSubjectTokenType(t string) bool {
 // only for a JWT-shaped token that is malformed, has no sub, or is expired.
 func subjectFromToken(tok string, now time.Time) (sub string, profile map[string]any, ok bool) {
 	parts := strings.Split(tok, ".")
-	if len(parts) != 3 || !isJSONSegment(parts[0]) {
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" || !isJSONSegment(parts[0]) {
 		return tok, nil, true
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	raw, err := decodeSegment(parts[1])
 	if err != nil {
 		return "", nil, false
 	}
@@ -76,15 +60,20 @@ func subjectFromToken(tok string, now time.Time) (sub string, profile map[string
 	if sub == "" {
 		return "", nil, false
 	}
-	if exp, has := payload["exp"].(float64); has && !now.Before(time.Unix(int64(exp), 0)) {
+	if exp, has := payload["exp"].(float64); has && float64(now.Unix()) >= exp {
 		return "", nil, false
 	}
 	return sub, profileOf(payload), true
 }
 
+// decodeSegment decodes a base64url segment, with or without padding.
+func decodeSegment(seg string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(strings.TrimRight(seg, "="))
+}
+
 // isJSONSegment reports whether a base64url segment decodes to a JSON object.
 func isJSONSegment(seg string) bool {
-	raw, err := base64.RawURLEncoding.DecodeString(seg)
+	raw, err := decodeSegment(seg)
 	if err != nil {
 		return false
 	}

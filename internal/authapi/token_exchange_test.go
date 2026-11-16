@@ -58,6 +58,11 @@ func TestValidSubjectTokenType(t *testing.T) {
 		"urn:ietf:params:oauth:token-type:jwt": false,
 		"URN:IETF:x":                           false,
 		"urn:auth0:x":                          false,
+		"https://auth0.com:443/x":              false,
+		"https://auth0.company.com/x":          false,
+		"urn:ietfx:foo":                        false,
+		"https://sub.auth0.com/x":              true,
+		"urn:":                                 true,
 		"urn:okta:x":                           false,
 	}
 	for in, want := range cases {
@@ -92,6 +97,15 @@ func TestSubjectFromToken(t *testing.T) {
 	assert.False(t, ok)
 	_, _, ok = subjectFromToken(fakeJWT(t, map[string]any{"sub": "u", "exp": now.Unix() + 60}), now)
 	assert.True(t, ok)
+	enc := base64.URLEncoding
+	padded := enc.EncodeToString([]byte(`{"alg":"none"}`)) + "." + enc.EncodeToString([]byte(`{"sub":"pad"}`)) + ".sig"
+	require.Contains(t, padded, "=")
+	sub, _, ok = subjectFromToken(padded, now)
+	assert.True(t, ok)
+	assert.Equal(t, "pad", sub)
+	sub, _, ok = subjectFromToken("hdr.payload.", now)
+	assert.True(t, ok)
+	assert.Equal(t, "hdr.payload.", sub)
 	_, _, ok = subjectFromToken("eyJhbGciOiJub25lIn0.!!!.sig", now)
 	assert.False(t, ok)
 }
