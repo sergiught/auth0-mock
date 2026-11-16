@@ -88,9 +88,11 @@ func Mount(d Deps) {
 		LoginPage:           d.LoginPage,
 	}
 	d.Router.Method(http.MethodGet, "/authorize", authorizeHandler)
-	loginPage := &LoginPageHandler{Authorize: authorizeHandler}
-	d.Router.Method(http.MethodGet, "/u/login", loginPage)
-	d.Router.Method(http.MethodPost, "/u/login", loginPage)
+	if d.LoginPage {
+		loginPage := &LoginPageHandler{Authorize: authorizeHandler}
+		d.Router.Method(http.MethodGet, "/u/login", loginPage)
+		d.Router.Method(http.MethodPost, "/u/login", loginPage)
+	}
 	userInfo := &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions}
 	d.Router.Method(http.MethodGet, "/userinfo", userInfo)
 	d.Router.Method(http.MethodPost, "/userinfo", userInfo)

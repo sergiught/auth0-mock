@@ -77,6 +77,11 @@ func TestLoginPage_OffUnchanged(t *testing.T) {
 	assert.Equal(t, "s1", loc.Query().Get("state"))
 }
 
+func TestLoginPage_OffNotMounted(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, false)
+	assert.Equal(t, http.StatusNotFound, getLoginPage(r, "x").Code)
+}
+
 func TestLoginPage_RedirectsWhenLoggedOut(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, true)
 	w := loginPageAuthorize(r, nil, nil)
@@ -305,6 +310,7 @@ func TestLoginPage_Organization(t *testing.T) {
 	off, _, _, _ := newLoginPageRouter(t, false)
 	auto, _ := loginExchange(t, off, redirectCode(t, loginPageAuthorize(off, nil, codeQuery(url.Values{"organization": {"acme"}}))))
 	assert.Equal(t, "acme", viaPage["org_name"])
+	assert.NotEmpty(t, viaPage["org_id"])
 	assert.Equal(t, auto["org_id"], viaPage["org_id"])
 	assert.Equal(t, auto["org_name"], viaPage["org_name"])
 }
