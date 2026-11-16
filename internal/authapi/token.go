@@ -57,6 +57,8 @@ type TokenHandler struct {
 	// is remembered per subject so /userinfo can return it, and each refresh
 	// token's grant is remembered so refreshes keep the same user.
 	Sessions *session.Store
+	// Devices holds the device authorization entries of /oauth/device/code.
+	Devices *session.Store
 	// Strict makes the authorization_code grant fail with 403 invalid_grant
 	// when the code is unknown, used or expired, or when redirect_uri or
 	// client_id differ from the /authorize request. It also omits

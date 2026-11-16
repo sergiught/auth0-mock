@@ -33,6 +33,7 @@ func TestDiscovery_PublishesIssuerAndEndpoints(t *testing.T) {
 
 	algs, _ := doc["id_token_signing_alg_values_supported"].([]any)
 	assert.Contains(t, algs, "RS256")
+	assert.Equal(t, "https://mock/oauth/device/code", doc["device_authorization_endpoint"])
 }
 
 func TestDiscovery_AdvertisesPKCEMethodsAndClaims(t *testing.T) {
@@ -46,7 +47,8 @@ func TestDiscovery_AdvertisesPKCEMethodsAndClaims(t *testing.T) {
 	assert.Equal(t, []any{"S256", "plain"}, doc["code_challenge_methods_supported"])
 	assert.Equal(t, []any{"query", "fragment", "form_post"}, doc["response_modes_supported"])
 	assert.Equal(t, []any{"aud", "auth_time", "azp", "email", "email_verified", "exp", "iat", "iss", "name", "nickname", "nonce", "phone_number", "phone_number_verified", "picture", "sub"}, doc["claims_supported"])
-	assert.Equal(t, discoveryGrantTypes, doc["grant_types_supported"])
+	// The device grant joins discoveryGrantTypes once /oauth/token serves it.
+	assert.Equal(t, append(append([]any{}, discoveryGrantTypes...), grantDeviceCode), doc["grant_types_supported"])
 	assert.Equal(t, []any{"client_secret_basic", "client_secret_post", "none"}, doc["token_endpoint_auth_methods_supported"])
 }
 
