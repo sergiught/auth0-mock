@@ -204,6 +204,8 @@ paths:
         - { name: code_challenge,       in: query, required: false, schema: { type: string } }
         - { name: code_challenge_method,in: query, required: false, schema: { type: string, enum: [S256, plain] } }
         - { name: response_mode,       in: query, required: false, schema: { type: string, enum: [query, fragment, form_post, web_message] } }
+        - { name: organization,        in: query, required: false, description: "Organization id (`org_...`) or name. Adds `org_id`, and `org_name` for a name, to the tokens.", schema: { type: string } }
+        - { name: invitation,          in: query, required: false, description: "Accepted and ignored; the login completes as if the invitation was accepted.", schema: { type: string } }
         - { name: prompt,              in: query, required: false, description: "`none` answers from the session cookie or returns `login_required`; `login` ignores the session. Other values are ignored.", schema: { type: string } }
       responses:
         "302":
@@ -493,6 +495,7 @@ components:
         oob_code:      { type: string }
         binding_code:  { type: string }
         recovery_code: { type: string }
+        organization:  { type: string, description: "client_credentials only; other grants ignore it." }
     MFAChallengeRequest:
       type: object
       required: [mfa_token]

@@ -456,6 +456,7 @@ func parseTokenBody(r *http.Request) (*tokenRequest, error) {
 		RedirectURI:  r.PostForm.Get("redirect_uri"),
 		CodeVerifier: r.PostForm.Get("code_verifier"),
 		Realm:        r.PostForm.Get("realm"),
+		Organization: r.PostForm.Get("organization"),
 		MFAToken:     r.PostForm.Get("mfa_token"),
 		OTP:          r.PostForm.Get("otp"),
 		OOBCode:      r.PostForm.Get("oob_code"),
@@ -506,13 +507,15 @@ func (h *TokenHandler) respondClientCredentials(w http.ResponseWriter, r *http.R
 		return
 	}
 	scope := h.clientCredentialsScope(aud, req.Scope)
+	accessBase := map[string]any{"gty": "client-credentials", "azp": req.ClientID}
+	resolveOrganization(req.Organization).addClaims(accessBase)
 	access, err := h.Keys.Mint(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  req.ClientID + "@clients",
 		Audience: []string{aud},
 		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "client-credentials", "azp": req.ClientID}, aud, req.Params),
+		Extra:    h.augmentExtra(accessBase, aud, req.Params),
 	})
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -676,13 +679,16 @@ func (h *TokenHandler) mintRefreshGrant(w http.ResponseWriter, r *http.Request, 
 	if clientID == "" {
 		clientID = grant.ClientID
 	}
+	org := organization{ID: grant.OrgID, Name: grant.OrgName}
+	accessBase := map[string]any{"gty": "refresh-token", "azp": clientID}
+	org.addClaims(accessBase)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  grant.Subject,
 		Audience: []string{aud},
 		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "refresh-token", "azp": clientID}, aud, req.Params),
+		Extra:    h.augmentExtra(accessBase, aud, req.Params),
 	}, clientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -693,6 +699,7 @@ func (h *TokenHandler) mintRefreshGrant(w http.ResponseWriter, r *http.Request, 
 		idExtra = deriveProfile(grant.Subject)
 	}
 	idExtra["azp"] = clientID
+	org.addClaims(idExtra)
 	idExtra["auth_time"] = grant.AuthTime.Unix()
 	if grant.Realm != "" {
 		idExtra["connection"] = grant.Realm
@@ -794,13 +801,17 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 		subject = entry.LoginHint
 	}
 	aud, scope := codeAudienceScope(entry, aud, req.Scope, h.Strict && hasEntry)
+	// A zero entry (no stored code) has no organization.
+	org := organization{ID: entry.OrgID, Name: entry.OrgName}
+	accessBase := map[string]any{"gty": "authorization-code", "azp": req.ClientID}
+	org.addClaims(accessBase)
 	access, err := h.mintAccess(jwks.MintOpts{
 		Issuer:   h.Keys.IssuerFor(r),
 		Subject:  subject,
 		Audience: []string{aud},
 		Scope:    scope,
 		TTL:      h.Keys.Cfg().AccessTokenTTL,
-		Extra:    h.augmentExtra(map[string]any{"gty": "authorization-code", "azp": req.ClientID}, aud, req.Params),
+		Extra:    h.augmentExtra(accessBase, aud, req.Params),
 	}, req.ClientID)
 	if err != nil {
 		httperr.WriteAuth(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -808,6 +819,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	}
 	idExtra := deriveProfile(subject)
 	idExtra["azp"] = req.ClientID
+	org.addClaims(idExtra)
 	authTime := h.Keys.Cfg().Now()
 	if hasEntry {
 		authTime = entry.AuthTime
@@ -831,7 +843,7 @@ func (h *TokenHandler) respondAuthorizationCode(w http.ResponseWriter, r *http.R
 	render.JSON(w, r, tokenResponse{
 		AccessToken:  access,
 		IDToken:      id,
-		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, AuthTime: authTime}, idExtra),
+		RefreshToken: h.offlineRefreshToken(session.Grant{Subject: subject, ClientID: req.ClientID, Audience: aud, Scope: scope, OrgID: org.ID, OrgName: org.Name, AuthTime: authTime}, idExtra),
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(h.Keys.Cfg().AccessTokenTTL.Seconds()),
 		Scope:        scope,

@@ -15,6 +15,7 @@ type tokenRequest struct {
 	RedirectURI  string `json:"redirect_uri" form:"redirect_uri"`
 	CodeVerifier string `json:"code_verifier" form:"code_verifier"`
 	Realm        string `json:"realm" form:"realm"`
+	Organization string `json:"organization" form:"organization"`
 	MFAToken     string `json:"mfa_token" form:"mfa_token"`
 	OTP          string `json:"otp" form:"otp"`
 	OOBCode      string `json:"oob_code" form:"oob_code"`

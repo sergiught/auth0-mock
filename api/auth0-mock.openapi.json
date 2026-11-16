@@ -70319,6 +70319,10 @@
           "oob_code": {
             "type": "string"
           },
+          "organization": {
+            "description": "client_credentials only; other grants ignore it.",
+            "type": "string"
+          },
           "otp": {
             "type": "string"
           },
@@ -115508,6 +115512,22 @@
                 "form_post",
                 "web_message"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Organization id (`org_...`) or name. Adds `org_id`, and `org_name` for a name, to the tokens.",
+            "in": "query",
+            "name": "organization",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Accepted and ignored; the login completes as if the invitation was accepted.",
+            "in": "query",
+            "name": "invitation",
+            "schema": {
               "type": "string"
             }
           },
