@@ -147,7 +147,7 @@ The form fields to drive:
 | Password | `#password` (`name=password`) |
 | Submit | `button[name=action]` (`value=default`) |
 
-Playwright:
+Playwright, for a fresh browser context (with an existing session the login form does not show, so skip the `#username` and `#password` steps):
 
 ```js
 await page.goto('https://my-app.test/login'); // redirects to the mock's login page
@@ -185,7 +185,7 @@ curl -s -X POST http://localhost:8080/oauth/device/code \
   -d client_id=abc -d scope='openid profile' -d audience=https://api.example.com
 ```
 
-The answer has `device_code`, `user_code` (like `BCDF-GHJK`), `verification_uri` (`<issuer>activate`), `verification_uri_complete` (the same with `?user_code=...`), `expires_in` (`900`) and `interval` (`5`). The mock does not make you wait for the interval.
+The answer has `device_code`, `user_code` (like `BCDF-GHJK`), `verification_uri` (`<issuer>/activate`), `verification_uri_complete` (the same with `?user_code=...`), `expires_in` (`900`) and `interval` (`5`). The mock does not make you wait for the interval.
 
 Poll with the `device_code`:
 
@@ -208,7 +208,7 @@ With `LOGIN_PAGE=true`, the code starts pending and the poll answers `authorizat
 3. If the browser has no session, a login form shows. Any email and password works, as on the login page.
 4. A confirm screen shows the user code. Confirm or cancel.
 
-The next poll returns tokens for the email you typed, or `access_denied` after a cancel.
+If the browser already has a login session, the login step is skipped and the code is confirmed for that user. The next poll returns tokens for the email you typed (or the session user), or `access_denied` after a cancel.
 
 | Step | Selector |
 |---|---|
@@ -219,7 +219,7 @@ The next poll returns tokens for the email you typed, or `access_denied` after a
 | Confirm | `button[name=action][value=confirm]` |
 | Cancel | `button[name=action][value=cancel]` |
 
-Playwright:
+Playwright, for a fresh browser context (with an existing session the login form does not show, so skip the `#username` and `#password` steps):
 
 ```js
 await page.goto(verificationUriComplete);

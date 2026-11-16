@@ -296,6 +296,14 @@ paths:
                 client_id: { type: string }
                 scope:     { type: string }
                 audience:  { type: string }
+          application/json:
+            schema:
+              type: object
+              required: [client_id]
+              properties:
+                client_id: { type: string }
+                scope:     { type: string }
+                audience:  { type: string }
       responses:
         "200":
           description: Device code issued.
