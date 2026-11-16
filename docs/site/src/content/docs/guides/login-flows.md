@@ -174,6 +174,83 @@ A rule must match on `username` to fail on the page. A rule that matches only `/
 
 Browsers can't send the namespace header on a page navigation, so use the path prefix: point your app at `/ns/<id>/` (for example `http://localhost:8080/ns/test-42/`). The login page then stays inside that namespace. See [Parallel tests](/auth0-mock/guides/parallel-tests/).
 
+## Test a device login
+
+The device flow (RFC 8628) logs in a device that has no browser, such as a TV or a CLI. The device asks for a code, shows a short user code, and polls for tokens. The user types the code on another screen.
+
+Ask for a code:
+
+```bash
+curl -s -X POST http://localhost:8080/oauth/device/code \
+  -d client_id=abc -d scope='openid profile' -d audience=https://api.example.com
+```
+
+The answer has `device_code`, `user_code` (like `BCDF-GHJK`), `verification_uri` (`<issuer>activate`), `verification_uri_complete` (the same with `?user_code=...`), `expires_in` (`900`) and `interval` (`5`). The mock does not make you wait for the interval.
+
+Poll with the `device_code`:
+
+```bash
+curl -s -X POST http://localhost:8080/oauth/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+  -d client_id=abc -d device_code=<device_code>
+```
+
+### With the page off
+
+This is the default. The code is already approved, so the first poll returns tokens for `auth0|mock-user`. Nothing else is needed. `/activate` does not exist in this mode.
+
+### With the page on
+
+With `LOGIN_PAGE=true`, the code starts pending and the poll answers `authorization_pending`. `/activate` is mounted, and a person (or a browser test) approves the code there:
+
+1. Open `/activate`, or the `verification_uri_complete` to have the code filled in.
+2. Type the user code and continue. Case, spaces and the dash do not matter.
+3. If the browser has no session, a login form shows. Any email and password works, as on the login page.
+4. A confirm screen shows the user code. Confirm or cancel.
+
+The next poll returns tokens for the email you typed, or `access_denied` after a cancel.
+
+| Step | Selector |
+|---|---|
+| Code | `#code` (`name=code`) |
+| Continue | `button[name=action][value=default]` |
+| Email | `#username` |
+| Password | `#password` |
+| Confirm | `button[name=action][value=confirm]` |
+| Cancel | `button[name=action][value=cancel]` |
+
+Playwright:
+
+```js
+await page.goto(verificationUriComplete);
+await page.click('button[name=action][value=default]');
+await page.fill('#username', 'jane@example.com');
+await page.fill('#password', 'x');
+await page.click('button[name=action][value=default]');
+await page.click('button[name=action][value=confirm]');
+```
+
+The pages show "Activate your device", "Device Confirmation", then "Congratulations, you're all set!" (or "Device activation cancelled"). A bad code or step gives status `400` and "Invalid or expired code". Empty fields and failure rules on `username` behave as on the login page.
+
+### What a poll returns
+
+| Case | Status | `error` |
+|---|---|---|
+| No `device_code` | 400 | `invalid_request` |
+| Unknown, already used, or already reported as expired | 403 | `invalid_grant` |
+| `client_id` is not the one that asked for the code | 403 | `invalid_grant` |
+| Expired (first poll after the 900 seconds on the mock clock) | 403 | `expired_token` |
+| Cancelled | 403 | `access_denied` |
+| Not approved yet | 403 | `authorization_pending` |
+| Approved | 200 | tokens |
+
+An approved code works once. The tokens match the authorization code grant (access, id and refresh tokens, with the `audience` and `scope` from the code request), but the access token has no `gty` claim.
+
+### Not mocked
+
+- `slow_down`: polling faster than `interval` is fine.
+- Choosing the user with the page off: it is always `auth0|mock-user`. Turn the page on to pick one.
+
 ## Test silent login
 
 The mock keeps a real login session. A successful `/authorize` sets an `auth0` cookie, and a later `prompt=none` request answers from it. With no session the answer is `login_required`. This is the flow `getTokenSilently` in auth0-spa-js uses:

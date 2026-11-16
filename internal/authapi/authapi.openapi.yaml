@@ -20,7 +20,9 @@ paths:
         `http://auth0.com/oauth/grant-type/password-realm`, the MFA
         step-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`), and
         `urn:ietf:params:oauth:grant-type:token-exchange` (the subject token
-        names the user; its signature is not checked).
+        names the user; its signature is not checked), and
+        `urn:ietf:params:oauth:grant-type:device_code` (poll with the
+        `device_code` from `/oauth/device/code`).
       requestBody:
         required: true
         content:
@@ -48,7 +50,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthError" }
         "403":
-          description: MFA required, or access_denied for client_credentials with no audience and no default audience configured.
+          description: MFA required, access_denied for client_credentials with no audience and no default audience configured, or a device_code poll that is not done yet (`authorization_pending`, `access_denied`, `expired_token`, `invalid_grant`).
           content:
             application/json:
               schema:
@@ -271,6 +273,89 @@ paths:
               schema: { type: string }
         "400":
           description: Unknown or expired `state`, an empty field, or a failure rule; the form is shown again with the error.
+          content:
+            text/html:
+              schema: { type: string }
+  /oauth/device/code:
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: Start a device login (RFC 8628).
+      description: >-
+        Returns a device code to poll `/oauth/token` with and a user code to
+        type at `/activate`. With `LOGIN_PAGE` off, the code is already
+        approved for `auth0|mock-user`. With it on, the code is pending until
+        someone confirms it at `/activate`.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [client_id]
+              properties:
+                client_id: { type: string }
+                scope:     { type: string }
+                audience:  { type: string }
+      responses:
+        "200":
+          description: Device code issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_code:              { type: string }
+                  user_code:                { type: string, example: "BCDF-GHJK" }
+                  verification_uri:         { type: string }
+                  verification_uri_complete: { type: string }
+                  expires_in:               { type: integer, example: 900 }
+                  interval:                 { type: integer, example: 5 }
+        "400":
+          description: Missing `client_id`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+  /activate:
+    get:
+      tags: ["OAuth & OIDC"]
+      summary: Show the device activation page (only with `LOGIN_PAGE` on).
+      parameters:
+        - { name: user_code, in: query, required: false, description: "Prefills the code field.", schema: { type: string } }
+      responses:
+        "200":
+          description: The code form (`#code` and a submit button named `action`).
+          content:
+            text/html:
+              schema: { type: string }
+    post:
+      tags: ["OAuth & OIDC"]
+      summary: Run a step of the device activation (only with `LOGIN_PAGE` on).
+      description: >-
+        Without `state`, `code` is the user code and the answer is the login
+        form (or the confirm screen if the browser has a live session).
+        With `state` and `action=default`, `username` and `password` log in
+        and the answer is the confirm screen. With `state` and
+        `action=confirm` or `cancel`, the device is approved or denied.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                code:     { type: string }
+                state:    { type: string }
+                username: { type: string }
+                password: { type: string }
+                action:   { type: string, enum: [default, confirm, cancel] }
+      responses:
+        "200":
+          description: The next page, or the "you're all set" or "cancelled" page.
+          content:
+            text/html:
+              schema: { type: string }
+        "400":
+          description: Unknown or expired code or step, an empty field, or a failure rule; the page shows the error.
           content:
             text/html:
               schema: { type: string }
@@ -541,6 +626,7 @@ components:
         password:      { type: string }
         realm:         { type: string }
         refresh_token: { type: string }
+        device_code:   { type: string, description: "device_code grant only. The `device_code` from `/oauth/device/code`." }
         code:          { type: string }
         code_verifier: { type: string }
         redirect_uri:  { type: string }
