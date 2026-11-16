@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"maps"
+	"net/url"
 	"slices"
 	"sync"
 	"time"
@@ -31,6 +32,15 @@ type Store struct {
 
 	logins     map[string]Login
 	loginOrder []string // Login ids in insertion order, oldest first.
+
+	pending      map[string]pendingLogin
+	pendingOrder []string // Pending login ids in insertion order, oldest first.
+}
+
+// pendingLogin is an /authorize query waiting for the login page to be filled in.
+type pendingLogin struct {
+	query   url.Values
+	expires time.Time
 }
 
 // Login is a mock login session: who signed in and when, kept server-side
@@ -58,7 +68,7 @@ type Grant struct {
 
 // NewStore returns an empty Store.
 func NewStore() *Store {
-	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]refreshEntry{}, access: map[string]Access{}, logins: map[string]Login{}}
+	return &Store{profiles: map[string]map[string]any{}, refresh: map[string]refreshEntry{}, access: map[string]Access{}, logins: map[string]Login{}, pending: map[string]pendingLogin{}}
 }
 
 // RememberProfile stores a copy of profile for subject; last write wins.
@@ -98,6 +108,8 @@ func (s *Store) Clear() {
 	s.accessOrder = nil
 	s.logins = map[string]Login{}
 	s.loginOrder = nil
+	s.pending = map[string]pendingLogin{}
+	s.pendingOrder = nil
 }
 
 // refreshEntry is a stored refresh token: its grant, the chain it belongs to
@@ -276,4 +288,53 @@ func (s *Store) EndLogin(id string) {
 	if i := slices.Index(s.loginOrder, id); i >= 0 {
 		s.loginOrder = slices.Delete(s.loginOrder, i, i+1)
 	}
+}
+
+// StartPending stores a copy of an /authorize query that is waiting for the
+// login page and returns its random id. It is bounded by MaxEntries like the
+// other maps, evicting oldest first.
+func (s *Store) StartPending(q url.Values, expires time.Time) string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	id := base64.RawURLEncoding.EncodeToString(b)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.pendingOrder) >= MaxEntries {
+		delete(s.pending, s.pendingOrder[0])
+		s.pendingOrder = s.pendingOrder[1:]
+	}
+	s.pendingOrder = append(s.pendingOrder, id)
+	s.pending[id] = pendingLogin{query: maps.Clone(q), expires: expires}
+	return id
+}
+
+// Pending returns a copy of the query stored under id, leaving it in place.
+// It reports false when the id is unknown or expired at now.
+func (s *Store) Pending(id string, now time.Time) (url.Values, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pendingLocked(id, now, false)
+}
+
+// TakePending is Pending that also deletes the entry on success.
+func (s *Store) TakePending(id string, now time.Time) (url.Values, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pendingLocked(id, now, true)
+}
+
+// pendingLocked looks up id; the caller holds s.mu.
+func (s *Store) pendingLocked(id string, now time.Time, take bool) (url.Values, bool) {
+	p, ok := s.pending[id]
+	if !ok || !now.Before(p.expires) {
+		return nil, false
+	}
+	if take {
+		delete(s.pending, id)
+		s.pendingOrder = slices.DeleteFunc(s.pendingOrder, func(x string) bool { return x == id })
+	}
+	return maps.Clone(p.query), true
 }

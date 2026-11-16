@@ -251,6 +251,21 @@ func TestLoad_TokenEndpointStrict_FromEnv(t *testing.T) {
 	assert.True(t, spec.TokenEndpointStrict)
 }
 
+func TestLoad_LoginPage_DefaultsToFalse(t *testing.T) {
+	clearEnv(t)
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.False(t, spec.LoginPage)
+}
+
+func TestLoad_LoginPage_FromEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("LOGIN_PAGE", "true")
+	spec, err := Load()
+	require.NoError(t, err)
+	assert.True(t, spec.LoginPage)
+}
+
 func TestLoad_NamespaceMax(t *testing.T) {
 	clearEnv(t)
 	spec, err := Load()

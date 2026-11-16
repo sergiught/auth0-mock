@@ -128,6 +128,7 @@ func run() error {
 		CORSAllowedOrigins:           cfg.CORSAllowedOrigins,
 		BearerRequireAudience:        cfg.BearerRequireAudience,
 		TokenEndpointStrict:          cfg.TokenEndpointStrict,
+		LoginPage:                    cfg.LoginPage,
 		NamespaceMax:                 cfg.NamespaceMax,
 		BearerRequireScopes:          cfg.BearerRequireScopes,
 		Debug:                        cfg.Debug,

@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -343,4 +344,32 @@ func TestClear_ForgetsChains(t *testing.T) {
 		_, res := s.RedeemRefresh(tok, "demo")
 		assert.Equal(t, RedeemUnknown, res, tok)
 	}
+}
+
+func TestPendingLogins(t *testing.T) {
+	s := NewStore()
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	exp := now.Add(10 * time.Minute)
+	id := s.StartPending(url.Values{"client_id": {"app"}}, exp)
+
+	got, ok := s.Pending(id, now)
+	assert.True(t, ok)
+	got.Set("client_id", "mutated")
+	again, ok := s.Pending(id, now)
+	assert.True(t, ok)
+	assert.Equal(t, "app", again.Get("client_id"))
+
+	_, ok = s.Pending(id, exp)
+	assert.False(t, ok)
+
+	taken, ok := s.TakePending(id, now)
+	assert.True(t, ok)
+	assert.Equal(t, "app", taken.Get("client_id"))
+	_, ok = s.TakePending(id, now)
+	assert.False(t, ok)
+
+	id = s.StartPending(url.Values{"a": {"b"}}, exp)
+	s.Clear()
+	_, ok = s.Pending(id, now)
+	assert.False(t, ok)
 }
