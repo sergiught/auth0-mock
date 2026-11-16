@@ -40,6 +40,10 @@ type AuthorizeHandler struct {
 	// Sessions holds the login sessions behind the auth0 cookie; nil means no
 	// sessions, so prompt=none always answers login_required.
 	Sessions *session.Store
+
+	// LoginPage sends logged-out requests to the /u/login page instead of
+	// approving them on the spot. Needs Sessions to hold the pending login.
+	LoginPage bool
 }
 
 // responseTypes is the parsed response_type set.
@@ -80,17 +84,9 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	state := q.Get("state")
 	responseType := q.Get("response_type")
-	rt, validType := parseResponseTypes(responseType)
-	// Anything other than exactly {code} defaults to fragment delivery.
-	fragmentDefault := rt.token || rt.idToken
-
-	u, ok := h.vetRedirect(w, redirect)
+	u, mode, rt, validType, ok := h.target(w, q)
 	if !ok {
 		return
-	}
-	mode := resolveMode(q.Get("response_mode"), fragmentDefault)
-	if !modeCanDeliver(mode, u) {
-		mode = resolveMode("", fragmentDefault)
 	}
 
 	// Reject unservable requests before anything is minted or recorded.
@@ -109,12 +105,66 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.needsLoginPage(r, q) {
+		id := h.Sessions.StartPending(q, h.now().Add(pendingLoginTTL))
+		// Set by hand: http.Redirect would make the relative Location absolute.
+		w.Header().Set("Location", loginPagePath+"?state="+url.QueryEscape(id))
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+
 	subject, authTime, reuse, ok := h.resolveLogin(r, q)
 	if !ok {
 		deliver(w, u, mode, errorParams("login_required", "Login required", state))
 		return
 	}
 
+	h.finish(w, r, u, mode, q, rt, state, subject, authTime, reuse)
+}
+
+// target builds the redirect URL, delivery mode and response types for a
+// request's query. It writes the 400 itself when the redirect_uri is unusable.
+// ServeHTTP and the login page POST both use it so they cannot drift.
+func (h *AuthorizeHandler) target(w http.ResponseWriter, q url.Values) (u *url.URL, mode string, rt responseTypes, validType, ok bool) {
+	rt, validType = parseResponseTypes(q.Get("response_type"))
+	// Anything other than exactly {code} defaults to fragment delivery.
+	fragmentDefault := rt.token || rt.idToken
+
+	u, ok = h.vetRedirect(w, q.Get("redirect_uri"))
+	if !ok {
+		return nil, "", rt, validType, false
+	}
+	mode = resolveMode(q.Get("response_mode"), fragmentDefault)
+	if !modeCanDeliver(mode, u) {
+		mode = resolveMode("", fragmentDefault)
+	}
+	return u, mode, rt, validType, true
+}
+
+// needsLoginPage reports whether the request must go through the login page:
+// the page is on, the request is not prompt=none, and there is no live
+// session that can be reused (a live session is reused unless prompt=login or
+// a login_hint names someone else).
+func (h *AuthorizeHandler) needsLoginPage(r *http.Request, q url.Values) bool {
+	if !h.LoginPage || h.Sessions == nil {
+		return false
+	}
+	prompts := strings.Fields(q.Get("prompt"))
+	if slices.Contains(prompts, "none") {
+		return false
+	}
+	_, login, live := currentLogin(r, h.Sessions)
+	if !live || slices.Contains(prompts, "login") {
+		return true
+	}
+	hint := q.Get("login_hint")
+	return hint != "" && hint != login.Subject
+}
+
+// finish issues the response for subject, starts a session unless the live one
+// is reused, and delivers. Auto-approve and the login page both end here so
+// they cannot drift.
+func (h *AuthorizeHandler) finish(w http.ResponseWriter, r *http.Request, u *url.URL, mode string, q url.Values, rt responseTypes, state, subject string, authTime time.Time, reuse bool) {
 	params, ok := h.issue(w, r, u, mode, q, rt, state, subject, authTime)
 	if !ok {
 		return

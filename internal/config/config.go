@@ -114,6 +114,12 @@ type Specification struct {
 	// codes freely.
 	TokenEndpointStrict bool `env:"TOKEN_ENDPOINT_STRICT"`
 
+	// LoginPage makes /authorize send logged-out browsers to an Auth0-style
+	// login form at /u/login instead of approving the login on the spot.
+	// Submitting the form logs in as the typed email. Off (default) keeps
+	// the instant auto-approve.
+	LoginPage bool `env:"LOGIN_PAGE"`
+
 	// BearerRequireScopes makes the Mgmt-API bearer check enforce token
 	// scopes as Auth0 does: a token carrying none of the scopes an
 	// operation lists gets 403 insufficient_scope. On by default;

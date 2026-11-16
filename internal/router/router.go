@@ -79,6 +79,10 @@ type Deps struct {
 	// refresh tokens and makes /oauth/revoke end the chain. Opt-in; see
 	// config.Config.TokenEndpointStrict.
 	TokenEndpointStrict bool
+
+	// LoginPage turns on the /u/login page for logged-out /authorize requests.
+	// Opt-in; config.Config.LoginPage.
+	LoginPage bool
 	// BearerRequireScopes makes the Mgmt-API enforce each operation's
 	// required token scopes (403 insufficient_scope).
 	BearerRequireScopes bool
@@ -280,6 +284,7 @@ func build(d Deps) (http.Handler, *events.Hub, error) {
 		DefaultAudience:              d.DefaultAudience,
 		ManagementScopes:             d.Spec.ManagementScopes(),
 		TokenEndpointStrict:          d.TokenEndpointStrict,
+		LoginPage:                    d.LoginPage,
 		Log:                          d.Log,
 		Claims:                       d.Claims,
 		ClaimMappings:                d.ClaimMappings,

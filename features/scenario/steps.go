@@ -43,6 +43,11 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return nil
 	})
 
+	sc.Step(`^the mock is running with LOGIN_PAGE$`, func() error {
+		c.RestartLoginPage()
+		return nil
+	})
+
 	sc.Step(`^the mock is running with seed file:$`, func(body *godog.DocString) error {
 		return c.RestartWithSeed(body.Content)
 	})
@@ -276,20 +281,32 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 
 	// Same as the form step, with each {{name}} replaced by a saved value.
 	sc.Step(`^I post to "([^"]+)" with form body using saved values:$`, func(path string, body *godog.DocString) error {
-		content := body.Content
-		var missing string
-		content = savedPlaceholder.ReplaceAllStringFunc(content, func(m string) string {
-			name := savedPlaceholder.FindStringSubmatch(m)[1]
-			v, ok := c.SavedValues[name]
-			if !ok && missing == "" {
-				missing = name
-			}
-			return v
-		})
-		if missing != "" {
-			return fmt.Errorf("no saved value named %q", missing)
+		path, err := c.expandSaved(path)
+		if err != nil {
+			return err
+		}
+		content, err := c.expandSaved(body.Content)
+		if err != nil {
+			return err
 		}
 		c.DoForm("POST", path, parseFormDocString(content), false)
+		return nil
+	})
+
+	sc.Step(`^the response body has a form field named "([^"]+)"$`, func(name string) error {
+		if !bytes.Contains(c.LastBody, []byte(`name="`+name+`"`)) {
+			return fmt.Errorf("no form field %q in body:\n%s", name, c.LastBody)
+		}
+		return nil
+	})
+
+	// GET a path in which each {{name}} is replaced by a saved value.
+	sc.Step(`^I get "([^"]+)" using saved values$`, func(path string) error {
+		path, err := c.expandSaved(path)
+		if err != nil {
+			return err
+		}
+		c.Do("GET", path, "", false)
 		return nil
 	})
 
@@ -302,6 +319,23 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 			c.SavedValues = map[string]string{}
 		}
 		c.SavedValues[name] = code
+		return nil
+	})
+
+	sc.Step(`^I save the login state from the redirect as "([^"]+)"$`, func(name string) error {
+		loc := c.LastResp.Header.Get("Location")
+		u, err := url.Parse(loc)
+		if err != nil {
+			return fmt.Errorf("parse Location: %w", err)
+		}
+		state := u.Query().Get("state")
+		if state == "" {
+			return fmt.Errorf("location %q has no state param", loc)
+		}
+		if c.SavedValues == nil {
+			c.SavedValues = map[string]string{}
+		}
+		c.SavedValues[name] = state
 		return nil
 	})
 
@@ -1085,6 +1119,23 @@ func nestedExpectationBody(target, nestedJSON string) (string, error) {
 
 // savedPlaceholder matches {{name}} in a doc string.
 var savedPlaceholder = regexp.MustCompile(`\{\{([^}]+)\}\}`)
+
+// expandSaved replaces each {{name}} in s with its saved value.
+func (c *Context) expandSaved(s string) (string, error) {
+	var missing string
+	s = savedPlaceholder.ReplaceAllStringFunc(s, func(m string) string {
+		name := savedPlaceholder.FindStringSubmatch(m)[1]
+		v, ok := c.SavedValues[name]
+		if !ok && missing == "" {
+			missing = name
+		}
+		return v
+	})
+	if missing != "" {
+		return "", fmt.Errorf("no saved value named %q", missing)
+	}
+	return s, nil
+}
 
 // parseFormDocString reads a DocString of "key=value" lines into form values.
 func parseFormDocString(content string) url.Values {

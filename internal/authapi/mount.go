@@ -46,11 +46,15 @@ type Deps struct {
 	// refresh tokens and makes /oauth/revoke end the chain (see
 	// TokenHandler.Strict).
 	TokenEndpointStrict bool
+
+	// LoginPage sends logged-out /authorize requests to /u/login. Like
+	// TokenEndpointStrict it makes Mount create Sessions when nil.
+	LoginPage bool
 }
 
 // Mount registers all Auth API endpoints on d.Router.
 func Mount(d Deps) {
-	if d.TokenEndpointStrict && d.Sessions == nil {
+	if (d.TokenEndpointStrict || d.LoginPage) && d.Sessions == nil {
 		// Strict refresh tokens are only valid once stored, so strict mode
 		// needs a session store to issue usable ones.
 		d.Sessions = session.NewStore()
@@ -75,13 +79,20 @@ func Mount(d Deps) {
 	authenticators := &MFAAuthenticatorsHandler{MFA: d.MFA, Keys: d.Keys}
 	d.Router.Get("/mfa/authenticators", authenticators.List)
 	d.Router.Delete("/mfa/authenticators/{id}", authenticators.Delete)
-	d.Router.Method(http.MethodGet, "/authorize", &AuthorizeHandler{
+	authorizeHandler := &AuthorizeHandler{
 		PKCE:                d.PKCE,
 		AllowedRedirectURIs: d.AuthorizeAllowedRedirectURIs,
 		Errors:              d.AuthorizeErrors,
 		Token:               tok,
 		Sessions:            d.Sessions,
-	})
+		LoginPage:           d.LoginPage,
+	}
+	d.Router.Method(http.MethodGet, "/authorize", authorizeHandler)
+	if d.LoginPage {
+		loginPage := &LoginPageHandler{Authorize: authorizeHandler}
+		d.Router.Method(http.MethodGet, "/u/login", loginPage)
+		d.Router.Method(http.MethodPost, "/u/login", loginPage)
+	}
 	userInfo := &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions}
 	d.Router.Method(http.MethodGet, "/userinfo", userInfo)
 	d.Router.Method(http.MethodPost, "/userinfo", userInfo)

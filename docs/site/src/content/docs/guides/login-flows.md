@@ -127,6 +127,53 @@ Other descriptions are `Missing required parameter: subject_token`, `Missing req
 
 Send `organization` to add `org_id` (and `org_name` for a name) to the tokens, as for `client_credentials`: `organization=acme` gives `org_name` `acme` and `org_id` `org_822b33ad87c148a0`. This is the way to get an organization onto a login with no browser. See [Organizations](#organizations).
 
+## Test the login page
+
+By default `/authorize` signs in at once, with no page. To test a browser flow that fills in a login form, turn the page on:
+
+```bash
+docker run --rm -p 8080:8080 -e LOGIN_PAGE=true ghcr.io/sergiught/auth0-mock:latest
+```
+
+With `LOGIN_PAGE=true`, a logged-out `/authorize` answers `302` to `u/login?state=<id>`. That is also the case with `prompt=login` or a `login_hint` that differs from the session user. `prompt=none` and requests with a live session work as before.
+
+The page takes **any email and password**, because the mock stores no users. The login completes as the email you typed (it becomes the `sub`), then goes on to your `redirect_uri` as `/authorize` does, including `form_post` and `web_message`. Empty fields show "Email is required" or "Password is required". Claim mappings and failure rules see the original `/authorize` query, so a mapping keyed on `login_hint` won't see the typed email.
+
+The form fields to drive:
+
+| Field | Selector |
+|---|---|
+| Email | `#username` (`name=username`) |
+| Password | `#password` (`name=password`) |
+| Submit | `button[name=action]` (`value=default`) |
+
+Playwright:
+
+```js
+await page.goto('https://my-app.test/login'); // redirects to the mock's login page
+await page.fill('#username', 'jane@example.com');
+await page.fill('#password', 'x');
+await page.click('button[name=action]');
+```
+
+### Fail a login
+
+A failure rule that matches the `/authorize` query, plus `username`, makes the page show an error with status `400` instead of signing in:
+
+```bash
+curl -s -X POST http://localhost:8080/admin0/authorize-errors \
+  -H 'Content-Type: application/json' \
+  -d '{"match":{"username":"blocked@example.com"},"error":"access_denied","error_description":"Account blocked"}'
+```
+
+The page shows the rule's `error_description`, or "Wrong email or password." if the rule has none.
+
+A rule must match on `username` to fail on the page. A rule that matches only `/authorize` query params fires at `/authorize` and returns the OAuth error to the `redirect_uri` before the page is shown.
+
+### Namespaces
+
+Browsers can't send the namespace header on a page navigation, so use the path prefix: point your app at `/ns/<id>/` (for example `http://localhost:8080/ns/test-42/`). The login page then stays inside that namespace. See [Parallel tests](/auth0-mock/guides/parallel-tests/).
+
 ## Test silent login
 
 The mock keeps a real login session. A successful `/authorize` sets an `auth0` cookie, and a later `prompt=none` request answers from it. With no session the answer is `login_required`. This is the flow `getTokenSilently` in auth0-spa-js uses:
