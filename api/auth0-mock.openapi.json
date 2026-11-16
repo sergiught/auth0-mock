@@ -70320,7 +70320,7 @@
             "type": "string"
           },
           "organization": {
-            "description": "client_credentials only; other grants ignore it.",
+            "description": "client_credentials and token-exchange; other grants ignore it.",
             "type": "string"
           },
           "otp": {
@@ -70344,6 +70344,14 @@
           "scope": {
             "type": "string"
           },
+          "subject_token": {
+            "description": "token-exchange only. A JWT (payload read, signature not checked; `sub` is the user) or any string used as the user id.",
+            "type": "string"
+          },
+          "subject_token_type": {
+            "description": "token-exchange only. A `https://` or `urn:` URI outside the reserved auth0, okta and ietf namespaces.",
+            "type": "string"
+          },
           "username": {
             "type": "string"
           }
@@ -70363,6 +70371,11 @@
             "type": "integer"
           },
           "id_token": {
+            "type": "string"
+          },
+          "issued_token_type": {
+            "description": "token-exchange only.",
+            "example": "urn:ietf:params:oauth:token-type:access_token",
             "type": "string"
           },
           "refresh_token": {
@@ -115994,7 +116007,7 @@
     },
     "/oauth/token": {
       "post": {
-        "description": "Supports every grant type the mock implements: `client_credentials`,\n`password`, `refresh_token`, `authorization_code` (with optional PKCE),\n`http://auth0.com/oauth/grant-type/password-realm`, and the MFA\nstep-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`).\n",
+        "description": "Supports every grant type the mock implements: `client_credentials`,\n`password`, `refresh_token`, `authorization_code` (with optional PKCE),\n`http://auth0.com/oauth/grant-type/password-realm`, the MFA\nstep-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`), and\n`urn:ietf:params:oauth:grant-type:token-exchange` (the subject token\nnames the user; its signature is not checked).\n",
         "requestBody": {
           "content": {
             "application/json": {

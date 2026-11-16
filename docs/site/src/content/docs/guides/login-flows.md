@@ -80,7 +80,7 @@ curl -s -o /dev/null -D - 'http://localhost:8080/authorize?client_id=my-app&redi
 - **Id or name.** A value starting with `org_` is an id and is used as is: you get `org_id` only. Any other value is a name, lowercased: you get `org_name` and an `org_id` derived from the name (`acme` becomes `org_822b33ad87c148a0`). The same name always gives the same id, but it will not match the id of an organization in a real tenant. Real Auth0 only accepts names when the "Allow Organization Names in Authentication API" tenant setting is on; the mock always accepts them. A blank value adds nothing.
 - **Which flows.** Code, implicit, hybrid and `prompt=none` on `/authorize`, and `client_credentials` (send `organization` in the form or JSON body). The claims go on the access token, and on the ID token when the flow returns one. Opaque access tokens (no `audience`) carry no claims.
 - **Code exchange and refresh keep the org.** The organization is fixed at `/authorize`. An `organization` sent on the `/oauth/token` code request or on a refresh request is ignored, and every refreshed token keeps the original org, with or without `TOKEN_ENDPOINT_STRICT`.
-- **Password-style grants ignore it.** `password`, password-realm, passwordless and the `mfa-*` grants add no org claims and return no error, since Auth0 does not support Organizations there. Auth0 suggests Custom Token Exchange for that case.
+- **Password-style grants ignore it.** `password`, password-realm, passwordless and the `mfa-*` grants add no org claims and return no error, since Auth0 does not support Organizations there. Use the [token exchange](#token-exchange) grant when you need an organization on an automated login.
 - **`invitation`** is accepted and ignored. The login completes as if the invitation was accepted.
 - **Org claims are overridable.** Global claims and claim mappings can override `org_id` and `org_name` on access tokens, like any other claim. See [Tokens and claims](/auth0-mock/guides/tokens-and-claims/).
 - **Management API routes** for organizations are still stubs; creating an organization there does not register anything for logins.
@@ -94,6 +94,38 @@ curl -s -X POST http://localhost:8080/admin0/authorize-errors \
 ```
 
 Now `/authorize?...&organization=org_abc123&login_hint=bob@example.com` redirects with `error=access_denied`, while the same request for `alice@example.com` logs in. Auth0 does not document the exact error text, so use whatever your app expects.
+
+## Token exchange
+
+The token-exchange grant (`urn:ietf:params:oauth:grant-type:token-exchange`) mints tokens for a user you name, with no password or browser. It is the mock's version of Auth0's Custom Token Exchange. Send a form or JSON body to `/oauth/token`:
+
+- `subject_token` (required): names the user.
+- `subject_token_type` (required): a `https://` or `urn:` URI of your choosing, compared case-insensitively. URIs in the reserved `auth0.com`, `okta.com` (`http://` or `https://`), `urn:ietf`, `urn:auth0` and `urn:okta` namespaces are rejected.
+- `client_id`, `audience`, `scope`, `organization`: as for the other grants. `actor_token` and `requested_token_type` are ignored.
+
+**The subject token is not verified.** If it is a JWT (three non-empty dot-separated parts, header a JSON object), the mock reads the payload and never checks the signature, so any caller can name any user. `sub` is required and becomes the user id; `email`, `email_verified`, `name`, `nickname`, `picture`, `phone_number` and `phone_number_verified` go to the ID token. A JWT whose `exp` is in the past is rejected. Any other string is used whole as the user id, with the profile derived as for the other grants. Org claims inside the subject token are ignored.
+
+```bash
+curl -s -X POST http://localhost:8080/oauth/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange&client_id=demo&subject_token=auth0|jane&subject_token_type=https://example.com/token-types/legacy&audience=https://api.example.com&scope=openid email offline_access'
+# {"access_token":"...","id_token":"...","refresh_token":"...",
+#  "issued_token_type":"urn:ietf:params:oauth:token-type:access_token", ...}
+```
+
+The response has the same shape as a password grant plus `issued_token_type`. The access token carries `gty=token-exchange`. There is no MFA step and no `act` claim. A `refresh_token` follows the usual `offline_access` rules (in [strict mode](#test-strict-token-handling) it needs `offline_access`), and refreshing keeps the organization.
+
+Failures return `400 invalid_request`:
+
+```json
+{"error":"invalid_request","error_description":"Invalid subject token"}
+```
+
+Other descriptions are `Missing required parameter: subject_token`, `Missing required parameter: subject_token_type`, and `subject_token_type must be a https:// or urn: URI outside the reserved auth0, okta and ietf namespaces`. An expired JWT is the easy way to test your failure path.
+
+### Organizations and automated logins
+
+Send `organization` to add `org_id` (and `org_name` for a name) to the tokens, as for `client_credentials`: `organization=acme` gives `org_name` `acme` and `org_id` `org_822b33ad87c148a0`. This is the way to get an organization onto a login with no browser. See [Organizations](#organizations).
 
 ## Test silent login
 
