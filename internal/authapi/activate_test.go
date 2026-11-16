@@ -1,7 +1,6 @@
 package authapi
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,9 +19,10 @@ import (
 
 var stateRe = regexp.MustCompile(`name="state" value="([^"]+)"`)
 
-func startDevice(t *testing.T, r chi.Router) (deviceCode, userCode string) {
+func startDevice(t *testing.T, r chi.Router, form url.Values) (deviceCode, userCode string) {
 	t.Helper()
-	w := postDeviceCode(r, url.Values{"client_id": {"app"}})
+	w := postDeviceCode(r, form)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var body struct {
 		DeviceCode string `json:"device_code"`
 		UserCode   string `json:"user_code"`
@@ -78,7 +78,7 @@ func TestLoginPage_StylesheetIntact(t *testing.T) {
 
 func TestActivate_ConfirmStateWithLoginAction(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, true)
-	dc, uc := startDevice(t, r)
+	dc, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w := activateLogin(t, r, uc)
 	st := stateOf(t, w)
 	w = postActivate(r, nil, url.Values{"state": {st}, "username": {"mallory@example.com"}, "password": {"x"}, "action": {"default"}})
@@ -95,7 +95,7 @@ func TestActivate_GetEscapes(t *testing.T) {
 
 func TestActivate_FullRoundTrip(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, true)
-	dc, uc := startDevice(t, r)
+	dc, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 
 	loose := strings.ToLower(strings.ReplaceAll(uc, "-", ""))
 	w := postActivate(r, nil, url.Values{"code": {loose}, "action": {"default"}})
@@ -119,18 +119,16 @@ func TestActivate_FullRoundTrip(t *testing.T) {
 		IDToken string `json:"id_token"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tok))
-	payload := strings.Split(tok.IDToken, ".")[1]
-	assert.NotEmpty(t, payload)
-	assert.Contains(t, decodeJWTPart(t, payload), `"sub":"jane@example.com"`)
+	assert.Equal(t, "jane@example.com", rawClaims(t, tok.IDToken)["sub"])
 }
 
 func TestActivate_LiveSessionSkipsLogin(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, true)
-	_, uc := startDevice(t, r)
+	_, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w := activateLogin(t, r, uc)
 	cookie := loginCookieOf(t, w)
 
-	dc2, uc2 := startDevice(t, r)
+	dc2, uc2 := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w = postActivate(r, cookie, url.Values{"code": {uc2}, "action": {"default"}})
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Device Confirmation")
@@ -144,12 +142,12 @@ func TestActivate_LiveSessionSkipsLogin(t *testing.T) {
 		IDToken string `json:"id_token"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tok))
-	assert.Contains(t, decodeJWTPart(t, strings.Split(tok.IDToken, ".")[1]), `"sub":"jane@example.com"`)
+	assert.Equal(t, "jane@example.com", rawClaims(t, tok.IDToken)["sub"])
 }
 
 func TestActivate_Cancel(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, true)
-	dc, uc := startDevice(t, r)
+	dc, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w := activateLogin(t, r, uc)
 	w = postActivate(r, nil, url.Values{"state": {stateOf(t, w)}, "action": {"cancel"}})
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -171,7 +169,7 @@ func TestActivate_BadCode(t *testing.T) {
 func TestActivate_EmptyFieldsAndRule(t *testing.T) {
 	r, _, _, errs := newLoginPageRouter(t, true)
 	errs.Add(authorizeerr.Rule{Match: map[string]string{"username": "locked@example.com"}, Error: "access_denied"})
-	_, uc := startDevice(t, r)
+	_, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w := postActivate(r, nil, url.Values{"code": {uc}, "action": {"default"}})
 	st := stateOf(t, w)
 
@@ -195,14 +193,14 @@ func TestActivate_EmptyFieldsAndRule(t *testing.T) {
 
 func TestActivate_StepReplay(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, true)
-	dc, uc := startDevice(t, r)
+	dc, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w := postActivate(r, nil, url.Values{"code": {uc}, "action": {"default"}})
 	st := stateOf(t, w)
 	login := url.Values{"state": {st}, "username": {"jane@example.com"}, "password": {"x"}, "action": {"default"}}
 	assert.Equal(t, http.StatusOK, postActivate(r, nil, login).Code)
 	assert.Equal(t, http.StatusBadRequest, postActivate(r, nil, login).Code)
 
-	dc2, uc2 := startDevice(t, r)
+	dc2, uc2 := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w = postActivate(r, nil, url.Values{"code": {uc2}, "action": {"default"}})
 	w2 := postActivate(r, nil, url.Values{"state": {stateOf(t, w)}, "action": {"confirm"}})
 	assert.Equal(t, http.StatusBadRequest, w2.Code)
@@ -215,7 +213,7 @@ func TestActivate_StepReplay(t *testing.T) {
 
 func TestActivate_ExpiresMidway(t *testing.T) {
 	r, _, clk, _ := newLoginPageRouter(t, true)
-	dc, uc := startDevice(t, r)
+	dc, uc := startDevice(t, r, url.Values{"client_id": {"app"}})
 	w := activateLogin(t, r, uc)
 	st := stateOf(t, w)
 	clk.Advance(901 * time.Second)
@@ -223,11 +221,4 @@ func TestActivate_ExpiresMidway(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	w = pollDevice(r, dc, "app")
 	assert.Contains(t, w.Body.String(), "expired_token")
-}
-
-func decodeJWTPart(t *testing.T, part string) string {
-	t.Helper()
-	b, err := base64.RawURLEncoding.DecodeString(part)
-	require.NoError(t, err)
-	return string(b)
 }

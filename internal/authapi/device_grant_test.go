@@ -18,15 +18,6 @@ import (
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
-func requestDeviceCode(t *testing.T, r chi.Router, form url.Values) string {
-	t.Helper()
-	w := postDeviceCode(r, form)
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	var body deviceCodeResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	return body.DeviceCode
-}
-
 func pollDevice(r chi.Router, deviceCode, clientID string) *httptest.ResponseRecorder {
 	form := url.Values{"grant_type": {grantDeviceCode}}
 	if deviceCode != "" {
@@ -52,7 +43,7 @@ func requireAuthError(t *testing.T, w *httptest.ResponseRecorder, status int, co
 
 func TestDeviceGrant_PageOffFirstPoll(t *testing.T) {
 	r, _, _, _ := newLoginPageRouter(t, false)
-	dc := requestDeviceCode(t, r, url.Values{"client_id": {"app"}, "scope": {"openid offline_access"}, "audience": {"https://api"}})
+	dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}, "scope": {"openid offline_access"}, "audience": {"https://api"}})
 
 	w := pollDevice(r, dc, "app")
 	resp := decodeToken(t, w)
@@ -81,7 +72,7 @@ func TestDeviceGrant_MatchesAuthorizationCode(t *testing.T) {
 	viaCode := decodeToken(t, postTokenForm(r, url.Values{
 		"grant_type": {"authorization_code"}, "client_id": {"app"}, "code": {code}, "redirect_uri": {"https://app/cb"},
 	}))
-	dc := requestDeviceCode(t, r, url.Values{"client_id": {"app"}, "scope": {scope}, "audience": {audience}})
+	dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}, "scope": {scope}, "audience": {audience}})
 	viaDevice := decodeToken(t, pollDevice(r, dc, "app"))
 
 	norm := func(m map[string]any) map[string]any {
@@ -105,9 +96,9 @@ func TestDeviceGrant_StrictRefreshNeedsOfflineAccess(t *testing.T) {
 		Router: r, Keys: ks, Issuer: "https://mock/", DefaultAudience: "https://mock/api/v2/",
 		Log: zerolog.Nop(), PKCE: pkce.NewStore(pkce.WithNow(clk.Now)), TokenEndpointStrict: true,
 	})
-	withOffline := requestDeviceCode(t, r, url.Values{"client_id": {"app"}, "scope": {"openid offline_access"}})
+	withOffline, _ := startDevice(t, r, url.Values{"client_id": {"app"}, "scope": {"openid offline_access"}})
 	assert.NotEmpty(t, decodeToken(t, pollDevice(r, withOffline, "app")).RefreshToken)
-	without := requestDeviceCode(t, r, url.Values{"client_id": {"app"}, "scope": {"openid"}})
+	without, _ := startDevice(t, r, url.Values{"client_id": {"app"}, "scope": {"openid"}})
 	assert.Empty(t, decodeToken(t, pollDevice(r, without, "app")).RefreshToken)
 }
 
@@ -137,21 +128,23 @@ func TestDeviceGrant_Errors(t *testing.T) {
 		{
 			name: "client mismatch",
 			poll: func(t *testing.T, r chi.Router, _ *session.Store, _ *steppedClock) *httptest.ResponseRecorder {
-				return pollDevice(r, requestDeviceCode(t, r, url.Values{"client_id": {"app"}}), "other")
+				dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}})
+				return pollDevice(r, dc, "other")
 			},
 			status: 403, code: "invalid_grant", desc: invalid,
 		},
 		{
 			name: "pending",
 			poll: func(t *testing.T, r chi.Router, _ *session.Store, _ *steppedClock) *httptest.ResponseRecorder {
-				return pollDevice(r, requestDeviceCode(t, r, url.Values{"client_id": {"app"}}), "app")
+				dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}})
+				return pollDevice(r, dc, "app")
 			},
 			status: 403, code: "authorization_pending", desc: "User has yet to authorize device code.",
 		},
 		{
 			name: "denied, and still denied on the next poll",
 			poll: func(t *testing.T, r chi.Router, store *session.Store, _ *steppedClock) *httptest.ResponseRecorder {
-				dc := requestDeviceCode(t, r, url.Values{"client_id": {"app"}})
+				dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}})
 				require.True(t, store.DenyDevice(dc))
 				requireAuthError(t, pollDevice(r, dc, "app"), 403, "access_denied", "User cancelled the confirmation prompt.")
 				return pollDevice(r, dc, "app")
@@ -161,7 +154,7 @@ func TestDeviceGrant_Errors(t *testing.T) {
 		{
 			name: "expired, then invalid_grant",
 			poll: func(t *testing.T, r chi.Router, _ *session.Store, clk *steppedClock) *httptest.ResponseRecorder {
-				dc := requestDeviceCode(t, r, url.Values{"client_id": {"app"}})
+				dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}})
 				clk.Advance(900 * time.Second)
 				requireAuthError(t, pollDevice(r, dc, "app"), 403, "expired_token", "The device code has expired.")
 				return pollDevice(r, dc, "app")
@@ -171,7 +164,7 @@ func TestDeviceGrant_Errors(t *testing.T) {
 		{
 			name: "still valid just before expiry",
 			poll: func(t *testing.T, r chi.Router, _ *session.Store, clk *steppedClock) *httptest.ResponseRecorder {
-				dc := requestDeviceCode(t, r, url.Values{"client_id": {"app"}})
+				dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}})
 				clk.Advance(900*time.Second - time.Second)
 				return pollDevice(r, dc, "app")
 			},
@@ -188,7 +181,7 @@ func TestDeviceGrant_Errors(t *testing.T) {
 
 func TestDeviceGrant_ApprovedSubject(t *testing.T) {
 	r, store, clk, _ := newLoginPageRouter(t, true)
-	dc := requestDeviceCode(t, r, url.Values{"client_id": {"app"}, "scope": {"openid email"}})
+	dc, _ := startDevice(t, r, url.Values{"client_id": {"app"}, "scope": {"openid email"}})
 	authTime := clk.Now().Add(time.Minute)
 	require.True(t, store.ApproveDevice(dc, "jane@example.com", authTime))
 
