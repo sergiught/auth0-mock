@@ -6,7 +6,7 @@
 
 A drop-in mock of Auth0's HTTP API (Authentication + Management) that you can point any Auth0-using service at, with no code changes.
 
-Real RS256 JWTs. 400+ Management API endpoints. Runtime claim and permission injection. MFA, PKCE, OIDC discovery. HTTP and HTTPS.
+Real RS256 JWTs. 480+ Management API endpoints. Runtime claim and permission injection. MFA, PKCE, OIDC discovery. HTTP and HTTPS.
 
 [Quick start](#-quick-start) · [What's mocked](https://sergiu.dev/auth0-mock/reference/whats-mocked/) · [Recipes](https://sergiu.dev/auth0-mock/guides/stubbing/) · [Architecture](https://sergiu.dev/auth0-mock/reference/architecture/) · [Contributing](CONTRIBUTING.md)
 

@@ -132,7 +132,7 @@ Send `organization` to add `org_id` (and `org_name` for a name) to the tokens, a
 By default `/authorize` signs in at once, with no page. To test a browser flow that fills in a login form, turn the page on:
 
 ```bash
-docker run --rm -p 8080:8080 -e LOGIN_PAGE=true ghcr.io/sergiught/auth0-mock:latest
+docker run --rm -p 127.0.0.1:8080:8080 -e ADMIN_ALLOW_REMOTE=true -e LOGIN_PAGE=true ghcr.io/sergiught/auth0-mock:latest
 ```
 
 With `LOGIN_PAGE=true`, a logged-out `/authorize` answers `302` to `u/login?state=<id>`. That is also the case with `prompt=login` or a `login_hint` that differs from the session user. `prompt=none` and requests with a live session work as before.

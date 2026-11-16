@@ -10,7 +10,7 @@ keeps running unchanged.
 - **Real RS256 JWTs.** The mock generates a fresh keypair on boot and signs
   every token with it. Downstream services validate signatures against
   `/.well-known/jwks.json` with stock OSS libraries.
-- **400+ Management API endpoints** mounted from Auth0's published OpenAPI
+- **480+ Management API endpoints** mounted from Auth0's published OpenAPI
   spec. Stubbed responses are registered per `(method, path)` and validated
   against the spec schema at registration time.
 - **OIDC discovery** at `/.well-known/openid-configuration` for clients that
