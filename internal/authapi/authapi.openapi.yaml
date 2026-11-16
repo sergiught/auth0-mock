@@ -17,8 +17,10 @@ paths:
       description: |
         Supports every grant type the mock implements: `client_credentials`,
         `password`, `refresh_token`, `authorization_code` (with optional PKCE),
-        `http://auth0.com/oauth/grant-type/password-realm`, and the MFA
-        step-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`).
+        `http://auth0.com/oauth/grant-type/password-realm`, the MFA
+        step-up grants (`mfa-otp`, `mfa-oob`, `mfa-recovery-code`), and
+        `urn:ietf:params:oauth:grant-type:token-exchange` (the subject token
+        names the user; its signature is not checked).
       requestBody:
         required: true
         content:
@@ -495,7 +497,9 @@ components:
         oob_code:      { type: string }
         binding_code:  { type: string }
         recovery_code: { type: string }
-        organization:  { type: string, description: "client_credentials only; other grants ignore it." }
+        organization:  { type: string, description: "client_credentials and token-exchange; other grants ignore it." }
+        subject_token: { type: string, description: "token-exchange only. A JWT (payload read, signature not checked; `sub` is the user) or any string used as the user id." }
+        subject_token_type: { type: string, description: "token-exchange only. A `https://` or `urn:` URI outside the reserved auth0, okta and ietf namespaces." }
     MFAChallengeRequest:
       type: object
       required: [mfa_token]
@@ -553,6 +557,7 @@ components:
         access_token:   { type: string }
         id_token:       { type: string }
         refresh_token:  { type: string }
+        issued_token_type: { type: string, description: "token-exchange only.", example: "urn:ietf:params:oauth:token-type:access_token" }
         scope:          { type: string }
         token_type:     { type: string, example: Bearer }
         expires_in:     { type: integer, example: 86400 }

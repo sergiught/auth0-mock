@@ -53,6 +53,7 @@ func discoveryDoc(issuer string) []byte {
 			"http://auth0.com/oauth/grant-type/mfa-oob",
 			"http://auth0.com/oauth/grant-type/mfa-otp",
 			"http://auth0.com/oauth/grant-type/mfa-recovery-code",
+			grantTokenExchange,
 		},
 		"code_challenge_methods_supported": []string{"S256", "plain"},
 		"response_modes_supported":         []string{"query", "fragment", "form_post"},

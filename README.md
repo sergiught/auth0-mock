@@ -94,7 +94,7 @@ Full docs live at <https://sergiu.dev/auth0-mock/>.
 | [Go quickstart](https://sergiu.dev/auth0-mock/quickstarts/go/) | Test a Go API and a Management API client against the mock with go-jwt-middleware and the go-auth0 SDK. |
 | [Stubbing the Management API](https://sergiu.dev/auth0-mock/guides/stubbing/) | Stub Management API responses, errors and retries, and reset or inspect what is registered. |
 | [Tokens and claims](https://sergiu.dev/auth0-mock/guides/tokens-and-claims/) | Test code that reads permissions or custom claims, and test token expiry without sleeping. |
-| [Login flows](https://sergiu.dev/auth0-mock/guides/login-flows/) | Test PKCE, login errors, silent login, MFA challenges and the password-realm grant. |
+| [Login flows](https://sergiu.dev/auth0-mock/guides/login-flows/) | Test PKCE, login errors, silent login, MFA challenges, organizations, token exchange and the password-realm grant. |
 | [Event streams](https://sergiu.dev/auth0-mock/guides/event-streams/) | Drive an event-stream consumer from a test. |
 | [HTTPS / TLS](https://sergiu.dev/auth0-mock/guides/https-tls/) | Run auth0-mock over HTTPS and make clients trust its self-signed certificate. |
 | [Calling the API from Postman or Insomnia](https://sergiu.dev/auth0-mock/guides/postman/) | Import the merged OpenAPI document into Postman or Insomnia, and regenerate it after spec changes. |

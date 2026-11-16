@@ -199,6 +199,8 @@ func (h *TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.respondPasswordRealm(w, r, req, aud)
 	case grantPasswordlessOTP:
 		h.respondPasswordless(w, r, req, aud)
+	case grantTokenExchange:
+		h.respondTokenExchange(w, r, req, aud)
 	case "refresh_token":
 		h.respondRefreshToken(w, r, req, aud)
 	case "authorization_code":
@@ -443,25 +445,27 @@ func parseTokenBody(r *http.Request) (*tokenRequest, error) {
 		}
 	}
 	return &tokenRequest{
-		Params:       params,
-		GrantType:    r.PostForm.Get("grant_type"),
-		ClientID:     r.PostForm.Get("client_id"),
-		ClientSecret: r.PostForm.Get("client_secret"),
-		Audience:     r.PostForm.Get("audience"),
-		Scope:        r.PostForm.Get("scope"),
-		Username:     r.PostForm.Get("username"),
-		Password:     r.PostForm.Get("password"),
-		RefreshToken: r.PostForm.Get("refresh_token"),
-		Code:         r.PostForm.Get("code"),
-		RedirectURI:  r.PostForm.Get("redirect_uri"),
-		CodeVerifier: r.PostForm.Get("code_verifier"),
-		Realm:        r.PostForm.Get("realm"),
-		Organization: r.PostForm.Get("organization"),
-		MFAToken:     r.PostForm.Get("mfa_token"),
-		OTP:          r.PostForm.Get("otp"),
-		OOBCode:      r.PostForm.Get("oob_code"),
-		BindingCode:  r.PostForm.Get("binding_code"),
-		RecoveryCode: r.PostForm.Get("recovery_code"),
+		Params:           params,
+		GrantType:        r.PostForm.Get("grant_type"),
+		ClientID:         r.PostForm.Get("client_id"),
+		ClientSecret:     r.PostForm.Get("client_secret"),
+		Audience:         r.PostForm.Get("audience"),
+		Scope:            r.PostForm.Get("scope"),
+		Username:         r.PostForm.Get("username"),
+		Password:         r.PostForm.Get("password"),
+		RefreshToken:     r.PostForm.Get("refresh_token"),
+		Code:             r.PostForm.Get("code"),
+		RedirectURI:      r.PostForm.Get("redirect_uri"),
+		CodeVerifier:     r.PostForm.Get("code_verifier"),
+		Realm:            r.PostForm.Get("realm"),
+		Organization:     r.PostForm.Get("organization"),
+		SubjectToken:     r.PostForm.Get("subject_token"),
+		SubjectTokenType: r.PostForm.Get("subject_token_type"),
+		MFAToken:         r.PostForm.Get("mfa_token"),
+		OTP:              r.PostForm.Get("otp"),
+		OOBCode:          r.PostForm.Get("oob_code"),
+		BindingCode:      r.PostForm.Get("binding_code"),
+		RecoveryCode:     r.PostForm.Get("recovery_code"),
 	}, nil
 }
 
