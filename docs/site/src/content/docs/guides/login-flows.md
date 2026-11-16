@@ -1,6 +1,6 @@
 ---
 title: Login flows
-description: Test PKCE, login errors, silent login, MFA challenges and the password-realm grant.
+description: Test PKCE, login errors, silent login, MFA challenges, organizations, token exchange and the password-realm grant.
 sidebar:
   order: 3
 ---
@@ -101,9 +101,9 @@ The token-exchange grant (`urn:ietf:params:oauth:grant-type:token-exchange`) min
 
 - `subject_token` (required): names the user.
 - `subject_token_type` (required): a `https://` or `urn:` URI of your choosing, compared case-insensitively. URIs in the reserved `auth0.com`, `okta.com` (`http://` or `https://`), `urn:ietf`, `urn:auth0` and `urn:okta` namespaces are rejected.
-- `client_id`, `audience`, `scope`, `organization`: as for the other grants. `actor_token` and `requested_token_type` are ignored.
+- `client_id`, `audience`, `scope`, `organization`: as for client_credentials. `actor_token` and `requested_token_type` are ignored.
 
-**The subject token is not verified.** If it is a JWT (three non-empty dot-separated parts, header a JSON object), the mock reads the payload and never checks the signature, so any caller can name any user. `sub` is required and becomes the user id; `email`, `email_verified`, `name`, `nickname`, `picture`, `phone_number` and `phone_number_verified` go to the ID token. A JWT whose `exp` is in the past is rejected. Any other string is used whole as the user id, with the profile derived as for the other grants. Org claims inside the subject token are ignored.
+**The subject token is not verified.** If it is a JWT (three dot-separated parts whose header decodes to a JSON object; the signature part may be empty, so unsecured `alg: none` tokens work, and it is never checked), the mock reads the payload and never checks the signature, so any caller can name any user. `sub` is required and becomes the user id; `email`, `email_verified`, `name`, `nickname`, `picture`, `phone_number` and `phone_number_verified` go to the ID token, and profile keys missing from the payload are derived from `sub` the same way the authorization-code flow derives them. A JWT whose `exp` is in the past is rejected. Any other string is used whole as the user id, with the profile derived as for the authorization-code flow. Org claims inside the subject token are ignored.
 
 ```bash
 curl -s -X POST http://localhost:8080/oauth/token \
@@ -316,7 +316,7 @@ In strict mode:
 - A missing `code` gets `400 invalid_request` with "Missing required parameter: code".
 - On a code exchange, the scope sent to `/authorize` is used even when it is empty. The scope in the token request is ignored.
 - A code is used up by the first request, even when that request fails.
-- The password, password-realm, passwordless, authorization code and MFA grants issue a `refresh_token` only when the scope includes `offline_access`.
+- The password, password-realm, passwordless, authorization code, MFA and token exchange grants issue a `refresh_token` only when the scope includes `offline_access`.
 
 A rejected code returns `403`:
 
