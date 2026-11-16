@@ -59,11 +59,19 @@ func (h *ActivateHandler) code(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, login, live := currentLogin(r, h.Authorize.Sessions); live {
-		step := h.Devices.SetDeviceStep(dev.DeviceCode, login.Subject, login.AuthTime)
+		step, ok := h.Devices.SetDeviceStep(dev.DeviceCode, login.Subject, login.AuthTime, now)
+		if !ok {
+			writeActivate(w, http.StatusBadRequest, activateData{View: "error", Error: errInvalidCode})
+			return
+		}
 		writeActivate(w, http.StatusOK, activateData{View: "confirm", State: step, Code: dev.UserCode})
 		return
 	}
-	step := h.Devices.SetDeviceStep(dev.DeviceCode, "", time.Time{})
+	step, ok := h.Devices.SetDeviceStep(dev.DeviceCode, "", time.Time{}, now)
+	if !ok {
+		writeActivate(w, http.StatusBadRequest, activateData{View: "error", Error: errInvalidCode})
+		return
+	}
 	writeActivate(w, http.StatusOK, activateData{View: "login", State: step, Client: dev.ClientID})
 }
 
@@ -106,7 +114,11 @@ func (h *ActivateHandler) login(w http.ResponseWriter, r *http.Request, state st
 		return
 	}
 	a.startSession(w, r, username, now)
-	step := h.Devices.SetDeviceStep(dev.DeviceCode, username, now)
+	step, ok := h.Devices.SetDeviceStep(dev.DeviceCode, username, now, now)
+	if !ok {
+		writeActivate(w, http.StatusBadRequest, activateData{View: "error", Error: errInvalidCode})
+		return
+	}
 	writeActivate(w, http.StatusOK, activateData{View: "confirm", State: step, Code: dev.UserCode})
 }
 

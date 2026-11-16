@@ -97,7 +97,8 @@ func TestDeviceStep(t *testing.T) {
 	now := time.Now()
 	d := startDev(s, now)
 
-	step := s.SetDeviceStep(d.DeviceCode, "auth0|u", now)
+	step, ok := s.SetDeviceStep(d.DeviceCode, "auth0|u", now, now)
+	require.True(t, ok)
 	raw, err := base64.RawURLEncoding.DecodeString(step)
 	require.NoError(t, err)
 	assert.Len(t, raw, 32)
@@ -116,14 +117,59 @@ func TestDeviceStep(t *testing.T) {
 	_, ok = s.TakeDeviceStep(step, now)
 	assert.False(t, ok)
 
-	old := s.SetDeviceStep(d.DeviceCode, "", time.Time{})
-	fresh := s.SetDeviceStep(d.DeviceCode, "", time.Time{})
+	old, _ := s.SetDeviceStep(d.DeviceCode, "", time.Time{}, now)
+	fresh, _ := s.SetDeviceStep(d.DeviceCode, "", time.Time{}, now)
 	_, ok = s.DeviceByStep(old, now)
 	assert.False(t, ok)
 	_, ok = s.DeviceByStep(fresh, now)
 	assert.True(t, ok)
 
-	assert.Empty(t, s.SetDeviceStep("unknown", "", time.Time{}))
+	step, ok = s.SetDeviceStep("unknown", "", time.Time{}, now)
+	assert.Empty(t, step)
+	assert.False(t, ok)
+}
+
+func TestSetDeviceStep_OnlyPendingAndLive(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name  string
+		setup func(s *Store, d Device)
+		at    func(d Device) time.Time
+	}{
+		{"approved", func(s *Store, d Device) { require.True(t, s.ApproveDevice(d.DeviceCode, "auth0|real", now)) }, func(Device) time.Time { return now }},
+		{"denied", func(s *Store, d Device) { require.True(t, s.DenyDevice(d.DeviceCode)) }, func(Device) time.Time { return now }},
+		{"expired", func(*Store, Device) {}, func(d Device) time.Time { return d.Expires }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewStore()
+			d := startDev(s, now)
+			tc.setup(s, d)
+			step, ok := s.SetDeviceStep(d.DeviceCode, "auth0|attacker", now, tc.at(d))
+			assert.False(t, ok)
+			assert.Empty(t, step)
+			after, _ := s.PollDevice(d.DeviceCode, "app", now)
+			if tc.name == "approved" {
+				assert.Equal(t, "auth0|real", after.Subject)
+				assert.True(t, after.AuthTime.Equal(now))
+			} else {
+				assert.Empty(t, after.Subject)
+				assert.True(t, after.AuthTime.IsZero())
+			}
+		})
+	}
+}
+
+func TestSetDeviceStep_ApprovedSubjectSurvives(t *testing.T) {
+	s := NewStore()
+	now := time.Now()
+	d := startDev(s, now)
+	require.True(t, s.ApproveDevice(d.DeviceCode, "auth0|real", now))
+	_, ok := s.SetDeviceStep(d.DeviceCode, "auth0|attacker", now, now)
+	require.False(t, ok)
+	got, res := s.PollDevice(d.DeviceCode, "app", now)
+	assert.Equal(t, PollApproved, res)
+	assert.Equal(t, "auth0|real", got.Subject)
 }
 
 func TestApproveDevice_OnlyPending(t *testing.T) {
@@ -139,7 +185,7 @@ func TestDevice_ClearAndEviction(t *testing.T) {
 	s := NewStore()
 	now := time.Now()
 	first := startDev(s, now)
-	step := s.SetDeviceStep(first.DeviceCode, "", time.Time{})
+	step, _ := s.SetDeviceStep(first.DeviceCode, "", time.Time{}, now)
 	for i := 0; i < MaxEntries; i++ {
 		startDev(s, now)
 	}

@@ -161,13 +161,14 @@ func (s *Store) DeviceByUserCode(userCode string, now time.Time) (Device, bool) 
 }
 
 // SetDeviceStep records subject and authTime on the entry and returns a new
-// random step id replacing any previous one; "" when the code is unknown.
-func (s *Store) SetDeviceStep(deviceCode, subject string, authTime time.Time) string {
+// random step id replacing any previous one. It reports false, changing
+// nothing, unless the entry exists, is still pending and has not expired.
+func (s *Store) SetDeviceStep(deviceCode, subject string, authTime, now time.Time) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e, ok := s.devices[deviceCode]
-	if !ok {
-		return ""
+	if !ok || e.dev.Status != DevicePending || !now.Before(e.dev.Expires) {
+		return "", false
 	}
 	if e.step != "" {
 		delete(s.deviceSteps, e.step)
@@ -176,7 +177,7 @@ func (s *Store) SetDeviceStep(deviceCode, subject string, authTime time.Time) st
 	e.dev.Subject = subject
 	e.dev.AuthTime = authTime
 	s.deviceSteps[e.step] = deviceCode
-	return e.step
+	return e.step, true
 }
 
 // DeviceByStep peeks at the pending, live entry owning step.
