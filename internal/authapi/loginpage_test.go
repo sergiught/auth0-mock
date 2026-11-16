@@ -1,9 +1,13 @@
 package authapi
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -175,4 +179,188 @@ func TestLoginPage_EscapesHostileValues(t *testing.T) {
 	assert.NotContains(t, body, "<b>evil</b>")
 	assert.Contains(t, body, "&lt;b&gt;evil&lt;/b&gt;")
 	assert.Contains(t, body, "&#34;&gt;&lt;script&gt;")
+}
+
+const pkceVerifier = "v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1v1"
+
+func s256(v string) string {
+	sum := sha256.Sum256([]byte(v))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func codeQuery(extra url.Values) url.Values {
+	q := url.Values{
+		"nonce":                 {"n1"},
+		"code_challenge":        {s256(pkceVerifier)},
+		"code_challenge_method": {"S256"},
+		"scope":                 {"openid"},
+		"state":                 {"app-xyz"},
+	}
+	for k, v := range extra {
+		q[k] = v
+	}
+	return q
+}
+
+func postLogin(r chi.Router, id, username, password string) *httptest.ResponseRecorder {
+	form := url.Values{"username": {username}, "password": {password}, "action": {"default"}}
+	req := httptest.NewRequest("POST", "/u/login?state="+url.QueryEscape(id), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func redirectCode(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	require.Equal(t, http.StatusFound, w.Code, w.Body.String())
+	loc, err := url.Parse(w.Header().Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "https://app/cb", loc.Scheme+"://"+loc.Host+loc.Path)
+	assert.Equal(t, "app-xyz", loc.Query().Get("state"))
+	require.NotEmpty(t, loc.Query().Get("code"))
+	return loc.Query().Get("code")
+}
+
+func rawClaims(t *testing.T, tok string) map[string]any {
+	t.Helper()
+	parts := strings.Split(tok, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	return m
+}
+
+func loginExchange(t *testing.T, r chi.Router, code string) (access, id map[string]any) {
+	t.Helper()
+	w := exchangeCode(r, code, pkceVerifier)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp tokenResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	return rawClaims(t, resp.AccessToken), rawClaims(t, resp.IDToken)
+}
+
+func withoutTimes(m map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range m {
+		if k != "iat" && k != "exp" && k != "auth_time" && k != "jti" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func TestLoginPage_PostIssuesCode(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	w := postLogin(r, id, " jane@example.com ", "pw")
+	code := redirectCode(t, w)
+	assert.Contains(t, w.Header().Get("Set-Cookie"), loginCookieName+"=")
+	_, idc := loginExchange(t, r, code)
+	assert.Equal(t, "jane@example.com", idc["sub"])
+	assert.Equal(t, "n1", idc["nonce"])
+}
+
+func TestLoginPage_MatchesLoginHint(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	_, viaPage := loginExchange(t, r, redirectCode(t, postLogin(r, id, "jane@example.com", "pw")))
+
+	off, _, _, _ := newLoginPageRouter(t, false)
+	w := loginPageAuthorize(off, nil, codeQuery(url.Values{"login_hint": {"jane@example.com"}}))
+	_, viaHint := loginExchange(t, off, redirectCode(t, w))
+	assert.Equal(t, withoutTimes(viaHint), withoutTimes(viaPage))
+}
+
+func TestLoginPage_FormPostImplicit(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, url.Values{
+		"response_type": {"id_token token"}, "response_mode": {"form_post"}, "nonce": {"n2"},
+	}))
+	w := postLogin(r, id, "jane@example.com", "pw")
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "https://app/cb")
+	assert.Contains(t, body, `name="access_token"`)
+	idTok := regexpValue(t, body, "id_token")
+	c := rawClaims(t, idTok)
+	assert.Equal(t, "jane@example.com", c["sub"])
+	assert.Equal(t, "n2", c["nonce"])
+}
+
+func regexpValue(t *testing.T, body, name string) string {
+	t.Helper()
+	m := regexp.MustCompile(`name="` + name + `" value="([^"]*)"`).FindStringSubmatch(body)
+	require.Len(t, m, 2, body)
+	return m[1]
+}
+
+func TestLoginPage_Organization(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(url.Values{"organization": {"acme"}})))
+	viaPage, _ := loginExchange(t, r, redirectCode(t, postLogin(r, id, "jane@example.com", "pw")))
+
+	off, _, _, _ := newLoginPageRouter(t, false)
+	auto, _ := loginExchange(t, off, redirectCode(t, loginPageAuthorize(off, nil, codeQuery(url.Values{"organization": {"acme"}}))))
+	assert.Equal(t, "acme", viaPage["org_name"])
+	assert.Equal(t, auto["org_id"], viaPage["org_id"])
+	assert.Equal(t, auto["org_name"], viaPage["org_name"])
+}
+
+func TestLoginPage_EmptyFields(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	w := postLogin(r, id, "", "pw")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Email is required")
+	w = postLogin(r, id, "jane@example.com", "")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Password is required")
+	assert.Contains(t, w.Body.String(), `value="jane@example.com"`)
+	redirectCode(t, postLogin(r, id, "jane@example.com", "pw"))
+}
+
+func TestLoginPage_FailureRule(t *testing.T) {
+	r, _, _, errs := newLoginPageRouter(t, true)
+	errs.Add(authorizeerr.Rule{
+		Match: map[string]string{"username": "locked@example.com"}, Error: "access_denied",
+		ErrorDescription: "Wrong email or password.",
+	})
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	w := postLogin(r, id, "locked@example.com", "pw")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Wrong email or password.")
+	assert.Contains(t, w.Body.String(), `value="locked@example.com"`)
+	redirectCode(t, postLogin(r, id, "jane@example.com", "pw"))
+
+	errs.Clear()
+	errs.Add(authorizeerr.Rule{Match: map[string]string{"username": "locked@example.com"}, Error: "access_denied"})
+	id = pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	w = postLogin(r, id, "locked@example.com", "pw")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Wrong email or password.")
+}
+
+func TestLoginPage_ReusedState(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	redirectCode(t, postLogin(r, id, "jane@example.com", "pw"))
+	w := postLogin(r, id, "jane@example.com", "pw")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid or expired login")
+}
+
+func TestLoginPage_SessionThenSilent(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, codeQuery(nil)))
+	w := postLogin(r, id, "jane@example.com", "pw")
+	redirectCode(t, w)
+	cookies := w.Result().Cookies()
+	require.NotEmpty(t, cookies)
+
+	w = loginPageAuthorize(r, cookies[0], codeQuery(url.Values{"prompt": {"none"}}))
+	_, idc := loginExchange(t, r, redirectCode(t, w))
+	assert.Equal(t, "jane@example.com", idc["sub"])
 }

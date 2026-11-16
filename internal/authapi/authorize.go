@@ -84,17 +84,9 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	state := q.Get("state")
 	responseType := q.Get("response_type")
-	rt, validType := parseResponseTypes(responseType)
-	// Anything other than exactly {code} defaults to fragment delivery.
-	fragmentDefault := rt.token || rt.idToken
-
-	u, ok := h.vetRedirect(w, redirect)
+	u, mode, rt, validType, ok := h.target(w, q)
 	if !ok {
 		return
-	}
-	mode := resolveMode(q.Get("response_mode"), fragmentDefault)
-	if !modeCanDeliver(mode, u) {
-		mode = resolveMode("", fragmentDefault)
 	}
 
 	// Reject unservable requests before anything is minted or recorded.
@@ -128,6 +120,25 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.finish(w, r, u, mode, q, rt, state, subject, authTime, reuse)
+}
+
+// target builds the redirect URL, delivery mode and response types for a
+// request's query. It writes the 400 itself when the redirect_uri is unusable.
+// ServeHTTP and the login page POST both use it so they cannot drift.
+func (h *AuthorizeHandler) target(w http.ResponseWriter, q url.Values) (u *url.URL, mode string, rt responseTypes, validType, ok bool) {
+	rt, validType = parseResponseTypes(q.Get("response_type"))
+	// Anything other than exactly {code} defaults to fragment delivery.
+	fragmentDefault := rt.token || rt.idToken
+
+	u, ok = h.vetRedirect(w, q.Get("redirect_uri"))
+	if !ok {
+		return nil, "", rt, validType, false
+	}
+	mode = resolveMode(q.Get("response_mode"), fragmentDefault)
+	if !modeCanDeliver(mode, u) {
+		mode = resolveMode("", fragmentDefault)
+	}
+	return u, mode, rt, validType, true
 }
 
 // needsLoginPage reports whether the request must go through the login page:

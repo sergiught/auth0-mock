@@ -2,8 +2,10 @@ package authapi
 
 import (
 	"html/template"
+	"maps"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -22,13 +24,15 @@ type LoginPageHandler struct {
 	Authorize *AuthorizeHandler
 }
 
-// ServeHTTP renders the form on GET. POST is answered later.
+// ServeHTTP renders the form on GET and finishes the login on POST.
 func (h *LoginPageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		h.get(w, r)
+	case http.MethodPost:
+		h.post(w, r)
 	default:
-		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -53,6 +57,63 @@ func (h *LoginPageHandler) get(w http.ResponseWriter, r *http.Request) {
 		client = v[0]
 	}
 	renderLoginPage(w, http.StatusOK, client, hint, "")
+}
+
+// errWrongLogin is shown when a failure rule matches and has no description.
+const errWrongLogin = "Wrong email or password."
+
+// post finishes the login: any non-empty credentials are accepted unless a
+// failure rule matches the typed username.
+func (h *LoginPageHandler) post(w http.ResponseWriter, r *http.Request) {
+	a := h.Authorize
+	if err := r.ParseForm(); err != nil {
+		renderLoginError(w, http.StatusBadRequest, errInvalidLogin)
+		return
+	}
+	id := r.URL.Query().Get("state")
+	var q url.Values
+	ok := false
+	if a.Sessions != nil {
+		q, ok = a.Sessions.Pending(id, a.now())
+	}
+	if !ok {
+		renderLoginError(w, http.StatusBadRequest, errInvalidLogin)
+		return
+	}
+	client := q.Get("client_id")
+	username := strings.TrimSpace(r.PostFormValue("username"))
+	// A failed attempt re-renders and leaves the transaction usable.
+	if username == "" {
+		renderLoginPage(w, http.StatusBadRequest, client, username, "Email is required")
+		return
+	}
+	if r.PostFormValue("password") == "" {
+		renderLoginPage(w, http.StatusBadRequest, client, username, "Password is required")
+		return
+	}
+	if a.Errors != nil {
+		withUser := maps.Clone(q)
+		withUser.Set("username", username)
+		if rule := a.Errors.Find(withUser); rule != nil {
+			msg := rule.ErrorDescription
+			if msg == "" {
+				msg = errWrongLogin
+			}
+			renderLoginPage(w, http.StatusBadRequest, client, username, msg)
+			return
+		}
+	}
+	q, ok = a.Sessions.TakePending(id, a.now())
+	if !ok {
+		renderLoginError(w, http.StatusBadRequest, errInvalidLogin)
+		return
+	}
+	// The redirect was vetted at /authorize, so a failure here is not expected.
+	u, mode, rt, _, ok := a.target(w, q)
+	if !ok {
+		return
+	}
+	a.finish(w, r, u, mode, q, rt, q.Get("state"), username, a.now(), false)
 }
 
 var loginPageTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>

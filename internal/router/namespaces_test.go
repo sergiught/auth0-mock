@@ -353,3 +353,28 @@ func TestNamespaceMFAUserKeyDecodedOnce(t *testing.T) {
 		assert.Contains(t, rec.Body.String(), `"user":`+strconv.Quote(c.key))
 	}
 }
+
+func TestNamespaces_LoginPageIsolated(t *testing.T) {
+	t.Parallel()
+	h := newNamespaceRouterWith(t, 3, "", func(d *router.Deps) { d.LoginPage = true })
+	const q = "/authorize?client_id=app&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&response_type=code"
+	start := func() string {
+		loc := nsDo(t, h, http.MethodGet, q, "t1", "").Header().Get("Location")
+		require.True(t, strings.HasPrefix(loc, "u/login?state="), loc)
+		return loc
+	}
+	post := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("username=jane%40example.com&password=pw&action=default"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := post("/ns/t1/" + start())
+	require.Equal(t, http.StatusFound, rec.Code, rec.Body.String())
+	assert.True(t, strings.HasPrefix(rec.Header().Get("Location"), "https://app/cb?code="))
+
+	rec = post("/" + start())
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
