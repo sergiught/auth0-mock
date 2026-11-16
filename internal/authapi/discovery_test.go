@@ -57,6 +57,7 @@ var discoveryGrantTypes = []any{
 	"http://auth0.com/oauth/grant-type/mfa-oob",
 	"http://auth0.com/oauth/grant-type/mfa-otp",
 	"http://auth0.com/oauth/grant-type/mfa-recovery-code",
+	"urn:ietf:params:oauth:grant-type:token-exchange",
 }
 
 // implicit is served by /authorize, not /oauth/token, so it is skipped here.
