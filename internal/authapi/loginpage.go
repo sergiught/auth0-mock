@@ -120,7 +120,7 @@ func (h *LoginPageHandler) post(w http.ResponseWriter, r *http.Request) {
 // u/login the way it did from /authorize, one level up. Keeping it relative
 // preserves any /ns/<id>/ prefix the browser is under.
 func fromLoginPage(u *url.URL) *url.URL {
-	if u.Scheme != "" || u.Host != "" || strings.HasPrefix(u.Path, "/") {
+	if u.Scheme != "" || u.Host != "" || strings.HasPrefix(u.EscapedPath(), "/") {
 		return u
 	}
 	c := *u

@@ -381,6 +381,7 @@ func TestLoginPage_RelativeRedirectResolvesLikeAuthorize(t *testing.T) {
 		{"../cb", "/ns/t1/", "/ns/cb"},
 		{"?x=1", "/ns/t1/", "/ns/t1/authorize"},
 		{"/cb", "/ns/t1/", "/cb"},
+		{"%2Fcb", "/ns/t1/", "/ns/t1/%2Fcb"},
 	} {
 		t.Run(tc.redirect+" under "+tc.prefix, func(t *testing.T) {
 			r, _, _, _ := newLoginPageRouter(t, true)
@@ -392,7 +393,7 @@ func TestLoginPage_RelativeRedirectResolvesLikeAuthorize(t *testing.T) {
 			loc, err := url.Parse(w.Header().Get("Location"))
 			require.NoError(t, err)
 			got := page.ResolveReference(loc)
-			assert.Equal(t, tc.want, got.Path)
+			assert.Equal(t, tc.want, got.EscapedPath())
 			assert.NotEmpty(t, got.Query().Get("code"))
 			assert.Equal(t, "s1", got.Query().Get("state"))
 		})
