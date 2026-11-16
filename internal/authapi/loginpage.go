@@ -62,6 +62,12 @@ func (h *LoginPageHandler) get(w http.ResponseWriter, r *http.Request) {
 // errWrongLogin is shown when a failure rule matches and has no description.
 const errWrongLogin = "Wrong email or password."
 
+// The messages shown for empty login fields, shared with the /activate page.
+const (
+	errEmailRequired    = "Email is required"
+	errPasswordRequired = "Password is required"
+)
+
 // post finishes the login: any non-empty credentials are accepted unless a
 // failure rule matches the typed username.
 func (h *LoginPageHandler) post(w http.ResponseWriter, r *http.Request) {
@@ -84,11 +90,11 @@ func (h *LoginPageHandler) post(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.PostFormValue("username"))
 	// A failed attempt re-renders and leaves the transaction usable.
 	if username == "" {
-		renderLoginPage(w, http.StatusBadRequest, client, username, "Email is required")
+		renderLoginPage(w, http.StatusBadRequest, client, username, errEmailRequired)
 		return
 	}
 	if r.PostFormValue("password") == "" {
-		renderLoginPage(w, http.StatusBadRequest, client, username, "Password is required")
+		renderLoginPage(w, http.StatusBadRequest, client, username, errPasswordRequired)
 		return
 	}
 	if a.Errors != nil {
@@ -141,16 +147,7 @@ var loginPageTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log in</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#f4f5f7;margin:0;display:flex;justify-content:center;padding:48px 16px}
-main{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:32px;width:100%;max-width:360px}
-h1{margin:0 0 8px;font-size:24px}
-p{margin:0 0 20px;color:#555}
-label{display:block;margin:12px 0 4px;font-size:14px}
-input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bbb;border-radius:4px;font-size:16px}
-button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:4px;background:#1f2933;color:#fff;font-size:16px;cursor:pointer}
-.error{color:#b00020;margin:0 0 12px}
-</style>
+<style>\n` + pageCSS + `</style>
 </head>
 <body>
 <main>
@@ -192,3 +189,14 @@ func writeLoginPage(w http.ResponseWriter, status int, data loginPageData) {
 	// The status line is already sent, so a failed write to the client cannot be reported.
 	_ = loginPageTmpl.Execute(w, data)
 }
+
+// pageCSS is the stylesheet shared by the login and activate pages.
+const pageCSS = `body{font-family:system-ui,sans-serif;background:#f4f5f7;margin:0;display:flex;justify-content:center;padding:48px 16px}
+main{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:32px;width:100%;max-width:360px}
+h1{margin:0 0 8px;font-size:24px}
+p{margin:0 0 20px;color:#555}
+label{display:block;margin:12px 0 4px;font-size:14px}
+input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bbb;border-radius:4px;font-size:16px}
+button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:4px;background:#1f2933;color:#fff;font-size:16px;cursor:pointer}
+.error{color:#b00020;margin:0 0 12px}
+`

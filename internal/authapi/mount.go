@@ -100,6 +100,9 @@ func Mount(d Deps) {
 		loginPage := &LoginPageHandler{Authorize: authorizeHandler}
 		d.Router.Method(http.MethodGet, "/u/login", loginPage)
 		d.Router.Method(http.MethodPost, "/u/login", loginPage)
+		activate := &ActivateHandler{Authorize: authorizeHandler, Devices: devices}
+		d.Router.Method(http.MethodGet, "/activate", activate)
+		d.Router.Method(http.MethodPost, "/activate", activate)
 	}
 	userInfo := &UserInfoHandler{Keys: d.Keys, Sessions: d.Sessions}
 	d.Router.Method(http.MethodGet, "/userinfo", userInfo)
