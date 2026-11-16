@@ -104,7 +104,7 @@ func TestLoginPage_GetRendersForm(t *testing.T) {
 		`<input id="password" name="password" type="password"`,
 		`<button type="submit" name="action" value="default">Continue</button>`,
 		`method="POST"`,
-		`Log in`,
+		`<h1>Log in</h1>`,
 		`to continue to app`,
 		`value="jane@example.com"`,
 	} {
@@ -162,4 +162,17 @@ func TestLoginPage_ClientRuleStillFailsAtAuthorize(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://app/cb", loc.Scheme+"://"+loc.Host+loc.Path)
 	assert.Equal(t, "access_denied", loc.Query().Get("error"))
+}
+
+func TestLoginPage_EscapesHostileValues(t *testing.T) {
+	r, _, _, _ := newLoginPageRouter(t, true)
+	id := pageID(t, loginPageAuthorize(r, nil, url.Values{
+		"login_hint": {`"><script>x</script>`},
+		"client_id":  {`<b>evil</b>`},
+	}))
+	body := getLoginPage(r, id).Body.String()
+	assert.NotContains(t, body, "<script>x</script>")
+	assert.NotContains(t, body, "<b>evil</b>")
+	assert.Contains(t, body, "&lt;b&gt;evil&lt;/b&gt;")
+	assert.Contains(t, body, "&#34;&gt;&lt;script&gt;")
 }

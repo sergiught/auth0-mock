@@ -350,11 +350,14 @@ func TestPendingLogins(t *testing.T) {
 	s := NewStore()
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	exp := now.Add(10 * time.Minute)
-	id := s.StartPending(url.Values{"client_id": {"app"}}, exp)
+	in := url.Values{"client_id": {"app"}}
+	id := s.StartPending(in, exp)
+	in["client_id"][0] = "in-mutated"
 
 	got, ok := s.Pending(id, now)
 	assert.True(t, ok)
 	got.Set("client_id", "mutated")
+	got["client_id"][0] = "x"
 	again, ok := s.Pending(id, now)
 	assert.True(t, ok)
 	assert.Equal(t, "app", again.Get("client_id"))
@@ -372,4 +375,23 @@ func TestPendingLogins(t *testing.T) {
 	s.Clear()
 	_, ok = s.Pending(id, now)
 	assert.False(t, ok)
+}
+
+func TestPendingLogins_EvictsOldestAtMaxEntries(t *testing.T) {
+	s := NewStore()
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	exp := now.Add(time.Hour)
+	first := s.StartPending(url.Values{"n": {"0"}}, exp)
+	second := s.StartPending(url.Values{"n": {"1"}}, exp)
+	for i := 2; i < MaxEntries; i++ {
+		s.StartPending(url.Values{}, exp)
+	}
+	_, ok := s.Pending(first, now)
+	assert.True(t, ok)
+
+	s.StartPending(url.Values{}, exp)
+	_, ok = s.Pending(first, now)
+	assert.False(t, ok)
+	_, ok = s.Pending(second, now)
+	assert.True(t, ok)
 }

@@ -307,7 +307,7 @@ func (s *Store) StartPending(q url.Values, expires time.Time) string {
 		s.pendingOrder = s.pendingOrder[1:]
 	}
 	s.pendingOrder = append(s.pendingOrder, id)
-	s.pending[id] = pendingLogin{query: maps.Clone(q), expires: expires}
+	s.pending[id] = pendingLogin{query: cloneValues(q), expires: expires}
 	return id
 }
 
@@ -336,5 +336,14 @@ func (s *Store) pendingLocked(id string, now time.Time, take bool) (url.Values, 
 		delete(s.pending, id)
 		s.pendingOrder = slices.DeleteFunc(s.pendingOrder, func(x string) bool { return x == id })
 	}
-	return maps.Clone(p.query), true
+	return cloneValues(p.query), true
+}
+
+// cloneValues deep-copies q so callers cannot change the stored slices.
+func cloneValues(q url.Values) url.Values {
+	c := make(url.Values, len(q))
+	for k, v := range q {
+		c[k] = slices.Clone(v)
+	}
+	return c
 }

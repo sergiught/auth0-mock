@@ -3,6 +3,7 @@ package authapi
 import (
 	"html/template"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -34,13 +35,13 @@ func (h *LoginPageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *LoginPageHandler) get(w http.ResponseWriter, r *http.Request) {
 	a := h.Authorize
-	var q map[string][]string
+	var q url.Values
 	ok := false
 	if a.Sessions != nil {
 		q, ok = a.Sessions.Pending(r.URL.Query().Get("state"), a.now())
 	}
 	if !ok {
-		renderLoginPage(w, http.StatusBadRequest, "", "", errInvalidLogin)
+		renderLoginError(w, http.StatusBadRequest, errInvalidLogin)
 		return
 	}
 	hint := ""
@@ -89,13 +90,25 @@ button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:4px;backgr
 </html>
 `))
 
-// renderLoginPage writes the login form, or just the error when errMsg is
-// errInvalidLogin (an unusable transaction). Escaping is left to html/template.
+// renderLoginPage writes the login form, with errMsg above the fields when set.
+// Escaping is left to html/template.
 func renderLoginPage(w http.ResponseWriter, status int, clientID, username, errMsg string) {
+	writeLoginPage(w, status, loginPageData{Form: true, Client: clientID, Username: username, Error: errMsg})
+}
+
+// renderLoginError writes a bare error page with no form, for an unusable transaction.
+func renderLoginError(w http.ResponseWriter, status int, errMsg string) {
+	writeLoginPage(w, status, loginPageData{Error: errMsg})
+}
+
+type loginPageData struct {
+	Form                    bool
+	Client, Username, Error string
+}
+
+func writeLoginPage(w http.ResponseWriter, status int, data loginPageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_ = loginPageTmpl.Execute(w, struct {
-		Form                    bool
-		Client, Username, Error string
-	}{errMsg != errInvalidLogin, clientID, username, errMsg})
+	// The status line is already sent, so a failed write to the client cannot be reported.
+	_ = loginPageTmpl.Execute(w, data)
 }
