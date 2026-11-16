@@ -103,9 +103,14 @@ func TestSubjectFromToken(t *testing.T) {
 	sub, _, ok = subjectFromToken(padded, now)
 	assert.True(t, ok)
 	assert.Equal(t, "pad", sub)
+	// The header is not a JSON object, so this is a literal user id, not a JWT.
 	sub, _, ok = subjectFromToken("hdr.payload.", now)
 	assert.True(t, ok)
 	assert.Equal(t, "hdr.payload.", sub)
+	// An unsecured JWT (alg none) has an empty signature and is still a JWT.
+	sub, _, ok = subjectFromToken("eyJhbGciOiJub25lIn0.eyJzdWIiOiJhdXRoMHxqYW5lIn0.", now)
+	assert.True(t, ok)
+	assert.Equal(t, "auth0|jane", sub)
 	_, _, ok = subjectFromToken("eyJhbGciOiJub25lIn0.!!!.sig", now)
 	assert.False(t, ok)
 }
@@ -135,6 +140,14 @@ func TestTokenExchange_JWTSubject(t *testing.T) {
 	assert.Equal(t, "auth0|abc", id.Subject)
 	assert.Equal(t, "jane@example.com", id.Extra["email"])
 	assert.Equal(t, "Jane", id.Extra["name"])
+}
+
+func TestTokenExchange_UnsecuredJWTSubject(t *testing.T) {
+	r, ks := newAuthRouter(t)
+	w := postTokenForm(r, exchangeForm("eyJhbGciOiJub25lIn0.eyJzdWIiOiJhdXRoMHxqYW5lIn0.", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	access, _, _ := exchangeTokens(t, ks, w.Body.Bytes())
+	assert.Equal(t, "auth0|jane", access.Subject)
 }
 
 func TestTokenExchange_Errors(t *testing.T) {
@@ -207,6 +220,9 @@ func TestTokenExchange_RefreshKeepsOrg(t *testing.T) {
 	})
 	c := tokenClaims(t, ks, w)
 	assert.Equal(t, orgAcmeID, c.Extra["org_id"])
+	_, refreshedID, _ := exchangeTokens(t, ks, w.Body.Bytes())
+	assert.Equal(t, orgAcmeID, refreshedID.Extra["org_id"])
+	assert.Equal(t, "acme", refreshedID.Extra["org_name"])
 
 	w = postTokenForm(r, exchangeForm("user-123", nil))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
