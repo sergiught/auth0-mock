@@ -48,7 +48,8 @@ Feature: OIDC discovery and JWKS publication
           "http://auth0.com/oauth/grant-type/passwordless/otp",
           "http://auth0.com/oauth/grant-type/mfa-oob",
           "http://auth0.com/oauth/grant-type/mfa-otp",
-          "http://auth0.com/oauth/grant-type/mfa-recovery-code"
+          "http://auth0.com/oauth/grant-type/mfa-recovery-code",
+        "urn:ietf:params:oauth:grant-type:token-exchange"
         ],
         "code_challenge_methods_supported":      ["S256", "plain"],
         "response_modes_supported":              ["query", "fragment", "form_post"],
