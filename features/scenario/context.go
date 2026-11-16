@@ -75,6 +75,8 @@ type bootOptions struct {
 	seedFile string
 	// tokenStrict sets TOKEN_ENDPOINT_STRICT.
 	tokenStrict bool
+	// loginPage sets LOGIN_PAGE.
+	loginPage bool
 }
 
 // nonFollowingClient is used by all step requests so the tests can assert on
@@ -153,6 +155,16 @@ func (c *Context) RestartStrict() {
 	c.mustBoot(bootOptions{
 		issuerFor:   func(addr string) string { return "http://" + addr + "/" },
 		tokenStrict: true,
+	})
+}
+
+// RestartLoginPage stops the scenario's server and boots a fresh one with
+// LOGIN_PAGE on.
+func (c *Context) RestartLoginPage() {
+	c.shutdown()
+	c.mustBoot(bootOptions{
+		issuerFor: func(addr string) string { return "http://" + addr + "/" },
+		loginPage: true,
 	})
 }
 
@@ -275,6 +287,7 @@ func (c *Context) boot(o bootOptions) error {
 		SpecValidationStrict: true,
 		BearerRequireScopes:  true, // the production default
 		TokenEndpointStrict:  o.tokenStrict,
+		LoginPage:            o.loginPage,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
 		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},
