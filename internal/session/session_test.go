@@ -356,8 +356,8 @@ func TestPendingLogins(t *testing.T) {
 
 	got, ok := s.Pending(id, now)
 	assert.True(t, ok)
-	got.Set("client_id", "mutated")
 	got["client_id"][0] = "x"
+	got.Set("client_id", "mutated")
 	again, ok := s.Pending(id, now)
 	assert.True(t, ok)
 	assert.Equal(t, "app", again.Get("client_id"))

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -377,4 +378,40 @@ func TestNamespaces_LoginPageIsolated(t *testing.T) {
 
 	rec = post("/" + start())
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestNamespaces_LoginPageIssuerMatchesAutoApprove(t *testing.T) {
+	t.Parallel()
+	const q = "/authorize?client_id=app&redirect_uri=https%3A%2F%2Fapp%2Fcb&state=s1&response_type=code&scope=openid"
+	idIssuer := func(h http.Handler, loc string, rec *httptest.ResponseRecorder) string {
+		t.Helper()
+		if rec != nil {
+			req := httptest.NewRequest(http.MethodPost, "/ns/t1/"+loc, strings.NewReader("username=jane%40example.com&password=pw&action=default"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			h.ServeHTTP(rec, req)
+		}
+		u, err := url.Parse(rec.Header().Get("Location"))
+		require.NoError(t, err)
+		code := u.Query().Get("code")
+		require.NotEmpty(t, code, rec.Header().Get("Location"))
+		tok := nsDo(t, h, http.MethodPost, "/oauth/token", "t1",
+			"grant_type=authorization_code&client_id=app&redirect_uri=https%3A%2F%2Fapp%2Fcb&code="+code)
+		require.Equal(t, http.StatusOK, tok.Code, tok.Body.String())
+		var out struct {
+			IDToken string `json:"id_token"`
+		}
+		require.NoError(t, json.Unmarshal(tok.Body.Bytes(), &out))
+		iss, _ := jwtClaims(t, out.IDToken)["iss"].(string)
+		return iss
+	}
+
+	on := newNamespaceRouterWith(t, 3, "", func(d *router.Deps) { d.LoginPage = true })
+	loc := nsDo(t, on, http.MethodGet, q, "t1", "").Header().Get("Location")
+	pageIss := idIssuer(on, loc, httptest.NewRecorder())
+
+	off := newNamespaceRouter(t, 3, "")
+	autoIss := idIssuer(off, "", nsDo(t, off, http.MethodGet, q, "t1", ""))
+
+	assert.Equal(t, "https://mock/ns/t1/", autoIss)
+	assert.Equal(t, autoIss, pageIss)
 }
