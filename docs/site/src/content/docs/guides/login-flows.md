@@ -181,8 +181,10 @@ The device flow (RFC 8628) logs in a device that has no browser, such as a TV or
 Ask for a code:
 
 ```bash
-curl -s -X POST http://localhost:8080/oauth/device/code \
-  -d client_id=abc -d scope='openid profile' -d audience=https://api.example.com
+DEVICE=$(curl -s -X POST http://localhost:8080/oauth/device/code \
+  -d client_id=abc -d scope='openid profile' -d audience=https://api.example.com)
+echo "$DEVICE"
+DEVICE_CODE=$(echo "$DEVICE" | jq -r .device_code)
 ```
 
 The answer has `device_code`, `user_code` (like `BCDF-GHJK`), `verification_uri` (`<issuer>/activate`), `verification_uri_complete` (the same with `?user_code=...`), `expires_in` (`900`) and `interval` (`5`). The mock does not make you wait for the interval.
@@ -192,7 +194,7 @@ Poll with the `device_code`:
 ```bash
 curl -s -X POST http://localhost:8080/oauth/token \
   -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
-  -d client_id=abc -d device_code=<device_code>
+  -d client_id=abc -d device_code="$DEVICE_CODE"
 ```
 
 ### With the page off
