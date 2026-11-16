@@ -59,16 +59,23 @@ func randomID() string {
 // newUserCode returns an XXXX-XXXX code unused by a live entry; caller holds s.mu.
 func (s *Store) newUserCode() string {
 	for {
-		b := make([]byte, 8)
-		if _, err := rand.Read(b); err != nil {
-			panic(err)
-		}
 		var sb strings.Builder
-		for i, v := range b {
-			if i == 4 {
-				sb.WriteByte('-')
+		b := make([]byte, 16)
+		for n := 0; n < 8; {
+			if _, err := rand.Read(b); err != nil {
+				panic(err)
 			}
-			sb.WriteByte(userCodeAlphabet[int(v)%len(userCodeAlphabet)])
+			for _, v := range b {
+				// Discard bytes >= 240 so every letter is equally likely.
+				if v >= 240 || n == 8 {
+					continue
+				}
+				if n == 4 {
+					sb.WriteByte('-')
+				}
+				sb.WriteByte(userCodeAlphabet[int(v)%len(userCodeAlphabet)])
+				n++
+			}
 		}
 		code := sb.String()
 		if _, taken := s.userCodes[code]; !taken {

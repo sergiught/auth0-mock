@@ -38,6 +38,13 @@ func TestDeviceCode_Response(t *testing.T) {
 		Interval                int    `json:"interval"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	raw := w.Body.String()
+	last := -1
+	for _, k := range []string{"device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"} {
+		i := strings.Index(raw, `"`+k+`":`)
+		require.Greater(t, i, last, k)
+		last = i
+	}
 	assert.NotEmpty(t, body.DeviceCode)
 	assert.Regexp(t, `^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$`, body.UserCode)
 	assert.Equal(t, "https://mock/activate", body.VerificationURI)
@@ -73,6 +80,7 @@ func TestDeviceCode_MissingClientID(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, "invalid_request", body["error"])
+	assert.Equal(t, "Missing required parameter: client_id", body["error_description"])
 }
 
 func TestDeviceCode_PageOffApproved(t *testing.T) {
@@ -84,8 +92,6 @@ func TestDeviceCode_PageOffApproved(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	// Page off creates the entry already approved for the default subject.
-	// The page-off router has a store of its own, so read it back via Mount's
-	// shared Sessions.
 	d, res := store.PollDevice(body.DeviceCode, "app", clk.Now())
 	require.Equal(t, session.PollApproved, res)
 	assert.Equal(t, DefaultSubject, d.Subject)
@@ -108,4 +114,23 @@ func TestDeviceCode_ActivateMountedOnlyWithPage(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/activate", nil))
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestMount_DeviceStoreShared(t *testing.T) {
+	r, _ := newAuthRouter(t)
+	var tok *TokenHandler
+	var dev *DeviceCodeHandler
+	_ = chi.Walk(r, func(method, route string, h http.Handler, _ ...func(http.Handler) http.Handler) error {
+		switch v := h.(type) {
+		case *TokenHandler:
+			tok = v
+		case *DeviceCodeHandler:
+			dev = v
+		}
+		return nil
+	})
+	require.NotNil(t, tok)
+	require.NotNil(t, dev)
+	require.NotNil(t, tok.Devices)
+	assert.Same(t, tok.Devices, dev.Devices)
 }

@@ -77,6 +77,7 @@ func Mount(d Deps) {
 		PKCE:             d.PKCE,
 		MFA:              d.MFA,
 		Sessions:         d.Sessions,
+		Devices:          devices,
 		Strict:           d.TokenEndpointStrict,
 	}
 	d.Router.Method(http.MethodPost, "/oauth/token", tok)
