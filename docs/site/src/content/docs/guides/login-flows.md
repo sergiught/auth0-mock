@@ -137,7 +137,7 @@ docker run --rm -p 8080:8080 -e LOGIN_PAGE=true ghcr.io/sergiught/auth0-mock:lat
 
 With `LOGIN_PAGE=true`, a logged-out `/authorize` answers `302` to `u/login?state=<id>`. That is also the case with `prompt=login` or a `login_hint` that differs from the session user. `prompt=none` and requests with a live session work as before.
 
-The page takes **any email and password**, because the mock stores no users. The login completes as the email you typed (it becomes the `sub`), then goes on to your `redirect_uri` as `/authorize` does, including `form_post` and `web_message`. Empty fields show "Email is required" or "Password is required".
+The page takes **any email and password**, because the mock stores no users. The login completes as the email you typed (it becomes the `sub`), then goes on to your `redirect_uri` as `/authorize` does, including `form_post` and `web_message`. Empty fields show "Email is required" or "Password is required". Claim mappings and failure rules see the original `/authorize` query, so a mapping keyed on `login_hint` won't see the typed email.
 
 The form fields to drive:
 
@@ -167,6 +167,8 @@ curl -s -X POST http://localhost:8080/admin0/authorize-errors \
 ```
 
 The page shows the rule's `error_description`, or "Wrong email or password." if the rule has none.
+
+A rule must match on `username` to fail on the page. A rule that matches only `/authorize` query params fires at `/authorize` and returns the OAuth error to the `redirect_uri` before the page is shown.
 
 ### Namespaces
 
