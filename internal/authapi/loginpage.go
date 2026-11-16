@@ -113,7 +113,26 @@ func (h *LoginPageHandler) post(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.finish(w, r, u, mode, q, rt, q.Get("state"), username, a.now(), false)
+	a.finish(w, r, fromLoginPage(u), mode, q, rt, q.Get("state"), username, a.now(), false)
+}
+
+// fromLoginPage rewrites a path-relative redirect so it resolves from
+// u/login the way it did from /authorize, one level up. Keeping it relative
+// preserves any /ns/<id>/ prefix the browser is under.
+func fromLoginPage(u *url.URL) *url.URL {
+	if u.Scheme != "" || u.Host != "" || strings.HasPrefix(u.Path, "/") {
+		return u
+	}
+	c := *u
+	if c.Path == "" {
+		c.Path, c.RawPath = "../authorize", ""
+		return &c
+	}
+	c.Path = "../" + c.Path
+	if c.RawPath != "" {
+		c.RawPath = "../" + c.RawPath
+	}
+	return &c
 }
 
 var loginPageTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>

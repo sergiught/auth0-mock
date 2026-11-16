@@ -370,3 +370,31 @@ func TestLoginPage_SessionThenSilent(t *testing.T) {
 	_, idc := loginExchange(t, r, redirectCode(t, w))
 	assert.Equal(t, "jane@example.com", idc["sub"])
 }
+
+// A path-relative redirect_uri must land where it would from /authorize, not
+// from /u/login one level deeper, with or without a namespace prefix.
+func TestLoginPage_RelativeRedirectResolvesLikeAuthorize(t *testing.T) {
+	for _, tc := range []struct{ redirect, prefix, want string }{
+		{"cb", "/", "/cb"},
+		{"cb", "/ns/t1/", "/ns/t1/cb"},
+		{"./app/cb", "/ns/t1/", "/ns/t1/app/cb"},
+		{"../cb", "/ns/t1/", "/ns/cb"},
+		{"?x=1", "/ns/t1/", "/ns/t1/authorize"},
+		{"/cb", "/ns/t1/", "/cb"},
+	} {
+		t.Run(tc.redirect+" under "+tc.prefix, func(t *testing.T) {
+			r, _, _, _ := newLoginPageRouter(t, true)
+			id := pageID(t, loginPageAuthorize(r, nil, url.Values{"redirect_uri": {tc.redirect}}))
+			w := postLogin(r, id, "jane@example.com", "pw")
+			require.Equal(t, http.StatusFound, w.Code, w.Body.String())
+			page, err := url.Parse(tc.prefix + "u/login?state=x")
+			require.NoError(t, err)
+			loc, err := url.Parse(w.Header().Get("Location"))
+			require.NoError(t, err)
+			got := page.ResolveReference(loc)
+			assert.Equal(t, tc.want, got.Path)
+			assert.NotEmpty(t, got.Query().Get("code"))
+			assert.Equal(t, "s1", got.Query().Get("state"))
+		})
+	}
+}
