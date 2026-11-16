@@ -61,7 +61,8 @@ func (h *DeviceCodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.AuthTime = now
 	}
 	d = h.Devices.StartDevice(d)
-	uri := h.Token.Keys.IssuerFor(r) + "activate"
+	uri := h.Token.Keys.IssuerFor(r)
+	uri = strings.TrimSuffix(uri, "/") + "/activate"
 	render.JSON(w, r, deviceCodeResponse{
 		DeviceCode:              d.DeviceCode,
 		UserCode:                d.UserCode,

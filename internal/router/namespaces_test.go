@@ -202,6 +202,7 @@ func TestNamespaces_DeviceCodeIsolated(t *testing.T) {
 	assert.Contains(t, other.Body.String(), "invalid_grant")
 	def := nsDo(t, h, http.MethodPost, "/oauth/token", "", poll)
 	assert.Equal(t, http.StatusForbidden, def.Code, def.Body.String())
+	assert.Contains(t, def.Body.String(), `"error":"invalid_grant"`)
 
 	own := nsDo(t, h, http.MethodPost, "/oauth/token", "a", poll)
 	require.Equal(t, http.StatusOK, own.Code, own.Body.String())

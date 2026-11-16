@@ -7,11 +7,16 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sergiught/auth0-mock/internal/authorizeerr"
+	"github.com/sergiught/auth0-mock/internal/jwks"
+	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/session"
 )
 
@@ -133,4 +138,21 @@ func TestMount_DeviceStoreShared(t *testing.T) {
 	require.NotNil(t, dev)
 	require.NotNil(t, tok.Devices)
 	assert.Same(t, tok.Devices, dev.Devices)
+}
+
+func TestDeviceCode_IssuerWithoutTrailingSlash(t *testing.T) {
+	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "http://host:8080", AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour})
+	require.NoError(t, err)
+	r := chi.NewRouter()
+	Mount(Deps{
+		Router: r, Keys: ks, Issuer: "http://host:8080", DefaultAudience: "https://mock/api/v2/",
+		Log: zerolog.Nop(), PKCE: pkce.NewStore(), Sessions: session.NewStore(),
+		AuthorizeErrors: authorizeerr.NewStore(), LoginPage: true,
+	})
+	w := postDeviceCode(r, url.Values{"client_id": {"app"}})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body deviceCodeResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "http://host:8080/activate", body.VerificationURI)
+	assert.Equal(t, "http://host:8080/activate?user_code="+body.UserCode, body.VerificationURIComplete)
 }
