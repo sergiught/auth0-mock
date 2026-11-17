@@ -75,6 +75,8 @@ curl -X POST http://localhost:8080/admin0/expectations \
 Concrete-path stubs win over template stubs at request time. The optional `request` matcher (subset-matched `query` + `body`; a repeated query key can match any value or a list of values; an `absent` list names fields the request must not carry; `"arrays": "contains"` lets body arrays match in any order with extra items) lets you register multiple responses per operation; resolution is 4-tier (exact-path beats template-path; within a path, a request-matched expectation beats a catch-all; newest wins within a tier). `response.body` is validated against the operation's response schema at registration time. Invalid bodies are rejected with `400 invalid_match`, unknown operations with `400 unknown_operation`, unparseable or incomplete requests with `400 invalid_body`, and invalid `request` matcher fields (unknown fields, mistyped values, unknown query parameters) with `400 invalid_request_match`.
 :::
 
+**Stored data (opt-in).** With `MGMT_STORE=true`, most collections and settings paths keep what you create instead of needing a stub. A stub with `"override": true` wins over it. Some paths stay stub-only. See [Stored data](/auth0-mock/guides/stored-data/).
+
 ## Event streams
 
 `GET /api/v2/events` is a real Server-Sent Events endpoint. Tests push events through `POST /admin0/events`; every connected subscriber sees them in real time. The mock keeps a bounded replay buffer (default 100 events, configurable via `EVENTS_REPLAY_BUFFER`) so reconnecting subscribers can resume via `Last-Event-ID`, `?from=<offset>`, or `?from_timestamp=<rfc3339>`, and the buffer fills in what they missed.

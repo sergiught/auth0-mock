@@ -71,6 +71,7 @@ The file is YAML. JSON works too, because JSON is valid YAML. All keys are optio
 | `claims` | Custom claims, as for `PUT /admin0/claims` |
 | `claim_mappings` | Request-parameter to claim-name map, as for `PUT /admin0/claims/mappings` |
 | `permissions` | Audience mapped to a list of permissions |
+| `management` | Data for the [stored Management API](/auth0-mock/guides/stored-data/). A map from a path without `/api/v2/`, such as `roles` or `organizations/org_1/invitations`, to a list of objects (collections) or one object (settings paths such as `tenants/settings`) |
 | `mfa_required` | `true` or `false` |
 | `mfa_users` | A map of user to `{required, authenticators}`. See [Per-user MFA](/auth0-mock/guides/login-flows/#per-user-mfa). Quote a phone-number key, as in `"+15551234567":`, because unquoted YAML reads it as a number and drops the leading `+`. Generated authenticator IDs change on every reset and in every new namespace, so set an explicit `id` on an authenticator when a test needs a stable one. Authenticators sharing a `group` were enrolled together, so activating one activates all of them; exports keep it |
 
@@ -99,6 +100,28 @@ expectations:
 ```
 
 An export keeps the template as written, so it loads back the same way.
+
+## Stored Management data
+
+The `management` key starts the [store](/auth0-mock/guides/stored-data/) with objects:
+
+```yaml
+management:
+  roles:
+    - name: editor
+  users:
+    - user_id: "auth0|seeded"
+      email: seeded@example.com
+  tenants/settings:
+    friendly_name: Test tenant
+```
+
+- Loading is all-or-nothing. One bad entry and nothing from `management` is loaded.
+- Seeded objects keep the `id`, `created_at` and `updated_at` you give them.
+- A key Auth0 does not declare for that object is an error, as is a path that is not stored. A nested collection needs its parent in the same seed.
+- Fields that are required to create an object but never returned when you read it, such as a user's `connection`, may be left out.
+- With `MGMT_STORE` off, the mock logs `seed file has management data but MGMT_STORE is off; ignoring it` and carries on.
+- `POST /admin0/reset` re-applies the seed. With `keep_seed=false` the store ends empty. Export writes a `management` key only when the store is not empty, and never includes passwords.
 
 ## Reset
 
