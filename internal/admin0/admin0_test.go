@@ -626,7 +626,7 @@ func TestResetClearsMgmt(t *testing.T) {
 	v, err := spec.NewValidator(s)
 	require.NoError(t, err)
 	d := newDeps()
-	d.Mgmt = mgmtstore.NewEngine(s, v).NewStore(nil)
+	d.Mgmt = mgmtstore.NewEngine(s, v).NewStore(time.Now)
 
 	serve := func(method, path, body string) *httptest.ResponseRecorder {
 		op, err := v.Resolve(method, path)

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
@@ -41,7 +42,7 @@ func newStoreEnv(t *testing.T, withStore bool) *storeEnv {
 	r.Use(j.Middleware)
 	opts := MountOpts{Router: r, Spec: s, Validator: v, Store: stubs, Keys: ks, Log: zerolog.Nop(), Strict: true}
 	if withStore {
-		opts.Mgmt = mgmtstore.NewEngine(s, v).NewStore(nil)
+		opts.Mgmt = mgmtstore.NewEngine(s, v).NewStore(time.Now)
 	}
 	require.NoError(t, Mount(opts))
 	return &storeEnv{r: r, stubs: stubs, j: j, token: mintBearer(t, ks)}
