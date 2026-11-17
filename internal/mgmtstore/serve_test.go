@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
@@ -23,11 +22,8 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	sp, err := spec.Load(api.ManagementOpenAPIJSON)
-	require.NoError(t, err)
-	v, err := spec.NewValidator(sp)
-	require.NoError(t, err)
-	return &harness{t: t, s: NewEngine(sp, v).NewStore(fixedNow), v: v}
+	e, _, v := loadShared(t)
+	return &harness{t: t, s: e.NewStore(fixedNow), v: v}
 }
 
 // do sends one request through Serve and validates the response against

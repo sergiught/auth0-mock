@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,13 +16,36 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/classification.golden")
 
+var shared struct {
+	once sync.Once
+	e    *Engine
+	s    *spec.Spec
+	v    *spec.Validator
+	err  error
+}
+
+// loadShared builds the spec, validator and engine once per test binary.
+func loadShared(t *testing.T) (*Engine, *spec.Spec, *spec.Validator) {
+	t.Helper()
+	shared.once.Do(func() {
+		shared.s, shared.err = spec.Load(api.ManagementOpenAPIJSON)
+		if shared.err != nil {
+			return
+		}
+		shared.v, shared.err = spec.NewValidator(shared.s)
+		if shared.err != nil {
+			return
+		}
+		shared.e = NewEngine(shared.s, shared.v)
+	})
+	require.NoError(t, shared.err)
+	return shared.e, shared.s, shared.v
+}
+
 func loadEngine(t *testing.T) (*Engine, *spec.Spec) {
 	t.Helper()
-	s, err := spec.Load(api.ManagementOpenAPIJSON)
-	require.NoError(t, err)
-	v, err := spec.NewValidator(s)
-	require.NoError(t, err)
-	return NewEngine(s, v), s
+	e, s, _ := loadShared(t)
+	return e, s
 }
 
 func TestClassification(t *testing.T) {

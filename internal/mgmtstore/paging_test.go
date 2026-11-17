@@ -44,6 +44,44 @@ func TestPagingTotals(t *testing.T) {
 	assert.Equal(t, []string{"a", "b"}, names(t, body["roles"]))
 }
 
+// users declares length in its totals wrapper.
+func TestPagingTotalsLength(t *testing.T) {
+	h := newHarness(t)
+	for _, n := range []string{"u1", "u2", "u3"} {
+		code, _, _ := h.do("POST", "/api/v2/users", "", `{"user_id":"`+n+`","connection":"x"}`)
+		require.Equal(t, 201, code)
+	}
+	_, body, _ := h.do("GET", "/api/v2/users", "include_totals=true&per_page=2", "")
+	assert.EqualValues(t, 2, body["length"])
+	assert.EqualValues(t, 3, body["total"])
+}
+
+// actions/actions declares page and per_page in its object-only wrapper.
+func TestPagingPageFields(t *testing.T) {
+	h := newHarness(t)
+	for i := 0; i < 3; i++ {
+		_, err := h.s.create("/actions/actions", "id", Object{"name": "n"}, stamp{})
+		require.NoError(t, err)
+	}
+	_, body, _ := h.do("GET", "/api/v2/actions/actions", "per_page=2&page=1", "")
+	assert.EqualValues(t, 1, body["page"])
+	assert.EqualValues(t, 2, body["per_page"])
+	assert.EqualValues(t, 3, body["total"])
+	assert.Len(t, body["actions"], 1)
+}
+
+func TestPagingHugePage(t *testing.T) {
+	h := threeRoles(t)
+	code, _, raw := h.do("GET", "/api/v2/roles", "page=9223372036854775807&per_page=100", "")
+	assert.Equal(t, 200, code)
+	assert.JSONEq(t, `[]`, string(raw))
+
+	code, body, _ := h.do("GET", "/api/v2/roles", "include_totals=true&page=9223372036854775807&per_page=100", "")
+	assert.Equal(t, 200, code)
+	assert.Empty(t, body["roles"])
+	assert.GreaterOrEqual(t, body["start"], float64(0))
+}
+
 func TestPagingCheckpoint(t *testing.T) {
 	h := threeRoles(t)
 	_, body, _ := h.do("GET", "/api/v2/roles", "take=2", "")

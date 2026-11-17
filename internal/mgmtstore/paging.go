@@ -132,6 +132,7 @@ func pageList(op spec.Operation, r *http.Request, shape listShape, items []Objec
 	case q.Get("include_totals") == "true" && hasTotals:
 		return offsetPage(op, totals, q, items), totals.items, false
 	case shape.plain:
+		// Ops that declare neither page nor per_page return the whole list.
 		if !declares(op, "page", "per_page") {
 			return items, shape.plainItems, false
 		}
@@ -155,36 +156,31 @@ func offsetWindow(q map[string][]string, n int) (start, end, page, perPage int) 
 	if page < 0 {
 		page = 0
 	}
-	start = min(page*perPage, n)
+	// Compare before multiplying so a huge page cannot overflow int.
+	start = n
+	if page <= n/perPage {
+		start = min(page*perPage, n)
+	}
 	end = min(start+perPage, n)
 	return start, end, page, perPage
 }
 
 func offsetPage(op spec.Operation, w wrapper, q map[string][]string, items []Object) map[string]any {
 	out := map[string]any{}
-	if !declares(op, "page", "per_page") {
-		out[w.key] = items
-		if w.has("start") {
-			out["start"] = 0
-		}
-		if w.has("limit") {
-			out["limit"] = len(items)
-		}
-		if w.has("total") {
-			out["total"] = len(items)
-		}
-		return out
+	start, end, page, perPage := 0, len(items), 0, len(items)
+	// Ops that declare neither page nor per_page return the whole list.
+	if declares(op, "page", "per_page") {
+		start, end, page, perPage = offsetWindow(q, len(items))
 	}
-	start, end, page, perPage := offsetWindow(q, len(items))
 	out[w.key] = items[start:end]
-	if w.has("start") {
-		out["start"] = page * perPage
+	fields := map[string]int{
+		"start": start, "limit": perPage, "length": end - start,
+		"total": len(items), "page": page, "per_page": perPage,
 	}
-	if w.has("limit") {
-		out["limit"] = perPage
-	}
-	if w.has("total") {
-		out["total"] = len(items)
+	for name, v := range fields {
+		if w.has(name) {
+			out[name] = v
+		}
 	}
 	return out
 }
