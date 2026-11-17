@@ -47,5 +47,8 @@ func TestClassification(t *testing.T) {
 	has("PATCH\t/api/v2/tenants/settings\tsettings-merge")
 	has("GET\t/api/v2/users/{id}/roles\tstub")
 	has("POST\t/api/v2/event-streams/{id}/redeliver\tstub")
+	has("GET\t/api/v2/sessions/{id}\tstub")
+	has("PATCH\t/api/v2/refresh-tokens/{id}\tstub")
+	has("GET\t/api/v2/self-service-profiles/{id}/custom-text/{language}/{page}\tsettings-read\tparent=/self-service-profiles/{id}")
 	has("PATCH\t/api/v2/actions/triggers/{triggerId}/bindings\tstub")
 }

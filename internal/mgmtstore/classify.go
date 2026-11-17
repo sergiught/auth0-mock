@@ -60,6 +60,10 @@ type Route struct {
 
 // settingsDenyList holds settings-shaped paths that are really relations.
 var settingsDenyList = map[string]bool{
+	// Sessions and refresh tokens are records created by logins, so settings
+	// semantics would invent one for any id where Auth0 returns 404.
+	"/sessions/{id}":                         true,
+	"/refresh-tokens/{id}":                   true,
 	"/actions/triggers/{triggerId}/bindings": true,
 }
 
@@ -71,6 +75,8 @@ type Engine struct {
 	routes map[string]Route
 	// Initial maps a settings template to its initial value.
 	initial map[string]any
+	// Readable holds the handled item templates whose GET is a read.
+	readable map[string]bool
 	// CandColls maps collection candidates to their child item template.
 	candColls map[string]string
 	// CandItems holds the child item templates of collection candidates.
@@ -121,9 +127,9 @@ func (e *Engine) Describe() []string {
 		line := op.Method + "\t" + op.Template + "\t" + r.Kind.String()
 		if r.IDField != "" {
 			line += "\tid=" + r.IDField
-			if r.Parent != "" {
-				line += "\tparent=" + r.Parent
-			}
+		}
+		if r.Parent != "" {
+			line += "\tparent=" + r.Parent
 		}
 		lines = append(lines, line)
 	}
@@ -189,7 +195,8 @@ func (e *Engine) classifyCollections(paths map[string]map[string]spec.Operation)
 		return order[i] < order[j]
 	})
 
-	readable := map[string]bool{} // Accepted item templates whose GET is read.
+	readable := map[string]bool{}
+	e.readable = readable
 	for _, c := range order {
 		item := cands[c]
 		parent := ""
@@ -271,10 +278,22 @@ func (e *Engine) classifySettings(paths map[string]map[string]spec.Operation, v 
 			"GET": KindSettingsRead, "PATCH": KindSettingsMerge, "PUT": KindSettingsReplace, "DELETE": KindSettingsReset,
 		} {
 			if m[method].Op != nil {
-				e.set(method, s, Route{Kind: kind, Collection: s})
+				e.set(method, s, Route{Kind: kind, Collection: s, Parent: e.settingsParent(s)})
 			}
 		}
 	}
+}
+
+// settingsParent returns the longest handled item template that s lives
+// under, or "" if there is none.
+func (e *Engine) settingsParent(s string) string {
+	best := ""
+	for item := range e.readable {
+		if strings.HasPrefix(s, item+"/") && len(item) > len(best) {
+			best = item
+		}
+	}
+	return best
 }
 
 // settingsShaped reports whether path s, already known to have GET and

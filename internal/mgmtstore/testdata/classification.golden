@@ -364,9 +364,9 @@ GET	/api/v2/rate-limit-policies/{id}	read	id=id
 PATCH	/api/v2/rate-limit-policies/{id}	merge	id=id
 GET	/api/v2/refresh-tokens	stub
 POST	/api/v2/refresh-tokens/revoke	stub
-DELETE	/api/v2/refresh-tokens/{id}	settings-reset
-GET	/api/v2/refresh-tokens/{id}	settings-read
-PATCH	/api/v2/refresh-tokens/{id}	settings-merge
+DELETE	/api/v2/refresh-tokens/{id}	stub
+GET	/api/v2/refresh-tokens/{id}	stub
+PATCH	/api/v2/refresh-tokens/{id}	stub
 GET	/api/v2/resource-servers	list	id=id
 POST	/api/v2/resource-servers	create	id=id
 GET	/api/v2/resource-servers/search	stub
@@ -403,13 +403,13 @@ POST	/api/v2/self-service-profiles	create	id=id
 DELETE	/api/v2/self-service-profiles/{id}	delete	id=id
 GET	/api/v2/self-service-profiles/{id}	read	id=id
 PATCH	/api/v2/self-service-profiles/{id}	merge	id=id
-GET	/api/v2/self-service-profiles/{id}/custom-text/{language}/{page}	settings-read
-PUT	/api/v2/self-service-profiles/{id}/custom-text/{language}/{page}	settings-replace
+GET	/api/v2/self-service-profiles/{id}/custom-text/{language}/{page}	settings-read	parent=/self-service-profiles/{id}
+PUT	/api/v2/self-service-profiles/{id}/custom-text/{language}/{page}	settings-replace	parent=/self-service-profiles/{id}
 POST	/api/v2/self-service-profiles/{id}/sso-ticket	stub
 POST	/api/v2/self-service-profiles/{profileId}/sso-ticket/{id}/revoke	stub
-DELETE	/api/v2/sessions/{id}	settings-reset
-GET	/api/v2/sessions/{id}	settings-read
-PATCH	/api/v2/sessions/{id}	settings-merge
+DELETE	/api/v2/sessions/{id}	stub
+GET	/api/v2/sessions/{id}	stub
+PATCH	/api/v2/sessions/{id}	stub
 POST	/api/v2/sessions/{id}/revoke	stub
 GET	/api/v2/stats/active-users	stub
 GET	/api/v2/stats/daily	stub
