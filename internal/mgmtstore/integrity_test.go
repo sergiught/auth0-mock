@@ -70,6 +70,41 @@ func TestSelectBranch(t *testing.T) {
 	// An unknown discriminator value falls back to validation.
 	assert.Same(t, b, selectBranch(union, map[string]any{"kind": "nope", "b": "x"}, 0))
 
+	// Enum values beat key overlap: a contradicting branch is dropped, a
+	// matching one boosted, and a union nobody matches is returned as is.
+	kind := func(name string, extra ...string) *openapi3.SchemaRef {
+		props := map[string]*openapi3.SchemaRef{"kind": schemaOf(&openapi3.Schema{Enum: []any{name}}), "n": str}
+		for _, k := range extra {
+			props[k] = str
+		}
+		return schemaOf(&openapi3.Schema{Properties: props})
+	}
+	wide, narrow := kind("WIDE", "x", "y"), kind("NARROW")
+	byEnum := schemaOf(&openapi3.Schema{OneOf: openapi3.SchemaRefs{wide, narrow}})
+	assert.Same(t, narrow, selectBranch(byEnum, map[string]any{"kind": "NARROW", "n": 1, "x": 1, "y": 1}, 0))
+	assert.Same(t, byEnum, selectBranch(byEnum, map[string]any{"kind": "OTHER"}, 0))
+	allOfBad := schemaOf(&openapi3.Schema{AllOf: openapi3.SchemaRefs{kind("G", "x", "y")}})
+	allOfGood := schemaOf(&openapi3.Schema{AllOf: openapi3.SchemaRefs{kind("NARROW")}})
+	viaAllOf := schemaOf(&openapi3.Schema{OneOf: openapi3.SchemaRefs{allOfBad, allOfGood}})
+	assert.Same(t, allOfGood, selectBranch(viaAllOf, map[string]any{"kind": "NARROW", "n": 1, "x": 1, "y": 1}, 0))
+	// Const and allOf-wrapped enums count, as do enums of nested unions.
+	constB := schemaOf(&openapi3.Schema{Properties: map[string]*openapi3.SchemaRef{"kind": schemaOf(&openapi3.Schema{Const: "C"}), "x": str, "y": str}})
+	viaAll := schemaOf(&openapi3.Schema{Properties: map[string]*openapi3.SchemaRef{"kind": schemaOf(&openapi3.Schema{AllOf: openapi3.SchemaRefs{schemaOf(&openapi3.Schema{Enum: []any{"D"}})}})}})
+	nested := schemaOf(&openapi3.Schema{AllOf: openapi3.SchemaRefs{schemaOf(&openapi3.Schema{OneOf: openapi3.SchemaRefs{kind("E"), kind("F")}})}})
+	mixed := schemaOf(&openapi3.Schema{OneOf: openapi3.SchemaRefs{constB, viaAll, nested}})
+	assert.Same(t, viaAll, selectBranch(mixed, map[string]any{"kind": "D", "x": 1, "y": 1}, 0))
+	assert.Same(t, constB, selectBranch(mixed, map[string]any{"kind": "C", "n": 1}, 0))
+	assert.Same(t, nested, selectBranch(mixed, map[string]any{"kind": "F", "x": 1, "y": 1}, 0))
+	noConst := schemaOf(&openapi3.Schema{OneOf: openapi3.SchemaRefs{viaAll, nested}})
+	assert.Same(t, noConst, selectBranch(noConst, map[string]any{"kind": "Z"}, 0))
+	// Depth limit inside a branch is not a contradiction.
+	_, ok := enumFit(constB, nil, maxSchemaDepth+1)
+	assert.True(t, ok)
+	_, constrained := allowedValues(str, maxSchemaDepth+1)
+	assert.False(t, constrained)
+	_, ok = enumFit(nil, nil, 0)
+	assert.True(t, ok)
+
 	// A schema with its own properties keeps them and gains the branch.
 	own := schemaOf(&openapi3.Schema{Properties: map[string]*openapi3.SchemaRef{"id": str}, AnyOf: openapi3.SchemaRefs{a, b}})
 	props := schemaProps(selectBranch(own, map[string]any{"b": "x"}, 0))
@@ -142,4 +177,22 @@ func TestSeedValidatesPathParams(t *testing.T) {
 	assert.Contains(t, err.Error(), "prompts/login/custom-text/not-a-language")
 	assert.Contains(t, err.Error(), `"language"`)
 	require.NoError(t, e.NewStore(fixedNow).Load(raw(t, `{"prompts/login/custom-text/en":`+body+`}`)))
+}
+
+func TestVaultConnectionSnapshotReloads(t *testing.T) {
+	h := newHarness(t)
+	code, _, body := h.do("POST", "/api/v2/flows/vault/connections", "", `{"app_id":"HTTP","name":"http"}`)
+	require.Equal(t, 201, code, string(body))
+
+	first, err := json.Marshal(h.s.Export())
+	require.NoError(t, err)
+	var data map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(first, &data))
+	e, _ := loadEngine(t)
+	s2 := e.NewStore(fixedNow)
+	require.NoError(t, s2.Load(data))
+	second, err := json.Marshal(s2.Export())
+	require.NoError(t, err)
+	assert.JSONEq(t, string(first), string(second))
+	assert.NotContains(t, string(second), `"setup"`)
 }

@@ -150,7 +150,7 @@ func normalizeSeed(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, v any, 
 	if req == nil || req.Value == nil || depth > maxSchemaDepth {
 		return v, nil
 	}
-	req = selectBranch(req, v, 0)
+	req = selectBranch(req, withoutResponseOnly(req, resps, v), 0)
 	resps = slices.Clone(resps)
 	for i, r := range resps {
 		resps[i] = selectBranch(r, v, 0)
@@ -179,6 +179,26 @@ func normalizeSeed(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, v any, 
 		return normalizeObject(req, resps, val, depth)
 	}
 	return v, nil
+}
+
+// withoutResponseOnly returns v without the keys that only the response
+// schemas declare, so picking a request branch is not thrown off by them.
+func withoutResponseOnly(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, v any) any {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	reqProps := schemaProps(req)
+	respProps, _, _ := responseShape(resps)
+	out := make(map[string]any, len(obj))
+	for k, val := range obj {
+		_, inReq := reqProps[k]
+		if _, inResp := respProps[k]; inResp && !inReq {
+			continue
+		}
+		out[k] = val
+	}
+	return out
 }
 
 // responseShape merges what the response schemas declare: their properties

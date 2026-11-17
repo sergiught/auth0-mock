@@ -1,6 +1,8 @@
 package mgmtstore
 
 import (
+	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -234,6 +236,82 @@ func selectBranch(s *openapi3.SchemaRef, v any, depth int) *openapi3.SchemaRef {
 	return &openapi3.SchemaRef{Value: &merged}
 }
 
+// enumFit scores how well obj's values match the enum and const values of
+// schema s, directly, through allOf or through nested unions. A value that contradicts them
+// makes the result not ok, so the branch cannot be the one meant.
+// Each matching value adds enumBoost.
+func enumFit(s *openapi3.SchemaRef, obj map[string]any, depth int) (score int, ok bool) {
+	if s == nil || s.Value == nil || depth > maxSchemaDepth {
+		return 0, true
+	}
+	if score, ok = propsFit(s.Value.Properties, obj); !ok {
+		return 0, false
+	}
+	for _, b := range s.Value.AllOf {
+		n, ok := enumFit(b, obj, depth+1)
+		if !ok {
+			return 0, false
+		}
+		score += n
+	}
+	for _, group := range []openapi3.SchemaRefs{s.Value.OneOf, s.Value.AnyOf} {
+		best, found := 0, false
+		for _, b := range group {
+			if n, ok := enumFit(b, obj, depth+1); ok && (!found || n > best) {
+				best, found = n, true
+			}
+		}
+		if len(group) > 0 {
+			if !found {
+				return 0, false
+			}
+			score += best
+		}
+	}
+	return score, true
+}
+
+// propsFit checks obj's values against the enums and consts of props.
+func propsFit(props map[string]*openapi3.SchemaRef, obj map[string]any) (score int, ok bool) {
+	for k, p := range props {
+		val, present := obj[k]
+		if !present {
+			continue
+		}
+		allowed, constrained := allowedValues(p, 0)
+		if !constrained {
+			continue
+		}
+		if !slices.ContainsFunc(allowed, func(a any) bool { return fmt.Sprint(a) == fmt.Sprint(val) }) {
+			return 0, false
+		}
+		score += enumBoost
+	}
+	return score, true
+}
+
+const enumBoost = 1000
+
+// allowedValues returns the values a property schema restricts itself to
+// through enum or const, directly or through allOf, and whether it does.
+func allowedValues(p *openapi3.SchemaRef, depth int) ([]any, bool) {
+	if p == nil || p.Value == nil || depth > maxSchemaDepth {
+		return nil, false
+	}
+	if len(p.Value.Enum) > 0 {
+		return p.Value.Enum, true
+	}
+	if p.Value.Const != nil {
+		return []any{p.Value.Const}, true
+	}
+	for _, b := range p.Value.AllOf {
+		if vals, ok := allowedValues(b, depth+1); ok {
+			return vals, true
+		}
+	}
+	return nil, false
+}
+
 func pickBranch(s *openapi3.Schema, group openapi3.SchemaRefs, v any) *openapi3.SchemaRef {
 	obj, _ := v.(map[string]any)
 	if b := discriminated(s.Discriminator, group, obj); b != nil {
@@ -247,7 +325,11 @@ func pickBranch(s *openapi3.Schema, group openapi3.SchemaRefs, v any) *openapi3.
 		if acceptsValue(b, v) {
 			return b
 		}
-		n := 0
+		fit, ok := enumFit(b, obj, 0)
+		if !ok {
+			continue
+		}
+		n := fit
 		for k := range schemaProps(b) {
 			if _, ok := obj[k]; ok {
 				n++
