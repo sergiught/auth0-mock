@@ -93,7 +93,7 @@ func TestRemoveCascades(t *testing.T) {
 		require.NoError(t, err)
 		_, err = s.create("/organizations/"+o+"/invitations", "id", Object{"id": "i"}, both)
 		require.NoError(t, err)
-		s.replaceSettings("/organizations/"+o+"/cfg", Object{"k": 1})
+		_, _ = s.replaceSettings("/organizations/"+o+"/cfg", Object{"k": 1}, parentRef{})
 	}
 	assert.True(t, s.remove("/organizations", "o1"))
 	assert.False(t, s.remove("/organizations", "o1"))
@@ -148,11 +148,12 @@ func TestSettingsInitialMergeReplaceReset(t *testing.T) {
 	assert.Equal(t, 1, initial["a"])
 	assert.Equal(t, Object{"a": 1}, s.getSettings("/p", initial))
 
-	got = s.mergeSettings("/p", initial, Object{"b": 2})
+	got, _ = s.mergeSettings("/p", initial, Object{"b": 2}, parentRef{})
 	assert.Equal(t, Object{"a": 1, "b": 2}, got)
-	got = s.mergeSettings("/p", initial, Object{"a": nil})
+	got, _ = s.mergeSettings("/p", initial, Object{"a": nil}, parentRef{})
 	assert.Equal(t, Object{"b": 2}, got)
-	assert.Equal(t, Object{"c": 3}, s.replaceSettings("/p", Object{"c": 3}))
+	got, _ = s.replaceSettings("/p", Object{"c": 3}, parentRef{})
+	assert.Equal(t, Object{"c": 3}, got)
 	s.resetSettings("/p")
 	assert.Equal(t, Object{"a": 1}, s.getSettings("/p", initial))
 	s.Clear()
@@ -188,4 +189,23 @@ func TestRemoveCascadeKeepsPrefixSibling(t *testing.T) {
 	}
 	assert.True(t, s.remove("/organizations", "o1"))
 	assert.Len(t, s.list("/organizations/o10/invitations"), 1)
+}
+
+func TestSettingsWriteUnderMissingParent(t *testing.T) {
+	s := newTestStore(t)
+	p := parentRef{"/organizations", "o1"}
+	_, err := s.mergeSettings("/organizations/o1/cfg", nil, Object{"a": 1}, p)
+	assert.ErrorIs(t, err, errNotFound)
+	_, err = s.replaceSettings("/organizations/o1/cfg", Object{"a": 1}, p)
+	assert.ErrorIs(t, err, errNotFound)
+	assert.Empty(t, s.settings)
+
+	_, err = s.create("/organizations", "id", Object{"id": "o1"}, both)
+	require.NoError(t, err)
+	got, err := s.mergeSettings("/organizations/o1/cfg", nil, Object{"a": 1}, p)
+	require.NoError(t, err)
+	assert.Equal(t, Object{"a": 1}, got)
+	got, err = s.replaceSettings("/organizations/o1/cfg", Object{"b": 2}, p)
+	require.NoError(t, err)
+	assert.Equal(t, Object{"b": 2}, got)
 }

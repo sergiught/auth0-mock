@@ -30,12 +30,21 @@ func newHarness(t *testing.T) *harness {
 // the spec, where rawPath is the escaped path without the query.
 func (h *harness) do(method, rawPath, query, body string) (int, map[string]any, []byte) {
 	h.t.Helper()
+	return h.doType(method, rawPath, query, body, "")
+}
+
+// doType is do with a request Content-Type.
+func (h *harness) doType(method, rawPath, query, body, contentType string) (int, map[string]any, []byte) {
+	h.t.Helper()
 	u, err := url.Parse(rawPath)
 	require.NoError(h.t, err)
 	op, err := h.v.Resolve(method, u.Path)
 	require.NoError(h.t, err)
 	require.True(h.t, h.s.Handles(op), "%s %s not handled", method, rawPath)
 	r := httptest.NewRequest(method, rawPath+"?"+query, strings.NewReader(body))
+	if contentType != "" {
+		r.Header.Set("Content-Type", contentType)
+	}
 	w := httptest.NewRecorder()
 	h.s.Serve(w, r, op, []byte(body))
 	if w.Code < 400 {
@@ -160,4 +169,62 @@ func TestServeBadBody(t *testing.T) {
 	h.s.Serve(w, httptest.NewRequest("POST", "/api/v2/roles", nil), op, []byte(`[1]`))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid_body")
+}
+
+func TestServeProjectsNestedValuesBySchema(t *testing.T) {
+	h := newHarness(t)
+	code, created, raw := h.do("POST", "/api/v2/actions/modules", "",
+		`{"name":"m","code":"x","secrets":[{"name":"API_KEY","value":"private-value"}]}`)
+	require.Equal(t, 201, code, string(raw))
+	assert.NotContains(t, string(raw), "private-value")
+	assert.Contains(t, string(raw), "API_KEY")
+
+	id, _ := created["id"].(string)
+	_, _, raw = h.do("GET", "/api/v2/actions/modules/"+id, "", "")
+	assert.NotContains(t, string(raw), "private-value")
+	_, _, raw = h.do("GET", "/api/v2/actions/modules", "", "")
+	assert.NotContains(t, string(raw), "private-value")
+	assert.Contains(t, string(raw), "API_KEY")
+	assert.NotContains(t, h.s.exportJSON(t), "private-value")
+}
+
+func TestServeKeepsAllowedExtraKeys(t *testing.T) {
+	h := newHarness(t)
+	code, _, raw := h.do("POST", "/api/v2/users", "",
+		`{"user_id":"auth0|x1","connection":"c","email":"a@b.co","password":"Secret123!","user_metadata":{"deep":{"k":1}}}`)
+	require.Equal(t, 201, code, string(raw))
+	code, patched, raw := h.do("PATCH", "/api/v2/users/auth0%7Cx1", "", `{"custom_flag":true,"password":"Other123!"}`)
+	require.Equal(t, 200, code, string(raw))
+	assert.Equal(t, true, patched["custom_flag"])
+	assert.NotContains(t, string(raw), "password")
+
+	_, got, raw := h.do("GET", "/api/v2/users/auth0%7Cx1", "", "")
+	assert.Equal(t, true, got["custom_flag"])
+	assert.Equal(t, map[string]any{"deep": map[string]any{"k": float64(1)}}, got["user_metadata"])
+	assert.NotContains(t, string(raw), "password")
+	_, _, raw = h.do("GET", "/api/v2/users", "", "")
+	assert.Contains(t, string(raw), "custom_flag")
+	assert.NotContains(t, string(raw), "password")
+
+	exp := h.s.exportJSON(t)
+	assert.Contains(t, exp, "custom_flag")
+	assert.NotContains(t, exp, "password")
+}
+
+func TestServeFormBody(t *testing.T) {
+	h := newHarness(t)
+	code, role, raw := h.doType("POST", "/api/v2/roles", "", "name=editor", "application/x-www-form-urlencoded")
+	require.Equal(t, 200, code, string(raw))
+	assert.Equal(t, "editor", role["name"])
+	_, got, _ := h.do("GET", "/api/v2/roles/"+role["id"].(string), "", "")
+	assert.Equal(t, "editor", got["name"])
+
+	// A form body the operation does not declare is rejected.
+	op, err := h.v.Resolve("POST", "/api/v2/users")
+	require.NoError(t, err)
+	r := httptest.NewRequest("POST", "/api/v2/users", strings.NewReader("a=b"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.s.Serve(w, r, op, []byte("a=b"))
+	assert.Equal(t, 400, w.Code)
 }

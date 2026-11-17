@@ -129,3 +129,59 @@ func TestLoadStoresEncodedKeyWhereServeLooksIt(t *testing.T) {
 	assert.Equal(t, 200, code)
 	assert.Contains(t, string(body), "am_1")
 }
+
+// exportJSON is the export as one JSON string, for substring checks.
+func (s *Store) exportJSON(t *testing.T) string {
+	t.Helper()
+	b, err := json.Marshal(s.Export())
+	require.NoError(t, err)
+	return string(b)
+}
+
+func TestLoadRejectsBadResponseOnlyValue(t *testing.T) {
+	e, _ := loadEngine(t)
+	err := e.NewStore(fixedNow).Load(raw(t, `{"users": [{"user_id": "auth0|seeded", "connection": "c", "logins_count": "many"}]}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "management.users[0]: ")
+	assert.Contains(t, err.Error(), `"logins_count"`)
+
+	require.NoError(t, e.NewStore(fixedNow).Load(raw(t, `{"users": [{"user_id": "auth0|seeded", "connection": "c", "logins_count": 3}]}`)))
+}
+
+func TestEmptiedSettingsRoundTrip(t *testing.T) {
+	h := newHarness(t)
+	code, _, body := h.do("PATCH", "/api/v2/tenants/settings", "", `{"friendly_name":"x"}`)
+	require.Equal(t, 200, code, string(body))
+	code, _, body = h.do("PATCH", "/api/v2/tenants/settings", "", `{"friendly_name":null}`)
+	require.Equal(t, 200, code, string(body))
+	out := h.s.Export()
+	assert.Equal(t, Object{}, out["tenants/settings"])
+
+	b, err := json.Marshal(out)
+	require.NoError(t, err)
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &m))
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out, s2.Export())
+}
+
+func TestExportRoundTripsEncodedParentID(t *testing.T) {
+	e, _ := loadEngine(t)
+	s1 := e.NewStore(fixedNow)
+	require.NoError(t, s1.Load(raw(t, `{"users": [{"user_id": "auth0|100%", "connection": "x"}],
+	  "users/auth0%7C100%25/authentication-methods": [{"id": "am_1", "type": "totp"}]}`)))
+	out1 := s1.Export()
+	require.Contains(t, out1, "users/auth0%7C100%25/authentication-methods")
+
+	b, err := json.Marshal(out1)
+	require.NoError(t, err)
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &m))
+	s2 := e.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out1, s2.Export())
+	am, ok := s2.get("/users/auth0|100%/authentication-methods", "am_1")
+	require.True(t, ok)
+	assert.Equal(t, "totp", am["type"])
+}

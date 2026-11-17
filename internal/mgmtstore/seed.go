@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -63,35 +64,44 @@ func (e *Engine) lookup(path string) (target, bool) {
 		return target{}, false
 	}
 	t := target{route: best, params: params, settings: best.Kind != KindCreate}
+	t.request, t.response, t.read = e.schemas(best.Collection)
+	return t, true
+}
+
+// schemas returns the request schema that writes the collection or settings
+// path, the response schema of its create or settings read, and the response
+// schema of reading one item (collections only).
+func (e *Engine) schemas(collection string) (request, response, read *openapi3.SchemaRef) {
 	var putBody *openapi3.SchemaRef
 	for _, op := range e.ops {
 		r, ok := e.routes[routeKey(op.Method, op.Template)]
-		if !ok || r.Collection != best.Collection {
+		if !ok || r.Collection != collection {
 			continue
 		}
 		_, resp := successResponse(op.Op)
 		switch r.Kind {
 		case KindCreate:
-			t.request, t.response = bodySchema(op.Op), resp
+			request, response = bodySchema(op.Op), resp
 		case KindRead:
-			t.read = resp
+			read = resp
 		case KindSettingsRead:
-			t.response = resp
+			response = resp
 		case KindSettingsMerge:
-			t.request = bodySchema(op.Op)
+			request = bodySchema(op.Op)
 		case KindSettingsReplace:
 			putBody = bodySchema(op.Op)
 		}
 	}
-	if t.request == nil {
-		t.request = putBody
+	if request == nil {
+		request = putBody
 	}
-	return t, true
+	return request, response, read
 }
 
 // checkObject validates one seed object against the request schema. Keys the
 // request schema lacks but the response schema declares (such as logins_count
-// in an export) are not checked; any other undeclared key is an error. The
+// in an export) are checked against that response property; any other
+// undeclared key is an error. The
 // original object is stored by the caller.
 func (t target) checkObject(obj Object) error {
 	if t.request == nil || t.request.Value == nil {
@@ -106,8 +116,10 @@ func (t target) checkObject(obj Object) error {
 		for _, k := range slices.Sorted(maps.Keys(obj)) {
 			if _, ok := reqProps[k]; ok {
 				filtered[k] = obj[k]
-			} else if _, ok := respProps[k]; !ok {
+			} else if rp, ok := respProps[k]; !ok {
 				return fmt.Errorf("unknown key %q", k)
+			} else if err := checkResponseValue(rp, obj[k]); err != nil {
+				return fmt.Errorf("key %q: %w", k, err)
 			}
 		}
 		// A required field no GET returns, such as a user's connection, is
@@ -124,6 +136,14 @@ func (t target) checkObject(obj Object) error {
 	}
 	return t.request.Value.VisitJSON(filtered,
 		openapi3.VisitAsRequest(), openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails())
+}
+
+func checkResponseValue(prop *openapi3.SchemaRef, v any) error {
+	if prop == nil || prop.Value == nil {
+		return nil
+	}
+	return prop.Value.VisitJSON(v,
+		openapi3.VisitAsResponse(), openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails())
 }
 
 func (t target) parent() (coll, id string, ok bool) {
@@ -183,10 +203,14 @@ func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
 		if err := json.Unmarshal(rawVal, &obj); err != nil || obj == nil {
 			return fmt.Errorf("management.%q: must be an object", key)
 		}
-		if err := t.checkObject(obj); err != nil {
-			return fmt.Errorf("management.%s: %w", key, err)
+		// An empty snapshot is what a null patch leaves behind, and a PATCH
+		// schema may require a property, so only a non-empty one is checked.
+		if len(obj) > 0 {
+			if err := t.checkObject(obj); err != nil {
+				return fmt.Errorf("management.%s: %w", key, err)
+			}
 		}
-		s.replaceSettings(path, obj)
+		_, _ = s.replaceSettings(path, obj, parentRef{}) // Parent checked above.
 		return nil
 	}
 	var items []Object
@@ -234,6 +258,16 @@ func (s *Store) CheckSeed(data map[string]json.RawMessage) error {
 	return s.engine.CheckSeed(data)
 }
 
+// escapePath percent-escapes each segment of a stored (decoded) path, so
+// that Load, which decodes a key once, gets the stored path back.
+func escapePath(p string) string {
+	segs := strings.Split(p, "/")
+	for i, seg := range segs {
+		segs[i] = url.PathEscape(seg)
+	}
+	return strings.Join(segs, "/")
+}
+
 // Export returns the stored data in seed shape: every non-empty collection as
 // an array of objects projected like a GET response, and every written
 // settings path as stored.
@@ -253,7 +287,8 @@ func (s *Store) Export() map[string]any {
 
 	out := map[string]any{}
 	for _, k := range colls {
-		t, ok := s.engine.lookup(k)
+		key := escapePath(k)
+		t, ok := s.engine.lookup(key)
 		if !ok {
 			continue
 		}
@@ -261,10 +296,10 @@ func (s *Store) Export() map[string]any {
 		if schema == nil {
 			schema = t.response
 		}
-		out[strings.TrimPrefix(k, "/")] = projectAll(s.list(k), schema)
+		out[strings.TrimPrefix(key, "/")] = projectAll(s.list(k), schema, t.request)
 	}
 	for k, o := range settings {
-		out[strings.TrimPrefix(k, "/")] = o
+		out[strings.TrimPrefix(escapePath(k), "/")] = o
 	}
 	return out
 }

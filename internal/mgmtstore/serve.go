@@ -1,14 +1,17 @@
 package mgmtstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
 
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -64,19 +67,67 @@ func badBody(w http.ResponseWriter) {
 	httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "The request body must be a JSON object.", "invalid_body")
 }
 
-// project keeps only the properties schema declares and fills any required
-// property the stored object lacks with its minimal value, so the response
-// satisfies the spec even when the create request did not carry the field. A
-// schema with no properties keeps everything.
-func project(obj Object, schema *openapi3.SchemaRef) Object {
-	props := schemaProps(schema)
-	if len(props) == 0 {
-		return obj
+// project returns obj as a response body. Nested objects and array items follow
+// their own response sub-schemas. A key the response schema does not declare is
+// kept only where that schema allows additional properties, and never when the
+// request schema (req, may be nil) declares it at the same level, as it does
+// for a password. Any required property the stored object lacks is filled with
+// its minimal value, so the response satisfies the spec even when the create
+// request did not carry the field. A schema with no properties keeps
+// everything. Recursion follows the stored data, which is finite, so a
+// recursive schema cannot loop.
+func project(obj Object, schema, req *openapi3.SchemaRef) Object {
+	if out, ok := projectValue(obj, schema, req).(Object); ok {
+		return out
 	}
-	out := make(Object, len(props))
-	for k, v := range obj {
-		if _, ok := props[k]; ok {
-			out[k] = v
+	return obj
+}
+
+func projectValue(v any, schema, req *openapi3.SchemaRef) any {
+	if schema == nil || schema.Value == nil {
+		return v
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		return projectMap(t, schema, req)
+	case []any:
+		items := schema.Value.Items
+		if items == nil {
+			return v
+		}
+		var reqItems *openapi3.SchemaRef
+		if req != nil && req.Value != nil {
+			reqItems = req.Value.Items
+		}
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = projectValue(x, items, reqItems)
+		}
+		return out
+	}
+	return v
+}
+
+func projectMap(obj map[string]any, schema, req *openapi3.SchemaRef) map[string]any {
+	props := schemaProps(schema)
+	allowed, extra := additionalProps(schema, 0)
+	if len(props) == 0 {
+		if extra == nil {
+			return obj
+		}
+		out := make(map[string]any, len(obj))
+		for k, x := range obj {
+			out[k] = projectValue(x, extra, nil)
+		}
+		return out
+	}
+	reqProps := schemaProps(req)
+	out := make(map[string]any, len(props))
+	for k, x := range obj {
+		if p, ok := props[k]; ok {
+			out[k] = projectValue(x, p, reqProps[k])
+		} else if _, requestOnly := reqProps[k]; !requestOnly && allowed {
+			out[k] = projectValue(x, extra, nil)
 		}
 	}
 	for _, k := range collectRequired(schema, 0) {
@@ -89,10 +140,10 @@ func project(obj Object, schema *openapi3.SchemaRef) Object {
 	return out
 }
 
-func projectAll(items []Object, schema *openapi3.SchemaRef) []Object {
+func projectAll(items []Object, schema, req *openapi3.SchemaRef) []Object {
 	out := make([]Object, len(items))
 	for i, o := range items {
-		out[i] = project(o, schema)
+		out[i] = project(o, schema, req)
 	}
 	return out
 }
@@ -119,12 +170,66 @@ func writeJSON(w http.ResponseWriter, status int, schema *openapi3.SchemaRef, v 
 	_, _ = w.Write(b)
 }
 
+// writesBody reports whether a route of kind k stores the request body.
+func writesBody(k Kind) bool {
+	switch k {
+	case KindCreate, KindMerge, KindReplace, KindSettingsMerge, KindSettingsReplace:
+		return true
+	}
+	return false
+}
+
+const formType = "application/x-www-form-urlencoded"
+
+// decodeBody decodes a write body by its Content-Type: a form body through
+// kin-openapi's form decoder with the operation's form schema, so values are
+// typed, and anything else as JSON.
+func decodeBody(r *http.Request, op spec.Operation, body []byte) (Object, bool) {
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != formType {
+		return decodeObject(body)
+	}
+	if op.Op.RequestBody == nil || op.Op.RequestBody.Value == nil {
+		return nil, false
+	}
+	media := op.Op.RequestBody.Value.Content.Get(formType)
+	decode := openapi3filter.RegisteredBodyDecoder(formType)
+	if media == nil || decode == nil {
+		return nil, false
+	}
+	v, err := decode(bytes.NewReader(body), r.Header, media.Schema,
+		func(name string) *openapi3.Encoding { return media.Encoding[name] })
+	if err != nil {
+		return nil, false
+	}
+	o, ok := v.(map[string]any)
+	return o, ok && o != nil
+}
+
 func decodeObject(body []byte) (Object, bool) {
 	var o Object
 	if err := json.Unmarshal(body, &o); err != nil || o == nil {
 		return nil, false
 	}
 	return o, true
+}
+
+// parentOf names the parent item a route's path points at, or the zero
+// parentRef when the route has none.
+func parentOf(route Route, params map[string]string) parentRef {
+	if route.Parent == "" {
+		return parentRef{}
+	}
+	last := lastSegment(route.Parent)
+	return parentRef{fill(strings.TrimSuffix(route.Parent, "/"+last), params), params[paramName(last)]}
+}
+
+// hasParent reports whether parent is stored; a zero parent always is.
+func (s *Store) hasParent(parent parentRef) bool {
+	if parent == (parentRef{}) {
+		return true
+	}
+	_, found := s.get(parent.coll, parent.id)
+	return found
 }
 
 // Serve answers r, matched to op, from the store. The body argument is
@@ -140,32 +245,36 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 		notFound(w)
 		return
 	}
-	var parent parentRef
-	if route.Parent != "" {
-		parentColl := strings.TrimSuffix(route.Parent, "/"+lastSegment(route.Parent))
-		parent = parentRef{fill(parentColl, params), params[paramName(lastSegment(route.Parent))]}
-		if _, found := s.get(parent.coll, parent.id); !found {
-			notFound(w)
-			return
-		}
+	parent := parentOf(route, params)
+	if !s.hasParent(parent) {
+		notFound(w)
+		return
 	}
 	status, schema := successResponse(op.Op)
 	coll := fill(route.Collection, params)
+	req, _, _ := s.engine.schemas(route.Collection)
+	var obj Object
+	if writesBody(route.Kind) {
+		if obj, ok = decodeBody(r, op, body); !ok {
+			badBody(w)
+			return
+		}
+	}
 
 	switch route.Kind {
 	case KindList:
-		s.serveList(w, r, op, coll, status, schema)
+		s.serveList(w, r, op, coll, status, schema, req)
 	case KindCreate:
-		s.serveCreate(w, route, coll, parent, status, schema, body)
+		s.serveCreate(w, route, coll, parent, status, schema, req, obj)
 	case KindRead:
 		o, found := s.get(coll, params[route.IDParam])
 		if !found {
 			notFound(w)
 			return
 		}
-		writeJSON(w, status, schema, project(o, schema))
+		writeJSON(w, status, schema, project(o, schema, req))
 	case KindMerge, KindReplace:
-		s.serveWrite(w, route, coll, params[route.IDParam], status, schema, body)
+		s.serveWrite(w, route, coll, params[route.IDParam], status, schema, req, obj)
 	case KindDelete:
 		id := params[route.IDParam]
 		o, found := s.get(coll, id)
@@ -173,13 +282,13 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 			notFound(w)
 			return
 		}
-		writeJSON(w, status, schema, project(o, schema))
+		writeJSON(w, status, schema, project(o, schema, req))
 	default:
-		s.serveSettings(w, route, coll, status, schema, body)
+		s.serveSettings(w, route, coll, parent, status, schema, req, obj)
 	}
 }
 
-func (s *Store) serveList(w http.ResponseWriter, r *http.Request, op spec.Operation, coll string, status int, schema *openapi3.SchemaRef) {
+func (s *Store) serveList(w http.ResponseWriter, r *http.Request, op spec.Operation, coll string, status int, schema, req *openapi3.SchemaRef) {
 	items := s.list(coll)
 	shape := listShapeOf(schema)
 	page, itemSchema, badFrom := pageList(op, r, shape, items)
@@ -187,18 +296,18 @@ func (s *Store) serveList(w http.ResponseWriter, r *http.Request, op spec.Operat
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "from: not a cursor issued by this mock", "invalid_query_string")
 		return
 	}
-	writeJSON(w, status, schema, projectPage(page, itemSchema))
+	writeJSON(w, status, schema, projectPage(page, itemSchema, req))
 }
 
 // projectPage projects every item inside a paged list body.
-func projectPage(page any, itemSchema *openapi3.SchemaRef) any {
+func projectPage(page any, itemSchema, req *openapi3.SchemaRef) any {
 	switch p := page.(type) {
 	case []Object:
-		return projectAll(p, itemSchema)
+		return projectAll(p, itemSchema, req)
 	case map[string]any:
 		for k, v := range p {
 			if items, ok := v.([]Object); ok {
-				p[k] = projectAll(items, itemSchema)
+				p[k] = projectAll(items, itemSchema, req)
 			}
 		}
 	}
@@ -216,12 +325,7 @@ func newIDFor(prop *openapi3.SchemaRef) string {
 	return id
 }
 
-func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, parent parentRef, status int, schema *openapi3.SchemaRef, body []byte) {
-	obj, ok := decodeObject(body)
-	if !ok {
-		badBody(w)
-		return
-	}
+func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, parent parentRef, status int, schema, req *openapi3.SchemaRef, obj Object) {
 	if id, _ := obj[route.IDField].(string); id == "" {
 		obj[route.IDField] = newIDFor(schemaProps(schema)[route.IDField])
 	}
@@ -238,16 +342,11 @@ func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, par
 	case err != nil:
 		httperr.WriteMgmt(w, http.StatusInternalServerError, "Internal Server Error", err.Error(), "internal")
 	default:
-		writeJSON(w, status, schema, project(created, schema))
+		writeJSON(w, status, schema, project(created, schema, req))
 	}
 }
 
-func (s *Store) serveWrite(w http.ResponseWriter, route Route, coll, id string, status int, schema *openapi3.SchemaRef, body []byte) {
-	obj, ok := decodeObject(body)
-	if !ok {
-		badBody(w)
-		return
-	}
+func (s *Store) serveWrite(w http.ResponseWriter, route Route, coll, id string, status int, schema, req *openapi3.SchemaRef, obj Object) {
 	var (
 		out Object
 		err error
@@ -261,10 +360,10 @@ func (s *Store) serveWrite(w http.ResponseWriter, route Route, coll, id string, 
 		notFound(w)
 		return
 	}
-	writeJSON(w, status, schema, project(out, schema))
+	writeJSON(w, status, schema, project(out, schema, req))
 }
 
-func (s *Store) serveSettings(w http.ResponseWriter, route Route, path string, status int, schema *openapi3.SchemaRef, body []byte) {
+func (s *Store) serveSettings(w http.ResponseWriter, route Route, path string, parent parentRef, status int, schema, req *openapi3.SchemaRef, obj Object) {
 	initial, _ := s.engine.initial[route.Collection].(map[string]any)
 	var out Object
 	switch route.Kind {
@@ -274,19 +373,19 @@ func (s *Store) serveSettings(w http.ResponseWriter, route Route, path string, s
 		s.resetSettings(path)
 		out = s.getSettings(path, initial)
 	default:
-		obj, ok := decodeObject(body)
-		if !ok {
-			badBody(w)
-			return
-		}
+		var err error
 		if route.Kind == KindSettingsMerge {
-			out = s.mergeSettings(path, initial, obj)
+			out, err = s.mergeSettings(path, initial, obj, parent)
 		} else {
-			out = s.replaceSettings(path, obj)
+			out, err = s.replaceSettings(path, obj, parent)
+		}
+		if err != nil {
+			notFound(w)
+			return
 		}
 	}
 	if out == nil {
 		out = Object{}
 	}
-	writeJSON(w, status, schema, project(out, schema))
+	writeJSON(w, status, schema, project(out, schema, req))
 }

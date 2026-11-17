@@ -33,6 +33,30 @@ func collectProps(s *openapi3.SchemaRef, out map[string]*openapi3.SchemaRef, dep
 	}
 }
 
+// additionalProps reports whether schema, or one of its allOf/oneOf/anyOf
+// branches, allows undeclared properties (additionalProperties true or a
+// schema), and the schema they follow when it gives one.
+func additionalProps(s *openapi3.SchemaRef, depth int) (bool, *openapi3.SchemaRef) {
+	if s == nil || s.Value == nil || depth > maxSchemaDepth {
+		return false, nil
+	}
+	ap := s.Value.AdditionalProperties
+	if ap.Schema != nil {
+		return true, ap.Schema
+	}
+	allowed := ap.Has != nil && *ap.Has
+	for _, group := range []openapi3.SchemaRefs{s.Value.AllOf, s.Value.OneOf, s.Value.AnyOf} {
+		for _, b := range group {
+			if ok, sch := additionalProps(b, depth+1); sch != nil {
+				return true, sch
+			} else if ok {
+				allowed = true
+			}
+		}
+	}
+	return allowed, nil
+}
+
 // collectRequired gathers required property names across the schema and its
 // allOf branches.
 func collectRequired(s *openapi3.SchemaRef, depth int) []string {

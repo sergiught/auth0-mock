@@ -107,10 +107,8 @@ func (s *Store) create(coll, idField string, obj Object, st stamp) (Object, erro
 func (s *Store) insert(coll, idField string, obj Object, st stamp, keepStamps bool, parent parentRef) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if parent != (parentRef{}) {
-		if pc := s.colls[parent.coll]; pc == nil || pc.objs[parent.id] == nil {
-			return nil, errNotFound
-		}
+	if s.parentMissing(parent) {
+		return nil, errNotFound
 	}
 	c := s.colls[coll]
 	if c == nil {
@@ -142,6 +140,16 @@ func (s *Store) insert(coll, idField string, obj Object, st stamp, keepStamps bo
 	c.objs[id] = o
 	c.order = append(c.order, id)
 	return copyObject(o), nil
+}
+
+// parentMissing reports whether parent names an item that is not stored. A
+// zero parent never is. The caller holds s.mu.
+func (s *Store) parentMissing(parent parentRef) bool {
+	if parent == (parentRef{}) {
+		return false
+	}
+	pc := s.colls[parent.coll]
+	return pc == nil || pc.objs[parent.id] == nil
 }
 
 func (s *Store) get(coll, id string) (Object, bool) {
@@ -260,9 +268,12 @@ func (s *Store) getSettings(path string, initial Object) Object {
 	return copyObject(initial)
 }
 
-func (s *Store) mergeSettings(path string, initial, patch Object) Object {
+func (s *Store) mergeSettings(path string, initial, patch Object, parent parentRef) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.parentMissing(parent) {
+		return nil, errNotFound
+	}
 	cur, ok := s.settings[path]
 	if !ok {
 		cur = copyObject(initial)
@@ -278,18 +289,21 @@ func (s *Store) mergeSettings(path string, initial, patch Object) Object {
 		cur[k] = deepCopy(v)
 	}
 	s.settings[path] = cur
-	return copyObject(cur)
+	return copyObject(cur), nil
 }
 
-func (s *Store) replaceSettings(path string, obj Object) Object {
+func (s *Store) replaceSettings(path string, obj Object, parent parentRef) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.parentMissing(parent) {
+		return nil, errNotFound
+	}
 	o := copyObject(obj)
 	if o == nil {
 		o = Object{}
 	}
 	s.settings[path] = o
-	return copyObject(o)
+	return copyObject(o), nil
 }
 
 func (s *Store) resetSettings(path string) {
