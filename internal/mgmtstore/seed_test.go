@@ -185,3 +185,37 @@ func TestExportRoundTripsEncodedParentID(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "totp", am["type"])
 }
+
+func TestLoadShapeErrors(t *testing.T) {
+	e, _ := loadEngine(t)
+	cases := map[string]string{
+		`{"tenants/settings": 5}`:                           `management."tenants/settings": must be an object`,
+		`{"tenants/settings": {"bogus": 1}}`:                "management.tenants/settings: ",
+		`{"roles": {"name": "a"}}`:                          `management."roles": must be an array of objects`,
+		`{"roles": [null]}`:                                 "management.roles[0]: must be an object",
+		`{"roles": [{"name": 5}]}`:                          "management.roles[0]: ",
+		`{"users/auth0%7Cnone/authentication-methods": []}`: "is not in the seed",
+	}
+	for in, want := range cases {
+		err := e.NewStore(fixedNow).Load(raw(t, in))
+		require.Error(t, err, in)
+		assert.Contains(t, err.Error(), want, in)
+	}
+}
+
+func TestLoadLimit(t *testing.T) {
+	e, _ := loadEngine(t)
+	s := e.NewStore(fixedNow)
+	s.max = 1
+	err := s.Load(raw(t, `{"roles": [{"name": "a"}, {"name": "b"}]}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "1 objects is the most /roles holds")
+}
+
+func TestStoreCheckSeed(t *testing.T) {
+	e, _ := loadEngine(t)
+	s := e.NewStore(fixedNow)
+	require.NoError(t, s.CheckSeed(raw(t, seedData)))
+	assert.Empty(t, s.Export())
+	assert.Error(t, s.CheckSeed(raw(t, `{"nope": []}`)))
+}
