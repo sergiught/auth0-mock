@@ -32,13 +32,11 @@ var conformanceFixtures = map[string]string{
 	"/device-credentials":       `{"device_id":"ab","device_name":"a","type":"public_key","value":"a"}`,
 	"/hooks":                    `{"name":"a","script":"a","triggerId":"credentials-exchange"}`,
 	"/branding/phone/templates": `{"type":"otp_verify","content":{"syntax":"liquid"}}`,
-	"/branding/themes":          `{"borders":{"button_border_radius":1,"button_border_weight":0,"buttons_style":"pill","input_border_radius":0,"input_border_weight":0,"inputs_style":"pill","show_widget_shadow":false,"widget_border_weight":0,"widget_corner_radius":0},"colors":{"body_text":"#000000","error":"#000000","header":"#000000","icons":"#000000","input_background":"#000000","input_border":"#000000","input_filled_text":"#000000","input_labels_placeholders":"#000000","links_focused_components":"#000000","primary_button":"#000000","primary_button_label":"#000000","secondary_button_border":"#000000","secondary_button_label":"#000000","success":"#000000","widget_background":"#000000","widget_border":"#000000"},"fonts":{"body_text":{"bold":false,"size":0},"buttons_text":{"bold":false,"size":0},"font_url":"","input_labels":{"bold":false,"size":0},"links":{"bold":false,"size":0},"links_style":"normal","reference_text_size":12,"subtitle":{"bold":false,"size":0},"title":{"bold":false,"size":75}},"page_background":{"background_color":"#000000","background_image_url":"","page_layout":"center"},"widget":{"header_text_alignment":"center","logo_height":1,"logo_position":"center","logo_url":"","social_buttons_layout":"bottom"}}`,
 	"/event-streams":            `{"destination":{"type":"webhook","configuration":{"webhook_endpoint":"https://example.com","webhook_authorization":{"method":"basic","username":"a"}}}}`,
 	"/log-streams":              `{"type":"http","name":"a","sink":{"httpEndpoint":"https://example.com","httpContentFormat":"JSONLINES","httpContentType":"application/json"}}`,
 	"/verifiable-credentials/verification/templates": `{"dialect":"simplified/1.0","name":"a","presentation":{"org.iso.18013.5.1.mDL":{"org.iso.18013.5.1":{"given_name":true}}},"type":"a","well_known_trusted_issuers":"aamva"}`,
-	"/rules":                       `{"name":"a","script":"a"}`,
-	"/experimentation/experiments": `{"allocation_strategy":"percentage","authentication_flow":"authentication","feature_flag_id":"flg_a","name":"aaa"}`,
-	"/user-attribute-profiles":     `{"name":"a","user_attributes":{"email":{"label":"Email","profile_required":true,"auth0_mapping":"email","description":"a"}}}`,
+	"/rules":                   `{"name":"a","script":"a"}`,
+	"/user-attribute-profiles": `{"name":"a","user_attributes":{"email":{"label":"Email","profile_required":true,"auth0_mapping":"email","description":"a"}}}`,
 }
 
 // patchFixtures holds PATCH bodies for settings paths whose spec rejects {},
@@ -77,15 +75,15 @@ type conformance struct {
 	v     *spec.Validator
 	token string
 	// Ops is keyed by "METHOD template".
-	ops    map[string]spec.Operation
+	Ops    map[string]spec.Operation
 	routes []mgmtstore.RouteInfo
 	// Created is the body the last create succeeded with.
-	created string
+	Created string
 	base    string
 }
 
 func (c *conformance) op(method, template string) (spec.Operation, bool) {
-	op, ok := c.ops[method+" "+template]
+	op, ok := c.Ops[method+" "+template]
 	return op, ok
 }
 
@@ -126,11 +124,29 @@ func (c *conformance) call(method, path, body string) (int, []byte) {
 		// checkpoint variants have no required fields matches both oneOf
 		// branches; Auth0's own responses are ambiguous the same way.
 		if err != nil && strings.Contains(path, "take=") && strings.Contains(err.Error(), "more than one oneOf") {
-			err = nil
+			err = checkpointShape(w.Body.Bytes())
 		}
 		assert.NoError(c.t, err, "%s %s -> %d %s", method, path, w.Code, w.Body.String())
 	}
 	return w.Code, w.Body.Bytes()
+}
+
+// checkpointShape accepts a last checkpoint page: an object with no next
+// cursor and at least one array property.
+func checkpointShape(body []byte) error {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return fmt.Errorf("not an object: %w", err)
+	}
+	if next, ok := obj["next"]; ok && next != nil {
+		return fmt.Errorf("ambiguous page still has next %v", next)
+	}
+	for _, v := range obj {
+		if _, ok := v.([]any); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("no array item key in %s", body)
 }
 
 // itemRoute returns the first item route of the collection with the given method.
@@ -185,8 +201,7 @@ func (c *conformance) create(coll, base string) (string, map[string]any) {
 	}
 	code, out := c.call("POST", collPath, body)
 	require.Less(c.t, code, 300, "create %s with body %s -> %d %s; add a fixture", coll, body, code, out)
-	c.created = body
-	require.Less(c.t, code, 300, "create %s -> %d %s", coll, code, out)
+	c.Created = body
 	var obj map[string]any
 	require.NoError(c.t, json.Unmarshal(out, &obj))
 	return collPath, obj
@@ -211,8 +226,8 @@ func (c *conformance) patch(path, method, template string) (int, []byte) {
 	if op, ok := c.op(method, template); ok {
 		tries = append(tries, c.minimalBody(op))
 	}
-	if c.created != "" {
-		tries = append(tries, c.created)
+	if c.Created != "" {
+		tries = append(tries, c.Created)
 	}
 	for _, b := range tries {
 		if code, out = c.call(method, path, b); code != http.StatusBadRequest {
@@ -341,7 +356,7 @@ func TestStoreConformance(t *testing.T) {
 			Router: r, Spec: s, Validator: v, Store: matches.NewStore(), Keys: ks,
 			Log: zerolog.Nop(), Strict: true, Mgmt: engine.NewStore(time.Now),
 		}))
-		return &conformance{t: t, r: r, v: v, token: token, ops: ops, routes: routes, base: s.BasePath}
+		return &conformance{t: t, r: r, v: v, token: token, Ops: ops, routes: routes, base: s.BasePath}
 	}
 
 	seen := map[string]bool{}
@@ -362,5 +377,11 @@ func TestStoreConformance(t *testing.T) {
 			t.Run(tmpl, func(t *testing.T) { newC(t).settings(r.Collection, s.BasePath) })
 		}
 	}
-	assert.NotEmpty(t, seen)
+	// Every handled collection and settings route must have been visited.
+	// Nothing is skipped.
+	for _, r := range routes {
+		if r.Kind == mgmtstore.KindCreate || r.Kind == mgmtstore.KindSettingsRead {
+			assert.True(t, seen[strings.TrimPrefix(r.Template, s.BasePath)], "route %s %s not visited", r.Method, r.Template)
+		}
+	}
 }
