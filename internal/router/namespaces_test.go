@@ -27,6 +27,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/namespace"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
@@ -438,4 +439,30 @@ func TestNamespaces_LoginPageIssuerMatchesAutoApprove(t *testing.T) {
 
 	assert.Equal(t, "https://mock/ns/t1/", autoIss)
 	assert.Equal(t, autoIss, pageIss)
+}
+
+func TestNamespacesHaveSeparateStores(t *testing.T) {
+	h := newNamespaceRouterWith(t, 4, "", func(d *router.Deps) {
+		d.MgmtEngine = mgmtstore.NewEngine(d.Spec, d.Validator)
+	})
+	do := func(ns, method, path, body string) *httptest.ResponseRecorder {
+		return nsDo(t, h, method, path, ns, body, "Authorization", "Bearer "+nsToken(t, h, ns),
+			"Content-Type", "application/json")
+	}
+	create := func(ns, name string) string {
+		rec := do(ns, http.MethodPost, "/api/v2/roles", `{"name":"`+name+`"}`)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var role struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &role))
+		return role.ID
+	}
+	idA, idB := create("a", "r1"), create("b", "r2")
+	assert.Equal(t, http.StatusOK, do("a", http.MethodGet, "/api/v2/roles/"+idA, "").Code)
+	assert.Equal(t, http.StatusNotFound, do("b", http.MethodGet, "/api/v2/roles/"+idA, "").Code)
+
+	require.Equal(t, http.StatusNoContent, do("a", http.MethodPost, "/admin0/reset", "").Code)
+	assert.Equal(t, http.StatusNotFound, do("a", http.MethodGet, "/api/v2/roles/"+idA, "").Code)
+	assert.Equal(t, http.StatusOK, do("b", http.MethodGet, "/api/v2/roles/"+idB, "").Code)
 }

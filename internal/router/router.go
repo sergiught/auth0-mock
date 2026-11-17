@@ -23,6 +23,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
 	"github.com/sergiught/auth0-mock/internal/mgmtapi"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/middleware"
 	"github.com/sergiught/auth0-mock/internal/namespace"
 	"github.com/sergiught/auth0-mock/internal/permissions"
@@ -83,6 +84,12 @@ type Deps struct {
 	// LoginPage turns on the /u/login page for logged-out /authorize requests.
 	// Opt-in; config.Config.LoginPage.
 	LoginPage bool
+
+	// MgmtEngine builds each namespace's in-memory Management API store;
+	// nil means MGMT_STORE is off.
+	MgmtEngine *mgmtstore.Engine
+	// Mgmt is the default instance's store; nil means off.
+	Mgmt *mgmtstore.Store
 	// BearerRequireScopes makes the Mgmt-API enforce each operation's
 	// required token scopes (403 insufficient_scope).
 	BearerRequireScopes bool
@@ -186,6 +193,10 @@ func (d Deps) forNamespace(id string) (Deps, error) {
 	nd.Sessions = nil
 	nd.AuthorizeErrors = nil
 	nd.Clock = clk
+	nd.Mgmt = nil
+	if d.MgmtEngine != nil {
+		nd.Mgmt = d.MgmtEngine.NewStore(clk.Now)
+	}
 	nd.Keys = d.Keys.WithNow(clk.Now)
 	size := 0
 	if d.Journal != nil {
@@ -265,6 +276,7 @@ func build(d Deps) (http.Handler, *events.Hub, error) {
 		AuthorizeErrors: d.AuthorizeErrors,
 		Permissions:     d.Permissions,
 		MFA:             d.MFA,
+		Mgmt:            d.Mgmt,
 		Validator:       d.Validator,
 		Clock:           d.Clock,
 		Events:          hub,
@@ -303,6 +315,7 @@ func build(d Deps) (http.Handler, *events.Hub, error) {
 		RequireAudience: d.BearerRequireAudience,
 		RequireScopes:   d.BearerRequireScopes,
 		EventsHandler:   hub.Handler(),
+		Mgmt:            d.Mgmt,
 		Now:             clockNow,
 	}); err != nil {
 		return nil, nil, fmt.Errorf("mount mgmtapi: %w", err)

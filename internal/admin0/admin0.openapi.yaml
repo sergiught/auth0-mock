@@ -912,11 +912,12 @@ components:
         status: { type: integer, description: HTTP status the mock returned. }
         outcome:
           type: string
-          enum: [matched, no_match, rejected]
+          enum: [matched, no_match, rejected, stored]
           description: |
             `matched` a stub (or the SSE stream) served the call; `no_match`
             the call was well formed but no stub matched; `rejected` it never
-            reached stub matching (auth, validation, unknown route, ...).
+            reached stub matching (auth, validation, unknown route, ...); `stored` the
+            in-memory management store (`MGMT_STORE`) served it.
         expectationId:
           type: string
           description: ID of the stub that served the call (`matched` only).

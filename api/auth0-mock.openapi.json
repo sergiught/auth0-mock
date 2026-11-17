@@ -66253,11 +66253,12 @@
             "type": "string"
           },
           "outcome": {
-            "description": "`matched` a stub (or the SSE stream) served the call; `no_match`\nthe call was well formed but no stub matched; `rejected` it never\nreached stub matching (auth, validation, unknown route, ...).\n",
+            "description": "`matched` a stub (or the SSE stream) served the call; `no_match`\nthe call was well formed but no stub matched; `rejected` it never\nreached stub matching (auth, validation, unknown route, ...); `stored` the\nin-memory management store (`MGMT_STORE`) served it.\n",
             "enum": [
               "matched",
               "no_match",
-              "rejected"
+              "rejected",
+              "stored"
             ],
             "type": "string"
           },

@@ -21,6 +21,8 @@ const (
 	OutcomeMatched Outcome = "matched"
 	// OutcomeNoMatch means the call was well formed but no stub matched.
 	OutcomeNoMatch Outcome = "no_match"
+	// OutcomeStored means the in-memory Management API store served the call.
+	OutcomeStored Outcome = "stored"
 	// OutcomeRejected means the call never reached stub matching (auth,
 	// validation, unknown route, ...).
 	OutcomeRejected Outcome = "rejected"

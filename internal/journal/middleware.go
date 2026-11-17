@@ -38,6 +38,16 @@ func MarkMatched(ctx context.Context, expectationID string) {
 	}
 }
 
+// MarkStored records that the in-memory Management API store served the
+// call. It is a no-op when ctx has no journal slot.
+func MarkStored(ctx context.Context) {
+	if s, ok := ctx.Value(slotKey{}).(*slot); ok {
+		s.mu.Lock()
+		s.outcome = OutcomeStored
+		s.mu.Unlock()
+	}
+}
+
 // MarkNoMatch records that no stub matched, with the closest candidates. It
 // is a no-op when ctx has no journal slot.
 func MarkNoMatch(ctx context.Context, nearMisses []matches.NearMiss) {

@@ -120,6 +120,12 @@ type Specification struct {
 	// the instant auto-approve.
 	LoginPage bool `env:"LOGIN_PAGE"`
 
+	// MgmtStore makes the Management API remember what is written to it:
+	// supported operations are answered from an in-memory store instead of
+	// stubs (a stub registered with override still wins). Off (default)
+	// keeps the stub-only behaviour.
+	MgmtStore bool `env:"MGMT_STORE"`
+
 	// BearerRequireScopes makes the Mgmt-API bearer check enforce token
 	// scopes as Auth0 does: a token carrying none of the scopes an
 	// operation lists gets 403 insufficient_scope. On by default;

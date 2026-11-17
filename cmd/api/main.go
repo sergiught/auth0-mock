@@ -22,6 +22,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/logger"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
@@ -107,6 +108,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	mgmtEngine, mgmtStore := newMgmtStore(cfg.MgmtStore, openapiSpec, validator, clk.Now, log)
 	handler, err := router.New(router.Deps{
 		Log:                          log,
 		Store:                        store,
@@ -129,6 +131,8 @@ func run() error {
 		BearerRequireAudience:        cfg.BearerRequireAudience,
 		TokenEndpointStrict:          cfg.TokenEndpointStrict,
 		LoginPage:                    cfg.LoginPage,
+		MgmtEngine:                   mgmtEngine,
+		Mgmt:                         mgmtStore,
 		NamespaceMax:                 cfg.NamespaceMax,
 		BearerRequireScopes:          cfg.BearerRequireScopes,
 		Debug:                        cfg.Debug,
@@ -192,4 +196,15 @@ func watchSeed(ctx context.Context, m *seed.Manager) {
 	if m != nil {
 		go m.Watch(ctx, time.Second)
 	}
+}
+
+// newMgmtStore builds the opt-in Management API store; both results are nil
+// when MGMT_STORE is off.
+func newMgmtStore(on bool, s *spec.Spec, v *spec.Validator, now func() time.Time, log zerolog.Logger) (*mgmtstore.Engine, *mgmtstore.Store) {
+	if !on {
+		return nil, nil
+	}
+	engine := mgmtstore.NewEngine(s, v)
+	log.Info().Msg("management store on")
+	return engine, engine.NewStore(now)
 }

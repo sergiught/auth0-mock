@@ -31,6 +31,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
@@ -77,6 +78,8 @@ type bootOptions struct {
 	tokenStrict bool
 	// loginPage sets LOGIN_PAGE.
 	loginPage bool
+	// mgmtStore sets MGMT_STORE.
+	mgmtStore bool
 }
 
 // nonFollowingClient is used by all step requests so the tests can assert on
@@ -270,6 +273,12 @@ func (c *Context) boot(o bootOptions) error {
 			return err
 		}
 	}
+	var mgmtEngine *mgmtstore.Engine
+	var mgmtStore *mgmtstore.Store
+	if o.mgmtStore {
+		mgmtEngine = mgmtstore.NewEngine(openapiSpec, validator)
+		mgmtStore = mgmtEngine.NewStore(clk.Now)
+	}
 	handler, err := router.New(router.Deps{
 		Log:                  zerolog.Nop(),
 		Store:                store,
@@ -288,6 +297,8 @@ func (c *Context) boot(o bootOptions) error {
 		BearerRequireScopes:  true, // the production default
 		TokenEndpointStrict:  o.tokenStrict,
 		LoginPage:            o.loginPage,
+		MgmtEngine:           mgmtEngine,
+		Mgmt:                 mgmtStore,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
 		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},

@@ -15,6 +15,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
@@ -41,6 +42,8 @@ type MountOpts struct {
 	// the generic handler is used (the old behaviour — useful in tests
 	// that don't care about the SSE surface).
 	EventsHandler http.Handler
+	// Mgmt is the in-memory Management API store. Nil means off.
+	Mgmt *mgmtstore.Store
 	// Now supplies the time for {{now}} in templated responses. Nil means
 	// time.Now.
 	Now func() time.Time
@@ -55,7 +58,7 @@ func Mount(opts MountOpts) error {
 	for op := range opts.Spec.Operations() {
 		generic := &GenericHandler{
 			Op: op, Validator: opts.Validator, Store: opts.Store,
-			Log: opts.Log, Strict: opts.Strict, Now: opts.Now,
+			Log: opts.Log, Strict: opts.Strict, Now: opts.Now, Mgmt: opts.Mgmt,
 		}
 		var inner http.Handler = generic
 		if opts.EventsHandler != nil && op.Op.OperationID == spec.SubscribeEventsOperationID {
