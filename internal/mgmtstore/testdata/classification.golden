@@ -43,11 +43,11 @@ GET	/api/v2/attack-protection/suspicious-ip-throttling	settings-read
 PATCH	/api/v2/attack-protection/suspicious-ip-throttling	settings-merge
 GET	/api/v2/branding	settings-read
 PATCH	/api/v2/branding	settings-merge
-GET	/api/v2/branding/phone/providers	list	id=id
-POST	/api/v2/branding/phone/providers	create	id=id
-DELETE	/api/v2/branding/phone/providers/{id}	delete	id=id
-GET	/api/v2/branding/phone/providers/{id}	read	id=id
-PATCH	/api/v2/branding/phone/providers/{id}	merge	id=id
+GET	/api/v2/branding/phone/providers	stub
+POST	/api/v2/branding/phone/providers	stub
+DELETE	/api/v2/branding/phone/providers/{id}	stub
+GET	/api/v2/branding/phone/providers/{id}	stub
+PATCH	/api/v2/branding/phone/providers/{id}	stub
 POST	/api/v2/branding/phone/providers/{id}/try	stub
 GET	/api/v2/branding/phone/templates	list	id=id
 POST	/api/v2/branding/phone/templates	create	id=id
@@ -59,11 +59,11 @@ POST	/api/v2/branding/phone/templates/{id}/try	stub
 DELETE	/api/v2/branding/templates/universal-login	stub
 GET	/api/v2/branding/templates/universal-login	stub
 PUT	/api/v2/branding/templates/universal-login	stub
-POST	/api/v2/branding/themes	create	id=themeId
+POST	/api/v2/branding/themes	stub
 GET	/api/v2/branding/themes/default	stub
-DELETE	/api/v2/branding/themes/{themeId}	delete	id=themeId
-GET	/api/v2/branding/themes/{themeId}	read	id=themeId
-PATCH	/api/v2/branding/themes/{themeId}	merge	id=themeId
+DELETE	/api/v2/branding/themes/{themeId}	stub
+GET	/api/v2/branding/themes/{themeId}	stub
+PATCH	/api/v2/branding/themes/{themeId}	stub
 GET	/api/v2/client-grants	list	id=id
 POST	/api/v2/client-grants	create	id=id
 GET	/api/v2/client-grants/search	stub
@@ -161,28 +161,28 @@ POST	/api/v2/event-streams/{id}/redeliver	stub
 POST	/api/v2/event-streams/{id}/redeliver/{event_id}	stub
 POST	/api/v2/event-streams/{id}/test	stub
 GET	/api/v2/events	stub
-GET	/api/v2/experimentation/experiments	list	id=id
-POST	/api/v2/experimentation/experiments	create	id=id
-DELETE	/api/v2/experimentation/experiments/{id}	delete	id=id
-GET	/api/v2/experimentation/experiments/{id}	read	id=id
-PATCH	/api/v2/experimentation/experiments/{id}	merge	id=id
+GET	/api/v2/experimentation/experiments	stub
+POST	/api/v2/experimentation/experiments	stub
+DELETE	/api/v2/experimentation/experiments/{id}	stub
+GET	/api/v2/experimentation/experiments/{id}	stub
+PATCH	/api/v2/experimentation/experiments/{id}	stub
 POST	/api/v2/experimentation/experiments/{id}/advance-ramp	stub
 POST	/api/v2/experimentation/experiments/{id}/validate	stub
-GET	/api/v2/experimentation/feature-flags	list	id=id
-POST	/api/v2/experimentation/feature-flags	create	id=id
-DELETE	/api/v2/experimentation/feature-flags/{id}	delete	id=id
-GET	/api/v2/experimentation/feature-flags/{id}	read	id=id
-PATCH	/api/v2/experimentation/feature-flags/{id}	merge	id=id
-GET	/api/v2/experimentation/feature-flags/{id}/variations	list	id=id	parent=/experimentation/feature-flags/{id}
-POST	/api/v2/experimentation/feature-flags/{id}/variations	create	id=id	parent=/experimentation/feature-flags/{id}
-DELETE	/api/v2/experimentation/feature-flags/{id}/variations/{vid}	delete	id=id	parent=/experimentation/feature-flags/{id}
-GET	/api/v2/experimentation/feature-flags/{id}/variations/{vid}	read	id=id	parent=/experimentation/feature-flags/{id}
-PATCH	/api/v2/experimentation/feature-flags/{id}/variations/{vid}	merge	id=id	parent=/experimentation/feature-flags/{id}
-GET	/api/v2/experimentation/segments	list	id=id
-POST	/api/v2/experimentation/segments	create	id=id
-DELETE	/api/v2/experimentation/segments/{id}	delete	id=id
-GET	/api/v2/experimentation/segments/{id}	read	id=id
-PATCH	/api/v2/experimentation/segments/{id}	merge	id=id
+GET	/api/v2/experimentation/feature-flags	stub
+POST	/api/v2/experimentation/feature-flags	stub
+DELETE	/api/v2/experimentation/feature-flags/{id}	stub
+GET	/api/v2/experimentation/feature-flags/{id}	stub
+PATCH	/api/v2/experimentation/feature-flags/{id}	stub
+GET	/api/v2/experimentation/feature-flags/{id}/variations	stub
+POST	/api/v2/experimentation/feature-flags/{id}/variations	stub
+DELETE	/api/v2/experimentation/feature-flags/{id}/variations/{vid}	stub
+GET	/api/v2/experimentation/feature-flags/{id}/variations/{vid}	stub
+PATCH	/api/v2/experimentation/feature-flags/{id}/variations/{vid}	stub
+GET	/api/v2/experimentation/segments	stub
+POST	/api/v2/experimentation/segments	stub
+DELETE	/api/v2/experimentation/segments/{id}	stub
+GET	/api/v2/experimentation/segments/{id}	stub
+PATCH	/api/v2/experimentation/segments/{id}	stub
 GET	/api/v2/flows	list	id=id
 POST	/api/v2/flows	create	id=id
 GET	/api/v2/flows/vault/connections	list	id=id

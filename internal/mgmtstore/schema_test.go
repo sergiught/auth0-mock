@@ -42,31 +42,31 @@ func TestMinimalValue(t *testing.T) {
 		mod(s)
 		return ref(s)
 	}
-	assert.Equal(t, "", minimalValue(ref(typed("string"))))
-	assert.Equal(t, "user@example.com", minimalValue(str(func(s *openapi3.Schema) { s.Format = "email" })))
-	assert.Equal(t, "https://example.com", minimalValue(str(func(s *openapi3.Schema) { s.Format = "uri" })))
-	assert.Equal(t, "2026-01-01T00:00:00.000Z", minimalValue(str(func(s *openapi3.Schema) { s.Format = "date-time" })))
-	assert.Equal(t, "x", minimalValue(str(func(s *openapi3.Schema) { s.Enum = []any{"x", "y"} })))
-	assert.Equal(t, "aaa", minimalValue(str(func(s *openapi3.Schema) { s.MinLength = 3 })))
+	assert.Equal(t, "", MinimalValue(ref(typed("string"))))
+	assert.Equal(t, "user@example.com", MinimalValue(str(func(s *openapi3.Schema) { s.Format = "email" })))
+	assert.Equal(t, "https://example.com", MinimalValue(str(func(s *openapi3.Schema) { s.Format = "uri" })))
+	assert.Equal(t, "2026-01-01T00:00:00.000Z", MinimalValue(str(func(s *openapi3.Schema) { s.Format = "date-time" })))
+	assert.Equal(t, "x", MinimalValue(str(func(s *openapi3.Schema) { s.Enum = []any{"x", "y"} })))
+	assert.Equal(t, "aaa", MinimalValue(str(func(s *openapi3.Schema) { s.MinLength = 3 })))
 
-	assert.EqualValues(t, 0, minimalValue(ref(typed("integer"))))
+	assert.EqualValues(t, 0, MinimalValue(ref(typed("integer"))))
 	lo := 5.0
-	assert.EqualValues(t, 5, minimalValue(ref(&openapi3.Schema{Type: &openapi3.Types{"integer"}, Min: &lo})))
-	assert.Equal(t, false, minimalValue(ref(typed("boolean"))))
+	assert.EqualValues(t, 5, MinimalValue(ref(&openapi3.Schema{Type: &openapi3.Types{"integer"}, Min: &lo})))
+	assert.Equal(t, false, MinimalValue(ref(typed("boolean"))))
 
 	arr := typed("array")
 	arr.Items = ref(typed("boolean"))
-	assert.Equal(t, []any{}, minimalValue(ref(arr)))
+	assert.Equal(t, []any{}, MinimalValue(ref(arr)))
 	arr2 := typed("array")
 	arr2.Items = ref(typed("boolean"))
 	arr2.MinItems = 2
-	assert.Equal(t, []any{false, false}, minimalValue(ref(arr2)))
+	assert.Equal(t, []any{false, false}, MinimalValue(ref(arr2)))
 
 	obj := typed("object")
 	obj.Required = []string{"n"}
 	obj.Properties = openapi3.Schemas{"n": ref(typed("string")), "opt": ref(typed("string"))}
-	assert.Equal(t, map[string]any{"n": ""}, minimalValue(ref(obj)))
+	assert.Equal(t, map[string]any{"n": ""}, MinimalValue(ref(obj)))
 
 	one := &openapi3.Schema{OneOf: openapi3.SchemaRefs{ref(typed("boolean")), ref(typed("string"))}}
-	assert.Equal(t, false, minimalValue(ref(one)))
+	assert.Equal(t, false, MinimalValue(ref(one)))
 }

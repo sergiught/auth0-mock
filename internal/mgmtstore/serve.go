@@ -64,8 +64,10 @@ func badBody(w http.ResponseWriter) {
 	httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "The request body must be a JSON object.", "invalid_body")
 }
 
-// project keeps only the properties schema declares; a schema with no
-// properties keeps everything.
+// project keeps only the properties schema declares and fills any required
+// property the stored object lacks with its minimal value, so the response
+// satisfies the spec even when the create request did not carry the field. A
+// schema with no properties keeps everything.
 func project(obj Object, schema *openapi3.SchemaRef) Object {
 	props := schemaProps(schema)
 	if len(props) == 0 {
@@ -75,6 +77,13 @@ func project(obj Object, schema *openapi3.SchemaRef) Object {
 	for k, v := range obj {
 		if _, ok := props[k]; ok {
 			out[k] = v
+		}
+	}
+	for _, k := range collectRequired(schema, 0) {
+		if _, ok := out[k]; !ok {
+			if p, ok := props[k]; ok {
+				out[k] = MinimalValue(p)
+			}
 		}
 	}
 	return out
@@ -195,11 +204,25 @@ func projectPage(page any, itemSchema *openapi3.SchemaRef) any {
 	return page
 }
 
+// newIDFor generates an id long enough for the id property's minLength.
+func newIDFor(prop *openapi3.SchemaRef) string {
+	id := newID()
+	if prop != nil && prop.Value != nil && prop.Value.MinLength < 1024 {
+		if n := int(prop.Value.MinLength); n > len(id) {
+			id += strings.Repeat("0", n-len(id))
+		}
+	}
+	return id
+}
+
 func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, status int, schema *openapi3.SchemaRef, body []byte) {
 	obj, ok := decodeObject(body)
 	if !ok {
 		badBody(w)
 		return
+	}
+	if id, _ := obj[route.IDField].(string); id == "" {
+		obj[route.IDField] = newIDFor(schemaProps(schema)[route.IDField])
 	}
 	created, err := s.create(coll, route.IDField, obj, stampFor(schema))
 	switch {

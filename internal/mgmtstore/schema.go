@@ -46,9 +46,9 @@ func collectRequired(s *openapi3.SchemaRef, depth int) []string {
 	return req
 }
 
-// minimalValue returns the smallest JSON value that satisfies the schema's
+// MinimalValue returns the smallest JSON value that satisfies the schema's
 // required/type/enum/format/minLength constraints.
-func minimalValue(s *openapi3.SchemaRef) any {
+func MinimalValue(s *openapi3.SchemaRef) any {
 	return minimalAt(s, 0)
 }
 

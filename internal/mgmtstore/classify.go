@@ -67,6 +67,21 @@ var settingsDenyList = map[string]bool{
 	"/actions/triggers/{triggerId}/bindings": true,
 }
 
+// collectionDenyList holds collection templates the store must not handle.
+var collectionDenyList = map[string]bool{
+	// The spec's name pattern uses a lookahead the validator cannot compile, so
+	// every create body is rejected with 400 before the store sees it.
+	"/experimentation/feature-flags": true,
+	"/experimentation/segments":      true,
+	"/experimentation/experiments":   true, // Same lookahead pattern on name.
+	// The theme URL patterns use lookaheads the validator cannot compile, so
+	// every create body is rejected with 400.
+	"/branding/themes": true,
+	// The spec's response requires "credentials" but declares no such
+	// property under additionalProperties:false, so no body can satisfy it.
+	"/branding/phone/providers": true,
+}
+
 // Engine holds the classification of every operation in a spec.
 type Engine struct {
 	basePath string
@@ -136,6 +151,30 @@ func (e *Engine) Describe() []string {
 	return lines
 }
 
+// RouteInfo is a store route with the method and full template it serves.
+type RouteInfo struct {
+	Method   string
+	Template string // Includes the spec's base path, like spec.Operation.Template.
+	Route
+}
+
+// Routes returns every handled operation's route, sorted by template then method.
+func (e *Engine) Routes() []RouteInfo {
+	out := make([]RouteInfo, 0, len(e.routes))
+	for _, op := range e.ops {
+		if r, ok := e.routes[routeKey(op.Method, op.Template)]; ok {
+			out = append(out, RouteInfo{Method: op.Method, Template: op.Template, Route: r})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Template != out[j].Template {
+			return out[i].Template < out[j].Template
+		}
+		return out[i].Method < out[j].Method
+	})
+	return out
+}
+
 func lastSegment(p string) string { return p[strings.LastIndex(p, "/")+1:] }
 
 func isParam(seg string) bool { return strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") }
@@ -198,6 +237,9 @@ func (e *Engine) classifyCollections(paths map[string]map[string]spec.Operation)
 	readable := map[string]bool{}
 	e.readable = readable
 	for _, c := range order {
+		if collectionDenyList[c] {
+			continue
+		}
 		item := cands[c]
 		parent := ""
 		parentOf := strings.TrimSuffix(c, "/"+lastSegment(c))
@@ -348,7 +390,7 @@ func initialValue(v *spec.Validator, get spec.Operation) (any, bool) {
 		return map[string]any{}, true
 	}
 	media := get.Op.Responses.Status(http.StatusOK).Value.Content.Get("application/json")
-	val := minimalValue(media.Schema)
+	val := MinimalValue(media.Schema)
 	body, err := json.Marshal(val)
 	if err != nil || v.ValidateResponse(get, http.StatusOK, hdr, body) != nil {
 		return nil, false
