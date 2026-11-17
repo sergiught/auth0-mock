@@ -209,3 +209,16 @@ func TestSettingsWriteUnderMissingParent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, Object{"b": 2}, got)
 }
+
+func TestRemoveCascadeKeepsLiteralSiblingRoute(t *testing.T) {
+	s := newTestStore(t)
+	for _, c := range [][2]string{{"/flows", "vault"}, {"/flows/vault/connections", "c1"}} {
+		_, err := s.create(c[0], "id", Object{"id": c[1]}, both)
+		require.NoError(t, err)
+	}
+	assert.True(t, s.remove("/flows", "vault"))
+	_, ok := s.get("/flows", "vault")
+	assert.False(t, ok)
+	_, ok = s.get("/flows/vault/connections", "c1")
+	assert.True(t, ok, "the vault connections collection is a separate route")
+}

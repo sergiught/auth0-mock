@@ -2,10 +2,14 @@ package mgmtstore
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 func threeRoles(t *testing.T) *harness {
@@ -137,4 +141,40 @@ func TestOffsetPageExplicitZeroPerPage(t *testing.T) {
 	// A zero page size never divides, whatever the page.
 	start, end, _, perPage := offsetWindow(map[string][]string{"per_page": {"0"}, "page": {"7"}}, 3)
 	assert.Equal(t, []int{0, 0, 0}, []int{start, end, perPage})
+}
+
+// An operation that declares no paging parameters, and a shape with no
+// array to page, return the whole collection.
+func TestPageListWholeWhenNotPaged(t *testing.T) {
+	h := threeRoles(t)
+	fetch := func(win func(n int) (int, int)) (int, []Object) { return h.s.listWindow("/roles", win) }
+	op := spec.Operation{Op: &openapi3.Operation{}}
+	r := httptest.NewRequest("GET", "/?per_page=1", nil)
+
+	body, _, bad := pageList(op, r, listShape{plain: true}, fetch)
+	assert.False(t, bad)
+	assert.Len(t, body, 3)
+
+	body, schema, _ := pageList(op, r, listShape{}, fetch)
+	assert.Len(t, body, 3)
+	assert.Nil(t, schema)
+
+	w := wrapper{key: "roles", props: map[string]*openapi3.SchemaRef{"total": nil, "start": nil, "limit": nil}}
+	page := offsetPage(op, w, r.URL.Query(), fetch)
+	assert.Len(t, page["roles"], 3)
+	assert.Equal(t, 3, page["total"])
+	assert.Equal(t, 3, page["limit"])
+
+	total, items := h.s.listWindow("/missing", wholeList)
+	assert.Zero(t, total)
+	assert.Empty(t, items)
+}
+
+func TestUpdateStampFallsBackToCreateResponse(t *testing.T) {
+	withBoth := schemaOf(&openapi3.Schema{Properties: openapi3.Schemas{
+		"created_at": schemaOf(&openapi3.Schema{}), "updated_at": schemaOf(&openapi3.Schema{}),
+	}})
+	none := schemaOf(&openapi3.Schema{})
+	assert.Equal(t, both, updateStamp(nil, withBoth))
+	assert.Equal(t, stamp{}, updateStamp(none, withBoth))
 }

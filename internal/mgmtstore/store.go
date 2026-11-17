@@ -181,6 +181,24 @@ func (s *Store) list(coll string) []Object {
 	return out
 }
 
+// listWindow returns the collection's size and deep copies of only the items
+// win picks for that size, in insertion order.
+func (s *Store) listWindow(coll string, win func(n int) (start, end int)) (int, []Object) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.colls[coll]
+	if c == nil {
+		start, end := win(0)
+		return 0, make([]Object, 0, end-start)
+	}
+	start, end := win(len(c.order))
+	out := make([]Object, 0, end-start)
+	for _, id := range c.order[start:end] {
+		out = append(out, copyObject(c.objs[id]))
+	}
+	return len(c.order), out
+}
+
 func (s *Store) merge(coll, id, idField string, patch Object, st stamp) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -248,12 +266,12 @@ func (s *Store) remove(coll, id string) bool {
 	}
 	prefix := coll + "/" + url.PathEscape(id) + "/"
 	for k := range s.colls {
-		if strings.HasPrefix(k, prefix) {
+		if strings.HasPrefix(k, prefix) && !s.engine.literalAt(k, segCount(coll)+1) {
 			delete(s.colls, k)
 		}
 	}
 	for k := range s.settings {
-		if strings.HasPrefix(k, prefix) {
+		if strings.HasPrefix(k, prefix) && !s.engine.literalAt(k, segCount(coll)+1) {
 			delete(s.settings, k)
 		}
 	}

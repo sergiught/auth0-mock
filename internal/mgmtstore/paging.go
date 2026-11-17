@@ -117,9 +117,15 @@ func clampSize(n int) int {
 	return min(n, maxPageSize)
 }
 
-// pageList shapes items for a list response; badFrom reports an invalid
-// checkpoint cursor in the request.
-func pageList(op spec.Operation, r *http.Request, shape listShape, items []Object) (body any, itemsSchema *openapi3.SchemaRef, badFrom bool) {
+// fetchFn returns the collection's total count and deep copies of only the
+// window win picks for that count.
+type fetchFn func(win func(n int) (start, end int)) (total int, items []Object)
+
+func wholeList(n int) (int, int) { return 0, n }
+
+// pageList shapes a list response, fetching only the requested window;
+// badFrom reports an invalid checkpoint cursor in the request.
+func pageList(op spec.Operation, r *http.Request, shape listShape, fetch fetchFn) (body any, itemsSchema *openapi3.SchemaRef, badFrom bool) {
 	q := r.URL.Query()
 	_, hasFrom := q["from"]
 	_, hasTake := q["take"]
@@ -128,25 +134,30 @@ func pageList(op spec.Operation, r *http.Request, shape listShape, items []Objec
 
 	switch {
 	case (hasFrom || hasTake) && hasCkpt:
-		return checkpointPage(ckpt, q, items)
+		return checkpointPage(ckpt, q, fetch)
 	case q.Get("include_totals") == "true" && hasTotals:
-		return offsetPage(op, totals, q, items), totals.items, false
+		return offsetPage(op, totals, q, fetch), totals.items, false
 	case shape.plain:
 		// Ops that declare neither page nor per_page return the whole list.
 		if !declares(op, "page", "per_page") {
+			_, items := fetch(wholeList)
 			return items, shape.plainItems, false
 		}
-		start, end, _, _ := offsetWindow(q, len(items))
-		return items[start:end], shape.plainItems, false
+		_, items := fetch(func(n int) (int, int) {
+			start, end, _, _ := offsetWindow(q, n)
+			return start, end
+		})
+		return items, shape.plainItems, false
 	}
 	if len(shape.wrappers) == 0 {
+		_, items := fetch(wholeList)
 		return items, nil, false
 	}
 	w := shape.wrappers[0]
 	if w.checkpoint() {
-		return checkpointPage(w, q, items)
+		return checkpointPage(w, q, fetch)
 	}
-	return offsetPage(op, w, q, items), w.items, false
+	return offsetPage(op, w, q, fetch), w.items, false
 }
 
 func offsetWindow(q map[string][]string, n int) (start, end, page, perPage int) {
@@ -171,17 +182,23 @@ func offsetWindow(q map[string][]string, n int) (start, end, page, perPage int) 
 	return start, end, page, perPage
 }
 
-func offsetPage(op spec.Operation, w wrapper, q map[string][]string, items []Object) map[string]any {
+func offsetPage(op spec.Operation, w wrapper, q map[string][]string, fetch fetchFn) map[string]any {
 	out := map[string]any{}
-	start, end, page, perPage := 0, len(items), 0, len(items)
+	var start, page, perPage int
 	// Ops that declare neither page nor per_page return the whole list.
-	if declares(op, "page", "per_page") {
-		start, end, page, perPage = offsetWindow(q, len(items))
-	}
-	out[w.key] = items[start:end]
+	total, items := fetch(func(n int) (int, int) {
+		if !declares(op, "page", "per_page") {
+			start, page, perPage = 0, 0, n
+			return 0, n
+		}
+		var end int
+		start, end, page, perPage = offsetWindow(q, n)
+		return start, end
+	})
+	out[w.key] = items
 	fields := map[string]int{
-		"start": start, "limit": perPage, "length": end - start,
-		"total": len(items), "page": page, "per_page": perPage,
+		"start": start, "limit": perPage, "length": len(items),
+		"total": total, "page": page, "per_page": perPage,
 	}
 	for name, v := range fields {
 		if w.has(name) {
@@ -191,21 +208,25 @@ func offsetPage(op spec.Operation, w wrapper, q map[string][]string, items []Obj
 	return out
 }
 
-func checkpointPage(w wrapper, q map[string][]string, items []Object) (map[string]any, *openapi3.SchemaRef, bool) {
+func checkpointPage(w wrapper, q map[string][]string, fetch fetchFn) (map[string]any, *openapi3.SchemaRef, bool) {
 	take, _ := intParam(q, "take", defaultPageSize)
 	take = clampSize(take)
-	start := 0
+	from := 0
 	if v := q["from"]; len(v) > 0 {
 		n, err := strconv.Atoi(v[0])
 		if err != nil || n < 0 || strconv.Itoa(n) != v[0] {
 			return nil, nil, true
 		}
-		start = n
+		from = n
 	}
-	start = min(start, len(items))
-	end := min(start+take, len(items))
-	out := map[string]any{w.key: items[start:end]}
-	if end < len(items) {
+	var end int
+	total, items := fetch(func(n int) (int, int) {
+		start := min(from, n)
+		end = min(start+take, n)
+		return start, end
+	})
+	out := map[string]any{w.key: items}
+	if end < total {
 		out["next"] = strconv.Itoa(end)
 	}
 	return out, w.items, false

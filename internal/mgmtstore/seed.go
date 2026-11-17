@@ -92,6 +92,38 @@ func (e *Engine) checkPathParams(t target) error {
 // path, the response schema of its create or settings read, and the response
 // schema of reading one item (collections only).
 func (e *Engine) schemas(collection string) (request, response, read *openapi3.SchemaRef) {
+	set := e.schemaCache[collection]
+	return set.request, set.response, set.read
+}
+
+// schemaSet is the cached result of scanSchemas for one collection.
+type schemaSet struct{ request, response, read *openapi3.SchemaRef }
+
+// cacheSchemas scans the operations once per collection, so schemas never
+// rescans them. The cache is immutable once NewEngine returns.
+func (e *Engine) cacheSchemas() {
+	e.schemaCache = map[string]schemaSet{}
+	for _, r := range e.routes {
+		if _, done := e.schemaCache[r.Collection]; !done {
+			req, resp, read := e.scanSchemas(r.Collection)
+			e.schemaCache[r.Collection] = schemaSet{req, resp, read}
+		}
+	}
+}
+
+// literalAt reports whether the stored key matches a route whose segment at
+// index idx (counting the empty segment before the leading slash) is a
+// literal, so it is a sibling route rather than a child of an item there.
+func (e *Engine) literalAt(key string, idx int) bool {
+	r, _, ok := e.match(key)
+	if !ok {
+		return false
+	}
+	segs := strings.Split(r.Collection, "/")
+	return idx < len(segs) && !isParam(segs[idx])
+}
+
+func (e *Engine) scanSchemas(collection string) (request, response, read *openapi3.SchemaRef) {
 	var putBody *openapi3.SchemaRef
 	for _, op := range e.ops {
 		r, ok := e.routes[routeKey(op.Method, op.Template)]
@@ -285,9 +317,6 @@ func checkPresent(state Object, resps ...*openapi3.SchemaRef) error {
 		propSets = append(propSets, schemaProps(selectBranch(r, state, 0)))
 	}
 	for _, k := range slices.Sorted(maps.Keys(state)) {
-		if state[k] == nil {
-			continue
-		}
 		for _, props := range propSets {
 			if p, ok := props[k]; ok {
 				if err := checkResponseValue(p, state[k]); err != nil {
@@ -379,7 +408,7 @@ func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
 		return nil
 	}
 	var items []Object
-	if err := decodeJSON(rawVal, &items); err != nil {
+	if err := decodeJSON(rawVal, &items); err != nil || items == nil {
 		return fmt.Errorf("management.%q: must be an array of objects", key)
 	}
 	for i, obj := range items {
@@ -453,6 +482,9 @@ func (s *Store) Export() map[string]any {
 		out[strings.TrimPrefix(k, "/")] = projectAll(s.list(k), schema, t.request)
 	}
 	for k, o := range settings {
+		if t, ok := s.engine.lookup(k); ok {
+			o = project(o, t.response, t.request)
+		}
 		out[strings.TrimPrefix(k, "/")] = o
 	}
 	return out

@@ -305,3 +305,26 @@ func TestLoadChecksSettingsSeedAgainstReadSchema(t *testing.T) {
 
 	require.NoError(t, e.NewStore(fixedNow).Load(seed(20)))
 }
+
+func TestLoadRejectsNullCollection(t *testing.T) {
+	e, _ := loadEngine(t)
+	s := e.NewStore(fixedNow)
+	require.NoError(t, s.Load(raw(t, `{"roles": [{"name": "keep"}]}`)))
+	before := s.Export()
+	err := s.Load(raw(t, `{"roles": null}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "management.\"roles\": must be an array of objects")
+	assert.Equal(t, before, s.Export())
+}
+
+func TestLoadRejectsNullSettingsValue(t *testing.T) {
+	e, _ := loadEngine(t)
+	s := e.NewStore(fixedNow)
+	err := s.Load(raw(t, `{"tenants/settings": {"allow_organization_name_in_authentication_api": null}}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tenants/settings")
+	assert.Contains(t, err.Error(), "allow_organization_name_in_authentication_api")
+	assert.Empty(t, s.Export())
+
+	require.NoError(t, s.Load(raw(t, `{"tenants/settings": {"friendly_name": "Mock"}, "roles": []}`)))
+}

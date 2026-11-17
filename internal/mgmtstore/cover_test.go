@@ -310,6 +310,6 @@ func TestProspectiveAndCheckPresentBranches(t *testing.T) {
 	got = h.s.prospective(Route{Kind: KindSettingsMerge, Collection: "/nowhere"}, "/nowhere", "", Object{"a": 1})
 	assert.Equal(t, Object{"a": 1}, got)
 
-	// Null values are skipped, never validated.
-	assert.NoError(t, checkPresent(Object{"name": nil}, schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"name": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})}))))
+	// A present null is validated like any value; a write drops it first.
+	assert.Error(t, checkPresent(Object{"name": nil}, schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"name": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})}))))
 }

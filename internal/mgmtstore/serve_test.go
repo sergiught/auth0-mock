@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -299,4 +300,39 @@ func TestServeRejectsWriteTheReadSchemaRejects(t *testing.T) {
 	assert.Equal(t, 400, code)
 	_, got, _ = h.do("GET", path, "", "")
 	assert.Equal(t, strings.Repeat("a", 20), got["bundle_id"])
+}
+
+func TestServeUpdateBumpsUpdatedAtWhenPatchResponseOmitsIt(t *testing.T) {
+	h := newHarness(t)
+	code, created, _ := h.do("POST", "/api/v2/token-exchange-profiles", "",
+		`{"name":"profile one","subject_token_type":"urn:example:token","action_id":"act_1","type":"custom_authentication"}`)
+	require.Equal(t, 201, code)
+	id := created["id"].(string)
+	h.s.now = func() time.Time { return fixedNow().Add(time.Hour) }
+	code, _, _ = h.do("PATCH", "/api/v2/token-exchange-profiles/"+id, "", `{"name":"profile two"}`)
+	require.Equal(t, 200, code)
+	_, got, _ := h.do("GET", "/api/v2/token-exchange-profiles/"+id, "", "")
+	assert.Equal(t, "profile two", got["name"])
+	assert.Equal(t, created["created_at"], got["created_at"])
+	assert.NotEqual(t, created["updated_at"], got["updated_at"])
+}
+
+func TestExportRedactsWriteOnlySettings(t *testing.T) {
+	h := newHarness(t)
+	const path = "/api/v2/guardian/factors/push-notification/providers/apns"
+	code, _, raw := h.do("PUT", path, "", `{"bundle_id":"com.example.app","p12":"c2VjcmV0"}`)
+	require.Equal(t, 200, code, string(raw))
+	out := h.s.Export()
+	got, ok := out["guardian/factors/push-notification/providers/apns"].(Object)
+	require.True(t, ok)
+	assert.Equal(t, "com.example.app", got["bundle_id"])
+	assert.NotContains(t, got, "p12")
+
+	reloaded := h.s.engine.NewStore(fixedNow)
+	b, err := json.Marshal(out)
+	require.NoError(t, err)
+	var data map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &data))
+	require.NoError(t, reloaded.Load(data))
+	assert.Equal(t, out, reloaded.Export())
 }

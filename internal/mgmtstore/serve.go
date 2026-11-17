@@ -160,6 +160,16 @@ func stampFor(schema *openapi3.SchemaRef) stamp {
 	return stamp{created: c, updated: u}
 }
 
+// updateStamp is the stamp policy for updates: what a GET of the item
+// returns, else what create returns, as an update's own response may omit
+// the timestamps the item carries.
+func updateStamp(read, create *openapi3.SchemaRef) stamp {
+	if read != nil {
+		return stampFor(read)
+	}
+	return stampFor(create)
+}
+
 func writeJSON(w http.ResponseWriter, status int, schema *openapi3.SchemaRef, v any) {
 	if schema == nil {
 		w.WriteHeader(status)
@@ -331,7 +341,7 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 	}
 	status, schema := successResponse(op.Op)
 	coll := fill(route.Collection, params)
-	req, _, _ := s.engine.schemas(route.Collection)
+	req, resp, read := s.engine.schemas(route.Collection)
 	var obj Object
 	if writesBody(route.Kind) {
 		var msg string
@@ -354,7 +364,7 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 		}
 		writeJSON(w, status, schema, project(o, schema, req))
 	case KindMerge, KindReplace:
-		s.serveWrite(w, route, coll, params[route.IDParam], status, schema, req, obj)
+		s.serveWrite(w, route, coll, params[route.IDParam], status, schema, req, obj, updateStamp(read, resp))
 	case KindDelete:
 		id := params[route.IDParam]
 		o, found := s.get(coll, id)
@@ -369,9 +379,10 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 }
 
 func (s *Store) serveList(w http.ResponseWriter, r *http.Request, op spec.Operation, coll string, status int, schema, req *openapi3.SchemaRef) {
-	items := s.list(coll)
 	shape := listShapeOf(schema)
-	page, itemSchema, badFrom := pageList(op, r, shape, items)
+	page, itemSchema, badFrom := pageList(op, r, shape, func(win func(n int) (int, int)) (int, []Object) {
+		return s.listWindow(coll, win)
+	})
 	if badFrom {
 		httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "from: not a cursor issued by this mock", "invalid_query_string")
 		return
@@ -426,15 +437,15 @@ func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, par
 	}
 }
 
-func (s *Store) serveWrite(w http.ResponseWriter, route Route, coll, id string, status int, schema, req *openapi3.SchemaRef, obj Object) {
+func (s *Store) serveWrite(w http.ResponseWriter, route Route, coll, id string, status int, schema, req *openapi3.SchemaRef, obj Object, st stamp) {
 	var (
 		out Object
 		err error
 	)
 	if route.Kind == KindMerge {
-		out, err = s.merge(coll, id, route.IDField, obj, stampFor(schema))
+		out, err = s.merge(coll, id, route.IDField, obj, st)
 	} else {
-		out, err = s.replace(coll, id, route.IDField, obj, stampFor(schema))
+		out, err = s.replace(coll, id, route.IDField, obj, st)
 	}
 	if err != nil {
 		notFound(w)

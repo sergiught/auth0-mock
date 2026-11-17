@@ -99,6 +99,8 @@ type Engine struct {
 	candColls map[string]string
 	// CandItems holds the child item templates of collection candidates.
 	candItems map[string]itemInfo
+	// SchemaCache holds schemas() results per collection or settings template.
+	schemaCache map[string]schemaSet
 }
 
 func routeKey(method, template string) string { return method + " " + template }
@@ -121,6 +123,7 @@ func NewEngine(s *spec.Spec, v *spec.Validator) *Engine {
 	}
 	e.classifyCollections(paths)
 	e.classifySettings(paths, v)
+	e.cacheSchemas()
 	return e
 }
 
