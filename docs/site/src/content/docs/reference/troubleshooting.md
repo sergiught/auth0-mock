@@ -90,6 +90,10 @@ For a login grant, add it to the `scope` parameter of `/authorize` or the passwo
 
 Set `BEARER_REQUIRE_SCOPES=false` to turn the check off. See [Tokens and claims](/auth0-mock/guides/tokens-and-claims/) and [Configuration](/auth0-mock/reference/configuration/).
 
+## My stub stopped answering after I turned on MGMT_STORE
+
+With `MGMT_STORE=true`, the store answers stored paths before your normal stubs, so a stub on a path like `/api/v2/roles` is no longer reached. Add `"override": true` to the stub (or call `.Override()` in the Go SDK) and it answers first again. See [Stored data](/auth0-mock/guides/stored-data/#which-answer-wins).
+
 ## Tokens expire in tests that move the clock
 
 After you move `/admin0/clock` past a token's lifetime, the token is rejected at once with `401 invalid_bearer`. Tokens expire exactly on time unless you set a leeway. Mint a new token after moving the clock, or give the check some room:

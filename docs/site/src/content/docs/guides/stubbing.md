@@ -226,6 +226,10 @@ The mock checks the template when you register the stub. An unknown placeholder,
 
 The rendered body is checked against the schema on every call, as for any stub. If a placeholder renders the wrong type or value, strict mode returns a 500 `invalid_match`.
 
+## Win over the stored data
+
+With `MGMT_STORE=true` the store answers before your stubs. Add `"override": true` to a stub so it answers first, for example to force an error. In the Go SDK, call `.Override()` on the builder. Without the store, the field does nothing. See [Stored data](/auth0-mock/guides/stored-data/).
+
 ## Reset state between tests
 
 The cheapest possible teardown: one POST wipes everything:

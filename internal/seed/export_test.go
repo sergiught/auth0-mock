@@ -277,3 +277,12 @@ expectations:
 `)
 	require.JSONEq(t, `{"200":"x","1.5":"y"}`, string(s.Expectations[0].Response.Body))
 }
+
+func TestExportKeepsOverride(t *testing.T) {
+	const src = `{"expectations":[{"method":"GET","path":"/api/v2/users/{id}","override":true,"response":{"status":404}}]}`
+	st := applied(t, src)
+	js := mustBytes(t)(seed.Export(st.Stores, false).JSON())
+	require.Contains(t, string(js), `"override": true`)
+	_, err := seed.Parse(js, newValidator(t))
+	require.NoError(t, err)
+}

@@ -99,6 +99,14 @@ func (b *ExpectationBuilder) WithoutField(path string) *ExpectationBuilder {
 	return b
 }
 
+// Override lets the stub win over the opt-in Management API store
+// (MGMT_STORE=true), for example to force an error. Without the store it has
+// no effect.
+func (b *ExpectationBuilder) Override() *ExpectationBuilder {
+	b.exp.Override = true
+	return b
+}
+
 // WithArraysContaining makes arrays in the matcher body match when every
 // wanted item pairs with a different item of the request's array, in any
 // order and with extra items allowed. Without it arrays must match exactly.

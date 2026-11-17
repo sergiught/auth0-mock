@@ -309,3 +309,15 @@ func TestPrepareNormalisesArrays(t *testing.T) {
 	e := prepare(&matches.RequestMatcher{Arrays: "contains", Body: []byte(" null "), Absent: []string{"body.password"}})
 	require.Empty(t, e.Request.Arrays, "a null body padded with spaces is still no body")
 }
+
+func TestPrepareKeepsOverride(t *testing.T) {
+	v := newValidator(t)
+	e, err := matches.Prepare(v, matches.Registration{
+		Method:   "GET",
+		Path:     "/api/v2/users/{id}",
+		Override: true,
+		Response: matches.ResponseDef{Status: 404},
+	})
+	require.NoError(t, err)
+	require.True(t, e.Override)
+}

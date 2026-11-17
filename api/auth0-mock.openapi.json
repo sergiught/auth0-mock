@@ -52629,6 +52629,10 @@
             "example": "POST",
             "type": "string"
           },
+          "override": {
+            "description": "When the Management API store is on (`MGMT_STORE=true`), the store\nanswers the operations it handles before ordinary stubs. Set this\nto let the stub win over the store instead, for example to force\nan error. It has no effect when the store is off.\n",
+            "type": "boolean"
+          },
           "path": {
             "description": "Target operation path — concrete (`/api/v2/users/auth0|1`) or an\nOpenAPI template (`/api/v2/users/{id}`).\n",
             "example": "/api/v2/users",
@@ -66249,11 +66253,12 @@
             "type": "string"
           },
           "outcome": {
-            "description": "`matched` a stub (or the SSE stream) served the call; `no_match`\nthe call was well formed but no stub matched; `rejected` it never\nreached stub matching (auth, validation, unknown route, ...).\n",
+            "description": "`matched` a stub (or the SSE stream) served the call; `no_match`\nthe call was well formed but no stub matched; `rejected` it never\nreached stub matching (auth, validation, unknown route, ...); `stored` the\nin-memory management store (`MGMT_STORE`) served it.\n",
             "enum": [
               "matched",
               "no_match",
-              "rejected"
+              "rejected",
+              "stored"
             ],
             "type": "string"
           },
@@ -85157,11 +85162,25 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "properties": {
+                    "management": {
+                      "additionalProperties": true,
+                      "description": "Stored Management API data when `MGMT_STORE` is on, keyed\nby path under `/api/v2` (`users`, `tenants/settings`). A\ncollection is an array of objects shaped like a GET\nresponse, so a user's `password` is left out; a settings\npath is the object as written. Left out when the store\nis off or empty.\n",
+                      "type": "object"
+                    }
+                  },
                   "type": "object"
                 }
               },
               "application/yaml": {
                 "schema": {
+                  "properties": {
+                    "management": {
+                      "additionalProperties": true,
+                      "description": "Stored Management API data when `MGMT_STORE` is on, keyed\nby path under `/api/v2` (`users`, `tenants/settings`). A\ncollection is an array of objects shaped like a GET\nresponse, so a user's `password` is left out; a settings\npath is the object as written. Left out when the store\nis off or empty.\n",
+                      "type": "object"
+                    }
+                  },
                   "type": "object"
                 }
               }
@@ -85172,7 +85191,7 @@
             "description": "`errorCode: \"invalid_query\"` — `format` is not `json` or\n`yaml`, or `detail` is not `true` or `false`, a parameter is repeated, or the query string is malformed.\n"
           }
         },
-        "summary": "Dump the expectations, claims, claim mappings, permissions and MFA flag in the seed file format.",
+        "summary": "Dump the expectations, claims, claim mappings, permissions, the MFA flag and stored Management data in the seed file format.",
         "tags": [
           "Expectations"
         ]

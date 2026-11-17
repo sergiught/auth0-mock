@@ -14,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/httperr"
 	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/matches"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/spec"
 	"github.com/sergiught/auth0-mock/internal/tmpl"
 )
@@ -25,6 +26,8 @@ type GenericHandler struct {
 	Store     *matches.Store
 	Log       zerolog.Logger
 	Strict    bool
+	// Mgmt is the in-memory Management API store. Nil means off.
+	Mgmt *mgmtstore.Store
 	// Now supplies the time for {{now}} in templated responses. Nil means
 	// time.Now.
 	Now func() time.Time
@@ -63,6 +66,16 @@ func (h *GenericHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Query:   r.URL.Query(),
 		Headers: r.Header,
 		Body:    body,
+	}
+	if h.Mgmt != nil && h.Mgmt.Handles(h.Op) {
+		// A stub registered with override wins over the store.
+		if exp := h.Store.FindOverride(r.Method, r.URL.Path, h.Op.Template, req); exp != nil {
+			h.respond(w, r, exp, body)
+			return
+		}
+		journal.MarkStored(r.Context())
+		h.Mgmt.Serve(w, r, h.Op, body)
+		return
 	}
 	exp := h.Store.Find(r.Method, r.URL.Path, h.Op.Template, req)
 	if exp == nil {

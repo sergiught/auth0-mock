@@ -3,6 +3,7 @@ package seed_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -284,4 +285,83 @@ func TestManager_ApplyTo(t *testing.T) {
 	require.Equal(t, map[string]any{"role": "admin"}, b.Claims.Get())
 	require.Equal(t, []int{429}, f.statuses())
 	require.Equal(t, map[string]any{"role": "admin"}, f.st.Claims.Get())
+}
+
+func TestManagerWarnsWhenStoreOff(t *testing.T) {
+	f := newFixture(t, mgmtSeed)
+	require.Contains(t, f.log.String(), "seed file has management data but MGMT_STORE is off; ignoring it")
+	require.Contains(t, f.log.String(), "seed loaded: 3 management objects")
+}
+
+func TestManagerRejectsBadManagement(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "seed.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("management:\n  users:\n    - email: 5\n      connection: c\n"), 0o600))
+	st := newStores()
+	st.Mgmt = newMgmtStore(t)
+	_, err := seed.NewManager(p, newValidator(t), st.Stores, zerolog.Nop())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "management.users[0]")
+
+	// With the store off the same file loads.
+	_, err = seed.NewManager(p, newValidator(t), newStores().Stores, zerolog.Nop())
+	require.NoError(t, err)
+}
+
+func TestPollKeepsStateOnBadManagement(t *testing.T) {
+	f := newMgmtFixture(t, mgmtSeed)
+	f.write("management:\n  nope: []\n")
+	f.m.Poll(context.Background())
+	f.m.Poll(context.Background())
+	require.Contains(t, f.log.String(), `not a stored collection or settings path`)
+	require.Len(t, f.st.Mgmt.Export(), 3)
+
+	f.write("management:\n  roles:\n    - name: viewer\n")
+	f.m.Poll(context.Background())
+	f.m.Poll(context.Background())
+	require.Len(t, f.st.Mgmt.Export(), 1)
+}
+
+func newMgmtFixture(t *testing.T, content string) *fixture {
+	t.Helper()
+	f := &fixture{t: t, path: filepath.Join(t.TempDir(), "seed.yaml"), st: newStores(), log: &syncBuf{}}
+	f.st.Mgmt = newMgmtStore(t)
+	f.write(content)
+	m, err := seed.NewManager(f.path, newValidator(t), f.st.Stores, zerolog.New(f.log))
+	require.NoError(t, err)
+	m.Bind(func(context.Context) {
+		f.wipes.Add(1)
+		f.st.reset()
+		f.st.Mgmt.Clear()
+	})
+	f.m = m
+	return f
+}
+
+func TestResetReappliesManagement(t *testing.T) {
+	f := newMgmtFixture(t, mgmtSeed)
+	want := f.st.Mgmt.Export()
+	require.Len(t, want, 3)
+
+	// Change the store: drop the seeded data and add an object of its own.
+	require.NoError(t, f.st.Mgmt.Load(map[string]json.RawMessage{"roles": json.RawMessage(`[{"name":"extra"}]`)}))
+	require.NotEqual(t, want, f.st.Mgmt.Export())
+
+	f.m.Reset(context.Background(), true)
+	require.Equal(t, want, f.st.Mgmt.Export())
+
+	f.m.Reset(context.Background(), false)
+	require.Empty(t, f.st.Mgmt.Export())
+}
+
+func TestManagerExportIncludesManagement(t *testing.T) {
+	f := newMgmtFixture(t, mgmtSeed)
+	require.Len(t, f.m.Export(false).Management, 3)
+}
+
+func TestManagerApplyToNamespaceStore(t *testing.T) {
+	f := newMgmtFixture(t, mgmtSeed)
+	other := newStores()
+	other.Mgmt = newMgmtStore(t)
+	f.m.ApplyTo(other.Stores)
+	require.Len(t, other.Mgmt.Export(), 3)
 }

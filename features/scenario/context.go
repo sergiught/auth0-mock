@@ -31,6 +31,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/pkce"
 	"github.com/sergiught/auth0-mock/internal/router"
@@ -77,6 +78,8 @@ type bootOptions struct {
 	tokenStrict bool
 	// loginPage sets LOGIN_PAGE.
 	loginPage bool
+	// mgmtStore sets MGMT_STORE.
+	mgmtStore bool
 }
 
 // nonFollowingClient is used by all step requests so the tests can assert on
@@ -187,6 +190,29 @@ func (c *Context) RestartWithSeed(content string) error {
 	})
 }
 
+// RestartMgmtStore stops the scenario's server and boots a fresh one with
+// MGMT_STORE on. A non-empty seed becomes the SEED_FILE; one that fails to
+// load is returned as the error.
+func (c *Context) RestartMgmtStore(seedContent string) error {
+	c.shutdown()
+	o := bootOptions{
+		issuerFor: func(addr string) string { return "http://" + addr + "/" },
+		mgmtStore: true,
+	}
+	if seedContent != "" {
+		dir, err := os.MkdirTemp(c.t.TempDir(), "seed")
+		if err != nil {
+			return err
+		}
+		c.seedPath = filepath.Join(dir, "seed.yaml")
+		if err := os.WriteFile(c.seedPath, []byte(seedContent), 0o600); err != nil {
+			return err
+		}
+		o.seedFile = c.seedPath
+	}
+	return c.boot(o)
+}
+
 // ReplaceSeedFile saves content over the seed file the way an editor does
 // (write a temp file, rename it over) and reloads it. Nothing sleeps: the
 // harness runs no watcher and polls twice instead, as a changed file is acted
@@ -257,6 +283,12 @@ func (c *Context) boot(o bootOptions) error {
 	if err != nil {
 		t.Fatalf("spec validator: %v", err)
 	}
+	var mgmtEngine *mgmtstore.Engine
+	var mgmtStore *mgmtstore.Store
+	if o.mgmtStore {
+		mgmtEngine = mgmtstore.NewEngine(openapiSpec, validator)
+		mgmtStore = mgmtEngine.NewStore(clk.Now)
+	}
 	var seedMgr *seed.Manager
 	if o.seedFile != "" {
 		seedMgr, err = seed.NewManager(o.seedFile, validator, seed.Stores{
@@ -265,6 +297,7 @@ func (c *Context) boot(o bootOptions) error {
 			ClaimMappings: claimMappings,
 			Permissions:   permsStore,
 			MFA:           mfaStore,
+			Mgmt:          mgmtStore,
 		}, zerolog.Nop())
 		if err != nil {
 			return err
@@ -288,6 +321,8 @@ func (c *Context) boot(o bootOptions) error {
 		BearerRequireScopes:  true, // the production default
 		TokenEndpointStrict:  o.tokenStrict,
 		LoginPage:            o.loginPage,
+		MgmtEngine:           mgmtEngine,
+		Mgmt:                 mgmtStore,
 		MaxRequestBodyBytes:  1 << 20, // 1 MiB, matches the production default
 		LogoutAllowedURLs:    []string{"https://app/bye"},
 		CORSAllowedOrigins:   []string{"http://app.test", "https://*.example.test"},

@@ -97,7 +97,7 @@ paths:
   /admin0/export:
     get:
       tags: [Expectations]
-      summary: Dump the expectations, claims, claim mappings, permissions and MFA flag in the seed file format.
+      summary: Dump the expectations, claims, claim mappings, permissions, the MFA flag and stored Management data in the seed file format.
       description: |
         The body can be saved as a seed file and loaded with `SEED_FILE`.
         Empty sections are left out, keys are sorted, and exporting a
@@ -121,9 +121,33 @@ paths:
           description: The current state.
           content:
             application/json:
-              schema: { type: object }
+              schema:
+                type: object
+                properties:
+                  management:
+                    type: object
+                    additionalProperties: true
+                    description: |
+                      Stored Management API data when `MGMT_STORE` is on, keyed
+                      by path under `/api/v2` (`users`, `tenants/settings`). A
+                      collection is an array of objects shaped like a GET
+                      response, so a user's `password` is left out; a settings
+                      path is the object as written. Left out when the store
+                      is off or empty.
             application/yaml:
-              schema: { type: object }
+              schema:
+                type: object
+                properties:
+                  management:
+                    type: object
+                    additionalProperties: true
+                    description: |
+                      Stored Management API data when `MGMT_STORE` is on, keyed
+                      by path under `/api/v2` (`users`, `tenants/settings`). A
+                      collection is an array of objects shaped like a GET
+                      response, so a user's `password` is left out; a settings
+                      path is the object as written. Left out when the store
+                      is off or empty.
         "400":
           description: |
             `errorCode: "invalid_query"` — `format` is not `json` or
@@ -912,11 +936,12 @@ components:
         status: { type: integer, description: HTTP status the mock returned. }
         outcome:
           type: string
-          enum: [matched, no_match, rejected]
+          enum: [matched, no_match, rejected, stored]
           description: |
             `matched` a stub (or the SSE stream) served the call; `no_match`
             the call was well formed but no stub matched; `rejected` it never
-            reached stub matching (auth, validation, unknown route, ...).
+            reached stub matching (auth, validation, unknown route, ...); `stored` the
+            in-memory management store (`MGMT_STORE`) served it.
         expectationId:
           type: string
           description: ID of the stub that served the call (`matched` only).
@@ -973,6 +998,13 @@ components:
             Re-registering the stub restarts the sequence.
           items:
             $ref: "#/components/schemas/ResponseDef"
+        override:
+          type: boolean
+          description: |
+            When the Management API store is on (`MGMT_STORE=true`), the store
+            answers the operations it handles before ordinary stubs. Set this
+            to let the stub win over the store instead, for example to force
+            an error. It has no effect when the store is off.
     RequestMatcher:
       type: object
       description: |

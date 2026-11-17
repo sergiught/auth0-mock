@@ -49,7 +49,9 @@ type Expectation struct {
 	Request  *RequestMatcher `json:"request,omitempty"`
 	Response ResponseDef     `json:"response"`
 	Then     []ResponseDef   `json:"then,omitempty"`
-	Hits     int64           `json:"hits"`
+	// Override lets the stub win over the Management API store (MGMT_STORE=true).
+	Override bool  `json:"override,omitempty"`
+	Hits     int64 `json:"hits"`
 	// Seq is the Store's registration counter, used to order near misses
 	// newest first across buckets.
 	seq uint64

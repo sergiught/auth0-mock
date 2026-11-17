@@ -44,7 +44,12 @@ func NewManager(path string, v *spec.Validator, st Stores, log zerolog.Logger) (
 	if err != nil {
 		return nil, fmt.Errorf("seed file %s: %w", path, err)
 	}
-	s.Apply(st)
+	if err := checkManagement(s, st, log); err != nil {
+		return nil, fmt.Errorf("seed file %s: %w", path, err)
+	}
+	if err := s.ApplyChecked(st); err != nil {
+		return nil, fmt.Errorf("seed file %s: %w", path, err)
+	}
 	log.Info().Str("file", path).Msgf("seed loaded: %s", s.Summary())
 	return &Manager{
 		path:       path,
@@ -54,6 +59,19 @@ func NewManager(path string, v *spec.Validator, st Stores, log zerolog.Logger) (
 		current:    s,
 		loadedHash: sha256.Sum256(data),
 	}, nil
+}
+
+// checkManagement dry-runs the management section against st before anything
+// is wiped or applied. With the store off it warns and ignores the section.
+func checkManagement(s *Seed, st Stores, log zerolog.Logger) error {
+	if len(s.Management) == 0 {
+		return nil
+	}
+	if st.Mgmt == nil {
+		log.Warn().Msg("seed file has management data but MGMT_STORE is off; ignoring it")
+		return nil
+	}
+	return st.Mgmt.CheckSeed(s.Management)
 }
 
 // Bind sets the function that clears every store. It must be called before
@@ -70,7 +88,7 @@ func (m *Manager) Reset(ctx context.Context, keepSeed bool) {
 	defer m.mu.Unlock()
 	m.wipe(ctx)
 	if keepSeed {
-		m.current.Apply(m.st)
+		m.warnApply(m.current.ApplyChecked(m.st))
 	}
 }
 
@@ -82,7 +100,14 @@ func (m *Manager) ApplyTo(st Stores) {
 	if m.current == nil {
 		return
 	}
-	m.current.Apply(st)
+	m.warnApply(m.current.ApplyChecked(st))
+}
+
+// warnApply logs an Apply error: Reset and ApplyTo have no error path.
+func (m *Manager) warnApply(err error) {
+	if err != nil {
+		m.log.Warn().Msgf("seed file %s: %v", m.path, err)
+	}
 }
 
 // Export snapshots the stores in seed file shape while holding the lock Reset
@@ -126,8 +151,13 @@ func (m *Manager) Poll(ctx context.Context) {
 		m.badHash, m.hasBad = h, true
 		return
 	}
+	if err := checkManagement(s, m.st, m.log); err != nil {
+		m.log.Error().Msgf("seed file %s: %v", m.path, err)
+		m.badHash, m.hasBad = h, true
+		return
+	}
 	m.wipe(ctx)
-	s.Apply(m.st)
+	m.warnApply(s.ApplyChecked(m.st))
 	m.current = s
 	m.loadedHash = h
 	m.hasBad = false

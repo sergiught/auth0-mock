@@ -301,3 +301,34 @@ func TestStore_GetByIDAndListCarryThen(t *testing.T) {
 		assert.Equal(t, []int{503, 200}, statuses(list[0]))
 	}
 }
+
+func TestFindOverrideOnlyOverrides(t *testing.T) {
+	t.Parallel()
+	const path, tmpl = "/api/v2/users/123", "/api/v2/users/{id}"
+
+	plainOnly := NewStore()
+	plainOnly.Put(Expectation{Method: "GET", Path: path, Kind: KindExact, Response: resp(200, `{}`)})
+	assert.Nil(t, plainOnly.FindOverride("GET", path, tmpl, MatchableRequest{}))
+
+	s := NewStore()
+	s.Put(Expectation{Method: "GET", Path: path, Kind: KindExact, Response: resp(200, `{"plain":true}`)})
+	s.Put(Expectation{Method: "GET", Path: tmpl, Kind: KindTemplate, Override: true, Response: resp(500, `{"forced":true}`)})
+
+	m := s.FindOverride("GET", path, tmpl, MatchableRequest{})
+	if assert.NotNil(t, m) {
+		assert.Equal(t, 500, m.Response.Status)
+		assert.EqualValues(t, 1, m.Hits)
+	}
+	m = s.FindOverride("GET", path, tmpl, MatchableRequest{})
+	if assert.NotNil(t, m) {
+		assert.EqualValues(t, 2, m.Hits)
+	}
+
+	// Find still treats an override stub like any other (store off).
+	only := NewStore()
+	only.Put(Expectation{Method: "GET", Path: path, Kind: KindExact, Override: true, Response: resp(503, `{}`)})
+	f := only.Find("GET", path, tmpl, MatchableRequest{})
+	if assert.NotNil(t, f) {
+		assert.Equal(t, 503, f.Response.Status)
+	}
+}

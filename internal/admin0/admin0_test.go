@@ -19,6 +19,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/clock"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/session"
@@ -617,4 +618,58 @@ func TestExport_NoSeedManager(t *testing.T) {
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "/api/v2/users")
 	assert.Contains(t, w.Body.String(), "429")
+}
+
+func TestResetClearsMgmt(t *testing.T) {
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	d := newDeps()
+	d.Mgmt = mgmtstore.NewEngine(s, v).NewStore(time.Now)
+
+	serve := func(method, path, body string) *httptest.ResponseRecorder {
+		op, err := v.Resolve(method, path)
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		d.Mgmt.Serve(w, httptest.NewRequest(method, path, strings.NewReader(body)), op, []byte(body))
+		return w
+	}
+	w := serve("POST", "/api/v2/roles", `{"name":"r1"}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var role struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &role))
+	require.Equal(t, 200, serve("GET", "/api/v2/roles/"+role.ID, "").Code)
+
+	rec := httptest.NewRecorder()
+	newRouter(d).ServeHTTP(rec, httptest.NewRequest("POST", "/admin0/reset", nil))
+	require.Equal(t, 204, rec.Code)
+	assert.Equal(t, 404, serve("GET", "/api/v2/roles/"+role.ID, "").Code)
+}
+
+func TestExportIncludesManagement(t *testing.T) {
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	d := newDeps()
+	d.Mgmt = mgmtstore.NewEngine(s, v).NewStore(time.Now)
+	require.NoError(t, d.Mgmt.Load(map[string]json.RawMessage{"roles": json.RawMessage(`[{"name":"admin"}]`)}))
+
+	w := httptest.NewRecorder()
+	newRouter(d).ServeHTTP(w, httptest.NewRequest("GET", "/admin0/export", nil))
+	require.Equal(t, 200, w.Code)
+	var got struct {
+		Management map[string][]map[string]any `json:"management"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Len(t, got.Management["roles"], 1)
+	assert.Equal(t, "admin", got.Management["roles"][0]["name"])
+
+	d.Mgmt = nil
+	w = httptest.NewRecorder()
+	newRouter(d).ServeHTTP(w, httptest.NewRequest("GET", "/admin0/export", nil))
+	assert.NotContains(t, w.Body.String(), "management")
 }

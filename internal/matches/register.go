@@ -25,6 +25,8 @@ type Registration struct {
 	Request  *RequestMatcher `json:"request,omitempty"`
 	Response ResponseDef     `json:"response"`
 	Then     []ResponseDef   `json:"then,omitempty"`
+	// Override lets the stub win over the Management API store (MGMT_STORE=true).
+	Override bool `json:"override,omitempty"`
 }
 
 // RegistrationError is the validation failure Prepare returns. Message and
@@ -86,6 +88,7 @@ func Prepare(v *spec.Validator, r Registration) (Expectation, error) {
 		Request:  req,
 		Response: r.Response,
 		Then:     r.Then,
+		Override: r.Override,
 	}, nil
 }
 

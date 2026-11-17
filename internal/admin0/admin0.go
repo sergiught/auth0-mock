@@ -22,6 +22,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/session"
@@ -40,8 +41,11 @@ type Deps struct {
 	AuthorizeErrors *authorizeerr.Store
 	Permissions     *permissions.Store
 	MFA             *mfa.Store
-	Validator       *spec.Validator
-	Clock           *clock.Controlled
+	// Mgmt is the in-memory Management API store, cleared by /admin0/reset.
+	// Nil is fine.
+	Mgmt      *mgmtstore.Store
+	Validator *spec.Validator
+	Clock     *clock.Controlled
 	// Seed is the loaded SEED_FILE. Nil means no seed: reset wipes everything.
 	Seed *seed.Manager
 	// SeedTemplate is the shared seed a Seed-less store set (a namespace)
@@ -171,6 +175,7 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ClaimMappings: h.Deps.ClaimMappings,
 				Permissions:   h.Deps.Permissions,
 				MFA:           h.Deps.MFA,
+				Mgmt:          h.Deps.Mgmt,
 			})
 		}
 	}
@@ -199,6 +204,9 @@ func wipe(ctx context.Context, d Deps) {
 	}
 	if d.MFA != nil {
 		d.MFA.Reset()
+	}
+	if d.Mgmt != nil {
+		d.Mgmt.Clear()
 	}
 	if d.Journal != nil {
 		d.Journal.Clear()
