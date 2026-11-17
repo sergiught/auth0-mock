@@ -281,6 +281,11 @@ func TestServeRejectsWriteTheReadSchemaRejects(t *testing.T) {
 	const path = "/api/v2/guardian/factors/push-notification/providers/apns"
 	code, _, raw := h.do("PATCH", path, "", `{"bundle_id":"`+strings.Repeat("a", 21)+`"}`)
 	assert.Equal(t, 400, code, string(raw))
+	assert.Contains(t, string(raw), "bundle_id")
+	assert.NotContains(t, string(raw), "must be a JSON object")
+	code, _, raw = h.do("PATCH", path, "", `[1]`)
+	assert.Equal(t, 400, code, string(raw))
+	assert.Contains(t, string(raw), "The request body must be a JSON object.")
 	_, before, _ := h.do("GET", path, "", "")
 	assert.NotContains(t, before, "bundle_id")
 

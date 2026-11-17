@@ -65,9 +65,11 @@ func notFound(w http.ResponseWriter) {
 	httperr.WriteMgmt(w, http.StatusNotFound, "Not Found", "The resource does not exist.", "inexistent_resource")
 }
 
-func badBody(w http.ResponseWriter) {
-	httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", "The request body must be a JSON object.", "invalid_body")
+func badBody(w http.ResponseWriter, msg string) {
+	httperr.WriteMgmt(w, http.StatusBadRequest, "Bad Request", msg, "invalid_body")
 }
+
+const notObjectMsg = "The request body must be a JSON object."
 
 // project returns obj as a response body. Nested objects and array items follow
 // their own response sub-schemas. A key the response schema does not declare is
@@ -265,19 +267,20 @@ func (s *Store) prospective(route Route, coll, id string, obj Object) Object {
 }
 
 // decodeWrite decodes a write body and checks the state it would store.
-func (s *Store) decodeWrite(r *http.Request, op spec.Operation, body []byte, route Route, coll, id string) (Object, bool) {
+// A failure returns the message for the 400 response.
+func (s *Store) decodeWrite(r *http.Request, op spec.Operation, body []byte, route Route, coll, id string) (Object, string) {
 	obj, ok := decodeBody(r, op, body)
 	if !ok {
-		return nil, false
+		return nil, notObjectMsg
 	}
 	req, resp, read := s.engine.schemas(route.Collection)
 	if read == nil {
 		read = resp
 	}
-	if s.checkWrite(route, coll, id, obj, req, read) != nil {
-		return nil, false
+	if err := s.checkWrite(route, coll, id, obj, req, read); err != nil {
+		return nil, err.Error()
 	}
-	return obj, true
+	return obj, ""
 }
 
 // checkWrite validates the state a write would store against the read
@@ -331,8 +334,9 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 	req, _, _ := s.engine.schemas(route.Collection)
 	var obj Object
 	if writesBody(route.Kind) {
-		if obj, ok = s.decodeWrite(r, op, body, route, coll, params[route.IDParam]); !ok {
-			badBody(w)
+		var msg string
+		if obj, msg = s.decodeWrite(r, op, body, route, coll, params[route.IDParam]); msg != "" {
+			badBody(w, msg)
 			return
 		}
 	}
