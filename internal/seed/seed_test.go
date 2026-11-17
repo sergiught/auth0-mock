@@ -409,7 +409,7 @@ func TestParseManagementKey(t *testing.T) {
 func TestApplyManagement(t *testing.T) {
 	st := newStores()
 	st.Mgmt = newMgmtStore(t)
-	parse(t, mgmtSeed).Apply(st.Stores)
+	require.NoError(t, parse(t, mgmtSeed).ApplyChecked(st.Stores))
 	f := seed.Export(st.Stores, false)
 	require.Len(t, f.Management, 3)
 	js, err := f.JSON()

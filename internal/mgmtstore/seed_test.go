@@ -120,3 +120,12 @@ func TestLoadFailureLeavesStoreUnchanged(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, before, s.Export())
 }
+
+func TestLoadStoresEncodedKeyWhereServeLooksIt(t *testing.T) {
+	h := newHarness(t)
+	require.NoError(t, h.s.Load(raw(t, `{"users": [{"user_id": "auth0|abc", "connection": "x"}],
+	  "users/auth0%7Cabc/authentication-methods": [{"id": "am_1", "type": "totp"}]}`)))
+	code, _, body := h.do("GET", "/api/v2/users/auth0%7Cabc/authentication-methods", "", "")
+	assert.Equal(t, 200, code)
+	assert.Contains(t, string(body), "am_1")
+}

@@ -13,12 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sergiught/auth0-mock/api"
 	"github.com/sergiught/auth0-mock/internal/journal"
 	"github.com/sergiught/auth0-mock/internal/jwks"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mgmtstore"
-	"github.com/sergiught/auth0-mock/internal/spec"
 )
 
 type storeEnv struct {
@@ -30,10 +28,7 @@ type storeEnv struct {
 
 func newStoreEnv(t *testing.T, withStore bool) *storeEnv {
 	t.Helper()
-	s, err := spec.Load(api.ManagementOpenAPIJSON)
-	require.NoError(t, err)
-	v, err := spec.NewValidator(s)
-	require.NoError(t, err)
+	s, v := loadSpec(t)
 	ks, err := jwks.NewKeySet(jwks.Config{Issuer: "https://mock/", AccessTokenTTL: 3600e9})
 	require.NoError(t, err)
 	stubs := matches.NewStore()
