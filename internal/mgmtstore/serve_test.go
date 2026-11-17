@@ -413,3 +413,14 @@ func TestConnectionPrecedenceRoundTrip(t *testing.T) {
 	m2 := map[string]json.RawMessage{"connections": json.RawMessage(`[{"name":"c2","strategy":"auth0","options":{"precedence":["email","username"]}}]`)}
 	require.Error(t, h.s.engine.NewStore(fixedNow).Load(m2))
 }
+
+func TestServeEnforcesSchemaPatterns(t *testing.T) {
+	h := newHarness(t)
+	code, org, raw := h.do("POST", "/api/v2/organizations", "", `{"name":"acme"}`)
+	require.Equal(t, 201, code, string(raw))
+	path := "/api/v2/organizations/" + org["id"].(string) + "/discovery-domains"
+	code, _, raw = h.do("POST", path, "", `{"domain":"bad domain"}`)
+	assert.Equal(t, 400, code, string(raw))
+	code, _, raw = h.do("POST", path, "", `{"domain":"example.com"}`)
+	assert.Equal(t, 201, code, string(raw))
+}

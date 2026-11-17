@@ -313,3 +313,25 @@ func TestProspectiveAndCheckPresentBranches(t *testing.T) {
 	// A present null is validated like any value; a write drops it first.
 	assert.Error(t, checkPresent(Object{"name": nil}, schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"name": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})}))))
 }
+
+func TestUncompilablePatternSkipsOnlyItself(t *testing.T) {
+	look := openapi3.NewStringSchema()
+	look.Pattern = `^(?!-)[a-z]+$`
+	plain := openapi3.NewStringSchema()
+	plain.Pattern = `^https://.*`
+	obj := objectSchema(map[string]*openapi3.SchemaRef{"look": schemaOf(look), "plain": schemaOf(plain)})
+	// The second pass hits the compiled-pattern cache.
+	for i := 0; i < 2; i++ {
+		assert.NoError(t, obj.VisitJSON(map[string]any{"look": "-x", "plain": "https://a"}, patternOption))
+		assert.Error(t, obj.VisitJSON(map[string]any{"look": "x", "plain": "http://a"}, patternOption))
+	}
+}
+
+func TestListItemsShapes(t *testing.T) {
+	item := schemaOf(objectSchema(nil))
+	arr := openapi3.NewArraySchema()
+	arr.Items = item
+	assert.Same(t, item, listItems(schemaOf(arr)))
+	assert.Same(t, item, listItems(schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"xs": schemaOf(arr)}))))
+	assert.Nil(t, listItems(nil))
+}

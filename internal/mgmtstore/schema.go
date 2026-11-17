@@ -2,14 +2,41 @@ package mgmtstore
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 const maxSchemaDepth = 8
+
+// patternOption enforces schema patterns Go's regexp can compile and skips
+// only the ones it cannot (Perl lookaheads), so one such pattern never
+// disables the check of the others.
+var patternOption = openapi3.SetSchemaRegexCompiler(compilePattern)
+
+// matchAll stands in for a pattern Go cannot compile: it accepts every string.
+type matchAll struct{}
+
+func (matchAll) MatchString(string) bool { return true }
+
+// Patterns caches the matcher of each pattern string.
+var patterns sync.Map
+
+func compilePattern(expr string) (openapi3.RegexMatcher, error) {
+	if m, ok := patterns.Load(expr); ok {
+		return m.(openapi3.RegexMatcher), nil
+	}
+	var m openapi3.RegexMatcher = matchAll{}
+	if re, err := regexp.Compile(expr); err == nil {
+		m = re
+	}
+	patterns.Store(expr, m)
+	return m, nil
+}
 
 // schemaProps returns the union of declared properties across the schema's
 // own properties and its allOf/oneOf/anyOf branches.
@@ -345,7 +372,7 @@ func pickBranch(s *openapi3.Schema, group openapi3.SchemaRefs, v any) *openapi3.
 // acceptsValue reports whether v validates against b as a request or response.
 func acceptsValue(b *openapi3.SchemaRef, v any) bool {
 	for _, mode := range []openapi3.SchemaValidationOption{openapi3.VisitAsResponse(), openapi3.VisitAsRequest()} {
-		if b.Value.VisitJSON(v, mode, openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails()) == nil {
+		if b.Value.VisitJSON(v, mode, patternOption, openapi3.DisableSchemaErrorDetails()) == nil {
 			return true
 		}
 	}

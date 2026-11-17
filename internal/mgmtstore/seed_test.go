@@ -328,3 +328,31 @@ func TestLoadRejectsNullSettingsValue(t *testing.T) {
 
 	require.NoError(t, s.Load(raw(t, `{"tenants/settings": {"friendly_name": "Mock"}, "roles": []}`)))
 }
+
+func TestLoadEnforcesSchemaPatterns(t *testing.T) {
+	h := newHarness(t)
+	seed := map[string]json.RawMessage{"log-streams": json.RawMessage(`[{"name":"x","type":"http","sink":{"httpEndpoint":"http://insecure.example","httpContentFormat":"JSONLINES","httpContentType":"application/json","httpAuthorization":"a"}}]`)}
+	require.Error(t, h.s.engine.NewStore(fixedNow).Load(seed))
+}
+
+func TestDeviceCredentialExportKeepsListFields(t *testing.T) {
+	h := newHarness(t)
+	code, _, raw := h.do("POST", "/api/v2/device-credentials", "",
+		`{"device_name":"phone","type":"public_key","value":"secretkey","device_id":"abc123","client_id":"c1"}`)
+	require.Equal(t, 201, code, string(raw))
+	_, _, list := h.do("GET", "/api/v2/device-credentials", "", "")
+	assert.NotContains(t, string(list), "secretkey")
+	out1 := h.s.Export()
+	exported := h.s.exportJSON(t)
+	for _, want := range []string{"device_id", "device_name", "public_key"} {
+		assert.Contains(t, exported, want)
+	}
+	assert.NotContains(t, exported, "secretkey")
+	b, err := json.Marshal(out1)
+	require.NoError(t, err)
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &m))
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out1, s2.Export())
+}

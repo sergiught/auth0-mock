@@ -83,7 +83,7 @@ func (e *Engine) checkPathParams(t target) error {
 			if p.Value.In != "path" || !has || p.Value.Schema == nil || p.Value.Schema.Value == nil {
 				continue
 			}
-			if err := p.Value.Schema.Value.VisitJSON(val, openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails()); err != nil {
+			if err := p.Value.Schema.Value.VisitJSON(val, patternOption, openapi3.DisableSchemaErrorDetails()); err != nil {
 				return fmt.Errorf("path parameter %q: %q is not valid", p.Value.Name, val)
 			}
 		}
@@ -130,6 +130,7 @@ func (e *Engine) literalAt(key string, idx int) bool {
 func (e *Engine) scanSchemas(collection string) (request, response, read, proj *openapi3.SchemaRef) {
 	var putBody *openapi3.SchemaRef
 	var bodies openapi3.SchemaRefs
+	var list *openapi3.SchemaRef
 	for _, op := range e.ops {
 		r, ok := e.routes[routeKey(op.Method, op.Template)]
 		if !ok || r.Collection != collection {
@@ -144,6 +145,8 @@ func (e *Engine) scanSchemas(collection string) (request, response, read, proj *
 		switch r.Kind {
 		case KindCreate:
 			request, response = bodySchema(op.Op), resp
+		case KindList:
+			list = resp
 		case KindRead:
 			read = resp
 		case KindSettingsRead:
@@ -157,7 +160,24 @@ func (e *Engine) scanSchemas(collection string) (request, response, read, proj *
 	if request == nil {
 		request = putBody
 	}
+	if read == nil {
+		read = listItems(list)
+	}
 	return request, response, read, writeSchema(request, bodies)
+}
+
+// listItems returns the item schema of a list response, plain or inside a
+// paged envelope. A collection without an item GET reads back through it, as
+// its create response may declare far fewer fields than the list returns.
+func listItems(list *openapi3.SchemaRef) *openapi3.SchemaRef {
+	shape := listShapeOf(list)
+	switch {
+	case shape.plain && shape.plainItems != nil:
+		return shape.plainItems
+	case len(shape.wrappers) > 0:
+		return shape.wrappers[0].items
+	}
+	return nil
 }
 
 // writeSchema returns one schema declaring every key any write body does, the
@@ -218,7 +238,7 @@ func (t target) checkRequest(obj Object) error {
 		}
 	}
 	return t.request.Value.VisitJSON(filtered,
-		openapi3.VisitAsRequest(), openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails())
+		openapi3.VisitAsRequest(), patternOption, openapi3.DisableSchemaErrorDetails())
 }
 
 // normalizeSeed returns a copy of v shaped for request validation: response
@@ -366,7 +386,7 @@ func checkResponseValue(prop *openapi3.SchemaRef, v any) error {
 		return nil
 	}
 	return prop.Value.VisitJSON(v,
-		openapi3.VisitAsResponse(), openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails())
+		openapi3.VisitAsResponse(), patternOption, openapi3.DisableSchemaErrorDetails())
 }
 
 func (t target) parent() (coll, id string, ok bool) {
