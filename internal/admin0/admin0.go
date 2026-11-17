@@ -175,6 +175,7 @@ func (h *ResetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ClaimMappings: h.Deps.ClaimMappings,
 				Permissions:   h.Deps.Permissions,
 				MFA:           h.Deps.MFA,
+				Mgmt:          h.Deps.Mgmt,
 			})
 		}
 	}

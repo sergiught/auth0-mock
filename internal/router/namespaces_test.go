@@ -466,3 +466,17 @@ func TestNamespacesHaveSeparateStores(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, do("a", http.MethodGet, "/api/v2/roles/"+idA, "").Code)
 	assert.Equal(t, http.StatusOK, do("b", http.MethodGet, "/api/v2/roles/"+idB, "").Code)
 }
+
+func TestNamespaceResetKeepsSeededManagementData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "seed.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("management:\n  roles:\n    - {id: rol_seeded, name: seeded}\n"), 0o600))
+	h := newNamespaceRouterWith(t, 4, path, func(d *router.Deps) {
+		d.MgmtEngine = mgmtstore.NewEngine(d.Spec, d.Validator)
+	})
+	do := func(method, path string) *httptest.ResponseRecorder {
+		return nsDo(t, h, method, path, "a", "", "Authorization", "Bearer "+nsToken(t, h, "a"))
+	}
+	require.Equal(t, http.StatusOK, do(http.MethodGet, "/api/v2/roles/rol_seeded").Code)
+	require.Equal(t, http.StatusNoContent, do(http.MethodPost, "/admin0/reset").Code)
+	assert.Equal(t, http.StatusOK, do(http.MethodGet, "/api/v2/roles/rol_seeded").Code)
+}
