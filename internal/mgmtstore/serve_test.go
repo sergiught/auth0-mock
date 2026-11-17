@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -366,7 +367,7 @@ func mustJSON(t *testing.T, v any) []byte {
 func TestServeDropsVersionFromTemplatePatch(t *testing.T) {
 	h := newHarness(t)
 	const base = "/api/v2/verifiable-credentials/verification/templates"
-	code, created, raw := h.do("POST", base, "", `{"name":"t","type":"t","dialect":"d","presentation":{"org.iso.18013.5.1.mDL":{"org.iso.18013.5.1":{"family_name":true}}},"well_known_trusted_issuers":"x"}`)
+	code, created, raw := h.do("POST", base, "", `{"name":"t","type":"t","dialect":"simplified/1.0","presentation":{"org.iso.18013.5.1.mDL":{"org.iso.18013.5.1":{"family_name":true}}},"well_known_trusted_issuers":"x"}`)
 	require.Equal(t, 201, code, string(raw))
 	code, patched, raw := h.do("PATCH", base+"/"+created["id"].(string), "", `{"version":1,"name":"n"}`)
 	require.Equal(t, 200, code, string(raw))
@@ -458,4 +459,96 @@ func TestPatchSinkStaysFullReplaceForReadableKeys(t *testing.T) {
 	sink := got["sink"].(map[string]any)
 	assert.Equal(t, "https://example.com/b", sink["httpEndpoint"])
 	assert.NotContains(t, sink, "httpAuthorization")
+}
+
+func reloadExport(t *testing.T, h *harness) (map[string]any, *Store) {
+	t.Helper()
+	out := h.s.Export()
+	m := map[string]json.RawMessage{}
+	for k, v := range out {
+		m[k] = mustJSON(t, v)
+	}
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out, s2.Export())
+	return out, s2
+}
+
+func TestProjectRedactsWriteOnlyKeysInFreeFormOptions(t *testing.T) {
+	// The shipped spec marks no reachable request key writeOnly inside a
+	// free-form object (metadataXml sits in an unreferenced SAML schema), so
+	// the behaviour is checked on synthetic schemas.
+	wo := &openapi3.Schema{Type: &openapi3.Types{"string"}, WriteOnly: true}
+	object := func(p map[string]*openapi3.SchemaRef) *openapi3.SchemaRef {
+		return ref(&openapi3.Schema{Type: &openapi3.Types{"object"}, Properties: p})
+	}
+	req := object(map[string]*openapi3.SchemaRef{"options": object(map[string]*openapi3.SchemaRef{
+		"metadataXml": ref(wo), "signOutEndpoint": ref(typed("string"))})})
+	yes := true
+	free := ref(&openapi3.Schema{Type: &openapi3.Types{"object"}, AdditionalProperties: openapi3.AdditionalProperties{Has: &yes}})
+	read := object(map[string]*openapi3.SchemaRef{"options": free})
+	opts := Object{"metadataXml": "<xml/>", "signOutEndpoint": "u", "other": 1}
+
+	got := project(Object{"options": opts}, read, req)
+	assert.Equal(t, Object{"options": map[string]any{"signOutEndpoint": "u", "other": 1}}, got)
+
+	// With no additionalProperties schema the free-form object is also redacted.
+	bare := object(map[string]*openapi3.SchemaRef{"options": ref(typed("object"))})
+	got = project(Object{"options": opts}, bare, req)
+	assert.Equal(t, Object{"options": map[string]any{"signOutEndpoint": "u", "other": 1}}, got)
+
+	// A PATCH of options that omits the key carries it over; other keys do not.
+	ws := writeSchemas{req: req, read: bare}
+	carried := ws.carry("options", map[string]any{"metadataXml": "<xml/>", "signOutEndpoint": "old"}, map[string]any{"signOutEndpoint": "new"})
+	assert.Equal(t, map[string]any{"metadataXml": "<xml/>", "signOutEndpoint": "new"}, carried)
+	carried = ws.carry("options", map[string]any{"signOutEndpoint": "old"}, map[string]any{"metadataXml": "x"})
+	assert.Equal(t, map[string]any{"metadataXml": "x"}, carried)
+}
+
+func TestRedactWriteOnlyHelpers(t *testing.T) {
+	wo := &openapi3.Schema{Type: &openapi3.Types{"string"}, WriteOnly: true}
+	plain := typed("string")
+	obj := func(p map[string]*openapi3.SchemaRef) *openapi3.SchemaRef {
+		return ref(&openapi3.Schema{Type: &openapi3.Types{"object"}, Properties: p})
+	}
+	req := obj(map[string]*openapi3.SchemaRef{"secret": ref(wo), "keep": ref(plain),
+		"nested": obj(map[string]*openapi3.SchemaRef{"secret": ref(wo)}),
+		"list":   ref(&openapi3.Schema{Type: &openapi3.Types{"array"}, Items: obj(map[string]*openapi3.SchemaRef{"secret": ref(wo)})}),
+		"flat":   ref(&openapi3.Schema{Type: &openapi3.Types{"array"}}),
+	})
+	got := redactWriteOnly(map[string]any{
+		"secret": "s", "keep": "k", "other": "o",
+		"nested": map[string]any{"secret": "s", "x": 1},
+		"list":   []any{map[string]any{"secret": "s", "y": 2}},
+		"flat":   []any{1},
+	}, req)
+	assert.Equal(t, map[string]any{
+		"keep": "k", "other": "o",
+		"nested": map[string]any{"x": 1},
+		"list":   []any{map[string]any{"y": 2}},
+		"flat":   []any{1},
+	}, got)
+	assert.Equal(t, "x", redactWriteOnly("x", req))
+	assert.Equal(t, "x", redactWriteOnly("x", nil))
+
+	// An undecided union drops a key only when every branch marks it writeOnly.
+	a := obj(map[string]*openapi3.SchemaRef{"both": ref(wo), "one": ref(wo)})
+	b := obj(map[string]*openapi3.SchemaRef{"both": ref(wo), "one": ref(plain)})
+	union := ref(&openapi3.Schema{OneOf: openapi3.SchemaRefs{a, b}})
+	leaves := unionLeaves(union, 0)
+	assert.True(t, writeOnlyIn(leaves, "both"))
+	assert.False(t, writeOnlyIn(leaves, "one"))
+	assert.False(t, writeOnlyIn(leaves, "none"))
+	assert.False(t, writeOnlyIn([]*openapi3.SchemaRef{ref(&openapi3.Schema{Properties: map[string]*openapi3.SchemaRef{"k": {}}})}, "k"))
+}
+
+func TestServeTemplateNameRemovalExportsAndReloads(t *testing.T) {
+	h := newHarness(t)
+	const base = "/api/v2/verifiable-credentials/verification/templates"
+	code, created, raw := h.do("POST", base, "", `{"name":"t","type":"t","dialect":"simplified/1.0","presentation":{"org.iso.18013.5.1.mDL":{"org.iso.18013.5.1":{"family_name":true}}},"well_known_trusted_issuers":"aamva"}`)
+	require.Equal(t, 201, code, string(raw))
+	code, _, raw = h.do("PATCH", base+"/"+created["id"].(string), "", `{"name":null}`)
+	require.Equal(t, 200, code, string(raw))
+	out, _ := reloadExport(t, h)
+	assert.NotContains(t, string(mustJSON(t, out)), `"name"`)
 }

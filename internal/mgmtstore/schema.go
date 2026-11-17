@@ -433,16 +433,22 @@ func (w writeSchemas) carry(k string, old, nv any) any {
 	}
 	reqLeaves := fittingLeaves(w.req, k, newObj)
 	readLeaves := fittingLeaves(w.read, k, newObj)
-	if len(readLeaves) == 0 {
-		return nv
-	}
 	var out map[string]any
 	for key, ov := range oldObj {
 		if _, present := newObj[key]; present {
 			continue
 		}
 		rp := declaredBy(reqLeaves, key)
-		if rp == nil || (!writeOnlyKey(rp, readLeaves, key) && !requiredBy(readLeaves, key)) {
+		if rp == nil {
+			continue
+		}
+		// With no declared read shape (a free-form object) only keys the
+		// request explicitly marks writeOnly were redacted, so only they carry.
+		if len(readLeaves) == 0 {
+			if rp.Value == nil || !rp.Value.WriteOnly {
+				continue
+			}
+		} else if !writeOnlyKey(rp, readLeaves, key) && !requiredBy(readLeaves, key) {
 			continue
 		}
 		if out == nil {
@@ -535,4 +541,22 @@ func requiredBy(leaves []*openapi3.SchemaRef, key string) bool {
 
 func writeOnlyKey(req *openapi3.SchemaRef, read []*openapi3.SchemaRef, key string) bool {
 	return declaredBy(read, key) == nil || (req.Value != nil && req.Value.WriteOnly)
+}
+
+// allowsNull reports whether s accepts null, directly or through a union.
+func allowsNull(s *openapi3.SchemaRef, depth int) bool {
+	if s == nil || s.Value == nil || depth > maxSchemaDepth {
+		return false
+	}
+	if s.Value.Nullable || (s.Value.Type != nil && s.Value.Type.Includes("null")) {
+		return true
+	}
+	for _, group := range []openapi3.SchemaRefs{s.Value.OneOf, s.Value.AnyOf} {
+		for _, b := range group {
+			if allowsNull(b, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
 }

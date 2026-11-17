@@ -23,6 +23,9 @@ type target struct {
 	request, response, read *openapi3.SchemaRef
 	// Proj stands for every write body of the collection when projecting.
 	proj *openapi3.SchemaRef
+	// Removable names the keys a supported update can remove (a PATCH setting
+	// them to null), so a seed may omit them although create requires them.
+	removable map[string]bool
 }
 
 func bodySchema(op *openapi3.Operation) *openapi3.SchemaRef {
@@ -66,7 +69,7 @@ func (e *Engine) lookup(path string) (target, bool) {
 	}
 	t := target{route: best, params: params, settings: best.Kind != KindCreate}
 	set := e.schemaCache[best.Collection]
-	t.request, t.response, t.read, t.proj = set.request, set.response, set.read, set.proj
+	t.request, t.response, t.read, t.proj, t.removable = set.request, set.response, set.read, set.proj, set.removable
 	return t, true
 }
 
@@ -101,7 +104,10 @@ func (e *Engine) schemas(collection string) (proj, response, read *openapi3.Sche
 }
 
 // schemaSet is the cached result of scanSchemas for one collection.
-type schemaSet struct{ request, response, read, proj *openapi3.SchemaRef }
+type schemaSet struct {
+	request, response, read, proj *openapi3.SchemaRef
+	removable                     map[string]bool
+}
 
 // cacheSchemas scans the operations once per collection, so schemas never
 // rescans them. The cache is immutable once NewEngine returns.
@@ -109,8 +115,8 @@ func (e *Engine) cacheSchemas() {
 	e.schemaCache = map[string]schemaSet{}
 	for _, r := range e.routes {
 		if _, done := e.schemaCache[r.Collection]; !done {
-			req, resp, read, proj := e.scanSchemas(r.Collection)
-			e.schemaCache[r.Collection] = schemaSet{req, resp, read, proj}
+			req, resp, read, proj, removable := e.scanSchemas(r.Collection)
+			e.schemaCache[r.Collection] = schemaSet{req, resp, read, proj, removable}
 		}
 	}
 }
@@ -127,10 +133,11 @@ func (e *Engine) literalAt(key string, idx int) bool {
 	return idx < len(segs) && !isParam(segs[idx])
 }
 
-func (e *Engine) scanSchemas(collection string) (request, response, read, proj *openapi3.SchemaRef) {
+func (e *Engine) scanSchemas(collection string) (request, response, read, proj *openapi3.SchemaRef, removable map[string]bool) {
 	var putBody *openapi3.SchemaRef
 	var bodies openapi3.SchemaRefs
 	var list *openapi3.SchemaRef
+	removable = map[string]bool{}
 	for _, op := range e.ops {
 		r, ok := e.routes[routeKey(op.Method, op.Template)]
 		if !ok || r.Collection != collection {
@@ -140,6 +147,9 @@ func (e *Engine) scanSchemas(collection string) (request, response, read, proj *
 		if writesBody(r.Kind) {
 			if b := bodySchema(op.Op); b != nil {
 				bodies = append(bodies, b)
+				if r.Kind != KindCreate {
+					addNullable(removable, b)
+				}
 			}
 		}
 		switch r.Kind {
@@ -163,7 +173,7 @@ func (e *Engine) scanSchemas(collection string) (request, response, read, proj *
 	if read == nil {
 		read = listItems(list)
 	}
-	return request, response, read, writeSchema(request, bodies)
+	return request, response, read, writeSchema(request, bodies), removable
 }
 
 // listItems returns the item schema of a list response, plain or inside a
@@ -236,9 +246,44 @@ func (t target) checkRequest(obj Object) error {
 		if filtered, err = normalizeSeed(t.request, []*openapi3.SchemaRef{t.response, t.read}, obj, 0); err != nil {
 			return err
 		}
+		filtered = t.fillRemovable(filtered)
 	}
 	return t.request.Value.VisitJSON(filtered,
 		openapi3.VisitAsRequest(), patternOption, openapi3.DisableSchemaErrorDetails())
+}
+
+// addNullable marks each top-level property of body that accepts null.
+func addNullable(out map[string]bool, body *openapi3.SchemaRef) {
+	for k, p := range schemaProps(body) {
+		if allowsNull(p, 0) {
+			out[k] = true
+		}
+	}
+}
+
+// fillRemovable gives a minimal value to each required request field the seed
+// omits when an update can remove it, so an exported state after such an
+// update still loads. Supplied values are untouched, and so still validated.
+func (t target) fillRemovable(v any) any {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	props := schemaProps(t.request)
+	var out map[string]any
+	for _, k := range collectRequired(t.request, 0) {
+		if _, has := obj[k]; has || !t.removable[k] {
+			continue
+		}
+		if out == nil {
+			out = maps.Clone(obj)
+		}
+		out[k] = MinimalValue(props[k])
+	}
+	if out == nil {
+		return v
+	}
+	return out
 }
 
 // normalizeSeed returns a copy of v shaped for request validation: response

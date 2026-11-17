@@ -356,3 +356,22 @@ func TestDeviceCredentialExportKeepsListFields(t *testing.T) {
 	require.NoError(t, s2.Load(m))
 	assert.Equal(t, out1, s2.Export())
 }
+
+func TestSeedMayOmitFieldsAnUpdateRemoves(t *testing.T) {
+	e, _ := loadEngine(t)
+	const key = "verifiable-credentials/verification/templates"
+	tmpl := func(extra string) map[string]json.RawMessage {
+		return raw(t, `{"`+key+`":[{`+extra+`"type":"t","dialect":"simplified/1.0","presentation":{"org.iso.18013.5.1.mDL":{"org.iso.18013.5.1":{"family_name":true}}},"well_known_trusted_issuers":"aamva"}]}`)
+	}
+	// The name is required on create but a PATCH can null it, so a seed may omit it.
+	require.NoError(t, e.NewStore(fixedNow).Load(tmpl("")))
+	require.NoError(t, e.NewStore(fixedNow).Load(tmpl(`"name":"n",`)))
+	// A supplied invalid name is still validated.
+	require.Error(t, e.NewStore(fixedNow).Load(tmpl(`"name":"",`)))
+	// A required field no update can remove is still required.
+	err := e.NewStore(fixedNow).Load(raw(t, `{"`+key+`":[{"name":"n"}]}`))
+	require.Error(t, err)
+
+	// Non-object values and a missing request schema are left alone.
+	assert.Equal(t, 5, target{}.fillRemovable(5))
+}

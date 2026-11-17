@@ -70,3 +70,12 @@ func TestMinimalValue(t *testing.T) {
 	one := &openapi3.Schema{OneOf: openapi3.SchemaRefs{ref(typed("boolean")), ref(typed("string"))}}
 	assert.Equal(t, false, MinimalValue(ref(one)))
 }
+
+func TestAllowsNull(t *testing.T) {
+	assert.False(t, allowsNull(nil, 0))
+	assert.False(t, allowsNull(ref(typed("string")), 0))
+	assert.True(t, allowsNull(ref(&openapi3.Schema{Nullable: true}), 0))
+	assert.True(t, allowsNull(ref(&openapi3.Schema{Type: &openapi3.Types{"string", "null"}}), 0))
+	assert.True(t, allowsNull(ref(&openapi3.Schema{AnyOf: openapi3.SchemaRefs{ref(typed("string")), ref(typed("null"))}}), 0))
+	assert.False(t, allowsNull(ref(&openapi3.Schema{OneOf: openapi3.SchemaRefs{ref(typed("string"))}}), 0))
+}

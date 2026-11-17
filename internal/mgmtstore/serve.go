@@ -117,14 +117,7 @@ func projectMap(obj map[string]any, schema, req *openapi3.SchemaRef) map[string]
 	props := schemaProps(schema)
 	allowed, extra := additionalProps(schema, 0)
 	if len(props) == 0 {
-		if extra == nil {
-			return obj
-		}
-		out := make(map[string]any, len(obj))
-		for k, x := range obj {
-			out[k] = projectValue(x, extra, nil)
-		}
-		return out
+		return projectFreeForm(obj, extra, req)
 	}
 	reqProps := schemaProps(req)
 	out := make(map[string]any, len(props))
@@ -132,7 +125,7 @@ func projectMap(obj map[string]any, schema, req *openapi3.SchemaRef) map[string]
 		if p, ok := props[k]; ok {
 			out[k] = projectValue(x, p, reqProps[k])
 		} else if _, requestOnly := reqProps[k]; !requestOnly && allowed {
-			out[k] = projectValue(x, extra, nil)
+			out[k] = redactWriteOnly(projectValue(x, extra, nil), nil)
 		}
 	}
 	for _, k := range collectRequired(schema, 0) {
@@ -143,6 +136,75 @@ func projectMap(obj map[string]any, schema, req *openapi3.SchemaRef) map[string]
 		}
 	}
 	return out
+}
+
+// projectFreeForm projects an object whose read schema declares no
+// properties: values follow the extra schema when there is one, and keys the
+// request schema marks writeOnly are dropped, at every depth.
+func projectFreeForm(obj map[string]any, extra, req *openapi3.SchemaRef) map[string]any {
+	out := make(map[string]any, len(obj))
+	for k, x := range obj {
+		if extra != nil {
+			x = projectValue(x, extra, nil)
+		}
+		out[k] = x
+	}
+	return redactMap(out, req)
+}
+
+// redactWriteOnly returns v without the keys req explicitly marks writeOnly,
+// recursing through objects and arrays. Other request-declared keys stay.
+// Where req is a union that v does not single out, a key is dropped only when
+// every branch declaring it marks it writeOnly.
+func redactWriteOnly(v any, req *openapi3.SchemaRef) any {
+	if req == nil || req.Value == nil {
+		return v
+	}
+	req = selectBranch(req, v, 0)
+	switch t := v.(type) {
+	case []any:
+		if req.Value.Items == nil {
+			return v
+		}
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = redactWriteOnly(x, req.Value.Items)
+		}
+		return out
+	case map[string]any:
+		return redactMap(t, req)
+	}
+	return v
+}
+
+func redactMap(obj map[string]any, req *openapi3.SchemaRef) map[string]any {
+	if req == nil || req.Value == nil {
+		return obj
+	}
+	leaves := unionLeaves(selectBranch(req, obj, 0), 0)
+	out := make(map[string]any, len(obj))
+	for k, x := range obj {
+		if writeOnlyIn(leaves, k) {
+			continue
+		}
+		out[k] = redactWriteOnly(x, declaredBy(leaves, k))
+	}
+	return out
+}
+
+// writeOnlyIn reports whether some leaf declares key and every leaf that
+// does marks it writeOnly.
+func writeOnlyIn(leaves []*openapi3.SchemaRef, key string) bool {
+	found := false
+	for _, l := range leaves {
+		if p, ok := schemaProps(l)[key]; ok {
+			if p.Value == nil || !p.Value.WriteOnly {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
 }
 
 func projectAll(items []Object, schema, req *openapi3.SchemaRef) []Object {
