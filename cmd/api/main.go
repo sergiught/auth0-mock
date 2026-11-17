@@ -98,17 +98,18 @@ func run() error {
 	permsStore := permissions.NewStore()
 	pkceStore := pkce.NewStore(pkce.WithNow(clk.Now))
 	mfaStore := mfa.NewStore(mfa.WithNow(clk.Now))
+	mgmtEngine, mgmtStore := newMgmtStore(cfg.MgmtStore, openapiSpec, validator, clk.Now, log)
 	seedMgr, err := loadSeed(cfg.SeedFile, validator, seed.Stores{
 		Matches:       store,
 		Claims:        claimsStore,
 		ClaimMappings: claimMappings,
 		Permissions:   permsStore,
 		MFA:           mfaStore,
+		Mgmt:          mgmtStore,
 	}, log)
 	if err != nil {
 		return err
 	}
-	mgmtEngine, mgmtStore := newMgmtStore(cfg.MgmtStore, openapiSpec, validator, clk.Now, log)
 	handler, err := router.New(router.Deps{
 		Log:                          log,
 		Store:                        store,

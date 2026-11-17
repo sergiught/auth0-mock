@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/seed"
 	"github.com/sergiught/auth0-mock/internal/spec"
@@ -362,4 +364,60 @@ func TestParseRejectsMergedKeysThatCollideAsText(t *testing.T) {
 	} {
 		require.Equal(t, `duplicate key "31" after conversion to text`, parseErr(t, src), src)
 	}
+}
+
+var (
+	engineOnce sync.Once
+	engine     *mgmtstore.Engine
+)
+
+// newMgmtStore returns an empty store backed by an engine built once per test binary.
+func newMgmtStore(t *testing.T) *mgmtstore.Store {
+	t.Helper()
+	v := newValidator(t)
+	engineOnce.Do(func() {
+		s, err := spec.Load(api.ManagementOpenAPIJSON)
+		require.NoError(t, err)
+		engine = mgmtstore.NewEngine(s, v)
+	})
+	return engine.NewStore(time.Now)
+}
+
+const mgmtSeed = `
+management:
+  roles:
+    - name: admin
+  organizations:
+    - id: org_1
+      name: acme
+  tenants/settings:
+    friendly_name: Mock
+`
+
+func TestParseManagementKey(t *testing.T) {
+	s := parse(t, mgmtSeed)
+	require.Len(t, s.Management, 3)
+	require.JSONEq(t, `[{"name":"admin"}]`, string(s.Management["roles"]))
+	require.Equal(t, "3 management objects", strings.Join(strings.Split(s.Summary(), ", ")[0:1], ""))
+
+	_, err := seed.Parse([]byte("Management:\n  roles: []\n"), newValidator(t))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown key")
+}
+
+func TestApplyManagement(t *testing.T) {
+	st := newStores()
+	st.Mgmt = newMgmtStore(t)
+	parse(t, mgmtSeed).Apply(st.Stores)
+	f := seed.Export(st.Stores, false)
+	require.Len(t, f.Management, 3)
+	js, err := f.JSON()
+	require.NoError(t, err)
+	require.Contains(t, string(js), `"management"`)
+
+	off := seed.Export(newStores().Stores, false)
+	require.Empty(t, off.Management)
+	js, err = off.JSON()
+	require.NoError(t, err)
+	require.NotContains(t, string(js), "management")
 }

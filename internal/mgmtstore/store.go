@@ -95,6 +95,12 @@ func copyObject(o Object) Object {
 }
 
 func (s *Store) create(coll, idField string, obj Object, st stamp) (Object, error) {
+	return s.insert(coll, idField, obj, st, false)
+}
+
+// insert adds obj to coll. With keepStamps, a created_at or updated_at the
+// object already carries is kept instead of overwritten.
+func (s *Store) insert(coll, idField string, obj Object, st stamp, keepStamps bool) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.colls[coll]
@@ -117,10 +123,10 @@ func (s *Store) create(coll, idField string, obj Object, st stamp) (Object, erro
 	if _, dup := c.objs[id]; dup {
 		return nil, errConflict
 	}
-	if st.created {
+	if _, has := o["created_at"]; st.created && (!keepStamps || !has) {
 		o["created_at"] = s.stamp()
 	}
-	if st.updated {
+	if _, has := o["updated_at"]; st.updated && (!keepStamps || !has) {
 		o["updated_at"] = s.stamp()
 	}
 	c.objs[id] = o

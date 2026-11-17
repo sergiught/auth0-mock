@@ -55,6 +55,7 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ClaimMappings: d.ClaimMappings,
 			Permissions:   d.Permissions,
 			MFA:           d.MFA,
+			Mgmt:          d.Mgmt,
 		}, detail)
 	}
 	var (

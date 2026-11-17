@@ -85162,11 +85162,25 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "properties": {
+                    "management": {
+                      "additionalProperties": true,
+                      "description": "Stored Management API data when `MGMT_STORE` is on, keyed\nby path under `/api/v2` (`users`, `tenants/settings`). A\ncollection is an array of objects shaped like a GET\nresponse, so a user's `password` is left out; a settings\npath is the object as written. Left out when the store\nis off or empty.\n",
+                      "type": "object"
+                    }
+                  },
                   "type": "object"
                 }
               },
               "application/yaml": {
                 "schema": {
+                  "properties": {
+                    "management": {
+                      "additionalProperties": true,
+                      "description": "Stored Management API data when `MGMT_STORE` is on, keyed\nby path under `/api/v2` (`users`, `tenants/settings`). A\ncollection is an array of objects shaped like a GET\nresponse, so a user's `password` is left out; a settings\npath is the object as written. Left out when the store\nis off or empty.\n",
+                      "type": "object"
+                    }
+                  },
                   "type": "object"
                 }
               }
@@ -85177,7 +85191,7 @@
             "description": "`errorCode: \"invalid_query\"` — `format` is not `json` or\n`yaml`, or `detail` is not `true` or `false`, a parameter is repeated, or the query string is malformed.\n"
           }
         },
-        "summary": "Dump the expectations, claims, claim mappings, permissions and MFA flag in the seed file format.",
+        "summary": "Dump the expectations, claims, claim mappings, permissions, the MFA flag and stored Management data in the seed file format.",
         "tags": [
           "Expectations"
         ]

@@ -260,6 +260,12 @@ func (c *Context) boot(o bootOptions) error {
 	if err != nil {
 		t.Fatalf("spec validator: %v", err)
 	}
+	var mgmtEngine *mgmtstore.Engine
+	var mgmtStore *mgmtstore.Store
+	if o.mgmtStore {
+		mgmtEngine = mgmtstore.NewEngine(openapiSpec, validator)
+		mgmtStore = mgmtEngine.NewStore(clk.Now)
+	}
 	var seedMgr *seed.Manager
 	if o.seedFile != "" {
 		seedMgr, err = seed.NewManager(o.seedFile, validator, seed.Stores{
@@ -268,16 +274,11 @@ func (c *Context) boot(o bootOptions) error {
 			ClaimMappings: claimMappings,
 			Permissions:   permsStore,
 			MFA:           mfaStore,
+			Mgmt:          mgmtStore,
 		}, zerolog.Nop())
 		if err != nil {
 			return err
 		}
-	}
-	var mgmtEngine *mgmtstore.Engine
-	var mgmtStore *mgmtstore.Store
-	if o.mgmtStore {
-		mgmtEngine = mgmtstore.NewEngine(openapiSpec, validator)
-		mgmtStore = mgmtEngine.NewStore(clk.Now)
 	}
 	handler, err := router.New(router.Deps{
 		Log:                  zerolog.Nop(),

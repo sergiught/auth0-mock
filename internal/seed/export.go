@@ -48,6 +48,16 @@ func Export(st Stores, detail bool) File {
 	if u := st.MFA.Users(); len(u) > 0 {
 		f.MFAUsers = u
 	}
+	if st.Mgmt != nil {
+		for key, v := range st.Mgmt.Export() {
+			if b, err := marshalNoEscape(v, false); err == nil {
+				if f.Management == nil {
+					f.Management = map[string]json.RawMessage{}
+				}
+				f.Management[key] = bytes.TrimSuffix(b, []byte("\n"))
+			}
+		}
+	}
 	return f
 }
 

@@ -44,6 +44,9 @@ func NewManager(path string, v *spec.Validator, st Stores, log zerolog.Logger) (
 	if err != nil {
 		return nil, fmt.Errorf("seed file %s: %w", path, err)
 	}
+	if err := checkManagement(s, st, log); err != nil {
+		return nil, fmt.Errorf("seed file %s: %w", path, err)
+	}
 	s.Apply(st)
 	log.Info().Str("file", path).Msgf("seed loaded: %s", s.Summary())
 	return &Manager{
@@ -54,6 +57,19 @@ func NewManager(path string, v *spec.Validator, st Stores, log zerolog.Logger) (
 		current:    s,
 		loadedHash: sha256.Sum256(data),
 	}, nil
+}
+
+// checkManagement dry-runs the management section against st before anything
+// is wiped or applied. With the store off it warns and ignores the section.
+func checkManagement(s *Seed, st Stores, log zerolog.Logger) error {
+	if len(s.Management) == 0 {
+		return nil
+	}
+	if st.Mgmt == nil {
+		log.Warn().Msg("seed file has management data but MGMT_STORE is off; ignoring it")
+		return nil
+	}
+	return st.Mgmt.CheckSeed(s.Management)
 }
 
 // Bind sets the function that clears every store. It must be called before
@@ -122,6 +138,11 @@ func (m *Manager) Poll(ctx context.Context) {
 	}
 	s, err := Parse(data, m.v)
 	if err != nil {
+		m.log.Error().Msgf("seed file %s: %v", m.path, err)
+		m.badHash, m.hasBad = h, true
+		return
+	}
+	if err := checkManagement(s, m.st, m.log); err != nil {
 		m.log.Error().Msgf("seed file %s: %v", m.path, err)
 		m.badHash, m.hasBad = h, true
 		return

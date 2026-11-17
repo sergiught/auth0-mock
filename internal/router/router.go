@@ -151,7 +151,7 @@ func New(d Deps) (http.Handler, error) {
 		if d.Seed != nil {
 			d.Seed.ApplyTo(seed.Stores{
 				Matches: nd.Store, Claims: nd.Claims, ClaimMappings: nd.ClaimMappings,
-				Permissions: nd.Permissions, MFA: nd.MFA,
+				Permissions: nd.Permissions, MFA: nd.MFA, Mgmt: nd.Mgmt,
 			})
 		}
 		return &namespace.Instance{Handler: h, Close: func(ctx context.Context) {

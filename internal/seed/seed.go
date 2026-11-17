@@ -20,6 +20,7 @@ import (
 	"github.com/sergiught/auth0-mock/internal/claims"
 	"github.com/sergiught/auth0-mock/internal/matches"
 	"github.com/sergiught/auth0-mock/internal/mfa"
+	"github.com/sergiught/auth0-mock/internal/mgmtstore"
 	"github.com/sergiught/auth0-mock/internal/permissions"
 	"github.com/sergiught/auth0-mock/internal/spec"
 )
@@ -31,6 +32,8 @@ type Stores struct {
 	ClaimMappings *claims.MappingStore
 	Permissions   *permissions.Store
 	MFA           *mfa.Store
+	// Mgmt is the Management API store; nil means the store is off.
+	Mgmt *mgmtstore.Store
 }
 
 // File is the on-disk shape of a seed file, shared with the export.
@@ -41,6 +44,9 @@ type File struct {
 	Permissions   map[string][]string       `json:"permissions,omitempty"`
 	MFARequired   bool                      `json:"mfa_required,omitempty"`
 	MFAUsers      map[string]mfa.UserConfig `json:"mfa_users,omitempty"`
+	// Management holds stored Management API data: collections as arrays of
+	// objects and settings paths as objects, keyed by path under /api/v2.
+	Management map[string]json.RawMessage `json:"management,omitempty"`
 }
 
 // Item is one expectation entry. ID and Hits appear in exports; they are
@@ -59,17 +65,19 @@ type Seed struct {
 	Permissions   map[string][]string
 	MFARequired   bool
 	MFAUsers      map[string]mfa.UserConfig
+	Management    map[string]json.RawMessage
 }
 
 // rawFile mirrors File but keeps items raw so each can be decoded strictly
 // and reported by index.
 type rawFile struct {
-	Expectations  []json.RawMessage         `json:"expectations"`
-	Claims        map[string]any            `json:"claims"`
-	ClaimMappings map[string]string         `json:"claim_mappings"`
-	Permissions   map[string][]string       `json:"permissions"`
-	MFARequired   bool                      `json:"mfa_required"`
-	MFAUsers      map[string]mfa.UserConfig `json:"mfa_users"`
+	Expectations  []json.RawMessage          `json:"expectations"`
+	Claims        map[string]any             `json:"claims"`
+	ClaimMappings map[string]string          `json:"claim_mappings"`
+	Permissions   map[string][]string        `json:"permissions"`
+	MFARequired   bool                       `json:"mfa_required"`
+	MFAUsers      map[string]mfa.UserConfig  `json:"mfa_users"`
+	Management    map[string]json.RawMessage `json:"management"`
 }
 
 var unknownField = regexp.MustCompile(`json: unknown field "([^"]*)"`)
@@ -302,6 +310,7 @@ func newSeed(raw rawFile) (*Seed, error) {
 		Permissions:   raw.Permissions,
 		MFARequired:   raw.MFARequired,
 		MFAUsers:      raw.MFAUsers,
+		Management:    raw.Management,
 	}, nil
 }
 
@@ -353,6 +362,9 @@ func (s *Seed) Apply(st Stores) {
 	for key, cfg := range s.MFAUsers {
 		_, _ = st.MFA.SetUser(key, cfg) // Validated in Parse.
 	}
+	if st.Mgmt != nil && len(s.Management) > 0 {
+		_ = st.Mgmt.Load(s.Management) // Checked by the manager with CheckSeed.
+	}
 }
 
 // Summary is a one-line description for logs.
@@ -372,6 +384,7 @@ func (s *Seed) Summary() string {
 	add(len(s.ClaimMappings), "claim mapping", "claim mappings")
 	add(len(s.Permissions), "permission audience", "permission audiences")
 	add(len(s.MFAUsers), "mfa user", "mfa users")
+	add(s.managementCount(), "management object", "management objects")
 	if s.MFARequired {
 		parts = append(parts, "mfa required")
 	}
@@ -379,4 +392,19 @@ func (s *Seed) Summary() string {
 		return "empty"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// managementCount counts the objects under management: one per collection
+// item and one per settings path.
+func (s *Seed) managementCount() int {
+	n := 0
+	for _, raw := range s.Management {
+		var items []json.RawMessage
+		if json.Unmarshal(raw, &items) == nil {
+			n += len(items)
+		} else {
+			n++
+		}
+	}
+	return n
 }

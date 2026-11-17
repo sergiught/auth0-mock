@@ -648,3 +648,28 @@ func TestResetClearsMgmt(t *testing.T) {
 	require.Equal(t, 204, rec.Code)
 	assert.Equal(t, 404, serve("GET", "/api/v2/roles/"+role.ID, "").Code)
 }
+
+func TestExportIncludesManagement(t *testing.T) {
+	s, err := spec.Load(api.ManagementOpenAPIJSON)
+	require.NoError(t, err)
+	v, err := spec.NewValidator(s)
+	require.NoError(t, err)
+	d := newDeps()
+	d.Mgmt = mgmtstore.NewEngine(s, v).NewStore(time.Now)
+	require.NoError(t, d.Mgmt.Load(map[string]json.RawMessage{"roles": json.RawMessage(`[{"name":"admin"}]`)}))
+
+	w := httptest.NewRecorder()
+	newRouter(d).ServeHTTP(w, httptest.NewRequest("GET", "/admin0/export", nil))
+	require.Equal(t, 200, w.Code)
+	var got struct {
+		Management map[string][]map[string]any `json:"management"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Len(t, got.Management["roles"], 1)
+	assert.Equal(t, "admin", got.Management["roles"][0]["name"])
+
+	d.Mgmt = nil
+	w = httptest.NewRecorder()
+	newRouter(d).ServeHTTP(w, httptest.NewRequest("GET", "/admin0/export", nil))
+	assert.NotContains(t, w.Body.String(), "management")
+}
