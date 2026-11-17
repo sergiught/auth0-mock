@@ -152,13 +152,19 @@ func pageList(op spec.Operation, r *http.Request, shape listShape, items []Objec
 func offsetWindow(q map[string][]string, n int) (start, end, page, perPage int) {
 	pp, _ := intParam(q, "per_page", defaultPageSize)
 	perPage = clampSize(pp)
+	// Only an explicit per_page=0 gets here: an empty page with totals kept.
+	if pp == 0 {
+		perPage = 0
+	}
 	page, _ = intParam(q, "page", 0)
 	if page < 0 {
 		page = 0
 	}
 	// Compare before multiplying so a huge page cannot overflow int.
 	start = n
-	if page <= n/perPage {
+	if perPage == 0 {
+		start = 0
+	} else if page <= n/perPage {
 		start = min(page*perPage, n)
 	}
 	end = min(start+perPage, n)

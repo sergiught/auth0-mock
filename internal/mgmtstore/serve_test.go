@@ -241,3 +241,57 @@ func TestServeBodylessCreate(t *testing.T) {
 	assert.Contains(t, string(raw), "versions")
 	assert.Contains(t, string(raw), `"id"`)
 }
+
+// serveEscaped sends a request whose escaped path holds %2F straight to Serve:
+// the spec router resolves decoded paths, so the operation is resolved from a
+// stand-in path with the same shape.
+func (h *harness) serveEscaped(method, escaped, standIn, body string) (int, string) {
+	h.t.Helper()
+	op, err := h.v.Resolve(method, standIn)
+	require.NoError(h.t, err)
+	r := httptest.NewRequest(method, escaped, strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.s.Serve(w, r, op, []byte(body))
+	return w.Code, w.Body.String()
+}
+
+func TestServeEncodedSlashParentID(t *testing.T) {
+	h := newHarness(t)
+	code, raw := h.serveEscaped("POST", "/api/v2/users", "/api/v2/users", `{"user_id":"auth0|a/b","connection":"x"}`)
+	require.Equal(t, 201, code, raw)
+	assert.Contains(t, raw, `"user_id":"auth0|a/b"`)
+	const path = "/api/v2/users/auth0%7Ca%2Fb/authentication-methods"
+	const standIn = "/api/v2/users/x/authentication-methods"
+	code, raw = h.serveEscaped("POST", path, standIn, `{"type":"totp"}`)
+	require.Equal(t, 201, code, raw)
+	code, raw = h.serveEscaped("GET", path, standIn, "")
+	require.Equal(t, 200, code, raw)
+	assert.Contains(t, raw, `"type":"totp"`)
+	assert.Contains(t, h.s.exportJSON(t), "users/auth0%7Ca%2Fb/authentication-methods")
+
+	code, raw = h.serveEscaped("DELETE", "/api/v2/users/auth0%7Ca%2Fb", "/api/v2/users/x", "")
+	require.Equal(t, 204, code, raw)
+	assert.NotContains(t, h.s.exportJSON(t), "authentication-methods")
+	code, _ = h.serveEscaped("GET", path, standIn, "")
+	assert.Equal(t, 404, code)
+}
+
+func TestServeRejectsWriteTheReadSchemaRejects(t *testing.T) {
+	h := newHarness(t)
+	const path = "/api/v2/guardian/factors/push-notification/providers/apns"
+	code, _, raw := h.do("PATCH", path, "", `{"bundle_id":"`+strings.Repeat("a", 21)+`"}`)
+	assert.Equal(t, 400, code, string(raw))
+	_, before, _ := h.do("GET", path, "", "")
+	assert.NotContains(t, before, "bundle_id")
+
+	code, _, raw = h.do("PATCH", path, "", `{"bundle_id":"`+strings.Repeat("a", 20)+`"}`)
+	require.Equal(t, 200, code, string(raw))
+	code, got, _ := h.do("GET", path, "", "")
+	require.Equal(t, 200, code)
+	assert.Equal(t, strings.Repeat("a", 20), got["bundle_id"])
+
+	code, _, _ = h.do("PATCH", path, "", `{"bundle_id":"`+strings.Repeat("b", 21)+`"}`)
+	assert.Equal(t, 400, code)
+	_, got, _ = h.do("GET", path, "", "")
+	assert.Equal(t, strings.Repeat("a", 20), got["bundle_id"])
+}

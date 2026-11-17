@@ -181,7 +181,7 @@ func TestExportRoundTripsEncodedParentID(t *testing.T) {
 	s2 := e.NewStore(fixedNow)
 	require.NoError(t, s2.Load(m))
 	assert.Equal(t, out1, s2.Export())
-	am, ok := s2.get("/users/auth0|100%/authentication-methods", "am_1")
+	am, ok := s2.get("/users/auth0%7C100%25/authentication-methods", "am_1")
 	require.True(t, ok)
 	assert.Equal(t, "totp", am["type"])
 }
@@ -262,4 +262,32 @@ func TestLoadNestedSeedErrors(t *testing.T) {
 	err = e.NewStore(fixedNow).Load(raw(t, `{"actions/modules": [{"name":"m","code":"x","secrets":[{"name":"a","zzz":5}]}]}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "zzz")
+}
+
+func TestLoadValidatesPresentKeysWithoutRequestSchema(t *testing.T) {
+	e, _ := loadEngine(t)
+	const mod = `"actions/modules": [{"id": "m1", "name": "m", "code": "x"}], `
+	err := e.NewStore(fixedNow).Load(raw(t, `{`+mod+`"actions/modules/m1/versions": [{"id": "v1", "version_number": "many"}]}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "management.actions/modules/m1/versions[0]: ")
+	assert.Contains(t, err.Error(), `"version_number"`)
+
+	require.NoError(t, e.NewStore(fixedNow).Load(raw(t, `{`+mod+`"actions/modules/m1/versions": [{"id": "v1", "version_number": 2}]}`)))
+}
+
+func TestEncodedSlashParentIDKeepsChildren(t *testing.T) {
+	const key = "users/auth0%7Ca%2Fb/authentication-methods"
+	e, _ := loadEngine(t)
+	s1 := e.NewStore(fixedNow)
+	require.NoError(t, s1.Load(raw(t, `{"users": [{"user_id": "auth0|a/b", "connection": "x"}], "`+key+`": [{"id": "am_1", "type": "totp"}]}`)))
+	out1 := s1.Export()
+	require.Contains(t, out1, key)
+	b, err := json.Marshal(out1)
+	require.NoError(t, err)
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &m))
+	s2 := e.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out1, s2.Export())
+	assert.Contains(t, s2.exportJSON(t), "am_1")
 }

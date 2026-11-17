@@ -1,9 +1,9 @@
 package mgmtstore
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -210,7 +210,7 @@ func TestPagingNoPageParamsReturnsWholeList(t *testing.T) {
 		code, _, raw := h.do("POST", "/api/v2/roles", "", `{"name":"r`+string(rune('a'+i))+`"}`)
 		require.Equal(t, 200, code, string(raw))
 	}
-	_, _, raw := h.do("GET", "/api/v2/roles", "page=-1&per_page=0", "")
+	_, _, raw := h.do("GET", "/api/v2/roles", "page=-1&per_page=-1", "")
 	assert.Equal(t, 3, strings.Count(string(raw), `"name"`))
 }
 
@@ -250,13 +250,6 @@ func (s *Store) replaceSettings0(path string, o Object) Object {
 func mergeInto(s *Store, patch Object) Object {
 	out, _ := s.mergeSettings("/m", nil, patch, parentRef{})
 	return out
-}
-
-func TestEscapePath(t *testing.T) {
-	assert.Equal(t, "/users/auth0%7C1%252/x", escapePath("/users/auth0|1%2/x"))
-	back, err := url.PathUnescape("auth0%7C1%252")
-	require.NoError(t, err)
-	assert.Equal(t, "auth0|1%2", back)
 }
 
 func TestNormalizeSeedBranches(t *testing.T) {
@@ -299,4 +292,24 @@ func TestNormalizeSeedBranches(t *testing.T) {
 	// CheckObject surfaces normalization errors.
 	err = target{request: schemaOf(req), response: schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"id": str}))}.checkObject(Object{"zzz": 1})
 	require.ErrorContains(t, err, "unknown key")
+}
+
+func TestProspectiveAndCheckPresentBranches(t *testing.T) {
+	h := newHarness(t)
+	_, _, raw := h.do("POST", "/api/v2/roles", "", `{"name":"r"}`)
+	var role map[string]any
+	require.NoError(t, json.Unmarshal(raw, &role))
+	id := role["id"].(string)
+	route := Route{Kind: KindMerge, IDField: "id"}
+	got := h.s.prospective(route, "/roles", id, Object{"id": "other", "created_at": "x", "name": "n", "description": nil})
+	assert.Equal(t, id, got["id"])
+	assert.Equal(t, "n", got["name"])
+	assert.NotContains(t, got, "description")
+
+	// A settings path with no stored value or initial value starts empty.
+	got = h.s.prospective(Route{Kind: KindSettingsMerge, Collection: "/nowhere"}, "/nowhere", "", Object{"a": 1})
+	assert.Equal(t, Object{"a": 1}, got)
+
+	// Null values are skipped, never validated.
+	assert.NoError(t, checkPresent(Object{"name": nil}, schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"name": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})}))))
 }

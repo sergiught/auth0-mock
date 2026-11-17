@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -128,7 +127,10 @@ func (e *Engine) schemas(collection string) (request, response, read *openapi3.S
 // original object is stored by the caller, untouched.
 func (t target) checkObject(obj Object) error {
 	if t.request == nil || t.request.Value == nil {
-		return nil
+		// No request schema to validate against: check the supplied keys
+		// against the response schemas instead. Generated and required response
+		// fields may be missing, so only the keys present are checked.
+		return checkPresent(obj, t.response, t.read)
 	}
 	filtered := any(obj)
 	if len(schemaProps(t.request)) > 0 {
@@ -259,6 +261,31 @@ func normalizeObject(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, obj O
 	return filtered, nil
 }
 
+// checkPresent validates each non-null top-level key of state that a response
+// schema declares against that property, with full nested validation. Keys no
+// schema declares and absent required keys are not errors. The first schema
+// declaring a key wins.
+func checkPresent(state Object, resps ...*openapi3.SchemaRef) error {
+	var propSets []map[string]*openapi3.SchemaRef
+	for _, r := range resps {
+		propSets = append(propSets, schemaProps(selectBranch(r, state, 0)))
+	}
+	for _, k := range slices.Sorted(maps.Keys(state)) {
+		if state[k] == nil {
+			continue
+		}
+		for _, props := range propSets {
+			if p, ok := props[k]; ok {
+				if err := checkResponseValue(p, state[k]); err != nil {
+					return fmt.Errorf("key %q: %w", k, err)
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
 func checkResponseValue(prop *openapi3.SchemaRef, v any) error {
 	if prop == nil || prop.Value == nil {
 		return nil
@@ -316,7 +343,7 @@ func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
 	if err := s.engine.checkPathParams(t); err != nil {
 		return fmt.Errorf("management.%q: %w", key, err)
 	}
-	path := fill(t.route.Collection, t.params) // Decoded, as Serve looks it up.
+	path := fill(t.route.Collection, t.params) // Escaped, as Serve looks it up.
 	if pc, pid, has := t.parent(); has {
 		if _, found := s.get(pc, pid); !found {
 			return fmt.Errorf("management.%q: parent %q is not in the seed", key, strings.TrimPrefix(pc+"/"+pid, "/"))
@@ -382,16 +409,6 @@ func (s *Store) CheckSeed(data map[string]json.RawMessage) error {
 	return s.engine.CheckSeed(data)
 }
 
-// escapePath percent-escapes each segment of a stored (decoded) path, so
-// that Load, which decodes a key once, gets the stored path back.
-func escapePath(p string) string {
-	segs := strings.Split(p, "/")
-	for i, seg := range segs {
-		segs[i] = url.PathEscape(seg)
-	}
-	return strings.Join(segs, "/")
-}
-
 // Export returns the stored data in seed shape: every non-empty collection as
 // an array of objects projected like a GET response, and every written
 // settings path as stored.
@@ -411,8 +428,7 @@ func (s *Store) Export() map[string]any {
 
 	out := map[string]any{}
 	for _, k := range colls {
-		key := escapePath(k)
-		t, ok := s.engine.lookup(key)
+		t, ok := s.engine.lookup(k) // Stored keys are already escaped.
 		if !ok {
 			continue
 		}
@@ -420,10 +436,10 @@ func (s *Store) Export() map[string]any {
 		if schema == nil {
 			schema = t.response
 		}
-		out[strings.TrimPrefix(key, "/")] = projectAll(s.list(k), schema, t.request)
+		out[strings.TrimPrefix(k, "/")] = projectAll(s.list(k), schema, t.request)
 	}
 	for k, o := range settings {
-		out[strings.TrimPrefix(escapePath(k), "/")] = o
+		out[strings.TrimPrefix(k, "/")] = o
 	}
 	return out
 }

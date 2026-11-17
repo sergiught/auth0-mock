@@ -119,3 +119,22 @@ func TestPagingObjectOnly(t *testing.T) {
 	assert.Contains(t, body, "actions")
 	assert.EqualValues(t, 0, body["total"])
 }
+
+func TestOffsetPageExplicitZeroPerPage(t *testing.T) {
+	h := newHarness(t)
+	for _, n := range []string{"u1", "u2", "u3"} {
+		code, _, _ := h.do("POST", "/api/v2/users", "", `{"user_id":"`+n+`","connection":"x"}`)
+		require.Equal(t, 201, code)
+	}
+	_, body, _ := h.do("GET", "/api/v2/users", "include_totals=true&per_page=0", "")
+	assert.Empty(t, body["users"])
+	assert.EqualValues(t, 3, body["total"])
+	assert.EqualValues(t, 0, body["limit"])
+	assert.EqualValues(t, 0, body["length"])
+	// An omitted or empty per_page still takes the default.
+	_, body, _ = h.do("GET", "/api/v2/users", "include_totals=true&per_page=", "")
+	assert.EqualValues(t, 50, body["limit"])
+	// A zero page size never divides, whatever the page.
+	start, end, _, perPage := offsetWindow(map[string][]string{"per_page": {"0"}, "page": {"7"}}, 3)
+	assert.Equal(t, []int{0, 0, 0}, []int{start, end, perPage})
+}

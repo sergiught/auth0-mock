@@ -49,12 +49,13 @@ func pathParams(template, escapedPath string) (map[string]string, bool) {
 	return out, true
 }
 
-// fill replaces every {param} segment of template with its value.
+// fill replaces every {param} segment of template with its value, percent-
+// escaped so an id holding a slash stays one segment of a storage key.
 func fill(template string, params map[string]string) string {
 	segs := strings.Split(template, "/")
 	for i, seg := range segs {
 		if isParam(seg) {
-			segs[i] = params[paramName(seg)]
+			segs[i] = url.PathEscape(params[paramName(seg)])
 		}
 	}
 	return strings.Join(segs, "/")
@@ -230,39 +231,62 @@ func decodeJSON(data []byte, v any) error {
 	return nil
 }
 
-// checkResponseTyped validates the keys of a write body that no request
-// schema declares but the response schema does (logins_count on a user, which
-// the request only admits through additionalProperties) against that response
-// property, so the store never saves a value its own GET would then return
-// invalid. A null value deletes the key and is skipped.
-func checkResponseTyped(op spec.Operation, req, resp *openapi3.SchemaRef, obj Object) error {
-	body := bodySchema(op.Op)
-	if body != nil {
-		body = selectBranch(body, obj, 0)
+// prospective returns the state a write would store: the patch applied to the
+// current item or settings for a merge, the body itself otherwise.
+func (s *Store) prospective(route Route, coll, id string, obj Object) Object {
+	var cur Object
+	switch route.Kind {
+	case KindMerge:
+		o, found := s.get(coll, id)
+		if !found {
+			return obj
+		}
+		cur = o
+	case KindSettingsMerge:
+		initial, _ := s.engine.initial[route.Collection].(map[string]any)
+		cur = s.getSettings(coll, initial)
+	default:
+		return obj
 	}
-	declared, respProps := schemaProps(selectBranch(req, obj, 0)), schemaProps(selectBranch(resp, obj, 0))
-	bodyProps := schemaProps(body)
+	if cur == nil {
+		cur = Object{}
+	}
 	for k, v := range obj {
-		_, inReq := declared[k]
-		_, inBody := bodyProps[k]
-		p, inResp := respProps[k]
-		if inReq || inBody || !inResp || v == nil {
+		if route.Kind == KindMerge && (k == route.IDField || k == "created_at") {
 			continue
 		}
-		if err := checkResponseValue(p, v); err != nil {
-			return fmt.Errorf("key %q: %w", k, err)
+		if v == nil {
+			delete(cur, k)
+			continue
 		}
+		cur[k] = v
 	}
-	return nil
+	return cur
 }
 
-// decodeWrite decodes a write body and checks its response-typed keys.
-func decodeWrite(r *http.Request, op spec.Operation, body []byte, req, resp *openapi3.SchemaRef) (Object, bool) {
+// decodeWrite decodes a write body and checks the state it would store.
+func (s *Store) decodeWrite(r *http.Request, op spec.Operation, body []byte, route Route, coll, id string) (Object, bool) {
 	obj, ok := decodeBody(r, op, body)
-	if !ok || checkResponseTyped(op, req, resp, obj) != nil {
+	if !ok {
+		return nil, false
+	}
+	req, resp, read := s.engine.schemas(route.Collection)
+	if read == nil {
+		read = resp
+	}
+	if s.checkWrite(route, coll, id, obj, req, read) != nil {
 		return nil, false
 	}
 	return obj, true
+}
+
+// checkWrite validates the state a write would store against the read
+// response schema, so the store never saves a value its own GET would then
+// return invalid. Keys the request also declares are checked too.
+// The state is projected first, as GET would, so values the response
+// legitimately redacts or drops (a secret's value) are not held against it.
+func (s *Store) checkWrite(route Route, coll, id string, obj Object, req, read *openapi3.SchemaRef) error {
+	return checkPresent(project(s.prospective(route, coll, id, obj), read, req), read)
 }
 
 // parentOf names the parent item a route's path points at, or the zero
@@ -307,7 +331,7 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 	req, _, _ := s.engine.schemas(route.Collection)
 	var obj Object
 	if writesBody(route.Kind) {
-		if obj, ok = decodeWrite(r, op, body, req, schema); !ok {
+		if obj, ok = s.decodeWrite(r, op, body, route, coll, params[route.IDParam]); !ok {
 			badBody(w)
 			return
 		}

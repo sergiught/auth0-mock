@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -245,7 +246,7 @@ func (s *Store) remove(coll, id string) bool {
 			break
 		}
 	}
-	prefix := coll + "/" + id + "/"
+	prefix := coll + "/" + url.PathEscape(id) + "/"
 	for k := range s.colls {
 		if strings.HasPrefix(k, prefix) {
 			delete(s.colls, k)
