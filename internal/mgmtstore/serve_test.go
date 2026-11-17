@@ -228,3 +228,16 @@ func TestServeFormBody(t *testing.T) {
 	h.s.Serve(w, r, op, []byte("a=b"))
 	assert.Equal(t, 400, w.Code)
 }
+
+func TestServeBodylessCreate(t *testing.T) {
+	h := newHarness(t)
+	code, created, raw := h.do("POST", "/api/v2/actions/modules", "", `{"name":"m","code":"x"}`)
+	require.Equal(t, 201, code, string(raw))
+	id, _ := created["id"].(string)
+	code, _, raw = h.do("POST", "/api/v2/actions/modules/"+id+"/versions", "", "")
+	require.Less(t, code, 300, string(raw))
+	code, _, raw = h.do("GET", "/api/v2/actions/modules/"+id+"/versions", "", "")
+	require.Equal(t, 200, code)
+	assert.Contains(t, string(raw), "versions")
+	assert.Contains(t, string(raw), `"id"`)
+}

@@ -185,11 +185,11 @@ const formType = "application/x-www-form-urlencoded"
 // kin-openapi's form decoder with the operation's form schema, so values are
 // typed, and anything else as JSON.
 func decodeBody(r *http.Request, op spec.Operation, body []byte) (Object, bool) {
+	if rb := op.Op.RequestBody; rb == nil || rb.Value == nil || (!rb.Value.Required && len(bytes.TrimSpace(body)) == 0) {
+		return Object{}, true
+	}
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != formType {
 		return decodeObject(body)
-	}
-	if op.Op.RequestBody == nil || op.Op.RequestBody.Value == nil {
-		return nil, false
 	}
 	media := op.Op.RequestBody.Value.Content.Get(formType)
 	decode := openapi3filter.RegisteredBodyDecoder(formType)
