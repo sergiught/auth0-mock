@@ -26,7 +26,7 @@ A nested collection needs its parent. Creating an invitation under an organizati
 
 ## Ids, timestamps and paging
 
-- A new object gets an id in Auth0's style (for example `rol_...` for a role), long enough for the schema.
+- A new object gets a random 24-character hexadecimal id, padded with zeros if the schema needs a longer one.
 - `created_at` and `updated_at` are set when the Auth0 schema has them, and `updated_at` moves on every update.
 - Lists support `page`, `per_page` and `include_totals`. Lists that Auth0 pages by checkpoint support `from` and `take`; the cursor is a plain number.
 - Fields that Auth0 always returns, but that you never wrote, get a minimal placeholder. You may see empty strings or zero values for fields you never set.
