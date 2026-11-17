@@ -2,6 +2,7 @@ package mgmtstore
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -290,4 +291,17 @@ func TestEncodedSlashParentIDKeepsChildren(t *testing.T) {
 	require.NoError(t, s2.Load(m))
 	assert.Equal(t, out1, s2.Export())
 	assert.Contains(t, s2.exportJSON(t), "am_1")
+}
+
+func TestLoadChecksSettingsSeedAgainstReadSchema(t *testing.T) {
+	e, _ := loadEngine(t)
+	seed := func(n int) map[string]json.RawMessage {
+		return raw(t, `{"guardian/factors/push-notification/providers/apns": {"bundle_id": "`+strings.Repeat("b", n)+`"}}`)
+	}
+	err := e.NewStore(fixedNow).Load(seed(21))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "guardian/factors/push-notification/providers/apns")
+	assert.Contains(t, err.Error(), `"bundle_id"`)
+
+	require.NoError(t, e.NewStore(fixedNow).Load(seed(20)))
 }

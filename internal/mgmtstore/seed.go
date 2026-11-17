@@ -126,6 +126,20 @@ func (e *Engine) schemas(collection string) (request, response, read *openapi3.S
 // against that schema when it gives one), otherwise it is an error. The
 // original object is stored by the caller, untouched.
 func (t target) checkObject(obj Object) error {
+	if err := t.checkRequest(obj); err != nil {
+		return err
+	}
+	// The object is stored as given, so it must also read back valid: check it
+	// as GET would project it, as the write path does.
+	read := t.read
+	if read == nil {
+		read = t.response
+	}
+	return checkPresent(project(obj, read, t.request), read)
+}
+
+// checkRequest validates obj against the request schema (see checkObject).
+func (t target) checkRequest(obj Object) error {
 	if t.request == nil || t.request.Value == nil {
 		// No request schema to validate against: check the supplied keys
 		// against the response schemas instead. Generated and required response
