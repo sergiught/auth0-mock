@@ -68,6 +68,27 @@ func (e *Engine) lookup(path string) (target, bool) {
 	return t, true
 }
 
+// checkPathParams validates the decoded path parameters of a seed key against
+// the parameter schemas of the operations that serve its route, so a key GET
+// and PUT would reject (an unknown prompt language) is rejected up front.
+func (e *Engine) checkPathParams(t target) error {
+	for _, op := range e.ops {
+		if r, ok := e.routes[routeKey(op.Method, op.Template)]; !ok || r.Collection != t.route.Collection {
+			continue
+		}
+		for _, p := range op.Op.Parameters {
+			val, has := t.params[p.Value.Name]
+			if p.Value.In != "path" || !has || p.Value.Schema == nil || p.Value.Schema.Value == nil {
+				continue
+			}
+			if err := p.Value.Schema.Value.VisitJSON(val, openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails()); err != nil {
+				return fmt.Errorf("path parameter %q: %q is not valid", p.Value.Name, val)
+			}
+		}
+	}
+	return nil
+}
+
 // schemas returns the request schema that writes the collection or settings
 // path, the response schema of its create or settings read, and the response
 // schema of reading one item (collections only).
@@ -128,6 +149,11 @@ func (t target) checkObject(obj Object) error {
 func normalizeSeed(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, v any, depth int) (any, error) {
 	if req == nil || req.Value == nil || depth > maxSchemaDepth {
 		return v, nil
+	}
+	req = selectBranch(req, v, 0)
+	resps = slices.Clone(resps)
+	for i, r := range resps {
+		resps[i] = selectBranch(r, v, 0)
 	}
 	switch val := v.(type) {
 	case []any:
@@ -267,6 +293,9 @@ func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
 	if !ok {
 		return fmt.Errorf("management.%q: not a stored collection or settings path", key)
 	}
+	if err := s.engine.checkPathParams(t); err != nil {
+		return fmt.Errorf("management.%q: %w", key, err)
+	}
 	path := fill(t.route.Collection, t.params) // Decoded, as Serve looks it up.
 	if pc, pid, has := t.parent(); has {
 		if _, found := s.get(pc, pid); !found {
@@ -275,7 +304,7 @@ func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
 	}
 	if t.settings {
 		var obj Object
-		if err := json.Unmarshal(rawVal, &obj); err != nil || obj == nil {
+		if err := decodeJSON(rawVal, &obj); err != nil || obj == nil {
 			return fmt.Errorf("management.%q: must be an object", key)
 		}
 		// An empty snapshot is what a null patch leaves behind, and a PATCH
@@ -289,7 +318,7 @@ func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
 		return nil
 	}
 	var items []Object
-	if err := json.Unmarshal(rawVal, &items); err != nil {
+	if err := decodeJSON(rawVal, &items); err != nil {
 		return fmt.Errorf("management.%q: must be an array of objects", key)
 	}
 	for i, obj := range items {

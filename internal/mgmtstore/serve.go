@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -87,6 +88,7 @@ func projectValue(v any, schema, req *openapi3.SchemaRef) any {
 	if schema == nil || schema.Value == nil {
 		return v
 	}
+	schema, req = selectBranch(schema, v, 0), selectBranch(req, v, 0)
 	switch t := v.(type) {
 	case map[string]any:
 		return projectMap(t, schema, req)
@@ -207,10 +209,60 @@ func decodeBody(r *http.Request, op spec.Operation, body []byte) (Object, bool) 
 
 func decodeObject(body []byte) (Object, bool) {
 	var o Object
-	if err := json.Unmarshal(body, &o); err != nil || o == nil {
+	if err := decodeJSON(body, &o); err != nil || o == nil {
 		return nil, false
 	}
 	return o, true
+}
+
+// decodeJSON decodes exactly one JSON value into v, keeping numbers as
+// json.Number so large integers survive a round trip, and rejects trailing
+// data like json.Unmarshal does.
+func decodeJSON(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("unexpected data after the JSON value")
+	}
+	return nil
+}
+
+// checkResponseTyped validates the keys of a write body that no request
+// schema declares but the response schema does (logins_count on a user, which
+// the request only admits through additionalProperties) against that response
+// property, so the store never saves a value its own GET would then return
+// invalid. A null value deletes the key and is skipped.
+func checkResponseTyped(op spec.Operation, req, resp *openapi3.SchemaRef, obj Object) error {
+	body := bodySchema(op.Op)
+	if body != nil {
+		body = selectBranch(body, obj, 0)
+	}
+	declared, respProps := schemaProps(selectBranch(req, obj, 0)), schemaProps(selectBranch(resp, obj, 0))
+	bodyProps := schemaProps(body)
+	for k, v := range obj {
+		_, inReq := declared[k]
+		_, inBody := bodyProps[k]
+		p, inResp := respProps[k]
+		if inReq || inBody || !inResp || v == nil {
+			continue
+		}
+		if err := checkResponseValue(p, v); err != nil {
+			return fmt.Errorf("key %q: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// decodeWrite decodes a write body and checks its response-typed keys.
+func decodeWrite(r *http.Request, op spec.Operation, body []byte, req, resp *openapi3.SchemaRef) (Object, bool) {
+	obj, ok := decodeBody(r, op, body)
+	if !ok || checkResponseTyped(op, req, resp, obj) != nil {
+		return nil, false
+	}
+	return obj, true
 }
 
 // parentOf names the parent item a route's path points at, or the zero
@@ -255,7 +307,7 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 	req, _, _ := s.engine.schemas(route.Collection)
 	var obj Object
 	if writesBody(route.Kind) {
-		if obj, ok = decodeBody(r, op, body); !ok {
+		if obj, ok = decodeWrite(r, op, body, req, schema); !ok {
 			badBody(w)
 			return
 		}

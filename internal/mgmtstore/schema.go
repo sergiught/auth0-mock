@@ -201,3 +201,94 @@ func successResponse(op *openapi3.Operation) (int, *openapi3.SchemaRef) {
 	}
 	return best, nil
 }
+
+// selectBranch narrows a oneOf/anyOf schema to the branch that describes v,
+// so projection and seed normalization follow the shape the value really has.
+// The branch is chosen by the discriminator when the schema has one, else it
+// is the first branch whose validation accepts v, else the one whose declared
+// properties overlap v's keys the most. A schema with its own properties keeps
+// them, with the chosen branch added as an allOf member. A schema without a
+// union, or a branchless one, is returned as is.
+func selectBranch(s *openapi3.SchemaRef, v any, depth int) *openapi3.SchemaRef {
+	if s == nil || s.Value == nil || depth > maxSchemaDepth {
+		return s
+	}
+	group := s.Value.OneOf
+	if len(group) == 0 {
+		group = s.Value.AnyOf
+	}
+	if len(group) == 0 {
+		return s
+	}
+	chosen := pickBranch(s.Value, group, v)
+	if chosen == nil {
+		return s
+	}
+	chosen = selectBranch(chosen, v, depth+1)
+	if len(s.Value.Properties) == 0 && len(s.Value.AllOf) == 0 && s.Value.AdditionalProperties.Schema == nil {
+		return chosen
+	}
+	merged := *s.Value
+	merged.OneOf, merged.AnyOf = nil, nil
+	merged.AllOf = append(openapi3.SchemaRefs{chosen}, s.Value.AllOf...)
+	return &openapi3.SchemaRef{Value: &merged}
+}
+
+func pickBranch(s *openapi3.Schema, group openapi3.SchemaRefs, v any) *openapi3.SchemaRef {
+	obj, _ := v.(map[string]any)
+	if b := discriminated(s.Discriminator, group, obj); b != nil {
+		return b
+	}
+	best, bestOverlap := (*openapi3.SchemaRef)(nil), -1
+	for _, b := range group {
+		if b == nil || b.Value == nil {
+			continue
+		}
+		if acceptsValue(b, v) {
+			return b
+		}
+		n := 0
+		for k := range schemaProps(b) {
+			if _, ok := obj[k]; ok {
+				n++
+			}
+		}
+		if n > bestOverlap {
+			best, bestOverlap = b, n
+		}
+	}
+	return best
+}
+
+// acceptsValue reports whether v validates against b as a request or response.
+func acceptsValue(b *openapi3.SchemaRef, v any) bool {
+	for _, mode := range []openapi3.SchemaValidationOption{openapi3.VisitAsResponse(), openapi3.VisitAsRequest()} {
+		if b.Value.VisitJSON(v, mode, openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails()) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// discriminated finds the branch named by obj's discriminator property, by
+// mapping entry or, without one, by the branch's own schema name.
+func discriminated(d *openapi3.Discriminator, group openapi3.SchemaRefs, obj map[string]any) *openapi3.SchemaRef {
+	if d == nil || obj == nil {
+		return nil
+	}
+	val, ok := obj[d.PropertyName].(string)
+	if !ok {
+		return nil
+	}
+	name := val
+	if m, ok := d.Mapping[val]; ok {
+		name = m.Ref
+	}
+	name = name[strings.LastIndex(name, "/")+1:]
+	for _, b := range group {
+		if b != nil && b.Ref != "" && b.Ref[strings.LastIndex(b.Ref, "/")+1:] == name {
+			return b
+		}
+	}
+	return nil
+}
