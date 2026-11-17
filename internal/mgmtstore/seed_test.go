@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -374,4 +375,45 @@ func TestSeedMayOmitFieldsAnUpdateRemoves(t *testing.T) {
 
 	// Non-object values and a missing request schema are left alone.
 	assert.Equal(t, 5, target{}.fillRemovable(5))
+}
+
+func TestSeedAcceptsValuesAnUpdateBodyAccepts(t *testing.T) {
+	e, _ := loadEngine(t)
+	load := func(client string) error {
+		return e.NewStore(fixedNow).Load(raw(t, `{"clients":[`+client+`]}`))
+	}
+	// A PATCH takes an empty custom_login_page where create wants minLength 1.
+	require.NoError(t, load(`{"name":"c","custom_login_page":""}`))
+	// A value no write body accepts is still rejected, naming the key.
+	err := load(`{"name":"c","custom_login_page":5}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "custom_login_page")
+	// A required create key an update body loosens is replaced, not dropped.
+	req := &openapi3.SchemaRef{Value: &openapi3.Schema{
+		Type:       &openapi3.Types{"object"},
+		Required:   []string{"k"},
+		Properties: map[string]*openapi3.SchemaRef{"k": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}, MinLength: 1}}},
+	}}
+	loose := &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}}
+	tg := target{request: req, updateProps: map[string][]*openapi3.SchemaRef{"k": {loose}}}
+	assert.Equal(t, map[string]any{"k": "a"}, tg.acceptUpdateValues(map[string]any{"k": ""}))
+	assert.Equal(t, map[string]any{"k": "a"}, tg.acceptUpdateValues(map[string]any{"k": "a"}))
+	assert.Equal(t, 5, tg.acceptUpdateValues(5))
+	// An optional key is dropped, an undeclared key is left, and a value the
+	// update body rejects too is left for the create schema to report.
+	req.Value.Properties["o"] = req.Value.Properties["k"]
+	tg.updateProps["o"] = []*openapi3.SchemaRef{loose}
+	tg.updateProps["n"] = []*openapi3.SchemaRef{loose}
+	assert.Equal(t, map[string]any{"k": "a", "x": 1}, tg.acceptUpdateValues(map[string]any{"k": "a", "o": "", "x": 1}))
+	assert.Equal(t, map[string]any{"k": 5}, tg.acceptUpdateValues(map[string]any{"k": 5}))
+	assert.True(t, acceptsRequest(&openapi3.SchemaRef{}, 1))
+
+	// A value an update body accepts but the read schema rejects is rejected.
+	read := &openapi3.SchemaRef{Value: &openapi3.Schema{
+		Type:       &openapi3.Types{"object"},
+		Properties: map[string]*openapi3.SchemaRef{"k": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}, MinLength: 1}}},
+	}}
+	tg.read, tg.response = read, read
+	require.NoError(t, tg.checkObject(Object{"k": "abc"}))
+	require.Error(t, tg.checkObject(Object{"k": ""}))
 }

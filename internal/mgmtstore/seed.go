@@ -26,6 +26,9 @@ type target struct {
 	// Removable names the keys a supported update can remove (a PATCH setting
 	// them to null), so a seed may omit them although create requires them.
 	removable map[string]bool
+	// UpdateProps lists the schemas update bodies give each top-level key,
+	// so a seed may hold what an update accepts.
+	updateProps map[string][]*openapi3.SchemaRef
 }
 
 func bodySchema(op *openapi3.Operation) *openapi3.SchemaRef {
@@ -69,7 +72,7 @@ func (e *Engine) lookup(path string) (target, bool) {
 	}
 	t := target{route: best, params: params, settings: best.Kind != KindCreate}
 	set := e.schemaCache[best.Collection]
-	t.request, t.response, t.read, t.proj, t.removable = set.request, set.response, set.read, set.proj, set.removable
+	t.request, t.response, t.read, t.proj, t.removable, t.updateProps = set.request, set.response, set.read, set.proj, set.removable, set.updateProps
 	return t, true
 }
 
@@ -107,6 +110,7 @@ func (e *Engine) schemas(collection string) (proj, response, read *openapi3.Sche
 type schemaSet struct {
 	request, response, read, proj *openapi3.SchemaRef
 	removable                     map[string]bool
+	updateProps                   map[string][]*openapi3.SchemaRef
 }
 
 // cacheSchemas scans the operations once per collection, so schemas never
@@ -115,8 +119,8 @@ func (e *Engine) cacheSchemas() {
 	e.schemaCache = map[string]schemaSet{}
 	for _, r := range e.routes {
 		if _, done := e.schemaCache[r.Collection]; !done {
-			req, resp, read, proj, removable := e.scanSchemas(r.Collection)
-			e.schemaCache[r.Collection] = schemaSet{req, resp, read, proj, removable}
+			req, resp, read, proj, removable, updateProps := e.scanSchemas(r.Collection)
+			e.schemaCache[r.Collection] = schemaSet{req, resp, read, proj, removable, updateProps}
 		}
 	}
 }
@@ -133,11 +137,12 @@ func (e *Engine) literalAt(key string, idx int) bool {
 	return idx < len(segs) && !isParam(segs[idx])
 }
 
-func (e *Engine) scanSchemas(collection string) (request, response, read, proj *openapi3.SchemaRef, removable map[string]bool) {
+func (e *Engine) scanSchemas(collection string) (request, response, read, proj *openapi3.SchemaRef, removable map[string]bool, updateProps map[string][]*openapi3.SchemaRef) {
 	var putBody *openapi3.SchemaRef
 	var bodies openapi3.SchemaRefs
 	var list *openapi3.SchemaRef
 	removable = map[string]bool{}
+	updateProps = map[string][]*openapi3.SchemaRef{}
 	for _, op := range e.ops {
 		r, ok := e.routes[routeKey(op.Method, op.Template)]
 		if !ok || r.Collection != collection {
@@ -148,7 +153,7 @@ func (e *Engine) scanSchemas(collection string) (request, response, read, proj *
 			if b := bodySchema(op.Op); b != nil {
 				bodies = append(bodies, b)
 				if r.Kind != KindCreate {
-					addNullable(removable, b)
+					addUpdate(removable, updateProps, b)
 				}
 			}
 		}
@@ -173,7 +178,7 @@ func (e *Engine) scanSchemas(collection string) (request, response, read, proj *
 	if read == nil {
 		read = listItems(list)
 	}
-	return request, response, read, writeSchema(request, bodies), removable
+	return request, response, read, writeSchema(request, bodies), removable, updateProps
 }
 
 // listItems returns the item schema of a list response, plain or inside a
@@ -246,10 +251,19 @@ func (t target) checkRequest(obj Object) error {
 		if filtered, err = normalizeSeed(t.request, []*openapi3.SchemaRef{t.response, t.read}, obj, 0); err != nil {
 			return err
 		}
-		filtered = t.fillRemovable(filtered)
+		filtered = t.acceptUpdateValues(t.fillRemovable(filtered))
 	}
 	return t.request.Value.VisitJSON(filtered,
 		openapi3.VisitAsRequest(), patternOption, openapi3.DisableSchemaErrorDetails())
+}
+
+// addUpdate records an update body's top-level properties: each that accepts
+// null is removable, and each is a schema a seed value may satisfy.
+func addUpdate(removable map[string]bool, updateProps map[string][]*openapi3.SchemaRef, body *openapi3.SchemaRef) {
+	addNullable(removable, body)
+	for k, p := range schemaProps(body) {
+		updateProps[k] = append(updateProps[k], p)
+	}
 }
 
 // addNullable marks each top-level property of body that accepts null.
@@ -284,6 +298,47 @@ func (t target) fillRemovable(v any) any {
 		return v
 	}
 	return out
+}
+
+// acceptUpdateValues stands in, for each top-level key whose value the create
+// body rejects but an update body accepts, a value the create body accepts
+// (the key is dropped when create does not require it). The write path stores
+// such a value, so the export must reload. A value no body accepts is left in
+// place, so the create schema reports it.
+func (t target) acceptUpdateValues(v any) any {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	branch := selectBranch(t.request, obj, 0)
+	props := schemaProps(branch)
+	required := collectRequired(branch, 0)
+	var out map[string]any
+	for k, val := range obj {
+		create := props[k]
+		if create == nil || acceptsRequest(create, val) {
+			continue
+		}
+		if !slices.ContainsFunc(t.updateProps[k], func(u *openapi3.SchemaRef) bool { return acceptsRequest(u, val) }) {
+			continue
+		}
+		if out == nil {
+			out = maps.Clone(obj)
+		}
+		if slices.Contains(required, k) {
+			out[k] = MinimalValue(create)
+		} else {
+			delete(out, k)
+		}
+	}
+	if out == nil {
+		return v
+	}
+	return out
+}
+
+func acceptsRequest(prop *openapi3.SchemaRef, v any) bool {
+	return prop.Value == nil || prop.Value.VisitJSON(v, openapi3.VisitAsRequest(), patternOption, openapi3.DisableSchemaErrorDetails()) == nil
 }
 
 // normalizeSeed returns a copy of v shaped for request validation: response

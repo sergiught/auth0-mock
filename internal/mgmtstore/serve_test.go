@@ -552,3 +552,14 @@ func TestServeTemplateNameRemovalExportsAndReloads(t *testing.T) {
 	out, _ := reloadExport(t, h)
 	assert.NotContains(t, string(mustJSON(t, out)), `"name"`)
 }
+
+func TestServeUpdateOnlyAcceptedValuesExportAndReload(t *testing.T) {
+	h := newHarness(t)
+	code, created, raw := h.do("POST", "/api/v2/clients", "", `{"name":"c"}`)
+	require.Equal(t, 201, code, string(raw))
+	code, _, raw = h.do("PATCH", "/api/v2/clients/"+created["client_id"].(string), "", `{"custom_login_page":""}`)
+	require.Equal(t, 200, code, string(raw))
+	out, s2 := reloadExport(t, h)
+	assert.Contains(t, string(mustJSON(t, out)), `"custom_login_page":""`)
+	assert.Equal(t, out, s2.Export())
+}
