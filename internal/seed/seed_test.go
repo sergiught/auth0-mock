@@ -386,7 +386,8 @@ func newMgmtStore(t *testing.T) *mgmtstore.Store {
 const mgmtSeed = `
 management:
   roles:
-    - name: admin
+    - id: rol_admin
+      name: admin
   organizations:
     - id: org_1
       name: acme
@@ -397,7 +398,7 @@ management:
 func TestParseManagementKey(t *testing.T) {
 	s := parse(t, mgmtSeed)
 	require.Len(t, s.Management, 3)
-	require.JSONEq(t, `[{"name":"admin"}]`, string(s.Management["roles"]))
+	require.JSONEq(t, `[{"id":"rol_admin","name":"admin"}]`, string(s.Management["roles"]))
 	require.Equal(t, "3 management objects", strings.Join(strings.Split(s.Summary(), ", ")[0:1], ""))
 
 	_, err := seed.Parse([]byte("Management:\n  roles: []\n"), newValidator(t))

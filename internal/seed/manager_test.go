@@ -3,6 +3,7 @@ package seed_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -338,11 +339,15 @@ func newMgmtFixture(t *testing.T, content string) *fixture {
 
 func TestResetReappliesManagement(t *testing.T) {
 	f := newMgmtFixture(t, mgmtSeed)
-	require.Len(t, f.st.Mgmt.Export(), 3)
+	want := f.st.Mgmt.Export()
+	require.Len(t, want, 3)
 
-	f.m.Poll(context.Background())
+	// Change the store: drop the seeded data and add an object of its own.
+	require.NoError(t, f.st.Mgmt.Load(map[string]json.RawMessage{"roles": json.RawMessage(`[{"name":"extra"}]`)}))
+	require.NotEqual(t, want, f.st.Mgmt.Export())
+
 	f.m.Reset(context.Background(), true)
-	require.Len(t, f.st.Mgmt.Export(), 3)
+	require.Equal(t, want, f.st.Mgmt.Export())
 
 	f.m.Reset(context.Background(), false)
 	require.Empty(t, f.st.Mgmt.Export())

@@ -110,22 +110,17 @@ func (t target) checkObject(obj Object) error {
 				return fmt.Errorf("unknown key %q", k)
 			}
 		}
-	}
-	// A required field no GET returns, such as a user's connection, is missing
-	// from an export. Fill it for the check only, so an export loads again.
-	if len(reqProps) > 0 {
-		respProps := schemaProps(t.response)
-		maps.Copy(respProps, schemaProps(t.read))
-		checked := maps.Clone(filtered)
+		// A required field no GET returns, such as a user's connection, is
+		// missing from an export. Fill it for the check only, so an export
+		// loads again.
 		for _, k := range collectRequired(t.request, 0) {
-			if _, has := checked[k]; has {
+			if _, has := filtered[k]; has {
 				continue
 			}
 			if _, inResp := respProps[k]; !inResp {
-				checked[k] = MinimalValue(reqProps[k])
+				filtered[k] = MinimalValue(reqProps[k])
 			}
 		}
-		filtered = checked
 	}
 	return t.request.Value.VisitJSON(filtered,
 		openapi3.VisitAsRequest(), openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails())
@@ -143,7 +138,23 @@ func (t target) parent() (coll, id string, ok bool) {
 // the leading slash, a collection takes an array of objects and a settings
 // path takes an object. Objects go through the create path; ids and
 // timestamps the seed carries are kept.
+//
+// Load replaces the store's contents with the seed and is all-or-nothing:
+// the seed is built in a scratch store and swapped in only when every key
+// loaded, so on error the store is unchanged. Callers wipe first anyway.
 func (s *Store) Load(data map[string]json.RawMessage) error {
+	scratch := s.engine.NewStore(s.now)
+	scratch.max = s.max
+	if err := scratch.loadAll(data); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.colls, s.settings = scratch.colls, scratch.settings
+	return nil
+}
+
+func (s *Store) loadAll(data map[string]json.RawMessage) error {
 	keys := slices.Sorted(maps.Keys(data))
 	sort.SliceStable(keys, func(i, j int) bool {
 		return strings.Count(keys[i], "/") < strings.Count(keys[j], "/")
@@ -214,7 +225,7 @@ func (s *Store) loadItem(path string, t target, obj Object) error {
 // CheckSeed reports the error Load would return for data, without touching
 // any store.
 func (e *Engine) CheckSeed(data map[string]json.RawMessage) error {
-	return e.NewStore(time.Now).Load(data)
+	return e.NewStore(time.Now).loadAll(data)
 }
 
 // CheckSeed reports the error Load would return for data, without changing

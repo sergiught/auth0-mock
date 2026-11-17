@@ -108,3 +108,15 @@ func TestCheckSeedDoesNotTouchStore(t *testing.T) {
 	require.NoError(t, e.CheckSeed(raw(t, seedData)))
 	assert.Error(t, e.CheckSeed(raw(t, `{"nope": []}`)))
 }
+
+func TestLoadFailureLeavesStoreUnchanged(t *testing.T) {
+	e, _ := loadEngine(t)
+	s := e.NewStore(fixedNow)
+	require.NoError(t, s.Load(raw(t, seedData)))
+	before := s.Export()
+
+	// "roles" sorts before "users" and loads; "users" then fails.
+	err := s.Load(raw(t, `{"roles": [{"name": "new"}], "users": [{"email": 5, "connection": "c"}]}`))
+	require.Error(t, err)
+	assert.Equal(t, before, s.Export())
+}

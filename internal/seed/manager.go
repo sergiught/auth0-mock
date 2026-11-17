@@ -47,7 +47,9 @@ func NewManager(path string, v *spec.Validator, st Stores, log zerolog.Logger) (
 	if err := checkManagement(s, st, log); err != nil {
 		return nil, fmt.Errorf("seed file %s: %w", path, err)
 	}
-	s.Apply(st)
+	if err := s.ApplyChecked(st); err != nil {
+		return nil, fmt.Errorf("seed file %s: %w", path, err)
+	}
 	log.Info().Str("file", path).Msgf("seed loaded: %s", s.Summary())
 	return &Manager{
 		path:       path,
@@ -86,7 +88,7 @@ func (m *Manager) Reset(ctx context.Context, keepSeed bool) {
 	defer m.mu.Unlock()
 	m.wipe(ctx)
 	if keepSeed {
-		m.current.Apply(m.st)
+		m.warnApply(m.current.ApplyChecked(m.st))
 	}
 }
 
@@ -98,7 +100,14 @@ func (m *Manager) ApplyTo(st Stores) {
 	if m.current == nil {
 		return
 	}
-	m.current.Apply(st)
+	m.warnApply(m.current.ApplyChecked(st))
+}
+
+// warnApply logs an Apply error: Reset and ApplyTo have no error path.
+func (m *Manager) warnApply(err error) {
+	if err != nil {
+		m.log.Warn().Msgf("seed file %s: %v", m.path, err)
+	}
 }
 
 // Export snapshots the stores in seed file shape while holding the lock Reset
@@ -148,7 +157,7 @@ func (m *Manager) Poll(ctx context.Context) {
 		return
 	}
 	m.wipe(ctx)
-	s.Apply(m.st)
+	m.warnApply(s.ApplyChecked(m.st))
 	m.current = s
 	m.loadedHash = h
 	m.hasBad = false

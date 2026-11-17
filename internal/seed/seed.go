@@ -343,7 +343,15 @@ func parseItem(r json.RawMessage, generic any, v *spec.Validator) (matches.Expec
 }
 
 // Apply writes the seed into the stores. Expectations are Put in file order.
+// It drops the error of loading the management section; the manager uses
+// ApplyChecked instead.
 func (s *Seed) Apply(st Stores) {
+	_ = s.ApplyChecked(st)
+}
+
+// ApplyChecked is Apply, and returns the error of loading the management
+// section, which leaves the management store unchanged.
+func (s *Seed) ApplyChecked(st Stores) error {
 	for _, e := range s.Expectations {
 		st.Matches.Put(e)
 	}
@@ -363,8 +371,9 @@ func (s *Seed) Apply(st Stores) {
 		_, _ = st.MFA.SetUser(key, cfg) // Validated in Parse.
 	}
 	if st.Mgmt != nil && len(s.Management) > 0 {
-		_ = st.Mgmt.Load(s.Management) // Checked by the manager with CheckSeed.
+		return st.Mgmt.Load(s.Management)
 	}
+	return nil
 }
 
 // Summary is a one-line description for logs.
