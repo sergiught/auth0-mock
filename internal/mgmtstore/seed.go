@@ -100,42 +100,117 @@ func (e *Engine) schemas(collection string) (request, response, read *openapi3.S
 
 // checkObject validates one seed object against the request schema. Keys the
 // request schema lacks but the response schema declares (such as logins_count
-// in an export) are checked against that response property; any other
-// undeclared key is an error. The
-// original object is stored by the caller.
+// in an export) are checked against that response property and dropped from
+// the validated copy, at every nesting level. A key neither schema declares is
+// accepted when the response schema allows additionalProperties (checked
+// against that schema when it gives one), otherwise it is an error. The
+// original object is stored by the caller, untouched.
 func (t target) checkObject(obj Object) error {
 	if t.request == nil || t.request.Value == nil {
 		return nil
 	}
-	reqProps := schemaProps(t.request)
-	filtered := obj
-	if len(reqProps) > 0 {
-		respProps := schemaProps(t.response)
-		maps.Copy(respProps, schemaProps(t.read))
-		filtered = Object{}
-		for _, k := range slices.Sorted(maps.Keys(obj)) {
-			if _, ok := reqProps[k]; ok {
-				filtered[k] = obj[k]
-			} else if rp, ok := respProps[k]; !ok {
-				return fmt.Errorf("unknown key %q", k)
-			} else if err := checkResponseValue(rp, obj[k]); err != nil {
-				return fmt.Errorf("key %q: %w", k, err)
-			}
-		}
-		// A required field no GET returns, such as a user's connection, is
-		// missing from an export. Fill it for the check only, so an export
-		// loads again.
-		for _, k := range collectRequired(t.request, 0) {
-			if _, has := filtered[k]; has {
-				continue
-			}
-			if _, inResp := respProps[k]; !inResp {
-				filtered[k] = MinimalValue(reqProps[k])
-			}
+	filtered := any(obj)
+	if len(schemaProps(t.request)) > 0 {
+		var err error
+		if filtered, err = normalizeSeed(t.request, []*openapi3.SchemaRef{t.response, t.read}, obj, 0); err != nil {
+			return err
 		}
 	}
 	return t.request.Value.VisitJSON(filtered,
 		openapi3.VisitAsRequest(), openapi3.DisablePatternValidation(), openapi3.DisableSchemaErrorDetails())
+}
+
+// normalizeSeed returns a copy of v shaped for request validation: response
+// only keys are validated against resps and dropped, response-allowed extras
+// are dropped, and required request fields GET never returns (a user's
+// connection, an action secret's value) get a minimal value. A value with no
+// response counterpart passes through unchanged.
+func normalizeSeed(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, v any, depth int) (any, error) {
+	if req == nil || req.Value == nil || depth > maxSchemaDepth {
+		return v, nil
+	}
+	switch val := v.(type) {
+	case []any:
+		if req.Value.Items == nil {
+			return v, nil
+		}
+		var itemResps []*openapi3.SchemaRef
+		for _, r := range resps {
+			if r != nil && r.Value != nil {
+				itemResps = append(itemResps, r.Value.Items)
+			}
+		}
+		out := make([]any, len(val))
+		for i, item := range val {
+			n, err := normalizeSeed(req.Value.Items, itemResps, item, depth+1)
+			if err != nil {
+				return nil, fmt.Errorf("item %d: %w", i, err)
+			}
+			out[i] = n
+		}
+		return out, nil
+	case map[string]any:
+		return normalizeObject(req, resps, val, depth)
+	}
+	return v, nil
+}
+
+// responseShape merges what the response schemas declare: their properties
+// and whether (and how) they allow undeclared keys.
+func responseShape(resps []*openapi3.SchemaRef) (props map[string]*openapi3.SchemaRef, extras bool, extraSchema *openapi3.SchemaRef) {
+	props = map[string]*openapi3.SchemaRef{}
+	for _, r := range resps {
+		maps.Copy(props, schemaProps(r))
+		if ok, sch := additionalProps(r, 0); ok {
+			extras = true
+			if extraSchema == nil {
+				extraSchema = sch
+			}
+		}
+	}
+	return props, extras, extraSchema
+}
+
+func normalizeObject(req *openapi3.SchemaRef, resps []*openapi3.SchemaRef, obj Object, depth int) (any, error) {
+	reqProps := schemaProps(req)
+	respProps, extras, extraSchema := responseShape(resps)
+	if len(reqProps) == 0 || (len(respProps) == 0 && !extras) {
+		return obj, nil
+	}
+	filtered := Object{}
+	for _, k := range slices.Sorted(maps.Keys(obj)) {
+		if rq, ok := reqProps[k]; ok {
+			var childResps []*openapi3.SchemaRef
+			if rp, ok := respProps[k]; ok {
+				childResps = []*openapi3.SchemaRef{rp}
+			}
+			n, err := normalizeSeed(rq, childResps, obj[k], depth+1)
+			if err != nil {
+				return nil, fmt.Errorf("key %q: %w", k, err)
+			}
+			filtered[k] = n
+			continue
+		}
+		rp, declared := respProps[k]
+		if !declared && !extras {
+			return nil, fmt.Errorf("unknown key %q", k)
+		}
+		if !declared {
+			rp = extraSchema
+		}
+		if err := checkResponseValue(rp, obj[k]); err != nil {
+			return nil, fmt.Errorf("key %q: %w", k, err)
+		}
+	}
+	for _, k := range collectRequired(req, 0) {
+		if _, has := filtered[k]; has {
+			continue
+		}
+		if _, inResp := respProps[k]; !inResp {
+			filtered[k] = MinimalValue(reqProps[k])
+		}
+	}
+	return filtered, nil
 }
 
 func checkResponseValue(prop *openapi3.SchemaRef, v any) error {

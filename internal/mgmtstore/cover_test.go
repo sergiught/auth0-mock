@@ -258,3 +258,45 @@ func TestEscapePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "auth0|1%2", back)
 }
+
+func TestNormalizeSeedBranches(t *testing.T) {
+	str := schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})
+	yes := true
+	// Response allows extras that must be strings.
+	resp := objectSchema(map[string]*openapi3.SchemaRef{"id": str})
+	resp.AdditionalProperties = openapi3.AdditionalProperties{Schema: str}
+	req := objectSchema(map[string]*openapi3.SchemaRef{"id": str})
+	_, err := normalizeSeed(schemaOf(req), []*openapi3.SchemaRef{schemaOf(resp)}, Object{"id": "a", "x": "ok"}, 0)
+	require.NoError(t, err)
+	_, err = normalizeSeed(schemaOf(req), []*openapi3.SchemaRef{schemaOf(resp)}, Object{"id": "a", "x": 5}, 0)
+	require.ErrorContains(t, err, `key "x"`)
+
+	// Nested object and array item errors carry their path.
+	nestedReq := schemaOf(objectSchema(map[string]*openapi3.SchemaRef{
+		"o": schemaOf(req),
+		"a": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"array"}, Items: schemaOf(req)}),
+		"n": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"array"}}),
+	}))
+	nestedResp := schemaOf(objectSchema(map[string]*openapi3.SchemaRef{
+		"o": schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"id": str})),
+		"a": schemaOf(&openapi3.Schema{Type: &openapi3.Types{"array"}, Items: schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"id": str}))}),
+	}))
+	resps := []*openapi3.SchemaRef{nestedResp}
+	_, err = normalizeSeed(nestedReq, resps, Object{"o": Object{"id": "a", "bad": 1}}, 0)
+	require.ErrorContains(t, err, `key "o"`)
+	_, err = normalizeSeed(nestedReq, resps, Object{"a": []any{Object{"id": "a", "bad": 1}}}, 0)
+	require.ErrorContains(t, err, "item 0")
+	// An array without items schema passes through.
+	out, err := normalizeSeed(nestedReq, resps, Object{"n": []any{1}}, 0)
+	require.NoError(t, err)
+	assert.Equal(t, Object{"n": []any{1}}, out)
+
+	// AdditionalProperties true allows undeclared keys.
+	resp.AdditionalProperties = openapi3.AdditionalProperties{Has: &yes}
+	_, err = normalizeSeed(schemaOf(req), []*openapi3.SchemaRef{schemaOf(resp)}, Object{"id": "a", "x": 5}, 0)
+	require.NoError(t, err)
+
+	// CheckObject surfaces normalization errors.
+	err = target{request: schemaOf(req), response: schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"id": str}))}.checkObject(Object{"zzz": 1})
+	require.ErrorContains(t, err, "unknown key")
+}

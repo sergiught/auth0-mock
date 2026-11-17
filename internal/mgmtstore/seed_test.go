@@ -219,3 +219,47 @@ func TestStoreCheckSeed(t *testing.T) {
 	assert.Empty(t, s.Export())
 	assert.Error(t, s.CheckSeed(raw(t, `{"nope": []}`)))
 }
+
+func TestExportReloadsCustomUserField(t *testing.T) {
+	h := newHarness(t)
+	code, _, raw := h.do("POST", "/api/v2/users", "", `{"user_id":"auth0|c1","connection":"c","email":"a@b.co"}`)
+	require.Equal(t, 201, code, string(raw))
+	code, _, raw = h.do("PATCH", "/api/v2/users/auth0%7Cc1", "", `{"custom_flag":true}`)
+	require.Equal(t, 200, code, string(raw))
+	out1 := h.s.Export()
+	assert.Contains(t, h.s.exportJSON(t), "custom_flag")
+	b, err := json.Marshal(out1)
+	require.NoError(t, err)
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &m))
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out1, s2.Export())
+}
+
+func TestExportReloadsRedactedSecrets(t *testing.T) {
+	h := newHarness(t)
+	code, _, raw := h.do("POST", "/api/v2/actions/modules", "", `{"name":"m","code":"x","secrets":[{"name":"API_KEY","value":"private-value"}]}`)
+	require.Equal(t, 201, code, string(raw))
+	out1 := h.s.Export()
+	b, err := json.Marshal(out1)
+	require.NoError(t, err)
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &m))
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out1, s2.Export())
+	assert.NotContains(t, s2.exportJSON(t), "private-value")
+	assert.NotContains(t, s2.exportJSON(t), `"value"`)
+}
+
+func TestLoadNestedSeedErrors(t *testing.T) {
+	e, _ := loadEngine(t)
+	// Nested response-only key with a bad value.
+	err := e.NewStore(fixedNow).Load(raw(t, `{"actions/modules": [{"name":"m","code":"x","secrets":[{"name":"a","updated_at":5}]}]}`))
+	require.Error(t, err)
+	// Unknown key nested in an array item.
+	err = e.NewStore(fixedNow).Load(raw(t, `{"actions/modules": [{"name":"m","code":"x","secrets":[{"name":"a","zzz":5}]}]}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "zzz")
+}
