@@ -168,11 +168,11 @@ func (s *Store) loadAll(data map[string]json.RawMessage) error {
 }
 
 func (s *Store) loadKey(key string, rawVal json.RawMessage) error {
-	path := "/" + key
-	t, ok := s.engine.lookup(path)
+	t, ok := s.engine.lookup("/" + key)
 	if !ok {
 		return fmt.Errorf("management.%q: not a stored collection or settings path", key)
 	}
+	path := fill(t.route.Collection, t.params) // Decoded, as Serve looks it up.
 	if pc, pid, has := t.parent(); has {
 		if _, found := s.get(pc, pid); !found {
 			return fmt.Errorf("management.%q: parent %q is not in the seed", key, strings.TrimPrefix(pc+"/"+pid, "/"))
@@ -212,7 +212,7 @@ func (s *Store) loadItem(path string, t target, obj Object) error {
 	if id, _ := obj[t.route.IDField].(string); id == "" {
 		obj[t.route.IDField] = newIDFor(schemaProps(t.response)[t.route.IDField])
 	}
-	_, err := s.insert(path, t.route.IDField, obj, stampFor(t.response), true)
+	_, err := s.insert(path, t.route.IDField, obj, stampFor(t.response), true, parentRef{})
 	switch {
 	case errors.Is(err, errConflict):
 		return fmt.Errorf("duplicate id %v", obj[t.route.IDField])

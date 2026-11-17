@@ -57,7 +57,7 @@ type NearMiss struct {
 }
 
 // JournalEntry is one recorded request. Outcome is "matched",
-// "no_match" or "rejected". Authorization and Cookie header values
+// "no_match", "rejected" or "stored". Authorization and Cookie header values
 // are redacted by the server.
 type JournalEntry struct {
 	ID            string          `json:"id"`

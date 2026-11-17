@@ -80,6 +80,9 @@ var collectionDenyList = map[string]bool{
 	// The spec's response requires "credentials" but declares no such
 	// property under additionalProperties:false, so no body can satisfy it.
 	"/branding/phone/providers": true,
+	// A relation between an organization and its client grants, not a
+	// collection of objects the store owns.
+	"/organizations/{id}/client-grants": true,
 }
 
 // Engine holds the classification of every operation in a spec.
@@ -268,7 +271,6 @@ func (e *Engine) classifyCollections(paths map[string]map[string]spec.Operation)
 			list.IDField = idField
 			e.set("GET", c, list)
 		}
-		create.IDField = idField
 		e.set("POST", c, create)
 
 		for method, kind := range map[string]Kind{

@@ -305,9 +305,9 @@ GET	/api/v2/organizations/search	stub
 DELETE	/api/v2/organizations/{id}	delete	id=id
 GET	/api/v2/organizations/{id}	read	id=id
 PATCH	/api/v2/organizations/{id}	merge	id=id
-GET	/api/v2/organizations/{id}/client-grants	list	id=id	parent=/organizations/{id}
-POST	/api/v2/organizations/{id}/client-grants	create	id=id	parent=/organizations/{id}
-DELETE	/api/v2/organizations/{id}/client-grants/{grant_id}	delete	id=id	parent=/organizations/{id}
+GET	/api/v2/organizations/{id}/client-grants	stub
+POST	/api/v2/organizations/{id}/client-grants	stub
+DELETE	/api/v2/organizations/{id}/client-grants/{grant_id}	stub
 DELETE	/api/v2/organizations/{id}/clients	stub
 GET	/api/v2/organizations/{id}/clients	stub
 POST	/api/v2/organizations/{id}/clients	stub

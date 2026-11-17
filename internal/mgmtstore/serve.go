@@ -140,10 +140,11 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 		notFound(w)
 		return
 	}
+	var parent parentRef
 	if route.Parent != "" {
 		parentColl := strings.TrimSuffix(route.Parent, "/"+lastSegment(route.Parent))
-		parentID := params[paramName(lastSegment(route.Parent))]
-		if _, found := s.get(fill(parentColl, params), parentID); !found {
+		parent = parentRef{fill(parentColl, params), params[paramName(lastSegment(route.Parent))]}
+		if _, found := s.get(parent.coll, parent.id); !found {
 			notFound(w)
 			return
 		}
@@ -155,7 +156,7 @@ func (s *Store) Serve(w http.ResponseWriter, r *http.Request, op spec.Operation,
 	case KindList:
 		s.serveList(w, r, op, coll, status, schema)
 	case KindCreate:
-		s.serveCreate(w, route, coll, status, schema, body)
+		s.serveCreate(w, route, coll, parent, status, schema, body)
 	case KindRead:
 		o, found := s.get(coll, params[route.IDParam])
 		if !found {
@@ -215,7 +216,7 @@ func newIDFor(prop *openapi3.SchemaRef) string {
 	return id
 }
 
-func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, status int, schema *openapi3.SchemaRef, body []byte) {
+func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, parent parentRef, status int, schema *openapi3.SchemaRef, body []byte) {
 	obj, ok := decodeObject(body)
 	if !ok {
 		badBody(w)
@@ -224,11 +225,13 @@ func (s *Store) serveCreate(w http.ResponseWriter, route Route, coll string, sta
 	if id, _ := obj[route.IDField].(string); id == "" {
 		obj[route.IDField] = newIDFor(schemaProps(schema)[route.IDField])
 	}
-	created, err := s.create(coll, route.IDField, obj, stampFor(schema))
+	created, err := s.insert(coll, route.IDField, obj, stampFor(schema), false, parent)
 	switch {
 	case errors.Is(err, errConflict):
 		id, _ := obj[route.IDField].(string)
 		httperr.WriteMgmt(w, http.StatusConflict, "Conflict", fmt.Sprintf("An object with id %s already exists.", id), "already_exists")
+	case errors.Is(err, errNotFound):
+		notFound(w)
 	case errors.Is(err, errLimit):
 		httperr.WriteMgmt(w, http.StatusTooManyRequests, "Too Many Requests",
 			fmt.Sprintf("mock store limit reached: %d objects in %s", s.max, coll), "too_many_entities")

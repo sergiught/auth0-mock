@@ -20,7 +20,7 @@ It is off by default, and nothing changes until you set it.
 
 Most Management API collections are stored: lists such as `/api/v2/roles` and `/api/v2/users`, single items such as `/api/v2/roles/{id}`, collections under another object such as `/api/v2/organizations/{id}/invitations`, and settings objects such as `/api/v2/tenants/settings`.
 
-Some paths stay stub-only. Examples are experimentation feature flags, segments and experiments, branding themes, branding phone providers, `/api/v2/sessions/{id}` and `/api/v2/refresh-tokens/{id}`. The full list, path by path, is in the [classification file](https://github.com/sergiught/auth0-mock/blob/main/internal/mgmtstore/testdata/classification.golden). A path marked `stub` there behaves as before.
+Some paths stay stub-only. Examples are experimentation feature flags, segments and experiments, branding themes, branding phone providers, `/api/v2/organizations/{id}/client-grants`, `/api/v2/sessions/{id}` and `/api/v2/refresh-tokens/{id}`. The full list, path by path, is in the [classification file](https://github.com/sergiught/auth0-mock/blob/main/internal/mgmtstore/testdata/classification.golden). A path marked `stub` there behaves as before.
 
 A nested collection needs its parent. Creating an invitation under an organization that does not exist gets a 404, as in Auth0.
 

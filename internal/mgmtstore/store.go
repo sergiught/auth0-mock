@@ -94,15 +94,24 @@ func copyObject(o Object) Object {
 	return deepCopy(o).(Object)
 }
 
+// parentRef names the parent item a child insert needs to still exist.
+// The zero value means no parent.
+type parentRef struct{ coll, id string }
+
 func (s *Store) create(coll, idField string, obj Object, st stamp) (Object, error) {
-	return s.insert(coll, idField, obj, st, false)
+	return s.insert(coll, idField, obj, st, false, parentRef{})
 }
 
 // insert adds obj to coll. With keepStamps, a created_at or updated_at the
 // object already carries is kept instead of overwritten.
-func (s *Store) insert(coll, idField string, obj Object, st stamp, keepStamps bool) (Object, error) {
+func (s *Store) insert(coll, idField string, obj Object, st stamp, keepStamps bool, parent parentRef) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if parent != (parentRef{}) {
+		if pc := s.colls[parent.coll]; pc == nil || pc.objs[parent.id] == nil {
+			return nil, errNotFound
+		}
+	}
 	c := s.colls[coll]
 	if c == nil {
 		c = &collection{objs: map[string]Object{}}
@@ -123,11 +132,12 @@ func (s *Store) insert(coll, idField string, obj Object, st stamp, keepStamps bo
 	if _, dup := c.objs[id]; dup {
 		return nil, errConflict
 	}
+	now := s.stamp()
 	if _, has := o["created_at"]; st.created && (!keepStamps || !has) {
-		o["created_at"] = s.stamp()
+		o["created_at"] = now
 	}
 	if _, has := o["updated_at"]; st.updated && (!keepStamps || !has) {
-		o["updated_at"] = s.stamp()
+		o["updated_at"] = now
 	}
 	c.objs[id] = o
 	c.order = append(c.order, id)
