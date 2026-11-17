@@ -336,3 +336,80 @@ func TestExportRedactsWriteOnlySettings(t *testing.T) {
 	require.NoError(t, reloaded.Load(data))
 	assert.Equal(t, out, reloaded.Export())
 }
+
+func TestServeDropsUpdateOnlyFields(t *testing.T) {
+	h := newHarness(t)
+	code, _, raw := h.do("POST", "/api/v2/users", "", `{"user_id":"auth0|u1","connection":"c","email":"a@b.co"}`)
+	require.Equal(t, 201, code, string(raw))
+	code, patched, raw := h.do("PATCH", "/api/v2/users/auth0%7Cu1", "", `{"client_id":"abc","verify_phone_number":true,"custom_flag":true}`)
+	require.Equal(t, 200, code, string(raw))
+	assert.NotContains(t, patched, "client_id")
+	assert.NotContains(t, patched, "verify_phone_number")
+
+	_, got, _ := h.do("GET", "/api/v2/users/auth0%7Cu1", "", "")
+	_, _, list := h.do("GET", "/api/v2/users", "", "")
+	for _, body := range []string{string(mustJSON(t, got)), string(list), h.s.exportJSON(t)} {
+		assert.NotContains(t, body, "client_id")
+		assert.NotContains(t, body, "verify_phone_number")
+		assert.Contains(t, body, "a@b.co")
+		assert.Contains(t, body, "custom_flag")
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
+}
+
+func TestServeDropsVersionFromTemplatePatch(t *testing.T) {
+	h := newHarness(t)
+	const base = "/api/v2/verifiable-credentials/verification/templates"
+	code, created, raw := h.do("POST", base, "", `{"name":"t","type":"t","dialect":"d","presentation":{"org.iso.18013.5.1.mDL":{"org.iso.18013.5.1":{"family_name":true}}},"well_known_trusted_issuers":"x"}`)
+	require.Equal(t, 201, code, string(raw))
+	code, patched, raw := h.do("PATCH", base+"/"+created["id"].(string), "", `{"version":1,"name":"n"}`)
+	require.Equal(t, 200, code, string(raw))
+	assert.NotContains(t, patched, "version")
+	assert.Equal(t, "n", patched["name"])
+}
+
+// TestConnectionPrecedenceRoundTrip creates an auth0 connection with the given precedence
+// the way the HTTP handler would: the request validator runs first, and only
+// a body it accepts reaches Serve. What it stores must export and reload.
+func TestConnectionPrecedenceRoundTrip(t *testing.T) {
+	h := newHarness(t)
+	post := func(body string) error {
+		op, err := h.v.Resolve("POST", "/api/v2/connections")
+		require.NoError(t, err)
+		r := httptest.NewRequest("POST", "/api/v2/connections", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		if err := h.v.ValidateRequest(r, op); err != nil {
+			return err
+		}
+		code, _, raw := h.do("POST", "/api/v2/connections", "", body)
+		require.Equal(t, 201, code, string(raw))
+		return nil
+	}
+
+	// The spec requires exactly three identifiers: the write path rejects two.
+	err := post(`{"name":"c2","strategy":"auth0","options":{"precedence":["email","username"]}}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "minimum number of items is 3")
+	assert.Empty(t, h.s.Export())
+
+	err = post(`{"name":"c3","strategy":"auth0","options":{"precedence":["email","phone_number","username"]}}`)
+	require.NoError(t, err)
+	out := h.s.Export()
+	m := map[string]json.RawMessage{}
+	for k, v := range out {
+		m[k] = mustJSON(t, v)
+	}
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(m))
+	assert.Equal(t, out, s2.Export())
+
+	// Seed validation agrees with the write path on the two-item body.
+	m2 := map[string]json.RawMessage{"connections": json.RawMessage(`[{"name":"c2","strategy":"auth0","options":{"precedence":["email","username"]}}]`)}
+	require.Error(t, h.s.engine.NewStore(fixedNow).Load(m2))
+}

@@ -21,6 +21,8 @@ type target struct {
 	// Request validates a seed object, response is what a write returns, and
 	// read is what a GET of one item returns (collections only).
 	request, response, read *openapi3.SchemaRef
+	// Proj stands for every write body of the collection when projecting.
+	proj *openapi3.SchemaRef
 }
 
 func bodySchema(op *openapi3.Operation) *openapi3.SchemaRef {
@@ -63,7 +65,8 @@ func (e *Engine) lookup(path string) (target, bool) {
 		return target{}, false
 	}
 	t := target{route: best, params: params, settings: best.Kind != KindCreate}
-	t.request, t.response, t.read = e.schemas(best.Collection)
+	set := e.schemaCache[best.Collection]
+	t.request, t.response, t.read, t.proj = set.request, set.response, set.read, set.proj
 	return t, true
 }
 
@@ -88,16 +91,17 @@ func (e *Engine) checkPathParams(t target) error {
 	return nil
 }
 
-// schemas returns the request schema that writes the collection or settings
-// path, the response schema of its create or settings read, and the response
+// schemas returns the schema that stands for every write body of the
+// collection or settings path (what projection treats as request-only keys),
+// the response schema of its create or settings read, and the response
 // schema of reading one item (collections only).
-func (e *Engine) schemas(collection string) (request, response, read *openapi3.SchemaRef) {
+func (e *Engine) schemas(collection string) (proj, response, read *openapi3.SchemaRef) {
 	set := e.schemaCache[collection]
-	return set.request, set.response, set.read
+	return set.proj, set.response, set.read
 }
 
 // schemaSet is the cached result of scanSchemas for one collection.
-type schemaSet struct{ request, response, read *openapi3.SchemaRef }
+type schemaSet struct{ request, response, read, proj *openapi3.SchemaRef }
 
 // cacheSchemas scans the operations once per collection, so schemas never
 // rescans them. The cache is immutable once NewEngine returns.
@@ -105,8 +109,8 @@ func (e *Engine) cacheSchemas() {
 	e.schemaCache = map[string]schemaSet{}
 	for _, r := range e.routes {
 		if _, done := e.schemaCache[r.Collection]; !done {
-			req, resp, read := e.scanSchemas(r.Collection)
-			e.schemaCache[r.Collection] = schemaSet{req, resp, read}
+			req, resp, read, proj := e.scanSchemas(r.Collection)
+			e.schemaCache[r.Collection] = schemaSet{req, resp, read, proj}
 		}
 	}
 }
@@ -123,14 +127,20 @@ func (e *Engine) literalAt(key string, idx int) bool {
 	return idx < len(segs) && !isParam(segs[idx])
 }
 
-func (e *Engine) scanSchemas(collection string) (request, response, read *openapi3.SchemaRef) {
+func (e *Engine) scanSchemas(collection string) (request, response, read, proj *openapi3.SchemaRef) {
 	var putBody *openapi3.SchemaRef
+	var bodies openapi3.SchemaRefs
 	for _, op := range e.ops {
 		r, ok := e.routes[routeKey(op.Method, op.Template)]
 		if !ok || r.Collection != collection {
 			continue
 		}
 		_, resp := successResponse(op.Op)
+		if writesBody(r.Kind) {
+			if b := bodySchema(op.Op); b != nil {
+				bodies = append(bodies, b)
+			}
+		}
 		switch r.Kind {
 		case KindCreate:
 			request, response = bodySchema(op.Op), resp
@@ -147,7 +157,29 @@ func (e *Engine) scanSchemas(collection string) (request, response, read *openap
 	if request == nil {
 		request = putBody
 	}
-	return request, response, read
+	return request, response, read, writeSchema(request, bodies)
+}
+
+// writeSchema returns one schema declaring every key any write body does, the
+// creating or settings-patch body first so its nested schemas win. A key only
+// an update body declares (client_id on a user PATCH) is request-only too.
+func writeSchema(first *openapi3.SchemaRef, bodies openapi3.SchemaRefs) *openapi3.SchemaRef {
+	all := openapi3.SchemaRefs{}
+	if first != nil {
+		all = append(all, first)
+	}
+	for _, b := range bodies {
+		if b != first {
+			all = append(all, b)
+		}
+	}
+	switch len(all) {
+	case 0:
+		return nil
+	case 1:
+		return all[0]
+	}
+	return &openapi3.SchemaRef{Value: &openapi3.Schema{AllOf: all}}
 }
 
 // checkObject validates one seed object against the request schema. Keys the
@@ -167,7 +199,7 @@ func (t target) checkObject(obj Object) error {
 	if read == nil {
 		read = t.response
 	}
-	return checkPresent(project(obj, read, t.request), read)
+	return checkPresent(project(obj, read, t.proj), read)
 }
 
 // checkRequest validates obj against the request schema (see checkObject).
@@ -479,11 +511,11 @@ func (s *Store) Export() map[string]any {
 		if schema == nil {
 			schema = t.response
 		}
-		out[strings.TrimPrefix(k, "/")] = projectAll(s.list(k), schema, t.request)
+		out[strings.TrimPrefix(k, "/")] = projectAll(s.list(k), schema, t.proj)
 	}
 	for k, o := range settings {
 		if t, ok := s.engine.lookup(k); ok {
-			o = project(o, t.response, t.request)
+			o = project(o, t.response, t.proj)
 		}
 		out[strings.TrimPrefix(k, "/")] = o
 	}
