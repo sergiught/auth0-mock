@@ -53,6 +53,46 @@ func RegisterSteps(sc *godog.ScenarioContext, c *Context) {
 		return c.RestartWithSeed(body.Content)
 	})
 
+	sc.Step(`^the mock restarts with the Management store on$`, func() error {
+		return c.RestartMgmtStore("")
+	})
+
+	sc.Step(`^the mock restarts with the Management store on and seed file:$`, func(body *godog.DocString) error {
+		return c.RestartMgmtStore(body.Content)
+	})
+
+	// Like the plain bearer steps, with each {{name}} in the path and body
+	// replaced by a saved value.
+	sc.Step(`^I send "([^"]+)" using saved values with a valid bearer$`, func(target string) error {
+		target, err := c.expandSaved(target)
+		if err != nil {
+			return err
+		}
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		c.Do(method, path, "", true)
+		return nil
+	})
+
+	sc.Step(`^I send "([^"]+)" using saved values with body and a valid bearer:$`, func(target string, body *godog.DocString) error {
+		target, err := c.expandSaved(target)
+		if err != nil {
+			return err
+		}
+		content, err := c.expandSaved(body.Content)
+		if err != nil {
+			return err
+		}
+		method, path, err := splitTarget(target)
+		if err != nil {
+			return err
+		}
+		c.Do(method, path, content, true)
+		return nil
+	})
+
 	sc.Step(`^I replace the seed file with:$`, func(body *godog.DocString) error {
 		return c.ReplaceSeedFile(body.Content)
 	})

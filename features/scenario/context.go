@@ -190,6 +190,29 @@ func (c *Context) RestartWithSeed(content string) error {
 	})
 }
 
+// RestartMgmtStore stops the scenario's server and boots a fresh one with
+// MGMT_STORE on. A non-empty seed becomes the SEED_FILE; one that fails to
+// load is returned as the error.
+func (c *Context) RestartMgmtStore(seedContent string) error {
+	c.shutdown()
+	o := bootOptions{
+		issuerFor: func(addr string) string { return "http://" + addr + "/" },
+		mgmtStore: true,
+	}
+	if seedContent != "" {
+		dir, err := os.MkdirTemp(c.t.TempDir(), "seed")
+		if err != nil {
+			return err
+		}
+		c.seedPath = filepath.Join(dir, "seed.yaml")
+		if err := os.WriteFile(c.seedPath, []byte(seedContent), 0o600); err != nil {
+			return err
+		}
+		o.seedFile = c.seedPath
+	}
+	return c.boot(o)
+}
+
 // ReplaceSeedFile saves content over the seed file the way an editor does
 // (write a temp file, rename it over) and reloads it. Nothing sleeps: the
 // harness runs no watcher and polls twice instead, as a changed file is acted
