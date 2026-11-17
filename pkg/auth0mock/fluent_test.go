@@ -356,3 +356,20 @@ func TestResponseBuilderTemplate(t *testing.T) {
 	require.Len(t, then, 1)
 	assert.NotContains(t, then[0], "template")
 }
+
+func TestBuilderOverride(t *testing.T) {
+	t.Parallel()
+	rec, c := newStub(t)
+
+	_, err := c.ExpectGet("/api/v2/users/auth0|123").
+		Override().
+		Respond(500).
+		Apply(t.Context())
+	require.NoError(t, err)
+
+	call := rec.last(t)
+	assert.Contains(t, string(call.Body), `"override":true`)
+	var sent auth0mock.Expectation
+	require.NoError(t, json.Unmarshal(call.Body, &sent))
+	assert.True(t, sent.Override)
+}

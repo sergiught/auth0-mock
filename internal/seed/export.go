@@ -23,6 +23,7 @@ func Export(st Stores, detail bool) File {
 			Path:     e.Path,
 			Request:  normaliseRequest(e.Request),
 			Response: normaliseResponse(e.Response),
+			Override: e.Override,
 		}}
 		for _, t := range e.Then {
 			item.Then = append(item.Then, normaliseResponse(t))

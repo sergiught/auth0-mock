@@ -346,3 +346,12 @@ func TestPostExpectation_ThenStatusRequiredMessage(t *testing.T) {
 	assert.Equal(t, "invalid_body", gjson.Get(rec.Body.String(), "errorCode").String(), rec.Body.String())
 	assert.Contains(t, gjson.Get(rec.Body.String(), "message").String(), "then[0].status is required")
 }
+
+func TestPostExpectation_AcceptsOverride(t *testing.T) {
+	r, store := newExpectationsRouter(t)
+	rec := do(t, r, http.MethodPost, "/admin0/expectations",
+		`{"method":"GET","path":"/api/v2/widgets/abc","override":true,"response":{"status":200,"body":{"id":"abc"}}}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	m := store.FindOverride("GET", "/api/v2/widgets/abc", "/api/v2/widgets/{id}", matches.MatchableRequest{})
+	require.NotNil(t, m)
+}

@@ -148,11 +148,29 @@ func (s *Store) Find(method, concretePath, opTemplate string, req MatchableReque
 	defer s.mu.RUnlock()
 	exact := s.exact[key{Method: method, Path: concretePath}]
 	tmpl := s.template[key{Method: method, Path: opTemplate}]
+	return s.findLocked(exact, tmpl, req, false)
+}
+
+// FindOverride is Find restricted to entries with Override set. It follows
+// the same tiers and hit counting, and returns nil when no override matches.
+func (s *Store) FindOverride(method, concretePath, opTemplate string, req MatchableRequest) *Expectation {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	exact := s.exact[key{Method: method, Path: concretePath}]
+	tmpl := s.template[key{Method: method, Path: opTemplate}]
+	return s.findLocked(exact, tmpl, req, true)
+}
+
+// findLocked applies the four-tier precedence over exact and tmpl, skipping
+// non-override entries when overrideOnly is set, and counts the hit. The
+// caller holds s.mu.
+func (s *Store) findLocked(exact, tmpl []Expectation, req MatchableRequest, overrideOnly bool) *Expectation {
 	matched := cmp.Or(
-		newestMatch(exact, req, false),
-		newestMatch(exact, req, true),
-		newestMatch(tmpl, req, false),
-		newestMatch(tmpl, req, true),
+		newestMatch(exact, req, false, overrideOnly),
+		newestMatch(exact, req, true, overrideOnly),
+		newestMatch(tmpl, req, false, overrideOnly),
+		newestMatch(tmpl, req, true, overrideOnly),
 	)
 	if matched != nil {
 		if counter := s.hits[matched.ID]; counter != nil {
@@ -165,8 +183,11 @@ func (s *Store) Find(method, concretePath, opTemplate string, req MatchableReque
 // newestMatch scans list newest-first and returns the first entry that both
 // matches req and has the requested catch-all-ness (catchAll == (Request is
 // nil)). Returns nil if none qualify.
-func newestMatch(list []Expectation, req MatchableRequest, catchAll bool) *Expectation {
+func newestMatch(list []Expectation, req MatchableRequest, catchAll, overrideOnly bool) *Expectation {
 	for _, e := range slices.Backward(list) {
+		if overrideOnly && !e.Override {
+			continue
+		}
 		if (e.Request == nil) != catchAll {
 			continue
 		}

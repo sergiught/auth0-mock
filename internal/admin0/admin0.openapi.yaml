@@ -973,6 +973,13 @@ components:
             Re-registering the stub restarts the sequence.
           items:
             $ref: "#/components/schemas/ResponseDef"
+        override:
+          type: boolean
+          description: |
+            When the Management API store is on (`MGMT_STORE=true`), the store
+            answers the operations it handles before ordinary stubs. Set this
+            to let the stub win over the store instead, for example to force
+            an error. It has no effect when the store is off.
     RequestMatcher:
       type: object
       description: |

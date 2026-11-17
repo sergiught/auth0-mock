@@ -52629,6 +52629,10 @@
             "example": "POST",
             "type": "string"
           },
+          "override": {
+            "description": "When the Management API store is on (`MGMT_STORE=true`), the store\nanswers the operations it handles before ordinary stubs. Set this\nto let the stub win over the store instead, for example to force\nan error. It has no effect when the store is off.\n",
+            "type": "boolean"
+          },
           "path": {
             "description": "Target operation path — concrete (`/api/v2/users/auth0|1`) or an\nOpenAPI template (`/api/v2/users/{id}`).\n",
             "example": "/api/v2/users",
