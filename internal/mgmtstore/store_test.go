@@ -67,10 +67,10 @@ func TestMergeShallowAndNullRemoves(t *testing.T) {
 	_, err := s.create("/c", "id", Object{"id": "1", "a": 1, "b": Object{"x": 1}}, both)
 	require.NoError(t, err)
 	s.now = func() time.Time { return later }
-	got, err := s.merge("/c", "1", "id", Object{"b": Object{"y": 2}, "a": nil, "id": "other", "created_at": "zzz"}, both)
+	got, err := s.merge("/c", "1", "id", Object{"b": Object{"y": 2}, "a": nil, "id": "other", "created_at": "zzz"}, both, writeSchemas{})
 	require.NoError(t, err)
 	assert.Equal(t, Object{"id": "1", "b": Object{"y": 2}, "created_at": fixedStamp, "updated_at": "2026-02-02T03:04:05.000Z"}, got)
-	_, err = s.merge("/c", "nope", "id", Object{}, both)
+	_, err = s.merge("/c", "nope", "id", Object{}, both, writeSchemas{})
 	assert.ErrorIs(t, err, errNotFound)
 }
 
@@ -148,9 +148,9 @@ func TestSettingsInitialMergeReplaceReset(t *testing.T) {
 	assert.Equal(t, 1, initial["a"])
 	assert.Equal(t, Object{"a": 1}, s.getSettings("/p", initial))
 
-	got, _ = s.mergeSettings("/p", initial, Object{"b": 2}, parentRef{})
+	got, _ = s.mergeSettings("/p", initial, Object{"b": 2}, parentRef{}, writeSchemas{})
 	assert.Equal(t, Object{"a": 1, "b": 2}, got)
-	got, _ = s.mergeSettings("/p", initial, Object{"a": nil}, parentRef{})
+	got, _ = s.mergeSettings("/p", initial, Object{"a": nil}, parentRef{}, writeSchemas{})
 	assert.Equal(t, Object{"b": 2}, got)
 	got, _ = s.replaceSettings("/p", Object{"c": 3}, parentRef{})
 	assert.Equal(t, Object{"c": 3}, got)
@@ -194,7 +194,7 @@ func TestRemoveCascadeKeepsPrefixSibling(t *testing.T) {
 func TestSettingsWriteUnderMissingParent(t *testing.T) {
 	s := newTestStore(t)
 	p := parentRef{"/organizations", "o1"}
-	_, err := s.mergeSettings("/organizations/o1/cfg", nil, Object{"a": 1}, p)
+	_, err := s.mergeSettings("/organizations/o1/cfg", nil, Object{"a": 1}, p, writeSchemas{})
 	assert.ErrorIs(t, err, errNotFound)
 	_, err = s.replaceSettings("/organizations/o1/cfg", Object{"a": 1}, p)
 	assert.ErrorIs(t, err, errNotFound)
@@ -202,7 +202,7 @@ func TestSettingsWriteUnderMissingParent(t *testing.T) {
 
 	_, err = s.create("/organizations", "id", Object{"id": "o1"}, both)
 	require.NoError(t, err)
-	got, err := s.mergeSettings("/organizations/o1/cfg", nil, Object{"a": 1}, p)
+	got, err := s.mergeSettings("/organizations/o1/cfg", nil, Object{"a": 1}, p, writeSchemas{})
 	require.NoError(t, err)
 	assert.Equal(t, Object{"a": 1}, got)
 	got, err = s.replaceSettings("/organizations/o1/cfg", Object{"b": 2}, p)

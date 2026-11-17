@@ -248,7 +248,7 @@ func (s *Store) replaceSettings0(path string, o Object) Object {
 }
 
 func mergeInto(s *Store, patch Object) Object {
-	out, _ := s.mergeSettings("/m", nil, patch, parentRef{})
+	out, _ := s.mergeSettings("/m", nil, patch, parentRef{}, writeSchemas{})
 	return out
 }
 
@@ -301,13 +301,13 @@ func TestProspectiveAndCheckPresentBranches(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &role))
 	id := role["id"].(string)
 	route := Route{Kind: KindMerge, IDField: "id"}
-	got := h.s.prospective(route, "/roles", id, Object{"id": "other", "created_at": "x", "name": "n", "description": nil})
+	got := h.s.prospective(route, "/roles", id, Object{"id": "other", "created_at": "x", "name": "n", "description": nil}, writeSchemas{})
 	assert.Equal(t, id, got["id"])
 	assert.Equal(t, "n", got["name"])
 	assert.NotContains(t, got, "description")
 
 	// A settings path with no stored value or initial value starts empty.
-	got = h.s.prospective(Route{Kind: KindSettingsMerge, Collection: "/nowhere"}, "/nowhere", "", Object{"a": 1})
+	got = h.s.prospective(Route{Kind: KindSettingsMerge, Collection: "/nowhere"}, "/nowhere", "", Object{"a": 1}, writeSchemas{})
 	assert.Equal(t, Object{"a": 1}, got)
 
 	// A present null is validated like any value; a write drops it first.
@@ -334,4 +334,48 @@ func TestListItemsShapes(t *testing.T) {
 	assert.Same(t, item, listItems(schemaOf(arr)))
 	assert.Same(t, item, listItems(schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"xs": schemaOf(arr)}))))
 	assert.Nil(t, listItems(nil))
+}
+
+func TestCarryWriteOnly(t *testing.T) {
+	str := schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})
+	wo := schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}, WriteOnly: true})
+	reqSink := objectSchema(map[string]*openapi3.SchemaRef{"a": str, "secret": wo, "need": str, "other": str})
+	readSink := objectSchema(map[string]*openapi3.SchemaRef{"a": str, "need": str, "other": str})
+	readSink.Required = []string{"need"}
+	ws := writeSchemas{
+		req:  schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"sink": schemaOf(reqSink)})),
+		read: schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"sink": schemaOf(readSink)})),
+	}
+	old := map[string]any{"a": "1", "secret": "s", "need": "n", "other": "o", "gone": "g"}
+	// Carries the write-only key and the read-required one; not the optional readable key nor an undeclared one.
+	assert.Equal(t, map[string]any{"a": "2", "secret": "s", "need": "n"}, ws.carry("sink", old, map[string]any{"a": "2"}))
+	// Nothing missing: same value back.
+	full := map[string]any{"a": "2", "secret": "x", "need": "y"}
+	assert.Equal(t, full, ws.carry("sink", old, full))
+	// Non-objects, unknown keys and a zero value pass through.
+	assert.Equal(t, "x", ws.carry("sink", old, "x"))
+	assert.Equal(t, map[string]any{"a": "2"}, ws.carry("unknown", old, map[string]any{"a": "2"}))
+	assert.Equal(t, map[string]any{"a": "2"}, writeSchemas{}.carry("sink", old, map[string]any{"a": "2"}))
+	// A key flagged writeOnly in the request is carried even if the read schema lists it.
+	ws.read = schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"sink": schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"secret": str, "a": str, "need": str, "other": str}))}))
+	assert.Equal(t, map[string]any{"secret": "s"}, ws.carry("sink", old, map[string]any{}))
+}
+
+func TestCarryDropsKeysOfOtherUnionBranch(t *testing.T) {
+	str := schemaOf(&openapi3.Schema{Type: &openapi3.Types{"string"}})
+	one := objectSchema(map[string]*openapi3.SchemaRef{"endpoint": str, "token": str})
+	one.Required = []string{"token"}
+	two := objectSchema(map[string]*openapi3.SchemaRef{"url": str})
+	union := schemaOf(&openapi3.Schema{OneOf: openapi3.SchemaRefs{schemaOf(one), schemaOf(two)}})
+	ws := writeSchemas{
+		req:  schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"sink": union})),
+		read: schemaOf(objectSchema(map[string]*openapi3.SchemaRef{"sink": union})),
+	}
+	old := map[string]any{"endpoint": "e", "token": "t"}
+	assert.Equal(t, map[string]any{"url": "u"}, ws.carry("sink", old, map[string]any{"url": "u"}))
+	assert.Equal(t, map[string]any{"endpoint": "f", "token": "t"}, ws.carry("sink", old, map[string]any{"endpoint": "f"}))
+}
+
+func TestUnionLeavesNilSchema(t *testing.T) {
+	assert.Empty(t, unionLeaves(nil, 0))
 }

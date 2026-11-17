@@ -401,3 +401,138 @@ func discriminated(d *openapi3.Discriminator, group openapi3.SchemaRefs, obj map
 	}
 	return nil
 }
+
+// writeSchemas are the request and read schemas a merge consults to keep
+// secrets. The zero value carries nothing over.
+type writeSchemas struct{ req, read *openapi3.SchemaRef }
+
+// writeSchemas returns the schemas for a collection or settings path. Like
+// decodeWrite, it falls back to the create/settings response when there is
+// no item read.
+func (e *Engine) writeSchemas(collection string) writeSchemas {
+	req, resp, read := e.schemas(collection)
+	if read == nil {
+		read = resp
+	}
+	return writeSchemas{req, read}
+}
+
+// carry returns what a PATCH of top-level key k stores. A PATCH replaces an
+// object value whole, so keys the stored object holds and the new one omits
+// are carried over when the client could not have read them back (write-only:
+// declared by a write body but not the read schema, or marked writeOnly) or
+// when the read schema requires them, which projection would otherwise
+// fabricate empty. Only keys declared by a schema branch the new value fits
+// are carried, so changing to another sink type drops the old one's keys.
+// Other values pass through.
+func (w writeSchemas) carry(k string, old, nv any) any {
+	oldObj, ok1 := old.(map[string]any)
+	newObj, ok2 := nv.(map[string]any)
+	if !ok1 || !ok2 {
+		return nv
+	}
+	reqLeaves := fittingLeaves(w.req, k, newObj)
+	readLeaves := fittingLeaves(w.read, k, newObj)
+	if len(readLeaves) == 0 {
+		return nv
+	}
+	var out map[string]any
+	for key, ov := range oldObj {
+		if _, present := newObj[key]; present {
+			continue
+		}
+		rp := declaredBy(reqLeaves, key)
+		if rp == nil || (!writeOnlyKey(rp, readLeaves, key) && !requiredBy(readLeaves, key)) {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]any, len(newObj)+1)
+			for nk, nvv := range newObj {
+				out[nk] = nvv
+			}
+		}
+		out[key] = ov
+	}
+	if out == nil {
+		return nv
+	}
+	return out
+}
+
+// fittingLeaves returns the object schemas of top-level property k, with
+// unions split into their branches, that declare every key of v.
+func fittingLeaves(s *openapi3.SchemaRef, k string, v map[string]any) []*openapi3.SchemaRef {
+	var out []*openapi3.SchemaRef
+	for _, c := range propCandidates(s, k, 0) {
+		for _, leaf := range unionLeaves(c, 0) {
+			props := schemaProps(leaf)
+			fits := len(props) > 0
+			for key := range v {
+				if _, ok := props[key]; !ok {
+					fits = false
+				}
+			}
+			if fits {
+				out = append(out, leaf)
+			}
+		}
+	}
+	return out
+}
+
+// propCandidates collects every schema declared for property k anywhere in s.
+func propCandidates(s *openapi3.SchemaRef, k string, depth int) []*openapi3.SchemaRef {
+	if s == nil || s.Value == nil || depth > maxSchemaDepth {
+		return nil
+	}
+	var out []*openapi3.SchemaRef
+	if p, ok := s.Value.Properties[k]; ok {
+		out = append(out, p)
+	}
+	for _, group := range []openapi3.SchemaRefs{s.Value.AllOf, s.Value.OneOf, s.Value.AnyOf} {
+		for _, b := range group {
+			out = append(out, propCandidates(b, k, depth+1)...)
+		}
+	}
+	return out
+}
+
+// unionLeaves splits a oneOf/anyOf schema into its non-union branches.
+func unionLeaves(s *openapi3.SchemaRef, depth int) []*openapi3.SchemaRef {
+	if s == nil || s.Value == nil || depth > maxSchemaDepth {
+		return nil
+	}
+	group := append(append(openapi3.SchemaRefs{}, s.Value.OneOf...), s.Value.AnyOf...)
+	if len(group) == 0 {
+		return []*openapi3.SchemaRef{s}
+	}
+	var out []*openapi3.SchemaRef
+	for _, b := range group {
+		out = append(out, unionLeaves(b, depth+1)...)
+	}
+	return out
+}
+
+func declaredBy(leaves []*openapi3.SchemaRef, key string) *openapi3.SchemaRef {
+	for _, l := range leaves {
+		if p, ok := schemaProps(l)[key]; ok {
+			return p
+		}
+	}
+	return nil
+}
+
+func requiredBy(leaves []*openapi3.SchemaRef, key string) bool {
+	for _, l := range leaves {
+		for _, r := range collectRequired(l, 0) {
+			if r == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func writeOnlyKey(req *openapi3.SchemaRef, read []*openapi3.SchemaRef, key string) bool {
+	return declaredBy(read, key) == nil || (req.Value != nil && req.Value.WriteOnly)
+}

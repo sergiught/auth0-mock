@@ -245,7 +245,7 @@ func decodeJSON(data []byte, v any) error {
 
 // prospective returns the state a write would store: the patch applied to the
 // current item or settings for a merge, the body itself otherwise.
-func (s *Store) prospective(route Route, coll, id string, obj Object) Object {
+func (s *Store) prospective(route Route, coll, id string, obj Object, ws writeSchemas) Object {
 	var cur Object
 	switch route.Kind {
 	case KindMerge:
@@ -271,7 +271,7 @@ func (s *Store) prospective(route Route, coll, id string, obj Object) Object {
 			delete(cur, k)
 			continue
 		}
-		cur[k] = v
+		cur[k] = ws.carry(k, cur[k], v)
 	}
 	return cur
 }
@@ -299,7 +299,7 @@ func (s *Store) decodeWrite(r *http.Request, op spec.Operation, body []byte, rou
 // The state is projected first, as GET would, so values the response
 // legitimately redacts or drops (a secret's value) are not held against it.
 func (s *Store) checkWrite(route Route, coll, id string, obj Object, req, read *openapi3.SchemaRef) error {
-	return checkPresent(project(s.prospective(route, coll, id, obj), read, req), read)
+	return checkPresent(project(s.prospective(route, coll, id, obj, writeSchemas{req, read}), read, req), read)
 }
 
 // parentOf names the parent item a route's path points at, or the zero
@@ -443,7 +443,7 @@ func (s *Store) serveWrite(w http.ResponseWriter, route Route, coll, id string, 
 		err error
 	)
 	if route.Kind == KindMerge {
-		out, err = s.merge(coll, id, route.IDField, obj, st)
+		out, err = s.merge(coll, id, route.IDField, obj, st, s.engine.writeSchemas(route.Collection))
 	} else {
 		out, err = s.replace(coll, id, route.IDField, obj, st)
 	}
@@ -466,7 +466,7 @@ func (s *Store) serveSettings(w http.ResponseWriter, route Route, path string, p
 	default:
 		var err error
 		if route.Kind == KindSettingsMerge {
-			out, err = s.mergeSettings(path, initial, obj, parent)
+			out, err = s.mergeSettings(path, initial, obj, parent, s.engine.writeSchemas(route.Collection))
 		} else {
 			out, err = s.replaceSettings(path, obj, parent)
 		}

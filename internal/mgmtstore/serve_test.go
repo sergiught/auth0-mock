@@ -424,3 +424,38 @@ func TestServeEnforcesSchemaPatterns(t *testing.T) {
 	code, _, raw = h.do("POST", path, "", `{"domain":"example.com"}`)
 	assert.Equal(t, 201, code, string(raw))
 }
+
+const mixpanelStream = `{"type":"mixpanel","name":"m","sink":{"mixpanelRegion":"us","mixpanelProjectId":"1","mixpanelServiceAccountUsername":"u","mixpanelServiceAccountPassword":"p"}}`
+
+func TestPatchKeepsOmittedSinkSecret(t *testing.T) {
+	h := newHarness(t)
+	code, created, raw := h.do("POST", "/api/v2/log-streams", "", mixpanelStream)
+	require.Equal(t, 200, code, string(raw))
+	path := "/api/v2/log-streams/" + created["id"].(string)
+	code, got, raw := h.do("PATCH", path, "", `{"sink":{"mixpanelRegion":"eu","mixpanelProjectId":"2","mixpanelServiceAccountUsername":"v"}}`)
+	require.Equal(t, 200, code, string(raw))
+	sink := got["sink"].(map[string]any)
+	assert.Equal(t, "p", sink["mixpanelServiceAccountPassword"])
+	assert.Equal(t, "eu", sink["mixpanelRegion"])
+
+	out, err := json.Marshal(h.s.Export())
+	require.NoError(t, err)
+	var data map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out, &data))
+	s2 := h.s.engine.NewStore(fixedNow)
+	require.NoError(t, s2.Load(data))
+	again, err := json.Marshal(s2.Export())
+	require.NoError(t, err)
+	assert.JSONEq(t, string(out), string(again))
+}
+
+func TestPatchSinkStaysFullReplaceForReadableKeys(t *testing.T) {
+	h := newHarness(t)
+	_, created, _ := h.do("POST", "/api/v2/log-streams", "", `{"type":"http","name":"h","sink":{"httpEndpoint":"https://example.com/a","httpAuthorization":"tok"}}`)
+	path := "/api/v2/log-streams/" + created["id"].(string)
+	code, got, raw := h.do("PATCH", path, "", `{"sink":{"httpEndpoint":"https://example.com/b"}}`)
+	require.Equal(t, 200, code, string(raw))
+	sink := got["sink"].(map[string]any)
+	assert.Equal(t, "https://example.com/b", sink["httpEndpoint"])
+	assert.NotContains(t, sink, "httpAuthorization")
+}

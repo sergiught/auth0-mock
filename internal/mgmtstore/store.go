@@ -199,7 +199,7 @@ func (s *Store) listWindow(coll string, win func(n int) (start, end int)) (int, 
 	return len(c.order), out
 }
 
-func (s *Store) merge(coll, id, idField string, patch Object, st stamp) (Object, error) {
+func (s *Store) merge(coll, id, idField string, patch Object, st stamp, ws writeSchemas) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.colls[coll]
@@ -215,7 +215,7 @@ func (s *Store) merge(coll, id, idField string, patch Object, st stamp) (Object,
 			delete(o, k)
 			continue
 		}
-		o[k] = deepCopy(v)
+		o[k] = deepCopy(ws.carry(k, o[k], v))
 	}
 	if st.updated {
 		o["updated_at"] = s.stamp()
@@ -287,7 +287,7 @@ func (s *Store) getSettings(path string, initial Object) Object {
 	return copyObject(initial)
 }
 
-func (s *Store) mergeSettings(path string, initial, patch Object, parent parentRef) (Object, error) {
+func (s *Store) mergeSettings(path string, initial, patch Object, parent parentRef, ws writeSchemas) (Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.parentMissing(parent) {
@@ -305,7 +305,7 @@ func (s *Store) mergeSettings(path string, initial, patch Object, parent parentR
 			delete(cur, k)
 			continue
 		}
-		cur[k] = deepCopy(v)
+		cur[k] = deepCopy(ws.carry(k, cur[k], v))
 	}
 	s.settings[path] = cur
 	return copyObject(cur), nil
