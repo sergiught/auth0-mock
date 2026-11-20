@@ -3,7 +3,7 @@ module github.com/sergiught/auth0-mock
 go 1.26.0
 
 require (
-	github.com/MicahParks/keyfunc/v3 v3.9.1
+	github.com/MicahParks/keyfunc/v3 v3.9.2
 	github.com/caarlos0/env/v11 v11.4.2
 	github.com/cucumber/godog v0.16.0
 	github.com/getkin/kin-openapi v0.153.0
@@ -14,7 +14,7 @@ require (
 	github.com/kinbiko/jsonassert v1.2.0
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
-	github.com/tidwall/gjson v1.20.2
+	github.com/tidwall/gjson v1.20.5
 	github.com/tmaxmax/go-sse v0.12.0
 	golang.org/x/sync v0.25.0
 	gopkg.in/yaml.v3 v3.0.1
